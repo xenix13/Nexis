@@ -19,6 +19,27 @@ TMDB = FakeTMDB()
 os.environ["SEANCE_TMDB_API"] = TMDB.url
 os.environ["SEANCE_TMDB_IMG"] = TMDB.url + "/img"
 
+# faux outils SMB + service de montage (voir tests/test_mounts.py)
+import stat  # noqa: E402
+from tests.test_mounts import FAKE_MOUNT, FAKE_SMBCLIENT, FAKE_UMOUNT  # noqa: E402
+SMB = tempfile.mkdtemp()
+os.makedirs(os.path.join(SMB, "bin"))
+for _n, _b in (("smbclient", FAKE_SMBCLIENT), ("mount", FAKE_MOUNT), ("umount", FAKE_UMOUNT), ("mount.cifs", "#!/bin/sh\n")):
+    with open(os.path.join(SMB, "bin", _n), "w") as _f:
+        _f.write(_b)
+    os.chmod(os.path.join(SMB, "bin", _n), 0o755)
+os.environ["PATH"] = os.path.join(SMB, "bin") + os.pathsep + os.environ["PATH"]
+for _k, _v in (("SEANCE_FSTAB", "fstab"), ("SEANCE_MOUNTINFO", "mountinfo"), ("SEANCE_SMB_CRED_DIR", "smb"),
+               ("SEANCE_MOUNT_ROOT", "mnt"), ("SEANCE_MOUNTD_SOCK", "run/mountd.sock")):
+    os.environ[_k] = os.path.join(SMB, _v)
+open(os.environ["SEANCE_FSTAB"], "w").close()
+open(os.environ["SEANCE_MOUNTINFO"], "w").close()
+from seance import mountd  # noqa: E402
+_mounts = mountd.Mounts()
+_mounts.env["unprivileged"] = False
+_msrv = mountd.make_server(_mounts, os.environ["SEANCE_MOUNTD_SOCK"], allowed_uids={os.getuid()})
+threading.Thread(target=_msrv.serve_forever, daemon=True).start()
+
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 from seance.api import Ctx, build_app  # noqa: E402
@@ -65,7 +86,7 @@ with sync_playwright() as pw:
     bctx.route("**/__test.webm", lambda r: r.fulfill(status=200, content_type="video/webm", path=webm))
     page = bctx.new_page()
     page.on("pageerror", lambda e: errors.append(f"[pageerror] {e}"))
-    page.on("console", lambda m: errors.append(f"[{m.type}] {m.text}") if m.type == "error" and "404" not in m.text else None)
+    page.on("console", lambda m: errors.append(f"[{m.type}] {m.text}") if m.type == "error" and "404" not in m.text and "400" not in m.text else None)
 
     # --- installation
     page.goto(base + "/")
@@ -176,6 +197,33 @@ with sync_playwright() as pw:
     page.goto(base + "/#/")
     page.wait_for_selector(".hero-title")
 
+    # --- partages réseau
+    page.goto(base + "/#/admin/shares")
+    page.wait_for_selector("text=Aucun partage réseau")
+    page.click("text=+ Ajouter un partage")
+    m = page.locator(".modal")
+    m.locator("input[placeholder='192.168.1.5']").fill("192.168.1.5")
+    m.locator("input").nth(1).fill("jellyfin")
+    m.locator("input[type=password]").fill("mauvais")
+    m.locator("text=Voir les partages du NAS").click()
+    page.wait_for_selector(".modal .form-error:has-text('mot de passe refusé')")
+    m.locator("input[type=password]").fill("secret")
+    m.locator("text=Voir les partages du NAS").click()
+    page.wait_for_selector(".share-pick")
+    check(m.locator(".share-pick").count() == 3, "3 partages découverts (sans les partages $)")
+    m.locator(".share-pick", has_text="Films").click()
+    check(m.locator("input[placeholder='films']").input_value() == "films", "nom local proposé")
+    page.screenshot(path=f"{out}/13-ajout-partage.png")
+    m.locator("button.primary", has_text="Monter").click()
+    page.wait_for_selector(".modal:has-text('Créer une bibliothèque avec ce dossier')")
+    page.locator(".modal button", has_text="Créer une bibliothèque").click()
+    page.wait_for_selector(".modal:has-text('Nouvelle bibliothèque')")
+    check(page.locator(".modal .path-row input").input_value().endswith("/mnt/films"), "chemin du partage prérempli")
+    page.screenshot(path=f"{out}/14-bibliotheque-depuis-partage.png")
+    page.locator(".modal button", has_text="Annuler").click()
+    page.wait_for_selector(".user-row:has-text('Monté')")
+    page.screenshot(path=f"{out}/15-partages.png")
+
     # --- mobile
     mctx = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2)
     mp = mctx.new_page()
@@ -187,7 +235,7 @@ with sync_playwright() as pw:
     mp.goto(base + "/#/admin/libraries")
     mp.wait_for_selector(".user-row")
     mp.wait_for_load_state("networkidle")
-    mp.screenshot(path=f"{out}/13-mobile-admin.png", full_page=True)
+    mp.screenshot(path=f"{out}/16-mobile-admin.png", full_page=True)
     sw = mp.evaluate("document.documentElement.scrollWidth")
     check(sw <= 390, f"pas de défilement horizontal sur mobile ({sw})")
     browser.close()

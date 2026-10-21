@@ -1,0 +1,20 @@
+[Unit]
+Description=Séance - montage des partages réseau (SMB/CIFS)
+After=network-online.target
+Wants=network-online.target
+Before=seance.service
+
+[Service]
+Type=simple
+# Doit tourner en root, SANS isolation de montage (PrivateTmp, ProtectSystem…) :
+# sinon les partages seraient montés dans un espace de noms invisible pour Séance.
+ExecStart=/usr/bin/python3 -m seance.mountd
+WorkingDirectory=/opt/seance
+Environment=PYTHONUNBUFFERED=1
+RuntimeDirectory=seance-mountd
+RuntimeDirectoryMode=0750
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

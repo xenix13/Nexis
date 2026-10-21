@@ -16,7 +16,7 @@ Un serveur multimédia **100 % auto-hébergé** pour tes films, séries et anime
 | **Espace personnel** | Reprise de lecture, « Reprendre et à suivre », historique, épisodes vus/non vus, langues audio/sous-titres préférées, thème, couleur, taille des affiches |
 | **Lecteur** | Choix audio, sous-titres et qualité en cours de lecture, raccourcis clavier, bandeau « Passer l'intro », épisode suivant avec compte à rebours |
 | **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou fichiers à côté de la vidéo, `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. PGS/VobSub incrustés |
-| **Administration** | Bibliothèques (avec explorateur de dossiers), utilisateurs, clé TMDB, limites de lectures/transcodages, lectures en cours avec la raison d'un éventuel transcodage |
+| **Administration** | Partages réseau SMB (montage depuis l'interface), bibliothèques (avec explorateur de dossiers), utilisateurs, clé TMDB, limites de lectures/transcodages, lectures en cours avec la raison d'un éventuel transcodage |
 
 ### Comment Séance ménage le processeur
 
@@ -38,13 +38,23 @@ Sur un conteneur LXC ou une VM **Ubuntu 22.04/24.04** ou **Debian 12/13**, en ro
 curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh | bash
 ```
 
-Le script installe Python, git et ffmpeg, récupère le code, l'installe dans `/opt/seance`, crée l'utilisateur système `seance` et le service `seance.service`, puis affiche l'adresse et le **code d'installation**.
+Le script installe Python, git, ffmpeg et les outils SMB (cifs-utils, smbclient), récupère le code, l'installe dans `/opt/seance`, crée l'utilisateur système `seance` et le service `seance.service`, puis affiche l'adresse et le **code d'installation**.
 
 **Mettre à jour** : relance la même commande. Les données (`/var/lib/seance`) et la configuration (`/etc/seance/seance.env`) sont conservées.
 
-### Donner accès aux médias dans un LXC (Proxmox)
+### Donner accès aux médias
 
-Un conteneur non privilégié ne peut pas monter de partage SMB lui-même. On monte donc les partages **sur l'hôte Proxmox**, puis on les « prête » au conteneur, en lecture seule.
+**Méthode 1 : depuis Séance (VM ou LXC privilégié).** L'onglet **Administration → Partages réseau** monte tes partages SMB/CIFS sans ligne de commande. Tu saisis l'adresse du NAS et les identifiants, Séance liste les partages disponibles, tu en choisis un, il est monté en lecture seule dans `/mnt/seance/<nom>`, et tu crées la bibliothèque en un clic. Les partages sont remontés automatiquement au démarrage et toutes les 5 minutes s'ils sont tombés (NAS redémarré). Les mots de passe sont stockés dans `/etc/seance/smb/` (lisibles par root seulement), jamais dans la base de Séance.
+
+Le montage est fait par un petit service root séparé, `seance-mountd`. Il ne sait que monter des partages SMB en lecture seule sous `/mnt/seance/`, et n'accepte les demandes que de l'utilisateur `seance`. Séance lui-même continue de tourner sans privilèges.
+
+> ⚠️ **Linux interdit le montage SMB dans un conteneur LXC non privilégié**, quelle que soit l'application. Pour utiliser la méthode 1 dans Proxmox, il faut un conteneur **privilégié** avec l'option `mount=cifs` :
+> - nouveau conteneur : `pct create … --unprivileged 0 --features mount=cifs,nesting=1` ;
+> - conteneur existant : *Sauvegarde* → *Restaurer* en décochant « Non privilégié », puis `pct set <ID> -features mount=cifs,nesting=1` et redémarrage.
+>
+> Un conteneur privilégié est moins cloisonné de l'hôte : à réserver à un réseau domestique de confiance. Sinon, utilise la méthode 2.
+
+**Méthode 2 : montage sur l'hôte Proxmox (LXC non privilégié).** On monte les partages **sur l'hôte**, puis on les « prête » au conteneur en lecture seule.
 
 1. **Sur l'hôte Proxmox**, crée un fichier d'identifiants :
 
@@ -80,7 +90,7 @@ Un conteneur non privilégié ne peut pas monter de partage SMB lui-même. On mo
 
 Dans le conteneur, tes médias sont alors dans `/mnt/films`, `/mnt/series` et `/mnt/animes`. Le script d'installation te prévient si l'utilisateur `seance` ne peut pas les lire.
 
-Pour une VM, monte simplement les partages dans son `/etc/fstab` (lecture seule suffit).
+Pour une VM, la méthode 1 fonctionne directement.
 
 **Ressources conseillées** : 2 à 4 cœurs (le transcodage est le seul poste gourmand), 1 Go de RAM, 8 Go de disque (cache d'images et segments vidéo temporaires).
 
@@ -149,6 +159,9 @@ La bannière « Passer l'intro » s'appuie sur des marqueurs de début et de fin
 
 | Symptôme | Piste |
 |---|---|
+| « Linux interdit le montage SMB… » | Conteneur LXC non privilégié : voir « Donner accès aux médias » (méthode 1 en privilégié, ou méthode 2) |
+| « Montage refusé (identifiants valides) » | Conteneur privilégié sans l'option : `pct set <ID> -features mount=cifs,nesting=1` puis redémarrer |
+| Partage « Non monté » | Bouton *Remonter* ; journal : `journalctl -u seance-mountd -n 50` |
 | « Dossier inaccessible » au scan | Le montage n'est pas visible dans le conteneur : `ls /mnt/films` dans le LXC, et `runuser -u seance -- ls /mnt/films` |
 | Film mal reconnu | Fiche → Identifier… ; ou renommer en `Titre (Année)` |
 | Épisodes « non reconnus » | Ajouter `S01E02` ou ` - 02` dans le nom |
@@ -179,6 +192,7 @@ Arborescence de `seance/` :
 - `metadata.py` : TMDB et `.nfo`
 - `images.py` : images
 - `transcoder.py` : décision de lecture, ffmpeg et HLS
+- `mountd.py` : service root de montage des partages SMB
 - `api.py` : routes HTTP
 - `auth.py`, `db.py`, `web.py` : socle
 

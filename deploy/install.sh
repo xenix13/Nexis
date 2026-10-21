@@ -22,7 +22,7 @@ fi
 
 echo "==> Paquets système"
 apt-get update -qq
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 ca-certificates curl git ffmpeg >/dev/null
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 ca-certificates curl git ffmpeg cifs-utils smbclient >/dev/null
 echo "   $(ffmpeg -version | head -1 | cut -d' ' -f1-3)"
 
 PYV=$(python3 -c 'import sys; print("%d%02d" % sys.version_info[:2])')
@@ -54,7 +54,7 @@ if ! id seance >/dev/null 2>&1; then
 fi
 
 echo "==> Copie de l'application dans $APP_DIR"
-mkdir -p "$APP_DIR" "$DATA_DIR" "$CONF_DIR"
+mkdir -p "$APP_DIR" "$DATA_DIR" "$CONF_DIR" /mnt/seance
 rm -rf "$APP_DIR/seance" "$APP_DIR/static.new"
 cp -r "$SRC_DIR/seance" "$APP_DIR/seance"
 cp -r "$SRC_DIR/static" "$APP_DIR/static.new"
@@ -98,8 +98,10 @@ fi
 
 echo "==> Service systemd"
 cp "$SRC_DIR/deploy/seance.service" /etc/systemd/system/seance.service
+cp "$SRC_DIR/deploy/seance-mountd.service" /etc/systemd/system/seance-mountd.service
 systemctl daemon-reload
-systemctl enable seance >/dev/null 2>&1
+systemctl enable seance-mountd seance >/dev/null 2>&1
+systemctl restart seance-mountd || true
 systemctl restart seance || true
 sleep 2
 
@@ -131,9 +133,18 @@ fi
 
 PORT=$(grep -E '^SEANCE_PORT=' "$CONF_DIR/seance.env" | cut -d= -f2 || true)
 IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+if ! systemctl is-active --quiet seance-mountd; then
+  echo "Attention : le service de montage seance-mountd n'a pas démarré (journalctl -u seance-mountd -n 30)."
+fi
+if [ -r /proc/self/uid_map ] && [ "$(awk 'NR==1{print $2}' /proc/self/uid_map)" != "0" ]; then
+  echo
+  echo "Note : ce conteneur LXC est NON privilégié. Linux y interdit le montage SMB :"
+  echo "l'onglet « Partages réseau » pourra lister les partages du NAS mais pas les monter."
+  echo "Solutions : conteneur privilégié avec « features: mount=cifs », ou montage depuis l'hôte (README)."
+fi
 echo
 echo "Séance tourne sur http://${IP:-<ip>}:${PORT:-8420}"
-for d in /mnt/*/; do
+for d in /mnt/*/ /mnt/seance/*/; do
   [ -d "$d" ] || continue
   if ! runuser -u seance -- ls "$d" >/dev/null 2>&1; then
     echo "Attention : l'utilisateur 'seance' ne peut pas lire $d (droits du montage)."

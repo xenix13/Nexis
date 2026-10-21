@@ -1,6 +1,6 @@
 [Unit]
 Description=Séance - serveur multimédia auto-hébergé
-After=network-online.target
+After=network-online.target seance-mountd.service
 Wants=network-online.target
 
 [Service]
@@ -20,7 +20,7 @@ PrivateTmp=true
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/seance
+ReadWritePaths=/var/lib/seance -/run/seance-mountd
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

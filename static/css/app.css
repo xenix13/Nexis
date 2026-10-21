@@ -416,3 +416,14 @@ body.playing { overflow: hidden; background: #000; }
 .empty .btn { margin-top: 12px; }
 @media (max-width: 760px) { .grid-search { grid-template-columns: 1fr; } .path-row { flex-wrap: wrap; } }
 img.broken { visibility: hidden; }
+/* ---------- partages réseau ---------- */
+.share-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; }
+.share-pick { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+.share-pick:hover, .share-pick.on { border-color: var(--accent); }
+.advanced { margin: 4px 0 12px; }
+.advanced summary { cursor: pointer; color: var(--muted); font-size: 14px; margin-bottom: 10px; }
+.tag.ok { background: color-mix(in srgb, var(--ok) 25%, transparent); margin-left: 8px; }
+.tag.bad { background: color-mix(in srgb, var(--danger) 30%, transparent); margin-left: 8px; }
+.panel.warn { border-color: color-mix(in srgb, var(--accent) 50%, transparent); margin-bottom: 16px; }
+.panel.warn ol { padding-left: 20px; line-height: 1.6; }
+.panel.warn code { font-size: 12px; background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }

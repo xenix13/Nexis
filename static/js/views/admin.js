@@ -4,7 +4,7 @@ import { avatar, clear, confirmDialog, field, fmtTime, h, icon, modal, select, t
 
 function tabs(active) {
   const t = (id, label) => h('a.tab', { href: `#/admin/${id}`, class: id === active ? 'tab active' : 'tab' }, label);
-  return h('div.tabs', t('libraries', 'Bibliothèques'), t('users', 'Utilisateurs'), t('settings', 'Métadonnées et lecture'),
+  return h('div.tabs', t('libraries', 'Bibliothèques'), t('shares', 'Partages réseau'), t('users', 'Utilisateurs'), t('settings', 'Métadonnées et lecture'),
     t('streams', 'Lectures en cours'));
 }
 
@@ -110,7 +110,7 @@ async function pickFolder(start) {
 }
 
 async function libraryForm(lib) {
-  const isNew = !lib;
+  const isNew = !lib || !lib.id;
   lib = lib || { name: '', kind: 'movie', paths: [] };
   const name = h('input', { value: lib.name, maxlength: 40, placeholder: 'Films, Séries, Animes…' });
   const kind = select([['movie', 'Films'], ['show', 'Séries (et animes)']], lib.kind);
@@ -196,6 +196,131 @@ async function librariesTab(body, ctx) {
   }
 }
 
+// ----------------------------------------------------------- partages SMB
+const SMB_VERSIONS = [['auto', 'Automatique'], ['3.1.1', 'SMB 3.1.1'], ['3.0', 'SMB 3.0'], ['2.1', 'SMB 2.1'],
+  ['2.0', 'SMB 2.0'], ['1.0', 'SMB 1 (ancien NAS)']];
+
+const slug = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'partage';
+
+async function shareForm(existing) {
+  const isNew = !existing;
+  const e = existing || { host: '', share: '', subdir: '', username: '', version: 'auto', name: '' };
+  const host = h('input', { value: e.host, placeholder: '192.168.1.5' });
+  const user = h('input', { value: e.username, autocomplete: 'off' });
+  const pass = h('input', { type: 'password', autocomplete: 'new-password',
+    placeholder: isNew ? '' : 'Laisser vide pour garder le mot de passe actuel' });
+  const domain = h('input', { placeholder: 'WORKGROUP (facultatif)' });
+  const version = select(SMB_VERSIONS, e.version || 'auto');
+  const share = h('input', { value: e.share, placeholder: 'Films' });
+  const subdir = h('input', { value: e.subdir || '', placeholder: 'facultatif, ex. Films/HD' });
+  const name = h('input', { value: e.name, disabled: !isNew, placeholder: 'films' });
+  let nameTouched = !isNew;
+  name.addEventListener('input', () => { nameTouched = true; });
+  share.addEventListener('input', () => { if (!nameTouched) name.value = slug(share.value); });
+  const found = h('div.share-list');
+  const err = h('p.form-error');
+  const creds = () => ({ host: host.value.trim(), username: user.value, password: pass.value, domain: domain.value.trim(),
+    version: version.value, reuse: isNew ? undefined : e.name });
+  const discover = h('button.btn', { type: 'button', onclick: async () => {
+    err.textContent = '';
+    discover.disabled = true;
+    found.replaceChildren(h('p.muted.small', 'Connexion au NAS…'));
+    try {
+      const r = await post('/api/admin/shares/discover', creds());
+      found.replaceChildren(...(r.shares.length ? r.shares.map((x) => h('button.share-pick', { type: 'button',
+        class: x.name === share.value ? 'share-pick on' : 'share-pick',
+        onclick: (ev) => {
+          share.value = x.name;
+          if (!nameTouched) name.value = slug(x.name);
+          found.querySelectorAll('.share-pick').forEach((b) => b.classList.remove('on'));
+          ev.currentTarget.classList.add('on');
+        } }, '🗂 ', h('strong', x.name), x.comment ? h('span.muted.small', ` ${x.comment}`) : null))
+        : [h('p.muted.small', 'Aucun partage visible avec ce compte.')]));
+    } catch (ex) { found.replaceChildren(); err.textContent = ex.message; } finally { discover.disabled = false; }
+  } }, 'Voir les partages du NAS');
+  const body = h('div.form',
+    h('div.grid2', field('Adresse du NAS', host), field('Identifiant', user)),
+    field('Mot de passe', pass),
+    h('div.actions-row', discover), found,
+    h('div.grid2', field('Partage', share), field('Nom local', name, 'Monté dans /mnt/seance/<nom>')),
+    h('details.advanced', h('summary', 'Options avancées'),
+      h('div.grid2', field('Sous-dossier du partage', subdir), field('Version SMB', version)), field('Domaine', domain)),
+    h('p.muted.small', 'Le partage est monté en lecture seule : Séance ne peut ni modifier ni supprimer tes fichiers. Le mot de passe est stocké côté système (lisible par root uniquement), jamais dans la base de Séance.'),
+    err);
+  return modal(isNew ? 'Ajouter un partage réseau (SMB)' : `Modifier « ${e.name} »`, body, [
+    { label: 'Annuler', value: null },
+    { label: 'Monter le partage', primary: true, handler: async () => {
+      err.textContent = 'Montage en cours…';
+      try {
+        const r = await post('/api/admin/shares', { name: name.value.trim(), host: host.value.trim(), share: share.value.trim(),
+          subdir: subdir.value.trim(), username: user.value, password: pass.value, domain: domain.value.trim(),
+          version: version.value });
+        return r.path;
+      } catch (ex) { err.textContent = ex.message; return false; }
+    } },
+  ]);
+}
+
+async function sharesTab(body, ctx) {
+  const data = await get('/api/admin/shares');
+  if (!ctx.isCurrent()) return;
+  const reload = () => sharesTab(body, ctx);
+  const offerLibrary = async (path, label) => {
+    const ok = await libraryForm({ name: label.charAt(0).toUpperCase() + label.slice(1), kind: 'movie', paths: [path] });
+    if (ok) { await refreshMe(); toast('Bibliothèque créée, scan en cours', 'ok'); }
+    reload();
+  };
+  if (!data.available) {
+    clear(body, h('section.panel', h('h2', 'Partages réseau'), h('div.plex-status.bad', data.error),
+      h('p.muted.small', 'Relance le script d’installation pour (ré)installer le service seance-mountd, puis : systemctl status seance-mountd')));
+    return;
+  }
+  const env = data.env;
+  const warning = env.unprivileged ? h('section.panel.warn',
+    h('h2', 'Ce conteneur ne peut pas monter de partages'),
+    h('p', 'Linux interdit le montage SMB dans un conteneur LXC non privilégié, quelle que soit l’application. Tu peux quand même lister les partages de ton NAS ici, mais le montage échouera. Deux solutions :'),
+    h('ol',
+      h('li', h('strong', 'Conteneur privilégié'), ' (le plus simple pour gérer les partages depuis Séance) : sauvegarde le conteneur puis restaure-le en « privilégié » (Proxmox : Sauvegarde → Restaurer, décocher « Non privilégié »), et active l’option ', h('code', 'pct set <ID> -features mount=cifs,nesting=1'), '.'),
+      h('li', h('strong', 'Garder le conteneur non privilégié'), ' : monter les partages sur l’hôte Proxmox et les prêter au conteneur (méthode détaillée dans le README). Ils apparaîtront alors directement dans l’explorateur de dossiers des bibliothèques.'))) : null;
+  const tools = env.tools && (!env.tools['mount.cifs'] || !env.tools.smbclient)
+    ? h('div.plex-status.bad', 'cifs-utils ou smbclient manquant : relance le script d’installation.') : null;
+  clear(body,
+    h('div.toolbar', h('p.muted', 'Monte les dossiers partagés de ton NAS (SMB/CIFS) directement depuis Séance, puis crée tes bibliothèques dessus.'),
+      h('button.btn.primary', { onclick: async () => {
+        const path = await shareForm(null);
+        if (path) {
+          toast('Partage monté', 'ok');
+          if (await confirmDialog('Partage monté', `Le partage est disponible dans ${path}. Créer une bibliothèque avec ce dossier ?`, 'Créer une bibliothèque', false)) {
+            await offerLibrary(path, path.split('/').pop());
+            return;
+          }
+          reload();
+        }
+      } }, '+ Ajouter un partage')),
+    warning, tools,
+    data.shares.length ? h('div.user-list', data.shares.map((sh) => h('div.user-row',
+      h('div.lib-icon', '🗄️'),
+      h('div.grow', h('strong', sh.name), h('span.muted', ` //${sh.host}/${sh.share}${sh.subdir ? `/${sh.subdir}` : ''}`),
+        h('div.small', h('code', sh.path),
+          sh.mounted ? h('span.tag.ok', 'Monté') : h('span.tag.bad', 'Non monté'),
+          sh.username ? h('span.muted', ` · compte ${sh.username}`) : null,
+          sh.libraries.length ? h('span.muted', ` · utilisé par ${sh.libraries.join(', ')}`) : null),
+        sh.error ? h('div.form-error.small', sh.error) : null),
+      sh.mounted && !sh.libraries.length ? h('button.btn.small', { onclick: () => offerLibrary(sh.path, sh.share) }, 'Créer une bibliothèque') : null,
+      sh.mounted ? null : h('button.btn.small', { onclick: async () => {
+        try { await post(`/api/admin/shares/${sh.name}/remount`); toast('Partage remonté', 'ok'); } catch (e) { toast(e.message, 'bad'); }
+        reload();
+      } }, 'Remonter'),
+      h('button.btn.small', { onclick: async () => { if (await shareForm(sh)) { toast('Partage mis à jour', 'ok'); reload(); } } }, 'Modifier'),
+      h('button.icon-btn', { title: 'Démonter et retirer', onclick: async () => {
+        const used = sh.libraries.length ? ` Les bibliothèques ${sh.libraries.join(', ')} ne trouveront plus leurs fichiers (leur contenu est conservé tant qu’elles ne sont pas rescannées avec le partage monté).` : '';
+        if (!await confirmDialog('Retirer ce partage ?', `Le partage sera démonté et oublié. Tes fichiers sur le NAS ne sont pas touchés.${used}`, 'Retirer')) return;
+        try { await del(`/api/admin/shares/${sh.name}`); toast('Partage retiré', 'ok'); reload(); } catch (e) { toast(e.message, 'bad'); }
+      } }, icon('trash')))))
+      : h('div.empty', 'Aucun partage réseau géré par Séance.'));
+}
+
 // --------------------------------------------------------------- settings
 async function settingsTab(body, ctx) {
   const s = await get('/api/admin/settings');
@@ -260,6 +385,7 @@ export async function renderAdmin(main, tab, ctx) {
   if (tab === 'users') await usersTab(body, ctx);
   else if (tab === 'settings') await settingsTab(body, ctx);
   else if (tab === 'streams') await streamsTab(body, ctx);
+  else if (tab === 'shares') await sharesTab(body, ctx);
   else await librariesTab(body, ctx);
 }
 

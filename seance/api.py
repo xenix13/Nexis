@@ -9,7 +9,7 @@ import secrets
 import threading
 import time
 
-from . import media
+from . import media, mountd
 from .auth import (Throttle, check_credentials, clear_session, create_session, hash_password,
                    load_user, validate_password, verify_password)
 from .db import DB
@@ -1200,6 +1200,50 @@ def build_app(ctx):
                "ON CONFLICT(rating_key,kind) DO UPDATE SET start_ms=excluded.start_ms, end_ms=excluded.end_ms, "
                "source='manual'", (rk, kind, start, end))
         return {"ok": True}
+
+    # ---------------------------------------------------- admin partages SMB
+    def mounts(cmd, args=None):
+        try:
+            return mountd.call(cmd, args, sock_path=os.environ.get("SEANCE_MOUNTD_SOCK"))
+        except mountd.MountError as e:
+            raise HTTPError(503 if "pas démarré" in str(e) else 400, str(e))
+
+    @app.route("GET", "/api/admin/shares", auth="admin")
+    def admin_shares(req):
+        db.release()
+        try:
+            st = mountd.call("status", sock_path=os.environ.get("SEANCE_MOUNTD_SOCK"), timeout=20)
+        except mountd.MountError as e:
+            return {"available": False, "error": str(e), "shares": [], "env": None}
+        libs = db.all("SELECT id, name, paths FROM libraries")
+        for sh in st["shares"]:
+            sh["libraries"] = [l["name"] for l in libs if any(
+                p == sh["path"] or p.startswith(sh["path"] + os.sep) for p in json.loads(l["paths"]))]
+        st["available"] = True
+        return st
+
+    @app.route("POST", "/api/admin/shares/discover", auth="admin")
+    def admin_shares_discover(req):
+        b = req.json()
+        db.release()
+        return mounts("discover", {k: b.get(k) for k in ("host", "username", "password", "domain", "version", "reuse")})
+
+    @app.route("POST", "/api/admin/shares", auth="admin")
+    def admin_shares_add(req):
+        b = req.json()
+        db.release()
+        return mounts("add", {k: b.get(k) for k in ("name", "host", "share", "subdir", "username", "password",
+                                                     "domain", "version")})
+
+    @app.route("POST", r"/api/admin/shares/(?P<name>[a-z0-9_-]{1,32})/remount", auth="admin")
+    def admin_shares_remount(req):
+        db.release()
+        return mounts("remount", {"name": req.params["name"]})
+
+    @app.route("DELETE", r"/api/admin/shares/(?P<name>[a-z0-9_-]{1,32})", auth="admin")
+    def admin_shares_remove(req):
+        db.release()
+        return mounts("remove", {"name": req.params["name"]})
 
     # ------------------------------------------------- admin identification
     def root_item(r):
