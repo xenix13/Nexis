@@ -1,0 +1,32 @@
+[Unit]
+Description=Séance - frontend multi-utilisateurs pour Plex
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=seance
+Group=seance
+EnvironmentFile=-/etc/seance/seance.env
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/opt/seance
+ExecStart=/usr/bin/python3 -m seance --data /var/lib/seance --static /opt/seance/static
+Restart=on-failure
+RestartSec=3
+
+# Durcissement
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/seance
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
