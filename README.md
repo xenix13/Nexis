@@ -27,24 +27,42 @@ Raccourcis du lecteur : `Espace` lecture/pause, `←` `→` ±10 s, `↑` `↓` 
 
 ## Installation
 
-Sur une VM ou un conteneur LXC **Debian 12/13** (ou Ubuntu), en root :
+Sur un conteneur LXC ou une VM **Ubuntu 22.04/24.04** ou **Debian 12/13**, en root :
 
 ```bash
-apt install -y unzip
-unzip seance.zip && cd seance
-./deploy/install.sh
+curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh | bash
 ```
 
-Le script installe Python si besoin, copie l'application dans `/opt/seance`, télécharge hls.js, crée l'utilisateur système `seance` et le service `seance.service`, puis affiche :
+Le script installe Python et git si besoin, récupère le code dans `/usr/local/src/seance`, l'installe dans `/opt/seance`, télécharge hls.js, crée l'utilisateur système `seance` et le service `seance.service`, puis affiche :
 
 ```
 Séance tourne sur http://192.168.1.30:8420
 Code d'installation (à saisir dans la page d'accueil) : 4F2A9C1B
 ```
 
-Pour un conteneur LXC sous Proxmox, un conteneur **non privilégié** Debian avec 1 cœur et 512 Mo de RAM suffit : Séance ne transcode rien, c'est Plex qui le fait.
+**Mettre à jour** : relance la même commande. Les données (`/var/lib/seance`) et la configuration (`/etc/seance/seance.env`) sont conservées.
 
-Pour mettre à jour : décompresse la nouvelle version et relance `./deploy/install.sh`. Les données (`/var/lib/seance`) sont conservées.
+### Créer le conteneur sous Proxmox
+
+Un conteneur **non privilégié** Ubuntu avec 1 cœur, 512 Mo de RAM et 4 Go de disque suffit : Séance ne transcode rien, c'est Plex qui le fait. Depuis le shell du nœud Proxmox (adapte l'ID, le stockage et le nom exact du modèle affiché par `pveam available`) :
+
+```bash
+pveam update && pveam available | grep ubuntu-24.04
+pveam download local ubuntu-24.04-standard_24.04-2_amd64.tar.zst
+pct create 120 local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst \
+  --hostname seance --cores 1 --memory 512 --rootfs local-lvm:4 \
+  --net0 name=eth0,bridge=vmbr0,ip=dhcp --unprivileged 1 --features nesting=1 --onboot 1
+pct start 120
+pct exec 120 -- bash -c "apt-get update && apt-get install -y curl && curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh | bash"
+```
+
+`nesting=1` permet au service de garder son bac à sable systemd. Sans lui, le script le détecte et bascule sur une version allégée du service.
+
+Installation depuis un clone :
+
+```bash
+git clone https://github.com/xenix13/Nexis.git && cd Nexis && sudo ./deploy/install.sh
+```
 
 ### Premier lancement
 

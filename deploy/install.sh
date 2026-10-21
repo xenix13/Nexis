@@ -2,12 +2,12 @@
 # Installe ou met à jour Séance sur Ubuntu / Debian (conteneur LXC ou VM).
 #
 # En une commande (installation ET mise à jour), en root :
-#   curl -fsSL https://raw.githubusercontent.com/xenix13/seance/main/deploy/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh | bash
 # Ou depuis un clone du dépôt :
 #   sudo ./deploy/install.sh
 set -euo pipefail
 
-REPO_URL="${SEANCE_REPO:-https://github.com/xenix13/seance.git}"
+REPO_URL="${SEANCE_REPO:-https://github.com/xenix13/Nexis.git}"
 BRANCH="${SEANCE_BRANCH:-main}"
 HLS_VERSION="${HLS_VERSION:-1.5.15}"
 APP_DIR=/opt/seance
