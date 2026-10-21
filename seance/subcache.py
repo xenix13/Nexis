@@ -1,4 +1,4 @@
-"""Préparation des sous-titres internes à l'avance.
+"""Préparation à l'avance : sous-titres internes et vignettes d'aperçu (barre de lecture).
 
 Extraire une piste de sous-titres d'un MKV oblige ffmpeg à lire tout le fichier : sur un
 partage réseau, cela peut prendre une à plusieurs minutes. On extrait donc toutes les pistes
@@ -9,6 +9,7 @@ texte d'un fichier en UNE seule lecture, et le plus tôt possible :
 """
 import collections
 import json
+import math
 import logging
 import os
 import shutil
@@ -31,6 +32,11 @@ class Job:
         self.error = None
 
 
+TRICK_INTERVAL = 10   # une vignette toutes les 10 s
+TRICK_W = 240
+TRICK_COLS = TRICK_ROWS = 10
+
+
 def text_tracks(probe):
     return [s["index"] for s in (probe or {}).get("subs", []) if s.get("codec") in media.TEXT_SUB_CODECS]
 
@@ -39,7 +45,9 @@ class SubtitleCache:
     def __init__(self, ctx):
         self.ctx = ctx
         self.base = os.path.join(ctx.data_dir, "cache", "subs")
+        self.trick_base = os.path.join(ctx.data_dir, "cache", "trickplay")
         os.makedirs(self.base, exist_ok=True)
+        os.makedirs(self.trick_base, exist_ok=True)
         self.lock = threading.Lock()
         self.jobs = {}
         self.urgent = collections.OrderedDict()
@@ -59,6 +67,28 @@ class SubtitleCache:
     def missing(self, item):
         probe = json.loads(item["probe"] or "{}") if isinstance(item["probe"], str) else item["probe"]
         return [i for i in text_tracks(probe) if not os.path.isfile(self.path(item, i))]
+
+    # -- vignettes d'aperçu
+    def trick_dir(self, item):
+        return os.path.join(self.trick_base, f"{item['id']}_{item['file_mtime'] or 0}")
+
+    def trick_index(self, item):
+        try:
+            with open(os.path.join(self.trick_dir(item), "index.json"), encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+
+    def needs_trick(self, item):
+        if self.ctx.db.setting("trickplay", "1") != "1":
+            return False
+        probe = json.loads(item["probe"] or "{}") if isinstance(item["probe"], str) else item["probe"]
+        if not (probe or {}).get("video") or (probe.get("duration") or 0) < 60:
+            return False
+        return self.trick_index(item) is None
+
+    def has_work(self, item):
+        return bool(self.missing(item)) or self.needs_trick(item)
 
     def read(self, item, index):
         try:
@@ -82,7 +112,7 @@ class SubtitleCache:
     # ------------------------------------------------------------ demandes
     def ensure_now(self, item):
         """Extraction prioritaire (lancement d'une lecture). Renvoie le Job (ou None si tout est prêt)."""
-        if not self.missing(item):
+        if not self.has_work(item):
             return None
         with self.lock:
             job = self.jobs.get(item["id"])
@@ -141,7 +171,7 @@ class SubtitleCache:
                     row = self.ctx.db.one("SELECT id, key, probe, file_mtime, duration_ms FROM items WHERE id=?", (item_id,))
                 finally:
                     self.ctx.db.release()
-                if not row or not self.missing(row):
+                if not row or not self.has_work(row):
                     continue
                 with self.lock:
                     if item_id in self.jobs and not self.jobs[item_id].done.is_set():
@@ -167,42 +197,79 @@ class SubtitleCache:
 
     def _extract(self, item, job):
         tracks = self.missing(item)
-        if not tracks:
+        trick = self.needs_trick(item)
+        if not tracks and not trick:
             return
         if not item["key"] or not os.path.isfile(item["key"]):
             raise media.MediaError("fichier introuvable")
-        out_dir = self._dir(item)
-        os.makedirs(out_dir, exist_ok=True)
         tmp = tempfile.mkdtemp(dir=self.base, prefix=".tmp-")
         try:
             try:
-                self._ffmpeg(item, tracks, tmp, job)
-            except media.MediaError:
-                # une piste problématique fait échouer toute la passe : on reprend piste par piste
+                self._ffmpeg(item, tracks, trick, tmp, job)  # une seule lecture du fichier pour tout
+            except media.MediaError as e:
+                log.info("Passe combinée en échec (%s), reprise séparée : %s", e, item["key"])
+                if trick:
+                    try:
+                        self._ffmpeg(item, [], True, tmp, job)
+                    except media.MediaError as e2:
+                        log.warning("Vignettes de %s : %s", item["key"], e2)
                 for i in tracks:
                     try:
-                        self._ffmpeg(item, [i], tmp, job)
-                    except media.MediaError as e:
-                        log.warning("Piste %s de %s : %s", i, item["key"], e)
+                        self._ffmpeg(item, [i], False, tmp, job)
+                    except media.MediaError as e2:
+                        log.warning("Piste %s de %s : %s", i, item["key"], e2)
+            if tracks:
+                os.makedirs(self._dir(item), exist_ok=True)
             for i in tracks:
                 src = os.path.join(tmp, f"{i}.srt")
                 if not os.path.isfile(src):
                     continue
                 with open(src, "rb") as f:
                     cues = parse_subtitles(f.read())
-                data = json.dumps({"cues": cues}, ensure_ascii=False).encode()
                 dest = self.path(item, i)
                 with open(dest + ".tmp", "wb") as f:
-                    f.write(data)
+                    f.write(json.dumps({"cues": cues}, ensure_ascii=False).encode())
                 os.replace(dest + ".tmp", dest)
+            if trick:
+                self._store_trick(item, tmp)
             still = [i for i in tracks if not os.path.isfile(self.path(item, i))]
             if still:
-                raise media.MediaError(f"{len(still)} piste(s) illisible(s)")
+                raise media.MediaError(f"{len(still)} piste(s) de sous-titres illisible(s)")
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-    def _ffmpeg(self, item, tracks, tmp, job):
-        cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-v", "error", "-y", "-i", item["key"]]
+    def _trick_size(self, item):
+        probe = json.loads(item["probe"] or "{}") if isinstance(item["probe"], str) else item["probe"]
+        v = (probe or {}).get("video") or {}
+        w, h = v.get("width") or 16, v.get("height") or 9
+        return TRICK_W, max(2, int(round(TRICK_W * h / w / 2)) * 2)
+
+    def _store_trick(self, item, tmp):
+        sheets = sorted(f for f in os.listdir(tmp) if f.startswith("t") and f.endswith(".jpg"))
+        if not sheets:
+            return
+        dest = self.trick_dir(item)
+        os.makedirs(dest, exist_ok=True)
+        for n, f in enumerate(sheets, 1):
+            os.replace(os.path.join(tmp, f), os.path.join(dest, f"{n}.jpg"))
+        w, h = self._trick_size(item)
+        dur = (item["duration_ms"] or 0) / 1000
+        index = {"interval": TRICK_INTERVAL, "w": w, "h": h, "cols": TRICK_COLS, "rows": TRICK_ROWS,
+                 "count": int(math.ceil(dur / TRICK_INTERVAL)) if dur else len(sheets) * TRICK_COLS * TRICK_ROWS,
+                 "sheets": len(sheets)}
+        with open(os.path.join(dest, "index.json"), "w", encoding="utf-8") as f:
+            json.dump(index, f)
+
+    def _ffmpeg(self, item, tracks, trick, tmp, job):
+        cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-v", "error", "-y"]
+        if trick:
+            cmd += ["-skip_frame", "nokey"]  # seules les images clés sont décodées : très peu de calcul
+        cmd += ["-i", item["key"]]
+        if trick:
+            w, h = self._trick_size(item)
+            cmd += ["-map", "0:v:0", "-an", "-sn",
+                    "-vf", f"fps=1/{TRICK_INTERVAL},scale={w}:{h},tile={TRICK_COLS}x{TRICK_ROWS}",
+                    "-q:v", "6", "-f", "image2", os.path.join(tmp, "t%04d.jpg")]
         for i in tracks:
             cmd += ["-map", f"0:{i}", "-c:s", "srt", "-f", "srt", os.path.join(tmp, f"{i}.srt")]
         cmd += ["-progress", "pipe:1", "-nostats"]

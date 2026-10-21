@@ -158,11 +158,18 @@ with sync_playwright() as pw:
     page.goto(base + "/#/library/1")
     page.wait_for_selector(".grid .card")
     page.click(".card[title='Brume']")
-    page.wait_for_selector(".admin-tools")
+    page.wait_for_selector(".detail-actions")
     page.wait_for_load_state("networkidle")
-    check("HEVC" in page.inner_text(".admin-tools"), "infos techniques pour l'admin")
-    page.screenshot(path=f"{out}/09-film-admin.png")
-    page.click("text=Identifier…")
+    check(not page.locator("text=Identifier…").is_visible(), "outils d'admin masqués dans la vue normale")
+    page.click("button[aria-label='Plus d’actions']")
+    page.wait_for_selector(".more-list:not([hidden])")
+    page.screenshot(path=f"{out}/09-menu-actions.png")
+    page.click(".more-item:has-text('Informations sur le fichier')")
+    page.wait_for_selector(".modal:has-text('HEVC')")
+    page.screenshot(path=f"{out}/09b-infos-fichier.png")
+    page.keyboard.press("Escape")
+    page.click("button[aria-label='Plus d’actions']")
+    page.click(".more-item:has-text('Identifier…')")
     page.wait_for_selector(".identify-hit")
     page.wait_for_load_state("networkidle")
     page.screenshot(path=f"{out}/10-identifier.png")
@@ -189,26 +196,47 @@ with sync_playwright() as pw:
     st, lib = admin.call("GET", "/api/libraries/3/items")
     st, show = admin.call("GET", f"/api/items/{lib['items'][0]['id']}")
     ep1 = show["play_target"]["id"]
-    page.goto(base + "/")
-    page.wait_for_selector(".hero-title")
-    # extraction lente simulée : le lecteur doit attendre les sous-titres avant de démarrer
+    for _ in range(100):  # vignettes d'aperçu préparées en tâche de fond
+        if admin.call("GET", f"/api/items/{ep1}/trickplay")[1].get("ready"):
+            break
+        time.sleep(0.2)
+    # fiche : choix des langues avant la lecture
+    page.goto(base + f"/#/item/{ep1}")
+    page.wait_for_selector(".track-chooser")
+    page.wait_for_load_state("networkidle")
+    href = page.get_attribute(".detail-actions a.btn.primary", "href")
+    check("s=" in href and "s=0" not in href, f"sous-titres choisis transmis au lecteur ({href})")
+    page.screenshot(path=f"{out}/12a-fiche-episode-pistes.png")
+    # extraction lente simulée : préparation silencieuse (pas de fenêtre), la lecture attend les sous-titres
     _row = ctx.db.one("SELECT * FROM items WHERE id=?", (int(ep1),))
     shutil.rmtree(ctx.subtitles._dir(_row), ignore_errors=True)
     _orig = ctx.subtitles._ffmpeg
 
-    def _slow(item, tracks, tmp, job):
-        for k in range(8):
-            job.progress = k / 10
-            time.sleep(0.5)
-        return _orig(item, tracks, tmp, job)
+    def _slow(item, tracks, trick, tmp, job):
+        time.sleep(3)
+        return _orig(item, tracks, trick, tmp, job)
     ctx.subtitles._ffmpeg = _slow
-    page.goto(base + f"/#/play/{ep1}?t=500")
-    page.wait_for_selector(".subs-wait:not([hidden])", timeout=15000)
+    page.click(".detail-actions a.btn.primary")
+    page.wait_for_selector(".player .controls")
     page.wait_for_timeout(1500)
-    check(page.evaluate("document.querySelector('video').paused"), "la vidéo attend les sous-titres")
-    page.screenshot(path=f"{out}/12a-attente-sous-titres.png")
+    check(page.evaluate("document.querySelector('video').paused"), "la vidéo attend les sous-titres en silence")
+    check(page.locator(".subs-wait").count() == 0, "aucune fenêtre de chargement des sous-titres")
     page.wait_for_function("document.querySelector('.sub-layer').textContent.includes('Le vent se lève')", timeout=30000)
     ctx.subtitles._ffmpeg = _orig
+    # aperçu au survol de la barre, avec le chapitre
+    page.mouse.move(700, 420)
+    tl = page.locator(".timeline").bounding_box()
+    page.mouse.move(tl["x"] + tl["width"] * (25 / 90), tl["y"] + tl["height"] / 2)
+    page.wait_for_timeout(400)
+    check(page.inner_text(".tl-preview-chapter") == "Opening", "chapitre affiché au survol")
+    check(page.evaluate("!document.querySelector('.tl-preview-img').hidden"), "vignette d'aperçu au survol")
+    check(page.locator(".tl-chapter").count() == 4, "repères de chapitres sur la barre")
+    page.screenshot(path=f"{out}/12b-apercu-chapitre.png")
+    page.mouse.move(700, 420)
+    page.click("button[aria-label='Chapitres']")
+    page.wait_for_selector(".chapters-col")
+    page.screenshot(path=f"{out}/12c-chapitres.png")
+    page.keyboard.press("Escape")
     page.mouse.move(700, 420)
     page.screenshot(path=f"{out}/12-lecteur-sous-titres.png")
     page.goto(base + "/#/")

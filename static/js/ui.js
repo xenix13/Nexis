@@ -93,6 +93,8 @@ export function icon(name) {
     eye: 'M12 5C7 5 2.7 8.1 1 12.5 2.7 16.9 7 20 12 20s9.3-3.1 11-7.5C21.3 8.1 17 5 12 5zm0 12.5a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
     trash: 'M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z',
     close: 'M19 6.4 17.6 5 12 10.6 6.4 5 5 6.4 10.6 12 5 17.6 6.4 19 12 13.4 17.6 19 19 17.6 13.4 12z',
+    chapters: 'M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z',
+    more: 'M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm0 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
   };
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
@@ -234,4 +236,28 @@ export function row(title, items, render, opts = {}) {
         h('button.icon-btn', { onclick: () => scroll(-1), 'aria-label': 'Précédent' }, '‹'),
         h('button.icon-btn', { onclick: () => scroll(1), 'aria-label': 'Suivant' }, '›'))),
     track);
+}
+
+// Menu « ⋯ » : bouton + liste d'actions, fermé au clic extérieur ou avec Échap.
+export function moreMenu(items, label = 'Plus d’actions') {
+  const list = h('div.more-list', { role: 'menu', hidden: true });
+  const close = () => { list.hidden = true; document.removeEventListener('click', onDoc, true); document.removeEventListener('keydown', onKey); };
+  const onDoc = (e) => { if (!wrap.contains(e.target)) close(); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  for (const it of items.filter(Boolean)) {
+    if (it.divider) { list.append(h('div.more-divider')); continue; }
+    if (it.heading) { list.append(h('div.more-heading', it.heading)); continue; }
+    list.append(h('button.more-item', { role: 'menuitem', class: it.danger ? 'more-item danger' : 'more-item',
+      onclick: async () => { close(); await it.onClick(); } }, it.label));
+  }
+  const btn = h('button.btn.ghost.icon-only', { 'aria-label': label, title: label, 'aria-haspopup': 'menu', onclick: (e) => {
+    e.stopPropagation();
+    if (list.hidden) {
+      list.hidden = false;
+      document.addEventListener('click', onDoc, true);
+      document.addEventListener('keydown', onKey);
+    } else close();
+  } }, icon('more'));
+  const wrap = h('div.more-wrap', btn, list);
+  return wrap;
 }

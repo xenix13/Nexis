@@ -44,15 +44,24 @@ def _lang(tags):
 
 
 def probe(path):
-    out = run([FFPROBE, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", path], timeout=90)
+    out = run([FFPROBE, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters",
+               path], timeout=90)
     data = json.loads(out or b"{}")
     fmt = data.get("format", {})
     info = {
         "container": fmt.get("format_name", ""),
         "duration": float(fmt.get("duration") or 0),
         "bitrate": int(fmt.get("bit_rate") or 0),
-        "video": None, "audio": [], "subs": [], "external": [],
+        "video": None, "audio": [], "subs": [], "external": [], "chapters": [],
     }
+    for c in data.get("chapters", []):
+        try:
+            start, end = float(c.get("start_time") or 0), float(c.get("end_time") or 0)
+        except (TypeError, ValueError):
+            continue
+        title = ((c.get("tags") or {}).get("title") or "").strip()
+        if end > start:
+            info["chapters"].append({"start": round(start, 3), "end": round(end, 3), "title": title[:120]})
     for s in data.get("streams", []):
         kind = s.get("codec_type")
         tags = {k.lower(): v for k, v in (s.get("tags") or {}).items()}

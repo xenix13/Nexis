@@ -165,9 +165,19 @@ films.mondomaine.fr {
 
 Pour nginx, ajoute `proxy_read_timeout 120s;` et `proxy_buffering off;`.
 
-## Passer l'intro
+## Chapitres, aperçus, intro et générique
 
-La bannière « Passer l'intro » s'appuie sur des marqueurs de début et de fin d'intro. Pour l'instant, un administrateur les pose pendant la lecture, via le menu ⚙ (*Début de l'intro ici* / *Fin de l'intro ici*). La détection automatique (empreintes audio comparées entre les épisodes d'une saison) est la prochaine étape.
+- **Aperçus au survol** : en survolant ou en faisant glisser la barre de lecture, une vignette de la scène s'affiche, avec le nom du chapitre. Les vignettes sont fabriquées à partir des images clés seulement, donc avec peu de calcul, et pendant la même lecture du fichier que la préparation des sous-titres.
+- **Chapitres** : repères sur la barre et menu « Chapitres » dans le lecteur.
+- **Passer l'intro / épisode suivant** : l'intro et le générique de fin sont repérés grâce aux chapitres du fichier. Les chapitres nommés (`Opening`, `OP`, `Intro`, `Générique`, `Ending`, `ED`, `Credits`…) sont reconnus. Pour les chapitres sans nom, typiques des animes, Séance cherche les blocs de 70 à 115 secondes en début et en fin d'épisode. Le bandeau « Passer l'intro » apparaît pendant l'intro ; la carte « Épisode suivant » apparaît au début du générique de fin. Un administrateur peut toujours corriger ces repères à la main pendant la lecture (menu ⚙), et ses repères priment.
+
+Les fichiers sans chapitres n'ont pas encore de détection automatique : la comparaison audio entre les épisodes d'une saison est la prochaine étape.
+
+## Langue audio et sous-titres
+
+Sur la fiche d'un film, d'un épisode ou d'une série, deux listes permettent de choisir l'audio et les sous-titres avant de lancer la lecture. Le choix est **retenu pour toute la série** (ou pour le film), et pour chaque utilisateur : les épisodes suivants se lancent dans la même langue. Un changement fait dans le lecteur est retenu de la même façon.
+
+Les pistes 5.1 / 7.1 (AC3, E-AC3, DTS, TrueHD, AAC 5.1…) sont réduites en stéréo par Séance avec une protection contre l'écrêtage. Le mixage par défaut de ffmpeg dépassait le niveau maximal et faisait saturer le son.
 
 ## Dépannage
 
@@ -217,7 +227,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 
 1. ~~Interface multi-utilisateurs~~ ✔
 2. ~~Serveur multimédia autonome : scan, TMDB, lecture directe / remux / transcodage~~ ✔
-3. Détection automatique des intros et génériques de fin
+3. Détection automatique des intros et génériques de fin par empreinte audio (pour les fichiers sans chapitres)
 4. Import de l'historique « vu » depuis Jellyfin, par utilisateur
 5. Liste « à regarder », collections, contrôle parental
 6. Accélération matérielle optionnelle (VAAPI / Quick Sync) pour les serveurs équipés d'un GPU

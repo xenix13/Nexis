@@ -79,7 +79,13 @@ def make_media(root, long_seconds=90):
     # (ffmpeg ne sait pas fabriquer de sous-titres image PGS/VobSub : l'incrustation est testée à part)
     d = os.path.join(animes, "Kaze no Michi")
     os.makedirs(d, exist_ok=True)
-    ff(*src, "-i", os.path.join(tmp, "a.ass"), "-t", str(long_seconds), "-map", "0:v", "-map", "1:a", "-map", "2:s",
+    with open(os.path.join(tmp, "chapters.txt"), "w") as f:
+        f.write(";FFMETADATA1\n")
+        for start, end, title in ((0, 10, "Prologue"), (10, 40, "Opening"), (40, 70, "Partie A"), (70, 85, "Ending"),
+                                  (85, long_seconds, "Preview")):
+            f.write(f"[CHAPTER]\nTIMEBASE=1/1000\nSTART={start * 1000}\nEND={end * 1000}\ntitle={title}\n")
+    ff(*src, "-i", os.path.join(tmp, "a.ass"), "-i", os.path.join(tmp, "chapters.txt"), "-t", str(long_seconds),
+       "-map", "0:v", "-map", "1:a", "-map", "2:s", "-map_chapters", "3",
        *x264, "-c:a", "aac", "-c:s", "ass", "-metadata:s:a:0", "language=jpn", "-metadata:s:s:0", "language=fre",
        os.path.join(d, "[Groupe] Kaze no Michi - 01 [1080p].mkv"))
     ff(*src, "-i", os.path.join(tmp, "fr.srt"), "-t", "15", "-map", "0:v", "-map", "1:a", "-map", "2:s", *x264,

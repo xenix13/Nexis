@@ -20,6 +20,8 @@ log = logging.getLogger("seance.transcode")
 
 QUALITY = {"original": None, "1080p": (1080, 8000), "720p": (720, 4000), "480p": (480, 1500)}
 BROWSER_AUDIO = {"aac", "mp3"}
+# 5.1/7.1 -> stéréo sans écrêtage : rematrix normalisé, léger gain, puis limiteur
+DOWNMIX = "aresample=rematrix_maxval=1.0,volume=4dB,alimiter=limit=0.8:level=disabled"
 SEGMENT = 4  # secondes
 SEG_RE = re.compile(r"^s(\d{5})\.ts$")
 AHEAD_PAUSE = 45   # segments d'avance (~3 min) avant de mettre ffmpeg en pause
@@ -54,7 +56,8 @@ def plan(probe, audio_index=None, burn_index=None, quality="original"):
     need_scale = bool(target and src_h > target[0])
     over_rate = bool(target and rate_kbps and rate_kbps > target[1] * 1.3)
     vcopy = video_ok(v) and burn_index is None and not need_scale and not over_rate
-    acopy = bool(a and a["codec"] in BROWSER_AUDIO)
+    # multicanal : on fait nous-mêmes la réduction en stéréo (le mixage par défaut sature)
+    acopy = bool(a and a["codec"] in BROWSER_AUDIO and (a.get("channels") or 2) <= 2)
     container = probe.get("container") or ""
     mp4 = "mp4" in container or "mov" in container
     first_audio = audios[0]["index"] if audios else None
@@ -80,9 +83,12 @@ def plan(probe, audio_index=None, burn_index=None, quality="original"):
         if need_scale or over_rate:
             reasons.append(f"qualité {quality}")
     if mode != "direct" and a and not acopy:
-        reasons.append(f"audio {str(a['codec']).upper()} converti")
+        if (a.get("channels") or 2) > 2:
+            reasons.append(f"audio {str(a['codec']).upper()} {a['channels']} canaux mixé en stéréo")
+        else:
+            reasons.append(f"audio {str(a['codec']).upper()} converti")
     return {"mode": mode, "video_index": (v or {}).get("index"), "audio_index": a["index"] if a else None,
-            "acopy": acopy, "burn_index": burn_index, "height": height, "kbps": kbps,
+            "acopy": acopy, "audio_channels": (a or {}).get("channels") or 2, "burn_index": burn_index, "height": height, "kbps": kbps,
             "src_height": src_h, "reasons": reasons}
 
 
@@ -107,7 +113,12 @@ def build_command(path, p, start, out_dir):
                 "-sc_threshold", "0", "-force_key_frames", f"expr:gte(t,n_forced*{SEGMENT})"]
     if p["audio_index"] is not None:
         cmd += ["-map", f"0:{p['audio_index']}"]
-        cmd += ["-c:a", "copy"] if p["acopy"] else ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]
+        if p["acopy"]:
+            cmd += ["-c:a", "copy"]
+        else:
+            cmd += ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]
+            if p.get("audio_channels", 2) > 2:
+                cmd += ["-af", DOWNMIX]
     else:
         cmd += ["-an"]
     cmd += ["-sn", "-dn", "-max_muxing_queue_size", "4096", "-f", "hls", "-hls_time", str(SEGMENT),

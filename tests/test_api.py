@@ -28,7 +28,7 @@ from seance.transcoder import plan  # noqa: E402
 from seance.web import Server, make_handler  # noqa: E402
 
 STATIC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
-MEDIA_CACHE = os.path.join(tempfile.gettempdir(), "seance-test-media-v2")
+MEDIA_CACHE = os.path.join(tempfile.gettempdir(), "seance-test-media-v3")
 
 
 def media_root():
@@ -419,6 +419,74 @@ class SeanceTest(unittest.TestCase):
             time.sleep(0.1)
         self.assertEqual(codes[-1], 200)
         self.assertEqual(r["cues"][0]["t"], "Bonjour tout le monde")
+
+    def test_chapters_markers_and_trickplay(self):
+        show, d, eps = self.episodes("Kaze no Michi", "Animes")
+        st, e1 = self.admin.call("GET", f"/api/items/{eps[0]['id']}")
+        self.assertEqual([c["title"] for c in e1["chapters"]], ["Prologue", "Opening", "Partie A", "Ending", "Preview"])
+        self.assertEqual(e1["markers"]["intro"], {"start": 10000, "end": 40000, "source": "chapters"})
+        self.assertEqual(e1["markers"]["credits"]["start"], 70000)
+        row = self.ctx.db.one("SELECT * FROM items WHERE id=?", (int(eps[0]["id"]),))
+        for _ in range(150):
+            st, t = self.admin.call("GET", f"/api/items/{eps[0]['id']}/trickplay")
+            if t.get("ready"):
+                break
+            time.sleep(0.2)
+        self.assertTrue(t["ready"], t)
+        self.assertEqual((t["interval"], t["w"], t["h"], t["sheets"]), (10, 240, 136, 1))
+        self.assertIn(t["count"], (9, 10))
+        st, body, h = self.admin.call("GET", f"/api/items/{eps[0]['id']}/trickplay/1.jpg", raw=True)
+        self.assertEqual(st, 200)
+        self.assertEqual(body[:2], b"\xff\xd8")
+        self.assertEqual(self.lea.call("GET", f"/api/items/{eps[0]['id']}/trickplay/1.jpg", raw=True)[0], 200)
+        self.assertEqual(self.ctx.subtitles.missing(row), [])  # même lecture : sous-titres prêts aussi
+
+    def test_track_prefs_per_show(self):
+        show, d, eps = self.episodes("Kaze no Michi", "Animes")
+        st, r = self.lea.call("PUT", f"/api/items/{eps[1]['id']}/tracks", {"audio_lang": "jpn", "sub_lang": "off"})
+        self.assertEqual(st, 200, r)
+        st, sh = self.lea.call("GET", f"/api/items/{show['id']}")
+        self.assertEqual(sh["track_prefs"], {"audio_lang": "jpn", "sub_lang": "off", "sub_forced": False})
+        self.assertTrue(sh["audio"])  # pistes de l'épisode à lire, pour le choix sur la fiche série
+        st, e1 = self.lea.call("GET", f"/api/items/{eps[0]['id']}")
+        self.assertEqual(e1["track_prefs"]["sub_lang"], "off")
+        st, e1a = self.admin.call("GET", f"/api/items/{eps[0]['id']}")
+        self.assertIsNone(e1a["track_prefs"])  # propre à chaque utilisateur
+        self.assertEqual(self.lea.call("PUT", f"/api/items/{eps[0]['id']}/tracks", {"audio_lang": "x;y"})[0], 400)
+        self.lea.call("PUT", f"/api/items/{eps[0]['id']}/tracks", {"reset": True})
+
+    def test_downmix_51_without_clipping(self):
+        from seance.transcoder import DOWNMIX, build_command
+        work = tempfile.mkdtemp()
+        try:
+            src = os.path.join(work, "in.mkv")
+            subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=24:d=6", "-f", "lavfi",
+                            "-i", "anoisesrc=d=6:a=0.6", "-filter_complex",
+                            "[1]asplit=6[a][b][c][d][e][f];[a][b][c][d][e][f]join=inputs=6:channel_layout=5.1[o]",
+                            "-map", "0:v", "-map", "[o]", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "ac3", src],
+                           check=True, timeout=60)
+            from seance import media
+            info = media.probe(src)
+            p = plan(info)
+            self.assertEqual(p["mode"], "copy")
+            self.assertFalse(p["acopy"])
+            self.assertIn("audio AC3 6 canaux mixé en stéréo", p["reasons"])
+            out = os.path.join(work, "out")
+            os.makedirs(out)
+            cmd = build_command(src, p, 0, out)
+            self.assertIn(DOWNMIX, cmd)
+            subprocess.run(cmd, check=True, timeout=60)
+            st = subprocess.run(["ffmpeg", "-hide_banner", "-i", os.path.join(out, "s00000.ts"), "-map", "0:a",
+                                 "-af", "astats", "-f", "null", "-"], capture_output=True, timeout=60).stderr.decode()
+            overall = st.split("Overall")[-1]
+            peak = float(overall.split("Peak level dB:")[1].split()[0])
+            # sans protection, ce bruit 5.1 atteint environ +8 dB (saturation) ; le reste vient du codage AAC du bruit blanc
+            self.assertLess(peak, 1.5)
+            # même une piste AAC 5.1 n'est plus copiée telle quelle
+            info["audio"][0].update(codec="aac", channels=6)
+            self.assertFalse(plan(info)["acopy"])
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
 
     # ---------------------------------------------------- détection des nouveautés
     def test_watcher_detects_new_episode_and_waits_for_copy(self):

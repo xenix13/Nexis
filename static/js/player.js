@@ -1,6 +1,7 @@
 // Web player: HLS stream proxied through Séance, custom controls, resume,
 // per-user track preferences, "skip intro" banner and next-episode countdown.
 import { get, post, put } from './api.js';
+import { pickAudio, pickSubtitle, trackPayload } from './tracks.js';
 import { state } from './app.js';
 import { clear, episodeCode, errorBox, fmtTime, h, icon, img, spinner, toast } from './ui.js';
 
@@ -15,44 +16,31 @@ function store(key, value) {
   return null;
 }
 
-function pickAudio(audio, prefs) {
-  if (!audio.length) return null;
-  const want = prefs.audio_lang;
-  return (want && audio.find((a) => a.lang === want)) || audio.find((a) => a.selected) || audio.find((a) => a.default) || audio[0];
-}
-
-function pickSubtitle(subs, audio, prefs) {
-  if (prefs.sub_mode === 'never' || !subs.length) return null;
-  const lang = prefs.sub_lang;
-  const inLang = subs.filter((s) => !lang || s.lang === lang);
-  const best = inLang.find((s) => !s.forced && s.overlay) || inLang.find((s) => !s.forced) || inLang[0];
-  if (prefs.sub_mode === 'always') return best || null;
-  // "foreign": subtitles only when the audio is not in the user's language
-  if (audio && prefs.audio_lang && audio.lang && audio.lang !== prefs.audio_lang) return best || null;
-  return subs.find((s) => s.forced && audio && s.lang === audio.lang) || null;
-}
-
 export async function renderPlayer(root, rk, ctx) {
   const prefs = state.me.prefs;
   const isAdmin = state.me.user.is_admin;
   const video = h('video.video', { playsinline: true, preload: 'auto' });
   const subLayer = h('div.sub-layer', { style: { fontSize: `${(prefs.sub_size / 100) * 2.4}vmin` } });
   const loader = h('div.player-loader', spinner());
-  const subsWait = h('div.subs-wait', { hidden: true });
   const errorLayer = h('div.player-error', { hidden: true });
   const titleEl = h('div.player-title');
   const timeEl = h('span.time');
   const played = h('div.tl-played');
   const buffered = h('div.tl-buffered');
   const introMark = h('div.tl-intro', { hidden: true });
-  const hoverTip = h('div.tl-tip', { hidden: true });
+  const previewImg = h('div.tl-preview-img', { hidden: true });
+  const previewChapter = h('div.tl-preview-chapter');
+  const previewTime = h('div.tl-preview-time');
+  const hoverTip = h('div.tl-tip', { hidden: true }, previewImg, previewChapter, previewTime);
+  const chapterMarks = h('div.tl-chapters');
   const timeline = h('div.timeline', { role: 'slider', 'aria-label': 'Position', tabindex: 0 },
-    h('div.tl-track', buffered, introMark, played, h('div.tl-thumb')), hoverTip);
+    h('div.tl-track', buffered, introMark, chapterMarks, played, h('div.tl-thumb')), hoverTip);
   const playBtn = h('button.ctl', { 'aria-label': 'Lecture/Pause' }, icon('play'));
   const muteBtn = h('button.ctl', { 'aria-label': 'Couper le son' }, icon('volume'));
   const volume = h('input.volume', { type: 'range', min: 0, max: 1, step: 0.05, 'aria-label': 'Volume' });
   const nextBtn = h('button.ctl', { 'aria-label': 'Épisode suivant', hidden: true }, icon('next'));
   const subsBtn = h('button.ctl', { 'aria-label': 'Audio et sous-titres' }, icon('subs'));
+  const chaptersBtn = h('button.ctl', { 'aria-label': 'Chapitres', hidden: true }, icon('chapters'));
   const cogBtn = h('button.ctl', { 'aria-label': 'Qualité' }, icon('cog'));
   const fullBtn = h('button.ctl', { 'aria-label': 'Plein écran' }, icon('full'));
   const menu = h('div.player-menu', { hidden: true });
@@ -66,9 +54,9 @@ export async function renderPlayer(root, rk, ctx) {
       playBtn,
       h('button.ctl', { 'aria-label': 'Reculer de 10 secondes', onclick: () => seekBy(-10000) }, icon('rewind')),
       h('button.ctl', { 'aria-label': 'Avancer de 30 secondes', onclick: () => seekBy(30000) }, icon('forward')),
-      h('div.vol', muteBtn, volume), timeEl, h('div.grow'), nextBtn, subsBtn, cogBtn, fullBtn));
+      h('div.vol', muteBtn, volume), timeEl, h('div.grow'), nextBtn, chaptersBtn, subsBtn, cogBtn, fullBtn));
   const top = h('div.player-top', backBtn, titleEl);
-  const player = h('div.player', video, subLayer, loader, subsWait, errorLayer, top, skipBtn, nextCard, menu, controls);
+  const player = h('div.player', video, subLayer, loader, errorLayer, top, skipBtn, nextCard, menu, controls);
   clear(root, player);
 
   // ------------------------------------------------------------ state
@@ -96,8 +84,30 @@ export async function renderPlayer(root, rk, ctx) {
   const poster = item.type === 'episode' ? (item.show_art || item.art) : item.art;
   if (poster) video.poster = img(poster, 1280, 720);
 
-  audioSel = pickAudio(item.audio || [], prefs);
-  subSel = pickSubtitle(item.subtitles || [], audioSel, prefs);
+  audioSel = pickAudio(item.audio || [], prefs, item.track_prefs);
+  subSel = pickSubtitle(item.subtitles || [], audioSel, prefs, item.track_prefs);
+  // choix faits sur la fiche juste avant de lancer
+  const qa = ctx.query.get('a'), qs = ctx.query.get('s');
+  if (qa !== null) audioSel = (item.audio || []).find((a) => String(a.id) === qa) || audioSel;
+  if (qs !== null) subSel = qs === '0' ? null : ((item.subtitles || []).find((x) => String(x.id) === qs) || subSel);
+  const chapters = (item.chapters || []).filter((c) => c.end > c.start);
+  let trick = null;
+  const paintChapters = () => {
+    const d = duration();
+    chapterMarks.replaceChildren(...(d ? chapters.filter((c) => c.start > 0).map((c) =>
+      h('span.tl-chapter', { style: { left: `${(c.start / d) * 100}%` } })) : []));
+  };
+  chaptersBtn.hidden = chapters.length < 2;
+  paintChapters();
+  const loadTrick = async (again) => {
+    try {
+      const r = await get(`/api/items/${item.id}/trickplay`);
+      if (r.ready) trick = r;
+      else if (again && !destroyed) setTimeout(() => loadTrick(false), 60000);
+    } catch { /* pas d'aperçu */ }
+  };
+  loadTrick(true);
+  const rememberTracks = () => put(`/api/items/${item.id}/tracks`, trackPayload(audioSel, subSel)).catch(() => {});
   let startAt = 0;
   if (ctx.query.get('t')) startAt = Number(ctx.query.get('t')) || 0;
   else if (ctx.query.get('resume') && item.position && !item.watched) startAt = item.position;
@@ -200,47 +210,32 @@ export async function renderPlayer(root, rk, ctx) {
     setupMediaSession();
   }
 
+  // Les sous-titres se préparent en silence pendant l'ouverture (simple roue de chargement).
+  // On attend au plus SUBS_MAX_WAIT ; au-delà la lecture démarre et ils apparaissent dès qu'ils sont prêts.
+  const SUBS_MAX_WAIT = 30000;
   function loadSubtitles(seq) {
     cues = [];
     cueIdx = -1;
     subLayer.replaceChildren();
-    subsWait.hidden = true;
     if (!session.subtitle_overlay) return Promise.resolve();
     const url = session.subtitle_overlay;
     return new Promise((resolve) => {
       let released = false;
-      const release = () => {
-        if (released) return;
-        released = true;
-        subsWait.hidden = true;
-        resolve();
-      };
+      const release = () => { if (!released) { released = true; resolve(); } };
+      const timer = setTimeout(release, SUBS_MAX_WAIT);
       const poll = async () => {
-        if (seq !== startSeq || destroyed) { release(); return; }
+        if (seq !== startSeq || destroyed) { clearTimeout(timer); release(); return; }
         try {
           const r = await get(url);
-          if (seq !== startSeq || destroyed) { release(); return; }
-          if (r && r.pending) {
-            if (!released) {
-              const pct = Math.round((r.progress || 0) * 100);
-              clear(subsWait, h('div.subs-wait-box',
-                h('strong', 'Préparation des sous-titres…'),
-                h('div.bar', h('div.bar-fill', { style: { width: `${Math.max(3, pct)}%` } })),
-                h('p.small', pct ? `${pct} % — lecture du fichier sur le NAS` : 'Lecture du fichier sur le NAS'),
-                h('button.btn.ghost.small', { onclick: release }, 'Lancer sans attendre')));
-              subsWait.hidden = false;
-            }
-            setTimeout(poll, 1000);
-            return;
-          }
+          if (seq !== startSeq || destroyed) { clearTimeout(timer); release(); return; }
+          if (r && r.pending) { setTimeout(poll, 800); return; }
           cues = r.cues || [];
           cueIdx = -1;
-          if (released && cues.length) toast('Sous-titres prêts');
-          release();
         } catch (e) {
-          toast(`Sous-titres : ${e.message}`, 'bad');
-          release();
+          console.warn('[seance] sous-titres', e.message);
         }
+        clearTimeout(timer);
+        release();
       };
       poll();
     });
@@ -396,15 +391,19 @@ export async function renderPlayer(root, rk, ctx) {
       onclick: () => { menu.hidden = true; onPick(); } }, h('span', label), hint ? h('span.muted.small', hint) : null,
     active ? icon('check') : null);
     const restart = () => start(pos());
-    if (kind === 'tracks') {
+    if (kind === 'chapters') {
+      const p = pos();
+      clear(menu, h('div.menu-col.chapters-col', h('h4', 'Chapitres'), chapters.map((c, n) => opt(c.title || `Chapitre ${n + 1}`,
+        p >= c.start && p < c.end, () => seekTo(c.start + 1), fmtTime(c.start)))));
+    } else if (kind === 'tracks') {
       const audio = session ? session.audio : item.audio;
       const subs = session ? session.subtitles : item.subtitles;
       clear(menu,
         h('div.menu-col', h('h4', 'Audio'), audio.length ? audio.map((a) => opt(a.title, audioSel && a.id === audioSel.id,
-          () => { audioSel = a; restart(); })) : h('p.muted.small', 'Piste unique')),
+          () => { audioSel = a; rememberTracks(); restart(); })) : h('p.muted.small', 'Piste unique')),
         h('div.menu-col', h('h4', 'Sous-titres'),
-          opt('Aucun', !subSel, () => { subSel = null; restart(); }),
-          subs.map((s) => opt(s.title, subSel && s.id === subSel.id, () => { subSel = s; restart(); },
+          opt('Aucun', !subSel, () => { subSel = null; rememberTracks(); restart(); }),
+          subs.map((s) => opt(s.title, subSel && s.id === subSel.id, () => { subSel = s; rememberTracks(); restart(); },
             s.overlay ? null : 'incrusté'))));
     } else {
       const q = [['original', 'Originale'], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p']];
@@ -472,6 +471,7 @@ export async function renderPlayer(root, rk, ctx) {
   backBtn.addEventListener('click', goBack);
   nextBtn.addEventListener('click', playNext);
   subsBtn.addEventListener('click', (e) => { e.stopPropagation(); openMenu('tracks'); });
+  chaptersBtn.addEventListener('click', (e) => { e.stopPropagation(); openMenu('chapters'); });
   cogBtn.addEventListener('click', (e) => { e.stopPropagation(); openMenu('settings'); });
   skipBtn.addEventListener('click', () => { const i = session.markers.intro; introSkipped = true; skipBtn.hidden = true; seekTo(i.end); });
   muteBtn.addEventListener('click', () => { video.muted = !video.muted; });
@@ -514,9 +514,28 @@ export async function renderPlayer(root, rk, ctx) {
   };
   timeline.addEventListener('pointermove', (e) => {
     const ratio = ratioAt(e);
+    const t = ratio * duration();
     hoverTip.hidden = false;
-    hoverTip.textContent = fmtTime(ratio * duration());
-    hoverTip.style.left = `${ratio * 100}%`;
+    previewTime.textContent = fmtTime(t);
+    const ch = chapters.find((c) => t >= c.start && t < c.end);
+    previewChapter.textContent = ch && (ch.title || chapters.length > 1) ? (ch.title || `Chapitre ${chapters.indexOf(ch) + 1}`) : '';
+    if (trick) {
+      // vignette tirée de la planche d'aperçus (grille cols x rows)
+      const n = Math.min(trick.count - 1, Math.floor(t / 1000 / trick.interval));
+      const perSheet = trick.cols * trick.rows;
+      const sheet = Math.floor(n / perSheet) + 1;
+      const k = n % perSheet;
+      previewImg.hidden = false;
+      previewImg.style.width = `${trick.w}px`;
+      previewImg.style.height = `${trick.h}px`;
+      previewImg.style.backgroundImage = `url("/api/items/${item.id}/trickplay/${sheet}.jpg")`;
+      previewImg.style.backgroundPosition = `-${(k % trick.cols) * trick.w}px -${Math.floor(k / trick.cols) * trick.h}px`;
+      previewImg.style.backgroundSize = `${trick.w * trick.cols}px ${trick.h * trick.rows}px`;
+    }
+    const r = timeline.getBoundingClientRect();
+    const half = (trick ? trick.w : 60) / 2 + 4;
+    const x = Math.min(r.width - half, Math.max(half, ratio * r.width));
+    hoverTip.style.left = `${x}px`;
     if (scrubbing) played.style.width = `${ratio * 100}%`;
   });
   timeline.addEventListener('pointerleave', () => { if (!scrubbing) hoverTip.hidden = true; });

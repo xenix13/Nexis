@@ -1,6 +1,7 @@
-import { get, post } from '../api.js';
+import { get, post, put } from '../api.js';
 import { state } from '../app.js';
-import { clear, episodeCode, field, fmtDuration, fmtTime, h, icon, img, modal, posterCard, progressBar, spinner, toast } from '../ui.js';
+import { pickAudio, pickSubtitle, trackPayload } from '../tracks.js';
+import { clear, episodeCode, field, fmtDuration, fmtTime, h, icon, img, modal, moreMenu, posterCard, progressBar, select, spinner, toast } from '../ui.js';
 
 async function identify(d, onDone) {
   const q = h('input', { value: d.type === 'episode' ? d.show : d.title });
@@ -32,19 +33,68 @@ async function identify(d, onDone) {
   await modal('Identifier sur TMDB', h('div', form, results), []);
 }
 
-function adminTools(d, rerender) {
-  if (!state.me.user.is_admin) return null;
-  const refresh = h('button.btn.ghost.small', { onclick: async () => {
-    refresh.disabled = true;
-    try { await post(`/api/admin/refresh/${d.id}`); toast('Métadonnées actualisées', 'ok'); rerender(); }
-    catch (e) { toast(e.message, 'bad'); refresh.disabled = false; }
-  } }, 'Actualiser les métadonnées');
-  return h('div.admin-tools',
-    ['nomatch', 'error'].includes(d.meta_state) ? h('span.tag', 'Non identifié') : null,
-    h('button.btn.ghost.small', { onclick: () => identify(d, rerender) }, 'Identifier…'), refresh,
-    d.path ? h('code.small.muted', d.path) : null,
-    d.media && d.media.video_codec ? h('span.muted.small', [d.media.container, d.media.video_codec, d.media.audio_codec,
-      d.media.bitrate ? `${d.media.bitrate} kb/s` : null].filter(Boolean).join(' · ').toUpperCase()) : null);
+function fileInfo(d) {
+  const m = d.media || {};
+  const mk = d.markers || {};
+  const src = { manual: 'posé à la main', chapters: 'chapitres', 'chapters-guess': 'chapitres (estimé)' };
+  const row = (k, v) => (v ? [h('dt', k), h('dd', v)] : null);
+  modal('Informations sur le fichier', h('dl.facts.file-facts',
+    row('Fichier', d.path ? h('code', d.path) : null),
+    row('Conteneur', (m.container || '').toUpperCase()),
+    row('Vidéo', [m.video_codec, m.resolution ? `${m.resolution}p` : null].filter(Boolean).join(' · ').toUpperCase()),
+    row('Débit', m.bitrate ? `${m.bitrate} kb/s` : null),
+    row('Audio', (d.audio || []).map((a) => a.title).join(' · ')),
+    row('Sous-titres', (d.subtitles || []).map((x) => x.title).join(' · ')),
+    row('Chapitres', d.chapters && d.chapters.length ? `${d.chapters.length}` : 'aucun'),
+    row('Intro', mk.intro ? `${fmtTime(mk.intro.start)} → ${fmtTime(mk.intro.end)} (${src[mk.intro.source] || mk.intro.source})` : 'non détectée'),
+    row('Générique de fin', mk.credits ? `${fmtTime(mk.credits.start)} (${src[mk.credits.source] || mk.credits.source})` : 'non détecté'),
+    row('Métadonnées', { done: 'TMDB', local: 'fichiers locaux', nomatch: 'non identifié', error: 'erreur', pending: 'en attente' }[d.meta_state] || d.meta_state),
+  ), []);
+}
+
+function itemMenu(d, rerender) {
+  const items = [{ label: d.watched ? 'Marquer comme non vu' : 'Marquer comme vu', onClick: async () => {
+    try {
+      await post(`/api/items/${d.id}/watched`, { watched: !d.watched });
+      toast(d.watched ? 'Marqué comme non vu' : 'Marqué comme vu', 'ok');
+      rerender();
+    } catch (e) { toast(e.message, 'bad'); }
+  } }];
+  if (state.me.user.is_admin) {
+    items.push({ divider: true }, { heading: 'Administration' },
+      { label: 'Identifier…', onClick: () => identify(d, rerender) },
+      { label: 'Actualiser les métadonnées', onClick: async () => {
+        try { await post(`/api/admin/refresh/${d.id}`); toast('Métadonnées actualisées', 'ok'); rerender(); }
+        catch (e) { toast(e.message, 'bad'); }
+      } });
+    if (d.type === 'movie' || d.type === 'episode') items.push({ label: 'Informations sur le fichier', onClick: () => fileInfo(d) });
+  }
+  return moreMenu(items);
+}
+
+// Choix audio / sous-titres avant la lecture (retenu pour le film ou la série)
+function trackChooser(d, target, onChange) {
+  const audio = d.audio || [];
+  const subs = d.subtitles || [];
+  if (!audio.length && !subs.length) return null;
+  const prefs = state.me.prefs;
+  let a = pickAudio(audio, prefs, d.track_prefs);
+  let s = pickSubtitle(subs, a, prefs, d.track_prefs);
+  const aSel = select(audio.map((x) => [x.id, x.title]), a ? a.id : '', { 'aria-label': 'Langue audio' });
+  const sSel = select([['0', 'Aucun'], ...subs.map((x) => [x.id, x.title])], s ? s.id : '0', { 'aria-label': 'Sous-titres' });
+  const save = () => {
+    a = audio.find((x) => String(x.id) === aSel.value) || null;
+    s = sSel.value === '0' ? null : subs.find((x) => String(x.id) === sSel.value) || null;
+    put(`/api/items/${d.id}/tracks`, trackPayload(a, s)).catch((e) => toast(e.message, 'bad'));
+    onChange(a, s);
+  };
+  aSel.addEventListener('change', save);
+  sSel.addEventListener('change', save);
+  onChange(a, s);
+  return h('div.track-chooser',
+    audio.length ? h('label.track-field', h('span', 'Audio'), aSel) : null,
+    h('label.track-field', h('span', 'Sous-titres'), sSel),
+    target ? h('span.muted.small', `pour ${episodeCode(target)}, retenu pour toute la série`) : null);
 }
 
 function playButtons(c) {
@@ -58,17 +108,6 @@ function playButtons(c) {
   return out;
 }
 
-function watchedButton(c, onChange) {
-  const btn = h('button.btn.ghost', { onclick: async () => {
-    btn.disabled = true;
-    try {
-      await post(`/api/items/${c.id}/watched`, { watched: !c.watched });
-      toast(c.watched ? 'Marqué comme non vu' : 'Marqué comme vu', 'ok');
-      onChange();
-    } catch (e) { toast(e.message, 'bad'); btn.disabled = false; }
-  } }, icon(c.watched ? 'eye' : 'check'), c.watched ? 'Marquer non vu' : 'Marquer vu');
-  return btn;
-}
 
 function metaLine(d) {
   const bits = [];
@@ -109,16 +148,33 @@ export async function renderItem(main, rk, ctx) {
   const poster = d.type === 'episode' ? d.show_thumb : d.thumb;
 
   const actions = h('div.detail-actions');
+  const playLinks = [];
+  const withTracks = (href, au, su) => {
+    const q = [];
+    if (au) q.push(`a=${au.id}`);
+    q.push(`s=${su ? su.id : 0}`);
+    return href + (href.includes('?') ? '&' : '?') + q.join('&');
+  };
   if (d.type === 'show') {
     const t = d.play_target;
     if (t) {
       const label = t.position > 0 ? `Reprendre ${episodeCode(t)}` : `Lire ${episodeCode(t)}`;
-      actions.append(h('a.btn.primary', { href: `#/play/${t.id}${t.position > 0 ? '?resume=1' : ''}` }, icon('play'), label));
+      const link = h('a.btn.primary', { href: `#/play/${t.id}${t.position > 0 ? '?resume=1' : ''}` }, icon('play'), label);
+      link.dataset.base = link.getAttribute('href');
+      playLinks.push(link);
+      actions.append(link);
     }
   } else {
-    actions.append(...playButtons(d));
+    for (const link of playButtons(d)) {
+      link.dataset.base = link.getAttribute('href');
+      playLinks.push(link);
+      actions.append(link);
+    }
   }
-  actions.append(watchedButton(d, rerender));
+  actions.append(itemMenu(d, rerender));
+  const chooser = trackChooser(d, d.type === 'show' ? d.play_target : null, (au, su) => {
+    for (const l of playLinks) l.setAttribute('href', withTracks(l.dataset.base, au, su));
+  });
 
   const info = h('div.detail-info',
     d.type === 'episode' ? h('a.detail-kicker', { href: `#/item/${d.show_id}` }, d.show) : null,
@@ -126,14 +182,13 @@ export async function renderItem(main, rk, ctx) {
     metaLine(d),
     d.tagline ? h('p.tagline', d.tagline) : null,
     actions,
+    chooser,
     d.summary ? h('p.summary', d.summary) : null,
     d.genres && d.genres.length ? h('div.chips', d.genres.map((g) => h('span.chip', g))) : null,
     h('dl.facts',
       d.directors && d.directors.length ? [h('dt', 'Réalisation'), h('dd', d.directors.join(', '))] : null,
       d.studio ? [h('dt', 'Studio'), h('dd', d.studio)] : null,
-      d.audio && d.audio.length ? [h('dt', 'Audio'), h('dd', d.audio.map((a) => a.title).join(' · '))] : null,
-      d.subtitles && d.subtitles.length ? [h('dt', 'Sous-titres'), h('dd', d.subtitles.map((s) => s.title).join(' · '))] : null),
-    adminTools(d, rerender));
+      null));
 
   const parts = [
     h('section.detail', art ? { style: { '--backdrop': `url("${img(art, 1600, 900)}")` } } : null,

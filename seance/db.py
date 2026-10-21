@@ -148,6 +148,17 @@ MIGRATIONS = [
     DELETE FROM markers;
     DELETE FROM settings WHERE key IN ('plex_url', 'plex_token', 'plex_verify_tls');
     """,
+    """
+    CREATE TABLE track_prefs(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        scope_id TEXT NOT NULL,
+        audio_lang TEXT,
+        sub_lang TEXT,
+        sub_forced INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, scope_id)
+    );
+    """,
 ]
 
 

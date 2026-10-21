@@ -14,6 +14,7 @@ from .auth import (Throttle, check_credentials, clear_session, create_session, h
                    load_user, validate_password, verify_password)
 from .db import DB
 from .images import Images
+from .markers import from_chapters as chapter_markers
 from .metadata import Metadata, MetaError
 from .names import LANG_WORDS, fold
 from .scanner import Scanner
@@ -25,7 +26,7 @@ from .web import App, HTTPError, Response
 
 log = logging.getLogger("seance")
 
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 RK = r"(?P<rk>\d{1,12})"
 SID = r"(?P<sid>[A-Za-z0-9_-]{8,40})"
 SORTS = {"title": "i.sort_title COLLATE NOCASE", "added": "i.added_at DESC", "year": "i.year DESC, i.sort_title",
@@ -193,12 +194,12 @@ class Ctx:
 
     def prefetch_missing_subtitles(self):
         """Au démarrage : met en file les fichiers dont les sous-titres internes ne sont pas encore prêts."""
-        if self.db.setting("subs_prefetch", "1") != "1":
+        if self.db.setting("subs_prefetch", "1") != "1" and self.db.setting("trickplay", "1") != "1":
             return
         n = 0
-        for r in self.db.all("SELECT id, probe, file_mtime FROM items WHERE type IN ('movie','episode') "
+        for r in self.db.all("SELECT id, probe, file_mtime, duration_ms FROM items WHERE type IN ('movie','episode') "
                              "ORDER BY added_at DESC"):
-            if text_tracks(json.loads(r["probe"] or "{}")) and self.subtitles.missing(r):
+            if self.subtitles.has_work(r):
                 self.subtitles.enqueue(r["id"])
                 n += 1
         if n:
@@ -207,7 +208,8 @@ class Ctx:
 
     def on_new_media(self, item_id, info):
         """Nouveau fichier (ou fichier remplacé) : on prépare ses sous-titres internes en tâche de fond."""
-        if self.db.setting("subs_prefetch", "1") == "1" and text_tracks(info):
+        if (self.db.setting("subs_prefetch", "1") == "1" and text_tracks(info)) or \
+                (self.db.setting("trickplay", "1") == "1" and info.get("video")):
             self.subtitles.enqueue(item_id)
 
 
@@ -382,11 +384,28 @@ def build_app(ctx):
             db.run("UPDATE progress SET watched=0, position_ms=0, updated_at=? WHERE user_id=? AND rating_key=?",
                    (now, uid, c["id"]))
 
-    def markers_for(rk):
-        out = {}
-        for r in db.all("SELECT kind,start_ms,end_ms,source FROM markers WHERE rating_key=?", (str(rk),)):
+    def markers_for(row):
+        """Marqueurs posés à la main (prioritaires), sinon déduits des chapitres."""
+        probe = json.loads(row["probe"] or "{}")
+        out = chapter_markers(probe.get("chapters") or [], probe.get("duration") or (row["duration_ms"] or 0) / 1000)
+        for r in db.all("SELECT kind,start_ms,end_ms,source FROM markers WHERE rating_key=?", (str(row["id"]),)):
             out[r["kind"]] = {"start": r["start_ms"], "end": r["end_ms"], "source": r["source"]}
         return out
+
+    def track_scope(row):
+        return str(row["show_id"]) if row["type"] in ("episode", "season") else str(row["id"])
+
+    def track_prefs(uid, row):
+        r = db.one("SELECT audio_lang, sub_lang, sub_forced FROM track_prefs WHERE user_id=? AND scope_id=?",
+                   (uid, track_scope(row)))
+        if r:
+            r["sub_forced"] = bool(r["sub_forced"])
+        return r
+
+    def chapters_for(row):
+        probe = json.loads(row["probe"] or "{}")
+        return [{"start": int(c["start"] * 1000), "end": int(c["end"] * 1000), "title": c.get("title") or ""}
+                for c in probe.get("chapters") or []]
 
     # ---------------------------------------------------------- public / auth
     @app.route("GET", "/api/status", auth=None)
@@ -633,12 +652,13 @@ def build_app(ctx):
         attach_state(uid, [d])
         if d["type"] in ("movie", "episode"):
             probe = json.loads(r["probe"] or "{}")
-            if text_tracks(probe):
+            if ctx.subtitles.has_work(r):
                 ctx.subtitles.enqueue(r["id"], urgent=True)  # on prépare au cas où la lecture suit
             audio, subs = stream_lists(probe)
             v = probe.get("video") or {}
             first_audio = (probe.get("audio") or [{}])[0]
-            d.update(audio=audio, subtitles=subs, markers=markers_for(r["id"]), media={
+            d["track_prefs"] = track_prefs(uid, r)
+            d.update(audio=audio, subtitles=subs, markers=markers_for(r), chapters=chapters_for(r), media={
                 "resolution": f"{v.get('height')}" if v.get("height") else None, "video_codec": v.get("codec"),
                 "audio_codec": first_audio.get("codec"), "container": (probe.get("container") or "").split(",")[0],
                 "bitrate": int((probe.get("bitrate") or 0) / 1000)})
@@ -658,6 +678,10 @@ def build_app(ctx):
                 last_watched = max((i for i, e in enumerate(eps) if e["watched"]), default=-1)
                 target = next((e for e in eps[last_watched + 1:] if not e["watched"]), None)
             d["play_target"] = target or (eps[0] if eps else None)
+            d["track_prefs"] = track_prefs(uid, r)
+            if d["play_target"]:
+                trow = db.one("SELECT probe FROM items WHERE id=?", (int(d["play_target"]["id"]),))
+                d["audio"], d["subtitles"] = stream_lists(json.loads(trow["probe"] or "{}"))
         elif d["type"] == "season":
             d["show_id"] = str(r["show_id"])
         return d
@@ -675,6 +699,26 @@ def build_app(ctx):
             c["summary"] = row["summary"]
             out.append(c)
         return attach_state(req.user["id"], out)
+
+    @app.route("PUT", f"/api/items/{RK}/tracks")
+    def item_tracks(req):
+        """Langues audio / sous-titres retenues pour ce film ou cette série (par utilisateur)."""
+        r = require_item(req.user, req.params["rk"])
+        b = req.json()
+        if b.get("reset"):
+            db.run("DELETE FROM track_prefs WHERE user_id=? AND scope_id=?", (req.user["id"], track_scope(r)))
+            return {"ok": True}
+        audio = b.get("audio_lang")
+        sub = b.get("sub_lang")
+        for v in (audio, sub):
+            if v is not None and not (isinstance(v, str) and (v in ("", "off") or LANG.match(v))):
+                raise HTTPError(400, "Langue invalide")
+        db.run("INSERT INTO track_prefs(user_id,scope_id,audio_lang,sub_lang,sub_forced,updated_at) VALUES(?,?,?,?,?,?) "
+               "ON CONFLICT(user_id,scope_id) DO UPDATE SET audio_lang=COALESCE(excluded.audio_lang, track_prefs.audio_lang), "
+               "sub_lang=COALESCE(excluded.sub_lang, track_prefs.sub_lang), sub_forced=excluded.sub_forced, "
+               "updated_at=excluded.updated_at",
+               (req.user["id"], track_scope(r), audio, sub, 1 if b.get("sub_forced") else 0, int(time.time())))
+        return {"ok": True, "track_prefs": track_prefs(req.user["id"], r)}
 
     @app.route("POST", f"/api/items/{RK}/watched")
     def item_watched(req):
@@ -745,6 +789,27 @@ def build_app(ctx):
                 f.write(data)
             os.replace(cache + ".tmp", cache)
         return Response(data, 200, json_type)
+
+    @app.route("GET", f"/api/items/{RK}/trickplay")
+    def item_trickplay(req):
+        r = require_item(req.user, req.params["rk"])
+        index = ctx.subtitles.trick_index(r)
+        if not index:
+            if ctx.subtitles.needs_trick(r):
+                ctx.subtitles.enqueue(r["id"], urgent=True)
+            return {"ready": False}
+        index["ready"] = True
+        return index
+
+    @app.route("GET", f"/api/items/{RK}/trickplay/(?P<n>\\d{{1,4}})\\.jpg")
+    def item_trickplay_sheet(req):
+        r = require_item(req.user, req.params["rk"])
+        path = os.path.join(ctx.subtitles.trick_dir(r), f"{int(req.params['n'])}.jpg")
+        try:
+            with open(path, "rb") as f:
+                return Response(f.read(), 200, "image/jpeg", {"Cache-Control": "private, max-age=604800"})
+        except OSError:
+            raise HTTPError(404, "Aperçu indisponible")
 
     # ------------------------------------------------------------- images
     @app.route("GET", "/api/img")
@@ -825,9 +890,11 @@ def build_app(ctx):
                "VALUES(?,?,?,?,?,?,?,?,?,?)", (sid, uid, sid, rk, json.dumps(p), title, quality, actual, now, now))
         upsert_meta(uid, c)
         nxt = next_episode(r)
-        if text_tracks(probe):
-            ctx.subtitles.ensure_now(r)
-        if nxt and text_tracks(json.loads(nxt["probe"] or "{}")):
+        if ctx.subtitles.missing(r):
+            ctx.subtitles.ensure_now(r)  # sous-titres + vignettes en une lecture
+        elif ctx.subtitles.has_work(r):
+            ctx.subtitles.enqueue(r["id"], urgent=True)
+        if nxt and ctx.subtitles.has_work(nxt):
             ctx.subtitles.enqueue(nxt["id"], urgent=True)
         url = f"/api/stream/{sid}/file" if p["mode"] == "direct" else f"/api/stream/{sid}/index.m3u8"
         return {
@@ -835,7 +902,7 @@ def build_app(ctx):
             "duration": duration, "quality": quality, "item": c, "audio": audio, "subtitles": subs,
             "audio_selected": p["audio_index"], "subtitle_selected": sub["id"] if sub else 0,
             "subtitle_overlay": f"/api/items/{rk}/subtitles/{sub['id']}" if sub and sub["overlay"] else None,
-            "markers": markers_for(r["id"]), "next": card(nxt) if nxt else None,
+            "markers": markers_for(r), "chapters": chapters_for(r), "next": card(nxt) if nxt else None,
         }
 
     def own_stream(req, sid):
@@ -1202,6 +1269,7 @@ def build_app(ctx):
         max_streams, max_transcodes = ctx.limits()
         return {"watch_interval": ctx.setting_int("watch_interval", 60),
                 "subs_prefetch": db.setting("subs_prefetch", "1") == "1",
+                "trickplay": db.setting("trickplay", "1") == "1",
                 "subs_queue": len(ctx.subtitles.urgent) + len(ctx.subtitles.idle),
                 "webhook_path": f"/api/hooks/scan?token={db.setting('webhook_token')}",
                 "watch_events": ctx.watcher.events[:8],"tmdb_set": bool(db.setting("tmdb_key")), "language": db.setting("meta_language", "fr-FR"),
@@ -1228,6 +1296,10 @@ def build_app(ctx):
                 raise HTTPError(400, "Langue invalide (ex. fr-FR)")
             db.set_setting("meta_language", b["language"])
             db.set_setting("meta_country", b["language"][-2:])
+        if "trickplay" in b:
+            db.set_setting("trickplay", "1" if b["trickplay"] else "0")
+            if b["trickplay"]:
+                threading.Thread(target=ctx.prefetch_missing_subtitles, daemon=True).start()
         if "subs_prefetch" in b:
             db.set_setting("subs_prefetch", "1" if b["subs_prefetch"] else "0")
             if b["subs_prefetch"]:

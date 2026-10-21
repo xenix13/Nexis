@@ -202,8 +202,9 @@ class Scanner:
                 watcher.defer(lib["id"])
 
     def _probe(self, path, row, size, mtime, dir_files):
-        if row and row["file_size"] == size and row["file_mtime"] == mtime and row["probe"]:
-            info = json.loads(row["probe"])
+        info = json.loads(row["probe"]) if row and row["probe"] else None
+        if info and row["file_size"] == size and row["file_mtime"] == mtime and "chapters" in info:
+            pass  # inchangé (les anciennes analyses sans chapitres sont refaites une fois)
         else:
             info = media.probe(path)
         info["external"] = external_subs(path, dir_files)
