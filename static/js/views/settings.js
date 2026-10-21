@@ -59,7 +59,7 @@ export async function renderSettings(main) {
     h('div.grid2',
       field('Qualité par défaut', bindSelect('quality', [['original', 'Originale (le moins de transcodage)'],
         ['1080p', '1080p · 10 Mb/s'], ['720p', '720p · 4 Mb/s'], ['480p', '480p · 1,5 Mb/s']]),
-      'Sans Plex Pass, tout transcodage vidéo se fait au processeur : « Originale » le limite au maximum.'),
+      '« Originale » évite au maximum de faire travailler le processeur du serveur (lecture directe ou remux quand c’est possible).'),
       field('Langue audio préférée', bindSelect('audio_lang', LANGS)),
       field('Sous-titres', bindSelect('sub_mode', [['foreign', 'Si l’audio n’est pas dans ma langue'],
         ['always', 'Toujours'], ['never', 'Jamais']])),

@@ -85,6 +85,69 @@ MIGRATIONS = [
         last_seen INTEGER NOT NULL
     );
     """,
+    """
+    CREATE TABLE libraries(
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        paths TEXT NOT NULL DEFAULT '[]',
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        scanned_at INTEGER
+    );
+    CREATE TABLE items(
+        id INTEGER PRIMARY KEY,
+        library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+        type TEXT NOT NULL,
+        parent_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+        show_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+        key TEXT,
+        title TEXT NOT NULL,
+        sort_title TEXT NOT NULL,
+        search TEXT NOT NULL DEFAULT '',
+        original_title TEXT,
+        year INTEGER,
+        idx INTEGER,
+        summary TEXT,
+        tagline TEXT,
+        rating REAL,
+        content_rating TEXT,
+        studio TEXT,
+        released TEXT,
+        genres TEXT NOT NULL DEFAULT '[]',
+        people TEXT NOT NULL DEFAULT '{}',
+        duration_ms INTEGER,
+        added_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        file_size INTEGER,
+        file_mtime INTEGER,
+        probe TEXT,
+        poster TEXT,
+        backdrop TEXT,
+        still TEXT,
+        tmdb_id INTEGER,
+        meta_state TEXT NOT NULL DEFAULT 'pending',
+        locked INTEGER NOT NULL DEFAULT 0,
+        img_version INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE UNIQUE INDEX items_key ON items(library_id, type, key);
+    CREATE INDEX items_lib ON items(library_id, type, sort_title);
+    CREATE INDEX items_parent ON items(parent_id, idx);
+    CREATE INDEX items_show ON items(show_id, type);
+    CREATE INDEX items_added ON items(library_id, type, added_at DESC);
+    CREATE INDEX items_meta ON items(meta_state);
+    DROP TABLE IF EXISTS user_libraries;
+    CREATE TABLE user_libraries(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        section_id TEXT NOT NULL,
+        PRIMARY KEY(user_id, section_id)
+    );
+    DELETE FROM streams;
+    DELETE FROM progress;
+    DELETE FROM history;
+    DELETE FROM markers;
+    DELETE FROM settings WHERE key IN ('plex_url', 'plex_token', 'plex_verify_tls');
+    """,
 ]
 
 

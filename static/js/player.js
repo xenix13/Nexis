@@ -107,7 +107,7 @@ export async function renderPlayer(root, rk, ctx) {
   volume.value = video.volume;
 
   // ------------------------------------------------------------ streaming
-  // Plex can take a while to produce the first segment after a jump (CPU transcode,
+  // The server can take a while to produce the first segment after a jump (CPU transcode,
   // burned-in ASS subtitles…): be much more patient than hls.js defaults.
   const slow = (firstByte, total, retries) => ({ default: {
     maxTimeToFirstByteMs: firstByte, maxLoadTimeMs: total,
@@ -120,7 +120,7 @@ export async function renderPlayer(root, rk, ctx) {
     playlistLoadPolicy: slow(60000, 90000, 4),
     fragLoadPolicy: slow(60000, 120000, 6),
   };
-  let startSeq = 0, autoRetries = 0;
+  let startSeq = 0, autoRetries = 0, forceHls = false;
 
   async function start(offset) {
     const seq = ++startSeq;
@@ -130,9 +130,10 @@ export async function renderPlayer(root, rk, ctx) {
     errorLayer.hidden = true;
     const previous = session && session.stream;
     if (hls) { hls.destroy(); hls = null; }
+    if (video.getAttribute('src')) { video.removeAttribute('src'); video.load(); }
     let s;
     try {
-      s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality,
+      s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality, no_direct: forceHls || undefined,
         audio: audioSel ? audioSel.id : null, subtitle: subSel ? subSel.id : 0, replace: previous || undefined });
     } catch (e) { if (seq === startSeq) showError(e.message, true); return; }
     if (destroyed || seq !== startSeq) {
@@ -145,10 +146,24 @@ export async function renderPlayer(root, rk, ctx) {
     introSkipped = false;
     nextBtn.hidden = !session.next;
     updateIntroMark();
-    await loadSubtitles();
-    if (seq !== startSeq || destroyed) return;
+    loadSubtitles(seq);  // en tâche de fond : l'extraction d'une piste interne peut prendre du temps
     const autoplay = () => video.play().catch(() => { loader.hidden = true; paintPlay(); });
-    if (window.Hls && window.Hls.isSupported()) {
+    if (session.mode === 'direct') {
+      // le navigateur lit le fichier tel quel : position réelle = currentTime
+      base = 0;
+      video.src = session.url;
+      video.addEventListener('loadedmetadata', () => {
+        if (session.offset) video.currentTime = session.offset / 1000;
+        autoplay();
+      }, { once: true });
+      video.addEventListener('error', () => {
+        if (seq === startSeq && session.mode === 'direct' && !destroyed) {
+          // format refusé par ce navigateur : on bascule sur un flux converti
+          forceHls = true;
+          start(Math.max(session.offset, pos()));
+        }
+      }, { once: true });
+    } else if (window.Hls && window.Hls.isSupported()) {
       hls = new window.Hls(HLS_CONFIG);
       hls.on(window.Hls.Events.ERROR, (_, data) => {
         if (!data.fatal || seq !== startSeq) return;
@@ -179,12 +194,15 @@ export async function renderPlayer(root, rk, ctx) {
     setupMediaSession();
   }
 
-  async function loadSubtitles() {
+  async function loadSubtitles(seq) {
     cues = [];
     cueIdx = -1;
     subLayer.replaceChildren();
     if (!session.subtitle_overlay) return;
-    try { cues = (await get(session.subtitle_overlay)).cues; } catch (e) { toast(`Sous-titres : ${e.message}`, 'bad'); }
+    try {
+      const r = await get(session.subtitle_overlay);
+      if (seq === startSeq) { cues = r.cues; cueIdx = -1; }
+    } catch (e) { toast(`Sous-titres : ${e.message}`, 'bad'); }
   }
 
   function showError(msg, retry = false, at = null) {
@@ -199,6 +217,7 @@ export async function renderPlayer(root, rk, ctx) {
   function seekTo(ms) {
     const d = duration();
     ms = Math.max(0, d ? Math.min(ms, d - 3000) : ms);
+    if (session && session.mode === 'direct') { video.currentTime = ms / 1000; return; }
     const rel = (ms - base) / 1000;
     const b = video.buffered;
     for (let i = 0; i < b.length; i++) {
@@ -348,7 +367,10 @@ export async function renderPlayer(root, rk, ctx) {
             s.overlay ? null : 'incrusté'))));
     } else {
       const q = [['original', 'Originale'], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p']];
-      const cols = [h('div.menu-col', h('h4', 'Qualité'), q.map(([v, l]) => opt(l, quality === v, () => { quality = v; restart(); })))];
+      const modeLabel = { direct: 'Lecture directe', copy: 'Remux (vidéo copiée)', transcode: 'Transcodage' }[session.mode] || '';
+      const cols = [h('div.menu-col', h('h4', 'Qualité'), q.map(([v, l]) => opt(l, quality === v, () => { quality = v; restart(); })),
+        h('p.menu-info', h('strong', modeLabel), session.reasons && session.reasons.length ? ` — ${session.reasons.join(', ')}` : '',
+          session.mode === 'transcode' ? h('br') : null, session.mode === 'transcode' ? 'Le processeur du serveur travaille pour cette lecture.' : null))];
       if (isAdmin && item.type === 'episode') {
         const setMarker = async (which) => {
           const cur = (session.markers && session.markers.intro) || {};

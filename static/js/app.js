@@ -65,7 +65,7 @@ function shell(active) {
       me.libraries.map((l) => navLink(`#/library/${l.id}`, l.title, active === `lib:${l.id}`))),
     h('div.topbar-right', h('label.search', icon('search'), search), h('div.user-wrap', userBtn, menu)));
   const main = h('main.content');
-  const banner = me.plex_error ? h('div.banner-error', `Plex est injoignable : ${me.plex_error}`) : null;
+  const banner = me.plex_error ? h('div.banner-error', me.plex_error) : null;
   clear(root, header, banner, main);
   return main;
 }
@@ -91,7 +91,7 @@ async function route() {
   }
   if (state.status.setup) {
     document.title = 'Installation · Séance';
-    return renderSetup(root, () => { state.status = null; state.me = null; location.hash = '#/'; route(); });
+    return renderSetup(root, () => { state.status = null; state.me = null; location.hash = '#/admin/libraries'; route(); });
   }
   if (page === 'login') {
     document.title = 'Connexion · Séance';
@@ -130,7 +130,7 @@ async function route() {
       case 'settings': await renderSettings(main, ctx); break;
       case 'admin':
         if (!state.me.user.is_admin) { location.hash = '#/'; return; }
-        await renderAdmin(main, parts[1] || 'users', ctx); break;
+        await renderAdmin(main, parts[1] || 'libraries', ctx); break;
       default: clear(main, h('div.empty', 'Page introuvable.'));
     }
   } catch (e) {
@@ -146,6 +146,9 @@ setUnauthorizedHandler(() => {
   }
 });
 
+document.addEventListener('error', (e) => {
+  if (e.target && e.target.tagName === 'IMG') e.target.classList.add('broken');
+}, true);
 document.addEventListener('click', () => {
   document.querySelectorAll('.user-menu').forEach((m) => { m.hidden = true; });
 });

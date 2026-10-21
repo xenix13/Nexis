@@ -215,7 +215,7 @@ def make_handler(app, trust_proxy=False):
                 self._write(resp, req, head=(method == "HEAD"))
             except (BrokenPipeError, ConnectionResetError, TimeoutError):
                 self.close_connection = True
-            except Exception as e:  # upstream (Plex) failed mid-stream: drop the connection
+            except Exception as e:  # upstream failed mid-stream: drop the connection
                 log.debug("Flux interrompu sur %s : %s", parsed.path, e)
                 self.close_connection = True
             finally:
@@ -283,3 +283,9 @@ class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
     request_queue_size = 64
+
+    def handle_error(self, request, client_address):
+        import sys
+        if isinstance(sys.exc_info()[1], (ConnectionResetError, BrokenPipeError, TimeoutError)):
+            return  # le navigateur a coupé la connexion (saut, changement de page) : normal
+        super().handle_error(request, client_address)

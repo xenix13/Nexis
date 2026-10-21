@@ -1,5 +1,51 @@
 import { get, post } from '../api.js';
-import { clear, episodeCode, fmtDuration, fmtTime, h, icon, img, posterCard, progressBar, spinner, toast } from '../ui.js';
+import { state } from '../app.js';
+import { clear, episodeCode, field, fmtDuration, fmtTime, h, icon, img, modal, posterCard, progressBar, spinner, toast } from '../ui.js';
+
+async function identify(d, onDone) {
+  const q = h('input', { value: d.type === 'episode' ? d.show : d.title });
+  const year = h('input', { type: 'number', value: d.type === 'episode' ? '' : (d.year || ''), placeholder: 'Année' });
+  const results = h('div.identify-results');
+  const search = async () => {
+    results.replaceChildren(spinner());
+    try {
+      const r = await get(`/api/admin/identify/${d.id}?q=${encodeURIComponent(q.value)}&year=${encodeURIComponent(year.value)}`);
+      results.replaceChildren(...(r.results.length ? r.results.map((x) => h('button.identify-hit', {
+        class: x.tmdb_id === r.current ? 'identify-hit on' : 'identify-hit',
+        onclick: async () => {
+          results.replaceChildren(spinner());
+          try {
+            await post(`/api/admin/identify/${d.id}`, { tmdb_id: x.tmdb_id });
+            toast(`Identifié : ${x.title}`, 'ok');
+            document.querySelector('.modal-overlay')?.remove();
+            onDone();
+          } catch (e) { toast(e.message, 'bad'); search(); }
+        } },
+      x.poster ? h('img', { src: x.poster, alt: '' }) : h('div.noimg'),
+      h('div', h('strong', x.title), h('div.muted.small', [x.year, x.original_title !== x.title ? x.original_title : null].filter(Boolean).join(' · ')),
+        h('p.small', (x.overview || '').slice(0, 220))))) : [h('p.muted', 'Aucun résultat.')]));
+    } catch (e) { results.replaceChildren(h('p.form-error', e.message)); }
+  };
+  const form = h('form.identify-form', { onsubmit: (e) => { e.preventDefault(); search(); } },
+    h('div.grid-search', field('Titre', q), field('Année', year), h('button.btn.primary', { type: 'submit' }, 'Rechercher')));
+  search();
+  await modal('Identifier sur TMDB', h('div', form, results), []);
+}
+
+function adminTools(d, rerender) {
+  if (!state.me.user.is_admin) return null;
+  const refresh = h('button.btn.ghost.small', { onclick: async () => {
+    refresh.disabled = true;
+    try { await post(`/api/admin/refresh/${d.id}`); toast('Métadonnées actualisées', 'ok'); rerender(); }
+    catch (e) { toast(e.message, 'bad'); refresh.disabled = false; }
+  } }, 'Actualiser les métadonnées');
+  return h('div.admin-tools',
+    ['nomatch', 'error'].includes(d.meta_state) ? h('span.tag', 'Non identifié') : null,
+    h('button.btn.ghost.small', { onclick: () => identify(d, rerender) }, 'Identifier…'), refresh,
+    d.path ? h('code.small.muted', d.path) : null,
+    d.media && d.media.video_codec ? h('span.muted.small', [d.media.container, d.media.video_codec, d.media.audio_codec,
+      d.media.bitrate ? `${d.media.bitrate} kb/s` : null].filter(Boolean).join(' · ').toUpperCase()) : null);
+}
 
 function playButtons(c) {
   const out = [];
@@ -86,7 +132,8 @@ export async function renderItem(main, rk, ctx) {
       d.directors && d.directors.length ? [h('dt', 'Réalisation'), h('dd', d.directors.join(', '))] : null,
       d.studio ? [h('dt', 'Studio'), h('dd', d.studio)] : null,
       d.audio && d.audio.length ? [h('dt', 'Audio'), h('dd', d.audio.map((a) => a.title).join(' · '))] : null,
-      d.subtitles && d.subtitles.length ? [h('dt', 'Sous-titres'), h('dd', d.subtitles.map((s) => s.title).join(' · '))] : null));
+      d.subtitles && d.subtitles.length ? [h('dt', 'Sous-titres'), h('dd', d.subtitles.map((s) => s.title).join(' · '))] : null),
+    adminTools(d, rerender));
 
   const parts = [
     h('section.detail', art ? { style: { '--backdrop': `url("${img(art, 1600, 900)}")` } } : null,

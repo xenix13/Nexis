@@ -1,4 +1,5 @@
 import { get } from '../api.js';
+import { state } from '../app.js';
 import { clear, h, icon, img, posterCard, row, wideCard } from '../ui.js';
 
 export async function renderHome(main, ctx) {
@@ -29,7 +30,10 @@ export async function renderHome(main, ctx) {
     parts.push(row(title, r.items, (c) => posterCard(c), { href: `#/library/${r.library.id}` }));
   }
   if (!data.rows.length && !data.continue.length) {
-    parts.push(h('div.empty', 'Aucune bibliothèque ne t’est accessible pour le moment. Demande à l’administrateur.'));
+    parts.push(state.me.user.is_admin
+      ? h('div.empty', h('p', 'Aucun média pour l’instant.'),
+        h('a.btn.primary', { href: '#/admin/libraries' }, 'Ajouter une bibliothèque'))
+      : h('div.empty', 'Aucune bibliothèque ne t’est accessible pour le moment. Demande à l’administrateur.'));
   }
   clear(main, parts);
 }

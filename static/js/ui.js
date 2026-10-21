@@ -1,5 +1,5 @@
 // DOM helpers, formatting and shared components. Text is always set with
-// textContent, never innerHTML, so Plex metadata cannot inject markup.
+// textContent, never innerHTML, so metadata cannot inject markup.
 
 export function h(tag, attrs, ...children) {
   const m = /^([a-z0-9]+)?((?:[.#][\w-]+)*)$/i.exec(tag);

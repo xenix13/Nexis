@@ -17,7 +17,7 @@ def env_bool(name, default=False):
 
 def main(argv=None):
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ap = argparse.ArgumentParser(prog="seance", description="Séance — frontend multi-utilisateurs pour Plex")
+    ap = argparse.ArgumentParser(prog="seance", description="Séance — serveur multimédia auto-hébergé")
     ap.add_argument("--host", default=os.environ.get("SEANCE_HOST", "0.0.0.0"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("SEANCE_PORT", "8420")))
     ap.add_argument("--data", default=os.environ.get("SEANCE_DATA", os.path.join(here, "data")))
@@ -38,6 +38,7 @@ def main(argv=None):
 
     def shutdown(*_):
         stop.set()
+        ctx.transcoder.stop_all()
         threading.Thread(target=server.shutdown, daemon=True).start()
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
