@@ -159,6 +159,14 @@ MIGRATIONS = [
         PRIMARY KEY(user_id, scope_id)
     );
     """,
+    """
+    ALTER TABLE items ADD COLUMN age INTEGER;
+    ALTER TABLE users ADD COLUMN pin_hash TEXT;
+    ALTER TABLE users ADD COLUMN managed INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN home INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE users ADD COLUMN max_age INTEGER;
+    ALTER TABLE users ADD COLUMN allow_unrated INTEGER NOT NULL DEFAULT 1;
+    """,
 ]
 
 

@@ -173,6 +173,16 @@ Pour nginx, ajoute `proxy_read_timeout 120s;` et `proxy_buffering off;`.
 
 Les fichiers sans chapitres n'ont pas encore de détection automatique : la comparaison audio entre les épisodes d'une saison est la prochaine étape.
 
+## Profils, code PIN et contrôle parental
+
+Comme Plex Home :
+- **« Qui regarde ? »** : après la connexion, chacun choisit son profil. Le menu utilisateur → *Changer de profil* le rouvre à tout moment.
+- **Profils gérés** (enfants, invités) : pas de mot de passe ; on y entre depuis « Qui regarde ? », avec un **code PIN** si on en a défini un.
+- **Code PIN** : chacun peut protéger son profil (*Réglages → Code PIN du profil*). Passer sur un compte complet ou administrateur sans PIN demande son mot de passe.
+- **Restriction d'âge** par profil (7, 10, 12 ou 16 ans max.), d'après la classification TMDB ou `.nfo` (U, 10, 12, 16, 18, PG-13, TV-MA…). Les contenus trop classés disparaissent partout : bibliothèques, accueil, recherche, fiches et lecture. Option pour autoriser ou non les contenus sans classification.
+
+Tout se règle dans **Administration → Utilisateurs**.
+
 ## Langue audio et sous-titres
 
 Sur la fiche d'un film, d'un épisode ou d'une série, deux listes permettent de choisir l'audio et les sous-titres avant de lancer la lecture. Le choix est **retenu pour toute la série** (ou pour le film), et pour chaque utilisateur : les épisodes suivants se lancent dans la même langue. Un changement fait dans le lecteur est retenu de la même façon.
@@ -229,5 +239,5 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 2. ~~Serveur multimédia autonome : scan, TMDB, lecture directe / remux / transcodage~~ ✔
 3. Détection automatique des intros et génériques de fin par empreinte audio (pour les fichiers sans chapitres)
 4. Import de l'historique « vu » depuis Jellyfin, par utilisateur
-5. Liste « à regarder », collections, contrôle parental
+5. ~~Profils, PIN, contrôle parental~~ ✔ — liste « à regarder », collections
 6. Accélération matérielle optionnelle (VAAPI / Quick Sync) pour les serveurs équipés d'un GPU

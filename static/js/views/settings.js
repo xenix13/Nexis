@@ -100,5 +100,22 @@ export async function renderSettings(main) {
       } catch (e) { toast(e.message, 'bad'); }
     } }, 'Changer le mot de passe'));
 
-  clear(main, h('div.page-head', h('h1', 'Réglages')), h('div.panels', profile, playback, display, security));
+  const pin = h('input', { type: 'password', inputmode: 'numeric', maxlength: 8, autocomplete: 'off', placeholder: '4 à 8 chiffres' });
+  const pinPass = h('input', { type: 'password', autocomplete: 'current-password' });
+  const pinPanel = me.user.home ? h('section.panel', h('h2', 'Code PIN du profil'),
+    h('p.muted.small', me.user.has_pin
+      ? 'Ton profil est protégé : le code est demandé quand quelqu’un passe sur ton profil depuis « Changer de profil ».'
+      : 'Sans code, n’importe quel membre du foyer peut passer sur ton profil depuis « Changer de profil » (ton mot de passe est alors demandé).'),
+    h('div.grid2', field('Nouveau code PIN', pin), me.user.managed ? null : field('Mot de passe actuel', pinPass)),
+    h('div.actions-row',
+      h('button.btn.primary', { onclick: async () => {
+        try { await put('/api/me/pin', { pin: pin.value, password: pinPass.value }); await refreshMe(); toast('Code PIN enregistré', 'ok'); renderSettings(main); }
+        catch (e) { toast(e.message, 'bad'); }
+      } }, 'Enregistrer le code'),
+      me.user.has_pin ? h('button.btn', { onclick: async () => {
+        try { await put('/api/me/pin', { pin: '', password: pinPass.value }); await refreshMe(); toast('Code PIN retiré', 'ok'); renderSettings(main); }
+        catch (e) { toast(e.message, 'bad'); }
+      } }, 'Retirer le code') : null)) : null;
+
+  clear(main, h('div.page-head', h('h1', 'Réglages')), h('div.panels', profile, playback, display, pinPanel, me.user.managed ? null : security));
 }

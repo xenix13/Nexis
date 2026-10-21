@@ -18,13 +18,24 @@ function since(ts) {
 }
 
 // ------------------------------------------------------------------ users
+const AGE_LIMITS = [['', 'Aucune restriction'], ['7', 'Jeunes enfants (7 ans max.)'], ['10', 'Enfant (10 ans max.)'],
+  ['12', '12 ans max.'], ['16', '16 ans max.']];
+
 async function userForm(user, libraries) {
   const isNew = !user;
-  user = user || { username: '', display_name: '', is_admin: false, all_libraries: true, libraries: [], disabled: false };
+  user = user || { username: '', display_name: '', is_admin: false, all_libraries: true, libraries: [], disabled: false,
+    managed: false, home: true, max_age: null, allow_unrated: true, has_pin: false };
   const username = h('input', { value: user.username, disabled: !isNew, autocomplete: 'off' });
   const display = h('input', { value: user.display_name, maxlength: 50 });
   const pass = h('input', { type: 'password', autocomplete: 'new-password',
     placeholder: isNew ? '8 caractères minimum' : 'Laisser vide pour ne pas changer' });
+  const managed = toggle('Profil géré : pas de mot de passe, on y accède par « Changer de profil » (idéal pour les enfants)', user.managed);
+  const home = toggle('Fait partie du foyer (apparaît dans « Qui regarde ? »)', user.home);
+  const pin = h('input', { type: 'password', inputmode: 'numeric', maxlength: 8, autocomplete: 'off',
+    placeholder: user.has_pin ? 'Code défini (laisser vide pour le garder)' : '4 à 8 chiffres (facultatif)' });
+  const clearPin = user.has_pin ? toggle('Retirer le code PIN', false) : null;
+  const age = select(AGE_LIMITS, user.max_age == null ? '' : String(user.max_age));
+  const unrated = toggle('Autoriser les contenus sans classification', user.allow_unrated);
   const admin = toggle('Administrateur', user.is_admin);
   const disabled = toggle('Compte désactivé', user.disabled);
   const all = toggle('Accès à toutes les bibliothèques (y compris les futures)', user.all_libraries);
@@ -34,24 +45,44 @@ async function userForm(user, libraries) {
     return t;
   });
   const libBox = h('div.checks', libChecks);
-  const syncLibs = () => { libBox.hidden = all.querySelector('input').checked; };
-  all.querySelector('input').addEventListener('change', syncLibs);
-  syncLibs();
+  const passField = field(isNew ? 'Mot de passe' : 'Nouveau mot de passe', pass);
+  const sync = () => {
+    libBox.hidden = all.querySelector('input').checked;
+    const isManaged = managed.querySelector('input').checked;
+    passField.hidden = isManaged;
+    admin.hidden = isManaged;
+    unrated.hidden = !age.value;
+  };
+  [all, managed].forEach((t) => t.querySelector('input').addEventListener('change', sync));
+  age.addEventListener('change', sync);
+  sync();
   const err = h('p.form-error');
   const body = h('div.form',
     h('div.grid2', field('Identifiant', username), field('Nom affiché', display)),
-    field(isNew ? 'Mot de passe' : 'Nouveau mot de passe', pass),
+    managed, passField,
+    h('h4.form-sub', 'Profil et contrôle parental'),
+    home,
+    h('div.grid2', field('Code PIN du profil', pin), field('Restriction d’âge', age, 'Selon la classification (TMDB / .nfo).')),
+    clearPin, unrated,
+    h('h4.form-sub', 'Droits et bibliothèques'),
     admin, isNew ? null : disabled, all, libBox, err);
   return modal(isNew ? 'Nouvel utilisateur' : `Modifier ${user.display_name}`, body, [
     { label: 'Annuler', value: null },
     { label: isNew ? 'Créer' : 'Enregistrer', primary: true, handler: async () => {
+      const isManaged = managed.querySelector('input').checked;
       const payload = {
         display_name: display.value.trim() || username.value.trim(),
-        is_admin: admin.querySelector('input').checked,
+        is_admin: !isManaged && admin.querySelector('input').checked,
         all_libraries: all.querySelector('input').checked,
         libraries: libChecks.filter((t) => t.querySelector('input').checked).map((t) => t.dataset.id),
+        managed: isManaged,
+        home: home.querySelector('input').checked,
+        max_age: age.value ? Number(age.value) : null,
+        allow_unrated: unrated.querySelector('input').checked,
       };
-      if (pass.value) payload.password = pass.value;
+      if (pass.value && !isManaged) payload.password = pass.value;
+      if (pin.value) payload.pin = pin.value;
+      else if (clearPin && clearPin.querySelector('input').checked) payload.pin = '';
       if (!isNew) payload.disabled = disabled.querySelector('input').checked;
       try {
         if (isNew) await post('/api/admin/users', { username: username.value.trim(), ...payload });
@@ -77,6 +108,9 @@ async function usersTab(body, ctx) {
         h('div.muted.small',
           u.is_admin ? h('span.tag.accent', 'Admin') : null,
           u.disabled ? h('span.tag', 'Désactivé') : null,
+          u.managed ? h('span.tag', 'Profil géré') : null,
+          u.max_age != null ? h('span.tag', `≤ ${u.max_age} ans`) : null,
+          u.has_pin ? h('span.tag', 'PIN') : null,
           u.all_libraries ? 'Toutes les bibliothèques' : (u.libraries.map(libName).join(', ') || 'Aucune bibliothèque'),
           ` · vu ${since(u.last_seen)}`)),
       h('button.btn.small', { onclick: async () => { if (await userForm(u, libraries)) { toast('Modifications enregistrées', 'ok'); reload(); } } }, 'Modifier'),

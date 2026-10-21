@@ -17,6 +17,7 @@ from .images import Images
 from .markers import from_chapters as chapter_markers
 from .metadata import Metadata, MetaError
 from .names import LANG_WORDS, fold
+from .ratings import age_of
 from .scanner import Scanner
 from .subcache import SubtitleCache, text_tracks
 from .subtitles import parse_subtitles
@@ -26,7 +27,7 @@ from .web import App, HTTPError, Response
 
 log = logging.getLogger("seance")
 
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 RK = r"(?P<rk>\d{1,12})"
 SID = r"(?P<sid>[A-Za-z0-9_-]{8,40})"
 SORTS = {"title": "i.sort_title COLLATE NOCASE", "added": "i.added_at DESC", "year": "i.year DESC, i.sort_title",
@@ -93,11 +94,12 @@ def validate_prefs(data):
     return out
 
 
-ITEM_SQL = ("SELECT i.*, p.idx AS parent_idx, "
+ITEM_SQL = ("SELECT i.*, p.idx AS parent_idx, COALESCE(sh.age, i.age) AS eff_age, "
             "((SELECT COUNT(*) FROM items x WHERE x.show_id=i.id AND x.type='episode') + "
             "(SELECT COUNT(*) FROM items x WHERE x.parent_id=i.id AND x.type='episode')) AS leaves, "
             "(SELECT COUNT(*) FROM items y WHERE y.parent_id=i.id AND y.type='season') AS child_count "
-            "FROM items i LEFT JOIN items p ON p.id=i.parent_id ")
+            "FROM items i LEFT JOIN items p ON p.id=i.parent_id LEFT JOIN items sh ON sh.id=i.show_id ")
+AGE_EXPR = "COALESCE(sh.age, i.age)"
 EPISODE_ORDER = "ORDER BY (p.idx=0), p.idx, i.idx, i.id"
 
 
@@ -164,6 +166,10 @@ class Ctx:
         self.transcoder = Transcoder(os.path.join(data_dir, "transcodes"), self.limits)
         self.subtitles = SubtitleCache(self)
         self.watcher = Watcher(self)
+        for r in self.db.all("SELECT id, content_rating FROM items WHERE content_rating IS NOT NULL AND age IS NULL"):
+            age = age_of(r["content_rating"])
+            if age is not None:
+                self.db.run("UPDATE items SET age=? WHERE id=?", (age, r["id"]))
         if not self.db.setting("webhook_token"):
             self.db.set_setting("webhook_token", secrets.token_urlsafe(24))
         self.sub_locks = {}
@@ -270,9 +276,26 @@ def build_app(ctx):
             raise HTTPError(404, "Introuvable")
         return row
 
+    def age_filter(user):
+        """Clause SQL du contrôle parental (profil limité à un âge)."""
+        if user.get("max_age") is None:
+            return "", []
+        return (f" AND ({AGE_EXPR} <= ? OR ({AGE_EXPR} IS NULL AND ?=1))",
+                [user["max_age"], 1 if user.get("allow_unrated") else 0])
+
+    def visible(user, row):
+        if user.get("max_age") is None:
+            return True
+        age = row.get("eff_age") if "eff_age" in row else row.get("age")
+        if age is None:
+            return bool(user.get("allow_unrated"))
+        return age <= user["max_age"]
+
     def require_item(user, rk):
         row = item_row(rk)
         require_section(user, row["library_id"])
+        if not visible(user, row):
+            raise HTTPError(404, "Introuvable")
         return row
 
     show_cache = {}
@@ -460,7 +483,9 @@ def build_app(ctx):
     # ------------------------------------------------------------------- me
     def user_view(u):
         return {"id": u["id"], "username": u["username"], "display_name": u["display_name"],
-                "is_admin": bool(u["is_admin"]), "avatar_color": u["avatar_color"]}
+                "is_admin": bool(u["is_admin"]), "avatar_color": u["avatar_color"],
+                "managed": bool(u.get("managed")), "has_pin": bool(u.get("pin_hash")),
+                "max_age": u.get("max_age"), "home": bool(u.get("home", 1))}
 
     @app.route("GET", "/api/me")
     def me(req):
@@ -500,6 +525,65 @@ def build_app(ctx):
         db.run("DELETE FROM sessions WHERE user_id=? AND token_hash<>?", (req.user["id"], req.session_hash))
         return {"ok": True}
 
+    # ------------------------------------------------------------ profils
+    def hash_pin(pin):
+        if pin in (None, ""):
+            return None
+        if not (isinstance(pin, str) and re.match(r"^\d{4,8}$", pin)):
+            raise HTTPError(400, "Le code PIN doit faire 4 à 8 chiffres")
+        return hash_password(pin)
+
+    @app.route("GET", "/api/profiles")
+    def profiles(req):
+        if not req.user.get("home"):
+            return []
+        rows = db.all("SELECT * FROM users WHERE home=1 AND disabled=0 ORDER BY managed, display_name COLLATE NOCASE")
+        out = []
+        for u in rows:
+            v = user_view(u)
+            v["current"] = u["id"] == req.user["id"]
+            # sans PIN, un compte complet (avec mot de passe) ou administrateur demande son mot de passe
+            v["needs"] = "pin" if u["pin_hash"] else ("none" if u["managed"] and not u["is_admin"] else "password")
+            out.append(v)
+        return out
+
+    @app.route("POST", r"/api/profiles/(?P<uid>\d{1,10})/switch")
+    def profile_switch(req):
+        uid = int(req.params["uid"])
+        if not req.user.get("home"):
+            raise HTTPError(403, "Ce compte ne fait pas partie du foyer")
+        target = db.one("SELECT * FROM users WHERE id=? AND home=1 AND disabled=0", (uid,))
+        if not target:
+            raise HTTPError(404, "Profil introuvable")
+        if uid != req.user["id"]:
+            b = req.json()
+            key = f"profile:{uid}"
+            ctx.throttle.check(key, "ip:" + req.client_ip)
+            if target["pin_hash"]:
+                ok = verify_password(str(b.get("pin") or "")[:8], target["pin_hash"])
+            elif target["managed"] and not target["is_admin"]:
+                ok = True
+            else:
+                ok = verify_password(str(b.get("password") or "")[:256], target["password_hash"])
+            if not ok:
+                ctx.throttle.fail(key, "ip:" + req.client_ip)
+                raise HTTPError(400, "Code PIN incorrect" if target["pin_hash"] else "Mot de passe incorrect")
+            ctx.throttle.reset(key)
+            clear_session(db, req, ctx.cookie_secure)
+            req.set_cookies.clear()
+            create_session(db, req, uid, ctx.cookie_secure)
+        return {"ok": True, "user": user_view(target)}
+
+    @app.route("PUT", "/api/me/pin")
+    def me_pin(req):
+        b = req.json()
+        if not req.user["managed"]:
+            row = db.one("SELECT password_hash FROM users WHERE id=?", (req.user["id"],))
+            if not verify_password(str(b.get("password") or ""), row["password_hash"]):
+                raise HTTPError(400, "Mot de passe actuel incorrect")
+        db.run("UPDATE users SET pin_hash=? WHERE id=?", (hash_pin(b.get("pin")), req.user["id"]))
+        return {"ok": True, "has_pin": bool(b.get("pin"))}
+
     # -------------------------------------------------------------- library
     @app.route("GET", "/api/libraries")
     def libraries(req):
@@ -523,7 +607,10 @@ def build_app(ctx):
         start = req.int_arg("start", 0, 0)
         size = req.int_arg("size", 60, 1, 200)
         order = SORTS.get(req.arg("sort", "title"), SORTS["title"])
-        total = db.scalar(f"SELECT COUNT(*) FROM items i {where}", args)
+        af, aa = age_filter(req.user)
+        where += af
+        args += aa
+        total = db.scalar(f"SELECT COUNT(*) FROM items i LEFT JOIN items sh ON sh.id=i.show_id {where}", args)
         rows = db.all(ITEM_SQL + where + f" ORDER BY {order} LIMIT ? OFFSET ?", [*args, size, start])
         items = attach_state(req.user["id"], [card(r) for r in rows])
         return {"total": total, "items": items}
@@ -537,17 +624,18 @@ def build_app(ctx):
                       (int(sid),))
         return [{"id": r["name"], "title": r["name"], "count": r["n"]} for r in rows]
 
-    def recent_row(lib):
+    def recent_row(lib, user):
         if lib["type"] == "movie":
-            rows = db.all(ITEM_SQL + "WHERE i.library_id=? AND i.type='movie' ORDER BY i.added_at DESC, i.id DESC "
-                          "LIMIT 24", (int(lib["id"]),))
+            af, aa = age_filter(user)
+            rows = db.all(ITEM_SQL + "WHERE i.library_id=? AND i.type='movie'" + af +
+                          " ORDER BY i.added_at DESC, i.id DESC LIMIT 24", (int(lib["id"]), *aa))
             return [card(r) for r in rows]
         latest = db.all("SELECT show_id, MAX(added_at) AS t FROM items WHERE library_id=? AND type='episode' "
                         "GROUP BY show_id ORDER BY t DESC LIMIT 24", (int(lib["id"]),))
         out = []
         for l in latest:
             show = db.one(ITEM_SQL + "WHERE i.id=?", (l["show_id"],))
-            if not show:
+            if not show or not visible(user, show):
                 continue
             c = card(show)
             ep = db.one(ITEM_SQL + "WHERE i.show_id=? AND i.type='episode' ORDER BY i.added_at DESC, p.idx DESC, "
@@ -566,7 +654,8 @@ def build_app(ctx):
         for r in rows:
             if r["section_id"] not in allowed:
                 continue
-            if not db.scalar("SELECT 1 FROM items WHERE id=?", (int(r["rating_key"]),)):
+            row = db.one(ITEM_SQL + "WHERE i.id=?", (int(r["rating_key"]),))
+            if not row or not visible(user, row):
                 continue
             c = json.loads(r["meta"])
             c.update(position=r["position_ms"], duration=r["duration_ms"] or c.get("duration"),
@@ -595,7 +684,7 @@ def build_app(ctx):
             for ep in eps[last_i + 1:]:
                 if str(ep["id"]) not in watched:
                     c = card(ep)
-                    if c["section"] in allowed:
+                    if c["section"] in allowed and visible(user, ep):
                         c.update(next_up=True, position=0, watched=False, _t=r["t"])
                         items.append(c)
                     break
@@ -611,7 +700,7 @@ def build_app(ctx):
         for lib in libraries_all():
             if lib["id"] not in allowed or lib["id"] in prefs["hidden_libraries"]:
                 continue
-            items = attach_state(user["id"], recent_row(lib))
+            items = attach_state(user["id"], recent_row(lib, user))
             if items:
                 rows.append({"library": lib, "items": items})
         cont = continue_row(user, allowed) if prefs["show_continue"] else []
@@ -630,9 +719,10 @@ def build_app(ctx):
         like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         marks = ",".join("?" * len(allowed))
         for typ, bucket, limit in (("movie", "movies", 30), ("show", "shows", 30), ("episode", "episodes", 20)):
-            rows = db.all(ITEM_SQL + f"WHERE i.type=? AND i.library_id IN ({marks}) AND i.search LIKE ? ESCAPE '\\' "
-                          f"ORDER BY (i.search LIKE ? ESCAPE '\\') DESC, i.sort_title LIMIT ?",
-                          [typ, *allowed, like, q + "%", limit])
+            af, aa = age_filter(req.user)
+            rows = db.all(ITEM_SQL + f"WHERE i.type=? AND i.library_id IN ({marks}) AND i.search LIKE ? ESCAPE '\\'"
+                          + af + f" ORDER BY (i.search LIKE ? ESCAPE '\\') DESC, i.sort_title LIMIT ?",
+                          [typ, *allowed, like, *aa, q + "%", limit])
             out[bucket] = attach_state(req.user["id"], [card(r) for r in rows])
         return out
 
@@ -1038,8 +1128,9 @@ def build_app(ctx):
         items = []
         for r in rows:
             c = json.loads(r["meta"])
-            exists = db.scalar("SELECT 1 FROM items WHERE id=?", (int(r["rating_key"]),))
-            c.update(history_id=r["id"], watched_at=r["watched_at"], available=bool(exists) and r["section_id"] in allowed)
+            row = db.one(ITEM_SQL + "WHERE i.id=?", (int(r["rating_key"]),))
+            c.update(history_id=r["id"], watched_at=r["watched_at"],
+                     available=bool(row) and r["section_id"] in allowed and visible(req.user, row))
             if not c["available"]:
                 c["thumb"] = c["art"] = c["show_thumb"] = None
             items.append(c)
@@ -1056,6 +1147,7 @@ def build_app(ctx):
     def admin_user_view(u):
         v = user_view(u)
         v.update(all_libraries=bool(u["all_libraries"]), disabled=bool(u["disabled"]), created_at=u["created_at"],
+                 allow_unrated=bool(u["allow_unrated"]),
                  libraries=[r["section_id"] for r in db.all(
                      "SELECT section_id FROM user_libraries WHERE user_id=?", (u["id"],))],
                  last_seen=db.scalar("SELECT MAX(last_seen) FROM sessions WHERE user_id=?", (u["id"],)))
@@ -1082,6 +1174,23 @@ def build_app(ctx):
         if b.get("password"):
             validate_password(b["password"])
             fields["password_hash"] = hash_password(b["password"])
+        for k in ("managed", "home", "allow_unrated"):
+            if k in b:
+                fields[k] = 1 if b[k] else 0
+        if "max_age" in b:
+            if b["max_age"] not in (None, 0, 7, 10, 12, 13, 14, 16, 17, 18):
+                raise HTTPError(400, "Restriction d'âge invalide")
+            fields["max_age"] = b["max_age"]
+        if "pin" in b:
+            fields["pin_hash"] = hash_pin(b["pin"])
+        cur = db.one("SELECT is_admin, managed, password_hash FROM users WHERE id=?", (uid,))
+        managed = fields.get("managed", cur["managed"])
+        if managed and fields.get("is_admin", cur["is_admin"]):
+            raise HTTPError(400, "Un profil géré (sans mot de passe) ne peut pas être administrateur")
+        if managed and fields.get("managed") and "password_hash" not in fields:
+            fields["password_hash"] = "!"  # plus de connexion par mot de passe : uniquement via « Changer de profil »
+        if not managed and cur["password_hash"] == "!" and "password_hash" not in fields:
+            raise HTTPError(400, "Définis un mot de passe pour ce compte")
         if fields:
             sets = ",".join(f"{k}=?" for k in fields)
             db.run(f"UPDATE users SET {sets} WHERE id=?", [*fields.values(), uid])
@@ -1101,7 +1210,8 @@ def build_app(ctx):
         username = str(b.get("username") or "").strip()
         if not USERNAME.match(username):
             raise HTTPError(400, "Identifiant : 2 à 32 caractères (lettres, chiffres, . _ -)")
-        validate_password(b.get("password"))
+        if not b.get("managed"):
+            validate_password(b.get("password"))
         if db.scalar("SELECT 1 FROM users WHERE username=?", (username,)):
             raise HTTPError(409, "Cet identifiant existe déjà")
         with db.tx():

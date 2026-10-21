@@ -541,6 +541,61 @@ class SeanceTest(unittest.TestCase):
         self.assertNotEqual(s2["webhook_path"], path)
         self.assertEqual(c.call("POST", path, {}, csrf=False)[0], 403)
 
+    # ------------------------------------------------- profils et contrôle parental
+    def test_profiles_pin_and_parental_control(self):
+        st, kid = self.admin.call("POST", "/api/admin/users", {
+            "username": "tom", "display_name": "Tom", "managed": True, "pin": "1234", "max_age": 10,
+            "allow_unrated": False})
+        self.assertEqual(st, 200, kid)
+        self.assertTrue(kid["managed"] and kid["has_pin"])
+        self.assertEqual(self.admin.call("POST", "/api/admin/users", {"username": "x1", "managed": True, "is_admin": True})[0], 400)
+        try:
+            # un profil géré ne se connecte pas par mot de passe
+            c = Client(self.base)
+            self.assertEqual(c.call("POST", "/api/login", {"username": "tom", "password": ""})[0], 401)
+            # depuis la session de l'admin : « Qui regarde ? »
+            dev = Client(self.base)
+            dev.call("POST", "/api/login", {"username": "colas", "password": "motdepasse1"})
+            st, profiles = dev.call("GET", "/api/profiles")
+            by = {p["display_name"]: p for p in profiles}
+            self.assertEqual(by["Tom"]["needs"], "pin")
+            self.assertEqual(by["colas"]["needs"], "password")
+            self.assertTrue(by["colas"]["current"])
+            self.assertEqual(dev.call("POST", f"/api/profiles/{kid['id']}/switch", {"pin": "0000"})[0], 400)
+            st, r = dev.call("POST", f"/api/profiles/{kid['id']}/switch", {"pin": "1234"})
+            self.assertEqual(st, 200, r)
+            st, me = dev.call("GET", "/api/me")
+            self.assertEqual(me["user"]["display_name"], "Tom")
+            # contrôle parental : films « U » visibles, séries classées 12 masquées partout
+            st, r = dev.call("GET", f"/api/libraries/{self.libs['Films']}/items")
+            self.assertEqual(r["total"], 3)
+            st, r = dev.call("GET", f"/api/libraries/{self.libs['Animes']}/items")
+            self.assertEqual(r["total"], 0)
+            show, d, eps = self.episodes("Kaze no Michi", "Animes")
+            self.assertEqual(dev.call("GET", f"/api/items/{show['id']}")[0], 404)
+            self.assertEqual(dev.call("GET", f"/api/items/{eps[0]['id']}")[0], 404)
+            self.assertEqual(dev.call("POST", "/api/play", {"id": eps[0]["id"]})[0], 404)
+            st, r = dev.call("GET", "/api/search?q=kaze")
+            self.assertEqual(r["shows"] + r["episodes"], [])
+            st, home = dev.call("GET", "/api/home")
+            self.assertNotIn("Animes", [row["library"]["title"] for row in home["rows"]])
+            # retour sur le compte admin : mot de passe exigé (pas de PIN)
+            self.assertEqual(dev.call("POST", f"/api/profiles/{by['colas']['id']}/switch", {"password": "faux"})[0], 400)
+            st, r = dev.call("POST", f"/api/profiles/{by['colas']['id']}/switch", {"password": "motdepasse1"})
+            self.assertEqual(st, 200)
+            st, me = dev.call("GET", "/api/me")
+            self.assertEqual(me["user"]["username"], "colas")
+            # PIN personnel
+            self.assertEqual(dev.call("PUT", "/api/me/pin", {"pin": "12", "password": "motdepasse1"})[0], 400)
+            self.assertEqual(dev.call("PUT", "/api/me/pin", {"pin": "4321", "password": "faux"})[0], 400)
+            self.assertEqual(dev.call("PUT", "/api/me/pin", {"pin": "4321", "password": "motdepasse1"})[0], 200)
+            st, profiles = dev.call("GET", "/api/profiles")
+            self.assertEqual({p["display_name"]: p for p in profiles}["colas"]["needs"], "pin")
+            dev.call("PUT", "/api/me/pin", {"pin": "", "password": "motdepasse1"})
+        finally:
+            self.ctx.throttle.fails.clear()
+            self.admin.call("DELETE", f"/api/admin/users/{kid['id']}")
+
     # ------------------------------------------------------------- auth / admin
     def test_setup_locked_and_csrf(self):
         c = Client(self.base)

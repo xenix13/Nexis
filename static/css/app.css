@@ -458,3 +458,25 @@ h3.sub { font-size: 15px; margin: 22px 0 10px; }
 .track-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .track-field select { width: auto; min-width: 220px; max-width: 360px; padding: 8px 10px; background: var(--surface); }
 .file-facts code { word-break: break-all; font-size: 12px; }
+/* ---------- profils ---------- */
+.profiles-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px;
+  padding: 32px 16px; background: radial-gradient(1000px 500px at 50% -10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%), var(--bg); }
+.profiles-title { font: 600 clamp(28px, 5vw, 44px) var(--display); }
+.profiles-grid { display: flex; flex-wrap: wrap; gap: 28px; justify-content: center; max-width: 900px; }
+.profile-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; background: none; border: 0;
+  cursor: pointer; padding: 8px; border-radius: 16px; color: var(--muted); transition: transform 0.15s, color 0.15s; }
+.profile-tile .avatar { border: 3px solid transparent; transition: border-color 0.15s; font-size: 44px !important; }
+.profile-tile:hover, .profile-tile:focus-visible { color: var(--text); transform: translateY(-3px); }
+.profile-tile:hover .avatar, .profile-tile.current .avatar { border-color: var(--text); }
+.profile-name { font-weight: 600; font-size: 16px; }
+.profile-lock { position: absolute; top: 6px; right: 6px; font-size: 18px; }
+.profile-kid { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+.pin-pad { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: 16px; }
+.pin-input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.pin-dots { display: flex; gap: 12px; }
+.pin-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--muted); }
+.pin-dot.on { background: var(--accent); border-color: var(--accent); }
+.pin-keys { display: grid; grid-template-columns: repeat(3, 64px); gap: 10px; }
+.pin-key { height: 56px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); font-size: 22px; font-weight: 600; cursor: pointer; }
+.pin-key:hover { background: var(--bg); }
+.form-sub { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 18px 0 6px; }

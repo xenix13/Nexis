@@ -1,6 +1,7 @@
 import { get, post, setUnauthorizedHandler } from './api.js';
 import { avatar, clear, errorBox, h, icon, spinner, toast } from './ui.js';
 import { renderLogin, renderSetup } from './views/auth.js';
+import { renderProfiles } from './views/profiles.js';
 import { renderHome } from './views/home.js';
 import { renderLibrary } from './views/library.js';
 import { renderItem } from './views/item.js';
@@ -53,6 +54,7 @@ function shell(active) {
   const menu = h('div.user-menu', { hidden: true },
     h('div.user-menu-head', avatar(me.user, 36), h('div', h('strong', me.user.display_name),
       h('div.muted', `@${me.user.username}`))),
+    me.user.home ? h('a', { href: '#/profiles' }, 'Changer de profil') : null,
     h('a', { href: '#/history' }, 'Historique'),
     h('a', { href: '#/settings' }, 'Réglages'),
     me.user.is_admin ? h('a', { href: '#/admin' }, 'Administration') : null,
@@ -95,7 +97,15 @@ async function route() {
   }
   if (page === 'login') {
     document.title = 'Connexion · Séance';
-    return renderLogin(root, async () => { await refreshMe(); location.hash = '#/'; });
+    return renderLogin(root, async () => { await refreshMe(); location.hash = '#/profiles'; });
+  }
+  if (page === 'profiles') {
+    document.title = 'Qui regarde ? · Séance';
+    if (!state.me) {
+      try { await refreshMe(); } catch { location.hash = '#/login'; return; }
+    }
+    document.body.classList.remove('playing');
+    return renderProfiles(root, async () => { await refreshMe(); location.replace('#/'); });
   }
   if (!state.me) {
     try { await refreshMe(); } catch (e) {

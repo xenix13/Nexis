@@ -10,6 +10,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 from .names import fold, sort_title
+from .ratings import age_of
 
 log = logging.getLogger("seance.meta")
 
@@ -182,6 +183,8 @@ class Metadata:
         for k in ("genres",):
             if k in fields:
                 fields[k] = json.dumps(fields[k], ensure_ascii=False)
+        if "content_rating" in fields:
+            fields["age"] = age_of(fields["content_rating"])
         fields["updated_at"] = int(time.time())
         sets = ",".join(f"{k}=?" for k in fields)
         self.ctx.db.run(f"UPDATE items SET {sets} WHERE id=?", [*fields.values(), item_id])

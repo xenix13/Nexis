@@ -242,6 +242,31 @@ with sync_playwright() as pw:
     page.goto(base + "/#/")
     page.wait_for_selector(".hero-title")
 
+    # --- profils : « Qui regarde ? » et code PIN
+    st, kid = admin.call("POST", "/api/admin/users", {"username": "tom", "display_name": "Tom", "managed": True,
+                                                      "pin": "1234", "max_age": 10, "avatar_color": "#4c9aff"})
+    check(st == 200, f"profil enfant : {kid}")
+    page.goto(base + "/#/profiles")
+    page.wait_for_selector(".profile-tile")
+    page.screenshot(path=f"{out}/16a-qui-regarde.png")
+    page.click(".profile-tile:has-text('Tom')")
+    page.wait_for_selector(".pin-keys")
+    for d in "1234":
+        page.click(f".pin-key:text-is('{d}')")
+    page.wait_for_selector(".hero-title, .empty", timeout=15000)
+    page.wait_for_load_state("networkidle")
+    check(page.locator(".nav-link").all_inner_texts() == ["Accueil", "Films", "Séries", "Animes"], "onglets du profil enfant")
+    page.click(".nav-link:has-text('Animes')")
+    page.wait_for_selector(".empty, .grid")
+    check(page.locator(".grid .card").count() == 0, "animes classés 12 masqués pour l'enfant")
+    page.screenshot(path=f"{out}/16b-profil-enfant.png")
+    page.goto(base + "/#/profiles")
+    page.wait_for_selector(".profile-tile")
+    page.click(".profile-tile:has-text('colas')")
+    page.fill(".modal input[type=password]", "motdepasse1")
+    page.click(".modal button.primary")
+    page.wait_for_selector(".hero-title")
+
     # --- partages réseau
     page.goto(base + "/#/admin/shares")
     page.wait_for_selector("text=Aucun partage réseau")
@@ -276,6 +301,9 @@ with sync_playwright() as pw:
     mp.fill("input[name=username]", "colas")
     mp.fill("input[name=password]", "motdepasse1")
     mp.click("button[type=submit]")
+    mp.wait_for_selector(".profile-tile")  # plusieurs profils dans le foyer : « Qui regarde ? »
+    mp.screenshot(path=f"{out}/17a-mobile-profils.png")
+    mp.click(".profile-tile.current")
     mp.wait_for_selector(".hero-title")
     mp.goto(base + "/#/admin/libraries")
     mp.wait_for_selector(".user-row")
