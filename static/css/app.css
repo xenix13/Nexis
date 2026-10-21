@@ -480,3 +480,17 @@ h3.sub { font-size: 15px; margin: 22px 0 10px; }
 .pin-key { height: 56px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); font-size: 22px; font-weight: 600; cursor: pointer; }
 .pin-key:hover { background: var(--bg); }
 .form-sub { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 18px 0 6px; }
+/* ---------- collections, playlists, à regarder ---------- */
+.view-tabs { margin: -8px 0 22px; }
+.btn.icon-only.on { color: var(--accent); }
+.card-img.mosaic { display: grid; grid-template-columns: repeat(4, 1fr); }
+.card-img.mosaic img { width: 100%; height: 100%; object-fit: cover; }
+.pick-list { display: flex; flex-direction: column; gap: 6px; max-height: 45vh; overflow: auto; margin-bottom: 14px; }
+.pick-item { text-align: left; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; }
+.pick-item:hover { border-color: var(--accent); }
+.inline-form { display: flex; gap: 8px; margin-top: 8px; }
+.checks.single { grid-template-columns: 1fr; }
+.trailer-box { position: relative; aspect-ratio: 16 / 9; width: min(860px, 85vw); }
+.trailer-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 10px; background: #000; }
+.modal:has(.trailer-box) { max-width: 920px; }
+textarea { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: inherit; font: inherit; }

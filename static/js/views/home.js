@@ -25,11 +25,12 @@ export async function renderHome(main, ctx) {
           h('a.btn.ghost', { href: infoHref }, 'Plus d’infos')))));
   }
   parts.push(row('Reprendre et à suivre', data.continue, (c) => wideCard(c), { wide: true }));
+  parts.push(row('À regarder', data.watchlist, (c) => posterCard(c), { href: '#/watchlist' }));
   for (const r of data.rows) {
     const title = r.library.type === 'show' ? `Nouveaux épisodes · ${r.library.title}` : `Ajoutés récemment · ${r.library.title}`;
     parts.push(row(title, r.items, (c) => posterCard(c), { href: `#/library/${r.library.id}` }));
   }
-  if (!data.rows.length && !data.continue.length) {
+  if (!data.rows.length && !data.continue.length && !(data.watchlist || []).length) {
     parts.push(state.me.user.is_admin
       ? h('div.empty', h('p', 'Aucun média pour l’instant.'),
         h('a.btn.primary', { href: '#/admin/libraries' }, 'Ajouter une bibliothèque'))

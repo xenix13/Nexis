@@ -169,7 +169,8 @@ SECURITY_HEADERS = {
     "Content-Security-Policy": (
         "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
         "script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; "
-        "worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        "worker-src 'self' blob:; frame-src https://www.youtube-nocookie.com; frame-ancestors 'none'; "
+        "base-uri 'none'; form-action 'self'"
     ),
 }
 

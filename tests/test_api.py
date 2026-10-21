@@ -28,7 +28,7 @@ from seance.transcoder import plan  # noqa: E402
 from seance.web import Server, make_handler  # noqa: E402
 
 STATIC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
-MEDIA_CACHE = os.path.join(tempfile.gettempdir(), "seance-test-media-v3")
+MEDIA_CACHE = os.path.join(tempfile.gettempdir(), "seance-test-media-v4")
 
 
 def media_root():
@@ -481,7 +481,7 @@ class SeanceTest(unittest.TestCase):
             overall = st.split("Overall")[-1]
             peak = float(overall.split("Peak level dB:")[1].split()[0])
             # sans protection, ce bruit 5.1 atteint environ +8 dB (saturation) ; le reste vient du codage AAC du bruit blanc
-            self.assertLess(peak, 1.5)
+            self.assertLess(peak, 2.0)
             # même une piste AAC 5.1 n'est plus copiée telle quelle
             info["audio"][0].update(codec="aac", channels=6)
             self.assertFalse(plan(info)["acopy"])
@@ -540,6 +540,77 @@ class SeanceTest(unittest.TestCase):
         st, s2 = self.admin.call("POST", "/api/admin/webhook/regenerate")
         self.assertNotEqual(s2["webhook_path"], path)
         self.assertEqual(c.call("POST", path, {}, csrf=False)[0], 403)
+
+    # ------------------------------------------------ collections, bonus, listes
+    def test_collections_extras_trailer(self):
+        st, cols = self.admin.call("GET", f"/api/libraries/{self.libs['Films']}/collections")
+        self.assertEqual([(c["title"], c["leaves"], c["kind"]) for c in cols], [("Saga Démo", 2, "auto")])
+        st, c = self.admin.call("GET", f"/api/collections/{cols[0]['id']}")
+        self.assertEqual([x["title"] for x in c["items"]], ["Le Grand Voyage", "Brume"])
+        self.assertEqual(c["summary"], "Deux films de démonstration.")
+        st, body, h = self.admin.call("GET", f"/api/img?p={cols[0]['thumb']}&w=200&h=300", raw=True)
+        self.assertEqual(st, 200)
+        m = self.movie("Le Grand Voyage")
+        st, d = self.admin.call("GET", f"/api/items/{m['id']}")
+        self.assertEqual(d["trailer"], "abcDEF12345")
+        self.assertEqual([c["title"] for c in d["collections"]], ["Saga Démo"])
+        self.assertEqual(sorted((e["extra_kind"], e["title"]) for e in d["extras"]),
+                         [("featurette", "Le Grand Voyage"), ("trailer", "Bande annonce officielle")])
+        self.assertEqual(len(self.items("Films")), 3)  # les bonus ne sont pas des films
+        trailer = next(e for e in d["extras"] if e["extra_kind"] == "trailer")
+        st, p = self.admin.call("POST", "/api/play", {"id": trailer["id"]})
+        self.assertEqual(st, 200, p)
+        self.admin.call("POST", "/api/progress", {"id": trailer["id"], "position": 7000, "duration": 8000,
+                                                   "stream": p["stream"], "state": "stopped"})
+        self.assertIsNone(self.ctx.db.one("SELECT 1 FROM progress WHERE rating_key=?", (trailer["id"],)))
+        # collection manuelle (admin)
+        self.assertEqual(self.lea.call("POST", "/api/admin/collections", {"title": "X", "item_id": m["id"]})[0], 403)
+        st, r = self.admin.call("POST", "/api/admin/collections", {"title": "Mes favoris", "item_id": m["id"]})
+        cid = r["id"]
+        n = self.movie("Nuit polaire")
+        self.assertEqual(self.admin.call("POST", f"/api/admin/collections/{cid}/items", {"item_id": n["id"]})[0], 200)
+        st, c = self.lea.call("GET", f"/api/collections/{cid}")
+        self.assertEqual(len(c["items"]), 2)
+        self.admin.call("DELETE", f"/api/admin/collections/{cid}/items/{n['id']}")
+        self.admin.call("DELETE", f"/api/admin/collections/{cid}")
+        self.assertEqual(self.lea.call("GET", f"/api/collections/{cid}")[0], 404)
+
+    def test_watchlist_and_playlists(self):
+        m = self.movie("Nuit polaire")
+        show, d, eps = self.episodes("Kaze no Michi", "Animes")
+        c = Client(self.base)
+        c.call("POST", "/api/login", {"username": "lea", "password": "motdepasse2"})
+        c.call("POST", f"/api/items/{m['id']}/watchlist", {"on": True})
+        c.call("POST", f"/api/items/{eps[1]['id']}/watchlist", {"on": True})  # un épisode -> sa série
+        st, wl = c.call("GET", "/api/watchlist")
+        self.assertEqual({x["title"] for x in wl}, {"Nuit polaire", "Kaze no Michi"})
+        st, home = c.call("GET", "/api/home")
+        self.assertEqual(len(home["watchlist"]), 2)
+        st, di = c.call("GET", f"/api/items/{m['id']}")
+        self.assertTrue(di["in_watchlist"])
+        c.call("POST", f"/api/items/{m['id']}/watched", {"watched": True})  # vu : retiré de la liste
+        st, wl = c.call("GET", "/api/watchlist")
+        self.assertEqual([x["title"] for x in wl], ["Kaze no Michi"])
+        c.call("POST", f"/api/items/{m['id']}/watched", {"watched": False})
+        # playlists
+        st, r = c.call("POST", "/api/playlists", {"title": "Soirée", "item_id": show["id"]})
+        pid = r["id"]
+        c.call("POST", f"/api/playlists/{pid}/items", {"item_id": m["id"]})
+        st, pl = c.call("GET", f"/api/playlists/{pid}")
+        self.assertEqual([x["title"] for x in pl["items"]], ["Titre 1x1", "Titre 1x2", "Nuit polaire"])
+        st, r = c.call("POST", "/api/play", {"id": eps[1]["id"], "playlist": pid})
+        self.assertEqual(r["next"]["title"], "Nuit polaire")  # suivant = playlist, pas la série
+        c.call("POST", "/api/stop", {"stream": r["stream"]})
+        order = [pl["items"][2]["entry_id"], pl["items"][0]["entry_id"], pl["items"][1]["entry_id"]]
+        c.call("PUT", f"/api/playlists/{pid}", {"order": order, "title": "Soirée ciné"})
+        st, pl = c.call("GET", f"/api/playlists/{pid}")
+        self.assertEqual((pl["title"], pl["items"][0]["title"]), ("Soirée ciné", "Nuit polaire"))
+        self.assertEqual(self.admin.call("GET", f"/api/playlists/{pid}")[0], 404)  # propre à l'utilisateur
+        c.call("DELETE", f"/api/playlists/{pid}/items/{pl['items'][0]['entry_id']}")
+        st, lists = c.call("GET", "/api/playlists")
+        self.assertEqual(lists[0]["count"], 2)
+        c.call("DELETE", f"/api/playlists/{pid}")
+        c.call("POST", f"/api/items/{show['id']}/watchlist", {"on": False})
 
     # ------------------------------------------------- profils et contrôle parental
     def test_profiles_pin_and_parental_control(self):

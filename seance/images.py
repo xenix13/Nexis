@@ -75,7 +75,7 @@ class Images:
                 return ("file", src)
         # repli : une image de la vidéo
         video = None
-        if t in ("movie", "episode"):
+        if t in ("movie", "episode", "extra"):
             video = item
         elif t in ("show", "season"):
             video = self._first_episode(item["show_id"] or item["id"])
@@ -83,6 +83,23 @@ class Images:
             dur = (video["duration_ms"] or 0) / 1000
             return ("frame", video["key"], max(1.0, dur * (0.2 if t == "movie" else 0.15)) if dur else 10.0)
         return None
+
+    def get_collection(self, coll, kind, w, h):
+        spec = coll["poster"] if kind == "thumb" else coll["backdrop"]
+        src = self._source(spec, "poster" if kind == "thumb" else "backdrop")
+        if not src:
+            # pas d'image propre : celle du premier élément de la collection
+            first = self.ctx.db.one("SELECT i.* FROM collection_items c JOIN items i ON i.id=c.item_id "
+                                    "WHERE c.collection_id=? ORDER BY i.year, i.sort_title LIMIT 1", (coll["id"],))
+            return self.get(first, kind, w, h) if first else None
+        tag = hashlib.sha1(f"coll{coll['id']}|{kind}|{coll['img_version']}|{src}|{w}|{h}".encode()).hexdigest()
+        dest = os.path.join(self.cache, tag + ".jpg")
+        if not os.path.isfile(dest):
+            try:
+                media.resize_image(src, dest, w, h)
+            except media.MediaError:
+                return None
+        return dest
 
     def get(self, item, kind, w, h):
         src = self.resolve(item, kind)

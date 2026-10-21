@@ -50,6 +50,10 @@ def make_media(root, long_seconds=90):
     ff(*src, "-t", str(long_seconds), *x264, "-c:a", "aac", "-movflags", "+faststart",
        os.path.join(d, "Le Grand Voyage (2019).mp4"))
     ff("-f", "lavfi", "-i", "color=c=0x335577:s=400x600", "-frames:v", "1", os.path.join(d, "poster.jpg"))
+    # bonus locaux (conventions Plex) : dossier Trailers/ et suffixe -featurette
+    os.makedirs(os.path.join(d, "Trailers"), exist_ok=True)
+    ff(*src, "-t", "8", *x264, "-c:a", "aac", os.path.join(d, "Trailers", "Bande annonce officielle.mp4"))
+    ff(*src, "-t", "8", *x264, "-c:a", "aac", os.path.join(d, "Le Grand Voyage (2019)-featurette.mkv"))
 
     # 2. MKV H.264, deux pistes audio (AAC fra + AC3 jpn), SRT interne, SRT externe -> remux
     ff(*src, "-f", "lavfi", "-i", "sine=frequency=880", "-i", os.path.join(tmp, "fr.srt"),
@@ -97,13 +101,18 @@ def make_media(root, long_seconds=90):
 
 
 # ------------------------------------------------------------------ faux TMDB
+SAGA = {"id": 9001, "name": "Saga Démo", "poster_path": "/c9001.jpg", "backdrop_path": "/cb9001.jpg"}
 MOVIES = {
     5001: {"title": "Le Grand Voyage", "original_title": "Le Grand Voyage", "release_date": "2019-05-02",
-           "overview": "Un voyage immense.", "genres": [{"name": "Aventure"}, {"name": "Drame"}]},
+           "overview": "Un voyage immense.", "genres": [{"name": "Aventure"}, {"name": "Drame"}],
+           "belongs_to_collection": SAGA,
+           "videos": {"results": [{"site": "YouTube", "key": "abcDEF12345", "type": "Trailer", "iso_639_1": "fr",
+                                   "official": True},
+                                  {"site": "YouTube", "key": "zzzzzzzzzzz", "type": "Teaser", "iso_639_1": "en"}]}},
     5002: {"title": "Nuit polaire", "original_title": "Polar Night", "release_date": "2021-11-10",
            "overview": "", "genres": [{"name": "Thriller"}]},
     5003: {"title": "Brume", "original_title": "Brume", "release_date": "2022-01-01",
-           "overview": "La brume tombe.", "genres": [{"name": "Drame"}]},
+           "overview": "La brume tombe.", "genres": [{"name": "Drame"}], "belongs_to_collection": SAGA},
 }
 SHOWS = {
     7001: {"name": "Les Veilleurs", "first_air_date": "2020-09-01", "overview": "Ils veillent.",
@@ -172,6 +181,8 @@ class FakeTMDB:
                                 "poster_path": f"/p{i}.jpg"})
             return self.send(h, 200, {"results": res})
         parts = path.strip("/").split("/")
+        if parts[0] == "collection" and int(parts[1]) == SAGA["id"]:
+            return self.send(h, 200, {"id": SAGA["id"], "name": SAGA["name"], "overview": "Deux films de démonstration."})
         if parts[0] == "movie" and int(parts[1]) in MOVIES:
             m = dict(MOVIES[int(parts[1])])
             if lang == "en-US" and not m["overview"]:

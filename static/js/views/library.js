@@ -10,8 +10,21 @@ export async function renderLibrary(main, sid, ctx) {
   document.title = `${lib.title} · Séance`;
   const sort = ctx.query.get('sort') || 'title';
   const genre = ctx.query.get('genre') || '';
-  const genres = await get(`/api/libraries/${sid}/genres`).catch(() => []);
+  const view = ctx.query.get('view') || '';
+  const [genres, collections] = await Promise.all([
+    get(`/api/libraries/${sid}/genres`).catch(() => []),
+    get(`/api/libraries/${sid}/collections`).catch(() => []),
+  ]);
   if (!ctx.isCurrent()) return;
+  const viewTabs = collections.length ? h('div.tabs.view-tabs',
+    h('a.tab', { href: `#/library/${sid}`, class: view ? 'tab' : 'tab active' }, lib.type === 'show' ? 'Séries' : 'Films'),
+    h('a.tab', { href: `#/library/${sid}?view=collections`, class: view === 'collections' ? 'tab active' : 'tab' },
+      `Collections (${collections.length})`)) : null;
+  if (view === 'collections') {
+    clear(main, h('div.page-head', h('h1', lib.title)), viewTabs,
+      h('div.grid', collections.map((c) => posterCard({ ...c, year: `${c.leaves} élément(s)` }, { href: `#/collection/${c.id}` }))));
+    return;
+  }
 
   const setQuery = (k, v) => {
     const q = new URLSearchParams(ctx.query);
@@ -25,7 +38,7 @@ export async function renderLibrary(main, sid, ctx) {
   const count = h('span.muted');
   const grid = h('div.grid');
   const sentinel = h('div.sentinel');
-  clear(main, h('div.page-head', h('h1', lib.title), count, h('div.filters', sortSel, genreSel)), grid, sentinel);
+  clear(main, h('div.page-head', h('h1', lib.title), count, h('div.filters', sortSel, genreSel)), viewTabs, grid, sentinel);
 
   let start = 0, total = Infinity, loading = false;
   async function more() {

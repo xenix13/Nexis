@@ -167,6 +167,50 @@ MIGRATIONS = [
     ALTER TABLE users ADD COLUMN max_age INTEGER;
     ALTER TABLE users ADD COLUMN allow_unrated INTEGER NOT NULL DEFAULT 1;
     """,
+    """
+    CREATE TABLE collections(
+        id INTEGER PRIMARY KEY,
+        library_id INTEGER NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        sort_title TEXT NOT NULL DEFAULT '',
+        summary TEXT,
+        tmdb_id INTEGER,
+        poster TEXT,
+        backdrop TEXT,
+        kind TEXT NOT NULL DEFAULT 'auto',
+        img_version INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX collections_tmdb ON collections(library_id, tmdb_id);
+    CREATE TABLE collection_items(
+        collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        PRIMARY KEY(collection_id, item_id)
+    );
+    CREATE INDEX collection_items_item ON collection_items(item_id);
+    CREATE TABLE playlists(
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE playlist_items(
+        id INTEGER PRIMARY KEY,
+        playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        position REAL NOT NULL
+    );
+    CREATE INDEX playlist_items_pl ON playlist_items(playlist_id, position);
+    CREATE TABLE watchlist(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, item_id)
+    );
+    ALTER TABLE items ADD COLUMN trailer TEXT;
+    ALTER TABLE items ADD COLUMN extra_kind TEXT;
+    """,
 ]
 
 

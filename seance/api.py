@@ -9,7 +9,9 @@ import secrets
 import threading
 import time
 
-from . import media, mountd
+import types
+
+from . import collections_api, media, mountd
 from .auth import (Throttle, check_credentials, clear_session, create_session, hash_password,
                    load_user, validate_password, verify_password)
 from .db import DB
@@ -18,7 +20,7 @@ from .markers import from_chapters as chapter_markers
 from .metadata import Metadata, MetaError
 from .names import LANG_WORDS, fold
 from .ratings import age_of
-from .scanner import Scanner
+from .scanner import EXTRA_LABELS, Scanner
 from .subcache import SubtitleCache, text_tracks
 from .subtitles import parse_subtitles
 from .transcoder import QUALITY, Busy, StreamError, Transcoder, plan
@@ -27,7 +29,7 @@ from .web import App, HTTPError, Response
 
 log = logging.getLogger("seance")
 
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 RK = r"(?P<rk>\d{1,12})"
 SID = r"(?P<sid>[A-Za-z0-9_-]{8,40})"
 SORTS = {"title": "i.sort_title COLLATE NOCASE", "added": "i.added_at DESC", "year": "i.year DESC, i.sort_title",
@@ -220,6 +222,7 @@ class Ctx:
 
 
 def build_app(ctx):
+    x = types.SimpleNamespace()  # outils partagés avec les modules de routes (collections_api…)
     app = App()
     app.static_dir = ctx.static_dir
     db = ctx.db
@@ -330,6 +333,9 @@ def build_app(ctx):
                      show_thumb=img(s["id"], "thumb", s["img_version"]))
         elif t == "show":
             c.update(leaves=r.get("leaves"), seasons=r.get("child_count"))
+        elif t == "extra":
+            c.update(extra_kind=r.get("extra_kind"), parent_id=str(r["parent_id"]),
+                     extra_label=EXTRA_LABELS.get(r.get("extra_kind") or "other", "Bonus"))
         return c
 
     def leaves(show_id):
@@ -395,6 +401,8 @@ def build_app(ctx):
     def set_watched(uid, c, watched):
         upsert_meta(uid, c)
         now = int(time.time())
+        if watched and c.get("type") == "movie":
+            db.run("DELETE FROM watchlist WHERE user_id=? AND item_id=?", (uid, int(c["id"])))
         if watched:
             db.run("UPDATE progress SET watched=1, position_ms=0, view_count=view_count+1, "
                    "last_watched_at=?, updated_at=? WHERE user_id=? AND rating_key=?", (now, now, uid, c["id"]))
@@ -705,7 +713,7 @@ def build_app(ctx):
                 rows.append({"library": lib, "items": items})
         cont = continue_row(user, allowed) if prefs["show_continue"] else []
         hero = rows[0]["items"][0] if rows and rows[0]["items"] else None
-        return {"continue": cont, "rows": rows, "hero": hero}
+        return {"continue": cont, "rows": rows, "hero": hero, "watchlist": x.watchlist_items(user, 24)}
 
     @app.route("GET", "/api/search")
     def search(req):
@@ -740,9 +748,16 @@ def build_app(ctx):
             show = db.one("SELECT genres FROM items WHERE id=?", (r["show_id"],))
             d["genres"] = json.loads(show["genres"] or "[]") if show else []
         attach_state(uid, [d])
-        if d["type"] in ("movie", "episode"):
+        d["in_watchlist"] = x.in_watchlist(req.user, r)
+        d["trailer"] = r["trailer"]
+        if d["type"] in ("movie", "show"):
+            extras = db.all(ITEM_SQL + "WHERE i.parent_id=? AND i.type='extra' ORDER BY i.extra_kind!='trailer', i.sort_title",
+                            (r["id"],))
+            d["extras"] = [card(e) for e in extras]
+            d["collections"] = x.collections_of(req.user, r["id"])
+        if d["type"] in ("movie", "episode", "extra"):
             probe = json.loads(r["probe"] or "{}")
-            if ctx.subtitles.has_work(r):
+            if ctx.subtitles.has_work(r) and d["type"] != "extra":
                 ctx.subtitles.enqueue(r["id"], urgent=True)  # on prépare au cas où la lecture suit
             audio, subs = stream_lists(probe)
             v = probe.get("video") or {}
@@ -904,6 +919,9 @@ def build_app(ctx):
     # ------------------------------------------------------------- images
     @app.route("GET", "/api/img")
     def image(req):
+        cm = collections_api.COLL_IMG.match(req.arg("p") or "")
+        if cm:
+            return x.collection_image(req, cm)
         m = IMG_PATH.match(req.arg("p") or "")
         if not m:
             raise HTTPError(400, "Image invalide")
@@ -933,7 +951,7 @@ def build_app(ctx):
             raise HTTPError(400, "Identifiant invalide")
         uid = req.user["id"]
         r = require_item(req.user, rk)
-        if r["type"] not in ("movie", "episode"):
+        if r["type"] not in ("movie", "episode", "extra"):
             raise HTTPError(400, "Cet élément n'est pas lisible")
         if not media.available():
             raise HTTPError(503, "ffmpeg n'est pas installé sur le serveur")
@@ -978,8 +996,11 @@ def build_app(ctx):
         title = c["title"] if c["type"] == "movie" else f"{c.get('show')} · S{c.get('season')}E{c.get('episode')}"
         db.run("INSERT INTO streams(id,user_id,plex_session,rating_key,params,title,quality,position_ms,created_at,last_seen) "
                "VALUES(?,?,?,?,?,?,?,?,?,?)", (sid, uid, sid, rk, json.dumps(p), title, quality, actual, now, now))
-        upsert_meta(uid, c)
+        if r["type"] != "extra":
+            upsert_meta(uid, c)
         nxt = next_episode(r)
+        if b.get("playlist"):
+            nxt = x.playlist_next(req.user, b["playlist"], r["id"]) if str(b["playlist"]).isdigit() else None
         if ctx.subtitles.missing(r):
             ctx.subtitles.ensure_now(r)  # sous-titres + vignettes en une lecture
         elif ctx.subtitles.has_work(r):
@@ -1085,6 +1106,14 @@ def build_app(ctx):
         state = b.get("state") if b.get("state") in ("playing", "paused", "stopped") else "playing"
         uid = req.user["id"]
         r = require_item(req.user, rk)
+        if r["type"] == "extra":  # les bonus ne laissent ni reprise ni historique
+            sid = str(b.get("stream") or "")
+            if sid and state == "stopped":
+                stop_stream(sid, uid)
+            elif sid:
+                ctx.transcoder.touch(sid)
+                db.run("UPDATE streams SET last_seen=? WHERE id=? AND user_id=?", (int(time.time()), sid, uid))
+            return {"ok": True, "watched": False}
         row = db.one("SELECT * FROM progress WHERE user_id=? AND rating_key=?", (uid, rk))
         if not row:
             upsert_meta(uid, card(r))
@@ -1568,6 +1597,10 @@ def build_app(ctx):
         with open(dest, "rb") as f:
             return Response(f.read(), 200, "image/jpeg", {"Cache-Control": "private, max-age=86400"})
 
+    x.__dict__.update(card=card, attach_state=attach_state, require_item=require_item, item_row=item_row,
+                      visible=visible, age_filter=age_filter, allowed_set=allowed_set, require_section=require_section,
+                      leaves=leaves, libraries_all=libraries_all, ITEM_SQL=ITEM_SQL, EPISODE_ORDER=EPISODE_ORDER)
+    collections_api.register(app, ctx, x)
     return app
 
 

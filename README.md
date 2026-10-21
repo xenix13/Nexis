@@ -14,6 +14,8 @@ Un serveur multimédia **100 % auto-hébergé** pour tes films, séries et anime
 | **Métadonnées** | TMDB (affiches, fonds, résumés, genres, distribution, titres et images d'épisodes, classification) en français avec repli anglais. Lit aussi les `.nfo` et `poster.jpg` / `fanart.jpg` déjà présents (ceux de Jellyfin/Kodi, par exemple). Correction manuelle avec « Identifier… » |
 | **Comptes** | Comptes propres à Séance, administrateurs, accès par bibliothèque, désactivation |
 | **Espace personnel** | Reprise de lecture, « Reprendre et à suivre », historique, épisodes vus/non vus, langues audio/sous-titres préférées, thème, couleur, taille des affiches |
+| **Collections et listes** | Sagas créées automatiquement depuis TMDB (*Harry Potter*, *Le Seigneur des anneaux*…), collections manuelles, liste « À regarder » par utilisateur, playlists personnelles lues à la suite |
+| **Bonus** | Bandes-annonces (YouTube via TMDB ou fichiers locaux), coulisses, scènes coupées, interviews… rangés sous le film ou la série |
 | **Lecteur** | Choix audio, sous-titres et qualité en cours de lecture, raccourcis clavier, bandeau « Passer l'intro », épisode suivant avec compte à rebours |
 | **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou fichiers à côté de la vidéo, `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. PGS/VobSub incrustés |
 | **Administration** | Partages réseau SMB (montage depuis l'interface), bibliothèques (avec explorateur de dossiers), utilisateurs, clé TMDB, limites de lectures/transcodages, lectures en cours avec la raison d'un éventuel transcodage |
@@ -183,6 +185,29 @@ Comme Plex Home :
 
 Tout se règle dans **Administration → Utilisateurs**.
 
+## Collections, « À regarder » et playlists
+
+- **Collections** : quand TMDB indique qu'un film fait partie d'une saga, Séance crée la collection tout seul (affiche, fond et résumé compris). Elles apparaissent dans l'onglet **Collections** de la bibliothèque et en bas de la fiche de chaque film. Un administrateur peut aussi créer ses propres collections (menu ⋯ → *Collections…*) et les renommer ou les supprimer.
+- **À regarder** : le bouton signet sur un film ou une série l'ajoute à ta liste (onglet *À regarder* et rangée sur l'accueil). Un film marqué comme vu en sort automatiquement.
+- **Playlists** : menu ⋯ → *Ajouter à une playlist…* sur un film, un épisode, une saison ou une série entière. *Tout lire* enchaîne les éléments dans l'ordre choisi (flèches ↑ ↓). Chaque utilisateur a les siennes.
+
+### Bonus et bandes-annonces
+
+Séance reconnaît les bonus rangés comme pour Plex ou Jellyfin, à côté du film ou dans le dossier de la série :
+
+| Dossier | Ou suffixe du fichier | Type |
+|---|---|---|
+| `Trailers/`, `Bandes-annonces/` | `-trailer`, `-bande-annonce` | Bande-annonce |
+| `Featurettes/` | `-featurette` | Featurette |
+| `Behind The Scenes/`, `Making of/` | `-behindthescenes` | Coulisses |
+| `Deleted Scenes/`, `Scènes coupées/` | `-deleted` | Scène coupée |
+| `Interviews/` | `-interview` | Interview |
+| `Scenes/` | `-scene` | Scène |
+| `Shorts/` | `-short` | Court métrage |
+| `Extras/`, `Bonus/`, `Other/` | `-other` | Bonus |
+
+Exemple : `Films/Inception (2010)/Trailers/Bande-annonce VF.mkv` ou `Films/Inception (2010)/Inception (2010)-trailer.mp4`. Les bonus ne sont jamais comptés comme des films ou des épisodes. Sans bande-annonce locale, le bouton *Bande-annonce* lit celle de TMDB depuis YouTube (mode sans cookies).
+
 ## Langue audio et sous-titres
 
 Sur la fiche d'un film, d'un épisode ou d'une série, deux listes permettent de choisir l'audio et les sous-titres avant de lancer la lecture. Le choix est **retenu pour toute la série** (ou pour le film), et pour chaque utilisateur : les épisodes suivants se lancent dans la même langue. Un changement fait dans le lecteur est retenu de la même façon.
@@ -239,5 +264,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 2. ~~Serveur multimédia autonome : scan, TMDB, lecture directe / remux / transcodage~~ ✔
 3. Détection automatique des intros et génériques de fin par empreinte audio (pour les fichiers sans chapitres)
 4. Import de l'historique « vu » depuis Jellyfin, par utilisateur
-5. ~~Profils, PIN, contrôle parental~~ ✔ — liste « à regarder », collections
-6. Accélération matérielle optionnelle (VAAPI / Quick Sync) pour les serveurs équipés d'un GPU
+5. ~~Profils, PIN, contrôle parental~~ ✔
+6. ~~Collections, « À regarder », playlists, bonus et bandes-annonces~~ ✔
+7. Appli installable sur téléphone (PWA), Chromecast / Google TV, téléchargement pour le hors ligne
+8. Accélération matérielle optionnelle (VAAPI / Quick Sync) pour les serveurs équipés d'un GPU

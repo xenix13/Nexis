@@ -2,6 +2,7 @@ import { get, post, setUnauthorizedHandler } from './api.js';
 import { avatar, clear, errorBox, h, icon, spinner, toast } from './ui.js';
 import { renderLogin, renderSetup } from './views/auth.js';
 import { renderProfiles } from './views/profiles.js';
+import { renderCollection, renderPlaylist, renderPlaylists, renderWatchlist } from './views/lists.js';
 import { renderHome } from './views/home.js';
 import { renderLibrary } from './views/library.js';
 import { renderItem } from './views/item.js';
@@ -55,6 +56,7 @@ function shell(active) {
     h('div.user-menu-head', avatar(me.user, 36), h('div', h('strong', me.user.display_name),
       h('div.muted', `@${me.user.username}`))),
     me.user.home ? h('a', { href: '#/profiles' }, 'Changer de profil') : null,
+    h('a', { href: '#/playlists' }, 'Mes playlists'),
     h('a', { href: '#/history' }, 'Historique'),
     h('a', { href: '#/settings' }, 'Réglages'),
     me.user.is_admin ? h('a', { href: '#/admin' }, 'Administration') : null,
@@ -63,7 +65,7 @@ function shell(active) {
     onclick: (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; } }, avatar(me.user, 34));
   const header = h('header.topbar',
     h('a.logo', { href: '#/' }, h('span.logo-mark'), 'Séance'),
-    h('nav.nav', navLink('#/', 'Accueil', active === 'home'),
+    h('nav.nav', navLink('#/', 'Accueil', active === 'home'), navLink('#/watchlist', 'À regarder', active === 'watchlist'),
       me.libraries.map((l) => navLink(`#/library/${l.id}`, l.title, active === `lib:${l.id}`))),
     h('div.topbar-right', h('label.search', icon('search'), search), h('div.user-wrap', userBtn, menu)));
   const main = h('main.content');
@@ -128,7 +130,7 @@ async function route() {
   const active = page === '' ? 'home' : page === 'library' ? `lib:${parts[1]}` : page;
   const main = shell(active);
   main.append(spinner());
-  const titles = { '': 'Accueil', search: 'Recherche', history: 'Historique', settings: 'Réglages', admin: 'Administration' };
+  const titles = { '': 'Accueil', watchlist: 'À regarder', playlists: 'Mes playlists', search: 'Recherche', history: 'Historique', settings: 'Réglages', admin: 'Administration' };
   document.title = `${titles[page] || 'Séance'} · Séance`;
   try {
     switch (page) {
@@ -136,6 +138,10 @@ async function route() {
       case 'library': await renderLibrary(main, parts[1], ctx); break;
       case 'item': await renderItem(main, parts[1], ctx); break;
       case 'search': await renderSearch(main, query.get('q') || '', ctx); break;
+      case 'collection': await renderCollection(main, parts[1], ctx); break;
+      case 'watchlist': await renderWatchlist(main, ctx); break;
+      case 'playlists': await renderPlaylists(main, ctx); break;
+      case 'playlist': await renderPlaylist(main, parts[1], ctx); break;
       case 'history': await renderHistory(main, ctx); break;
       case 'settings': await renderSettings(main, ctx); break;
       case 'admin':

@@ -1,4 +1,4 @@
-import { get, post, put } from '../api.js';
+import { del, get, post, put } from '../api.js';
 import { state } from '../app.js';
 import { pickAudio, pickSubtitle, trackPayload } from '../tracks.js';
 import { clear, episodeCode, field, fmtDuration, fmtTime, h, icon, img, modal, moreMenu, posterCard, progressBar, select, spinner, toast } from '../ui.js';
@@ -52,6 +52,55 @@ function fileInfo(d) {
   ), []);
 }
 
+async function addToPlaylist(d) {
+  const lists = await get('/api/playlists');
+  const name = h('input', { placeholder: 'Nouvelle playlist…', maxlength: 100 });
+  const err = h('p.form-error');
+  const add = async (pid) => {
+    try {
+      const r = await post(`/api/playlists/${pid}/items`, { item_id: d.id });
+      toast(r.added > 1 ? `${r.added} épisodes ajoutés` : 'Ajouté à la playlist', 'ok');
+      document.querySelector('.modal-overlay')?.remove();
+    } catch (e) { err.textContent = e.message; }
+  };
+  await modal('Ajouter à une playlist', h('div',
+    lists.length ? h('div.pick-list', lists.map((p) => h('button.pick-item', { onclick: () => add(p.id) },
+      h('strong', p.title), h('span.muted.small', ` ${p.count} élément(s)`)))) : h('p.muted', 'Aucune playlist pour l’instant.'),
+    h('form.inline-form', { onsubmit: async (e) => {
+      e.preventDefault();
+      if (!name.value.trim()) return;
+      try {
+        await post('/api/playlists', { title: name.value.trim(), item_id: d.id });
+        toast('Playlist créée', 'ok');
+        document.querySelector('.modal-overlay')?.remove();
+      } catch (ex) { err.textContent = ex.message; }
+    } }, name, h('button.btn.primary', { type: 'submit' }, 'Créer')), err), []);
+}
+
+async function manageCollections(d, rerender) {
+  const list = await get(`/api/admin/collections/for/${d.id}`);
+  const name = h('input', { placeholder: 'Nouvelle collection…', maxlength: 100 });
+  const err = h('p.form-error');
+  const body = h('div',
+    list.length ? h('div.checks.single', list.map((c) => {
+      const t = h('label.toggle', h('input', { type: 'checkbox', checked: c.member, onchange: async (e) => {
+        try {
+          if (e.target.checked) await post(`/api/admin/collections/${c.id}/items`, { item_id: d.id });
+          else await del(`/api/admin/collections/${c.id}/items/${d.id}`);
+        } catch (ex) { err.textContent = ex.message; e.target.checked = !e.target.checked; }
+      } }), h('span.toggle-ui'), h('span', c.title, c.kind === 'auto' ? h('span.muted.small', ' (TMDB)') : null));
+      return t;
+    })) : h('p.muted', 'Aucune collection dans cette bibliothèque.'),
+    h('form.inline-form', { onsubmit: async (e) => {
+      e.preventDefault();
+      if (!name.value.trim()) return;
+      try { await post('/api/admin/collections', { title: name.value.trim(), item_id: d.id }); document.querySelector('.modal-overlay')?.remove(); manageCollections(d, rerender); }
+      catch (ex) { err.textContent = ex.message; }
+    } }, name, h('button.btn.primary', { type: 'submit' }, 'Créer')), err);
+  await modal('Collections', body, [{ label: 'Terminé', primary: true, value: true }]);
+  rerender();
+}
+
 function itemMenu(d, rerender) {
   const items = [{ label: d.watched ? 'Marquer comme non vu' : 'Marquer comme vu', onClick: async () => {
     try {
@@ -60,6 +109,7 @@ function itemMenu(d, rerender) {
       rerender();
     } catch (e) { toast(e.message, 'bad'); }
   } }];
+  if (['movie', 'show', 'season', 'episode'].includes(d.type)) items.push({ label: 'Ajouter à une playlist…', onClick: () => addToPlaylist(d) });
   if (state.me.user.is_admin) {
     items.push({ divider: true }, { heading: 'Administration' },
       { label: 'Identifier…', onClick: () => identify(d, rerender) },
@@ -67,9 +117,44 @@ function itemMenu(d, rerender) {
         try { await post(`/api/admin/refresh/${d.id}`); toast('Métadonnées actualisées', 'ok'); rerender(); }
         catch (e) { toast(e.message, 'bad'); }
       } });
+    if (d.type === 'movie' || d.type === 'show') items.push({ label: 'Collections…', onClick: () => manageCollections(d, rerender) });
     if (d.type === 'movie' || d.type === 'episode') items.push({ label: 'Informations sur le fichier', onClick: () => fileInfo(d) });
   }
   return moreMenu(items);
+}
+
+function watchlistButton(d) {
+  if (!['movie', 'show'].includes(d.type)) return null;
+  let on = d.in_watchlist;
+  const btn = h('button.btn.ghost.icon-only', { title: '', 'aria-pressed': String(on) });
+  const paint = () => {
+    btn.replaceChildren(icon(on ? 'bookmarked' : 'bookmark'));
+    btn.title = on ? 'Retirer de « À regarder »' : 'Ajouter à « À regarder »';
+    btn.setAttribute('aria-label', btn.title);
+    btn.setAttribute('aria-pressed', String(on));
+    btn.classList.toggle('on', on);
+  };
+  btn.addEventListener('click', async () => {
+    try {
+      await post(`/api/items/${d.id}/watchlist`, { on: !on });
+      on = !on;
+      paint();
+      toast(on ? 'Ajouté à « À regarder »' : 'Retiré de « À regarder »', 'ok');
+    } catch (e) { toast(e.message, 'bad'); }
+  });
+  paint();
+  return btn;
+}
+
+function trailerButton(d) {
+  const local = (d.extras || []).find((e) => e.extra_kind === 'trailer');
+  if (local) return h('a.btn.ghost', { href: `#/play/${local.id}` }, icon('film'), 'Bande-annonce');
+  if (!d.trailer) return null;
+  return h('button.btn.ghost', { onclick: () => {
+    const frame = h('iframe.trailer-frame', { src: `https://www.youtube-nocookie.com/embed/${encodeURIComponent(d.trailer)}?autoplay=1&rel=0`,
+      allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: true, title: 'Bande-annonce' });
+    modal(`Bande-annonce — ${d.title}`, h('div.trailer-box', frame), []);
+  } }, icon('film'), 'Bande-annonce');
 }
 
 // Choix audio / sous-titres avant la lecture (retenu pour le film ou la série)
@@ -171,7 +256,7 @@ export async function renderItem(main, rk, ctx) {
       actions.append(link);
     }
   }
-  actions.append(itemMenu(d, rerender));
+  actions.append(...[watchlistButton(d), trailerButton(d)].filter(Boolean), itemMenu(d, rerender));
   const chooser = trackChooser(d, d.type === 'show' ? d.play_target : null, (au, su) => {
     for (const l of playLinks) l.setAttribute('href', withTracks(l.dataset.base, au, su));
   });
@@ -198,6 +283,18 @@ export async function renderItem(main, rk, ctx) {
         info)),
   ];
 
+  if (d.extras && d.extras.length) {
+    parts.push(h('section.block', h('h2', 'Bonus'), h('div.grid.wide', d.extras.map((e) => h('a.card.wide', { href: `#/play/${e.id}` },
+      h('div.card-img', h('img', { src: img(e.thumb, 400, 225), alt: '', loading: 'lazy' }), h('span.play-hover', icon('play'))),
+      h('div.card-title', e.title === d.title ? e.extra_label : e.title),
+      h('div.card-sub', `${e.extra_label} · ${fmtTime(e.duration, false)}`))))));
+  }
+  for (const c of d.collections || []) {
+    const others = c.items.filter((x) => x.id !== d.id);
+    if (!others.length) continue;
+    parts.push(h('section.block', h('div.row-head', h('a.row-title', { href: `#/collection/${c.id}` }, `Collection : ${c.title}`)),
+      h('div.grid.small', others.map((x) => posterCard(x)))));
+  }
   if (d.cast && d.cast.length) {
     parts.push(h('section.block', h('h2', 'Distribution'),
       h('div.cast', d.cast.map((p) => h('div.person', h('span.person-init', p.name.charAt(0)),

@@ -77,7 +77,7 @@ export async function renderPlayer(root, rk, ctx) {
     return () => {};
   }
   if (destroyed || !ctx.isCurrent()) return () => {};
-  if (!['movie', 'episode'].includes(item.type)) { location.replace(`#/item/${rk}`); return () => {}; }
+  if (!['movie', 'episode', 'extra'].includes(item.type)) { location.replace(`#/item/${rk}`); return () => {}; }
   document.title = `${item.type === 'episode' ? `${item.show} ${episodeCode(item)}` : item.title} · Séance`;
   titleEl.append(h('strong', item.type === 'episode' ? item.show : item.title),
     item.type === 'episode' ? h('span', `${episodeCode(item)} · ${item.title}`) : (item.year ? h('span', String(item.year)) : null));
@@ -145,6 +145,7 @@ export async function renderPlayer(root, rk, ctx) {
     let s;
     try {
       s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality, no_direct: forceHls || undefined,
+        playlist: ctx.query.get('playlist') || undefined,
         audio: audioSel ? audioSel.id : null, subtitle: subSel ? subSel.id : 0, replace: previous || undefined });
     } catch (e) { if (seq === startSeq) showError(e.message, true); return; }
     if (destroyed || seq !== startSeq) {
@@ -351,9 +352,9 @@ export async function renderPlayer(root, rk, ctx) {
     const paint = () => { counter.textContent = left === null ? '' : `dans ${left} s`; };
     paint();
     clear(nextCard,
-      next.thumb ? h('img', { src: img(next.thumb, 320, 180), alt: '' }) : null,
-      h('div.next-body', h('div.muted.small', 'Épisode suivant ', counter),
-        h('strong', `${episodeCode(next)} · ${next.title}`),
+      next.thumb ? h('img', { src: img(next.type === 'episode' ? next.thumb : next.art, 320, 180), alt: '' }) : null,
+      h('div.next-body', h('div.muted.small', next.type === 'episode' ? 'Épisode suivant ' : 'À suivre ', counter),
+        h('strong', next.type === 'episode' ? `${episodeCode(next)} · ${next.title}` : next.title),
         h('div.actions-row',
           h('button.btn.primary.small', { onclick: playNext }, icon('play'), 'Lire maintenant'),
           h('button.btn.ghost.small', { onclick: () => { nextDismissed = true; hideNextCard(); } }, 'Masquer'))));
@@ -375,7 +376,7 @@ export async function renderPlayer(root, rk, ctx) {
     clearInterval(nextTimer);
     report('stopped', true, { ended: true });
     finished = true;
-    location.replace(`#/play/${session.next.id}`);
+    location.replace(`#/play/${session.next.id}${ctx.query.get('playlist') ? `?playlist=${ctx.query.get('playlist')}` : ''}`);
   }
 
   function goBack() {

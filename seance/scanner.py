@@ -1,5 +1,6 @@
 """Scan des bibliothèques : fichiers -> films / séries / saisons / épisodes."""
 import json
+import re
 import logging
 import os
 import threading
@@ -77,6 +78,52 @@ def local_image(folder, kind, files, prefix=None):
             if f:
                 return "local:" + os.path.join(folder, f)
     return None
+
+
+EXTRA_DIRS = {"behind the scenes": "behindthescenes", "deleted scenes": "deleted", "featurettes": "featurette",
+              "interviews": "interview", "scenes": "scene", "shorts": "short", "trailers": "trailer", "other": "other",
+              "extras": "other", "bonus": "other", "making of": "behindthescenes", "bandes-annonces": "trailer",
+              "bande-annonce": "trailer", "scènes coupées": "deleted", "scenes coupees": "deleted"}
+EXTRA_SUFFIX = re.compile(r"[-_. ](trailer|featurette|behindthescenes|deleted|interview|scene|short|other|"
+                          r"bande-annonce)$", re.I)
+EXTRA_LABELS = {"trailer": "Bande-annonce", "featurette": "Featurette", "behindthescenes": "Coulisses",
+                "deleted": "Scène coupée", "interview": "Interview", "scene": "Scène", "short": "Court métrage",
+                "other": "Bonus"}
+
+
+def extra_kind(path, root):
+    rel = os.path.relpath(path, root).split(os.sep)
+    for d in rel[:-1]:
+        k = EXTRA_DIRS.get(d.lower())
+        if k:
+            return k
+    m = EXTRA_SUFFIX.search(os.path.splitext(rel[-1])[0])
+    if m:
+        k = m.group(1).lower()
+        return "trailer" if k == "bande-annonce" else k
+    return None
+
+
+def extra_owner_dir(path, root):
+    parts = os.path.relpath(path, root).split(os.sep)
+    folder = root
+    for d in parts[:-1]:
+        if d.lower() in EXTRA_DIRS:
+            break
+        folder = os.path.join(folder, d)
+    return folder
+
+
+def extra_title(path):
+    base = os.path.splitext(os.path.basename(path))[0]
+    base = EXTRA_SUFFIX.sub("", base)
+    t, _ = clean_title(base)
+    return t or base
+
+
+def like_prefix(folder):
+    esc = folder.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return esc + os.sep + "%"
 
 
 class Scanner:
@@ -157,10 +204,12 @@ class Scanner:
             # partage non monté : surtout ne rien supprimer
             return
         existing = {r["key"]: r for r in db.all(
-            "SELECT id, key, file_size, file_mtime, probe, type FROM items WHERE library_id=? AND type IN ('movie','episode')",
+            "SELECT id, key, file_size, file_mtime, probe, type FROM items WHERE library_id=? "
+            "AND type IN ('movie','episode','extra')",
             (lib["id"],))}
         seen = set()
         deferred = 0
+        extras = []
         self._set(phase="Analyse des fichiers", done=0, total=len(files))
         for n, (root, path, size, mtime) in enumerate(files, 1):
             self._set(done=n)
@@ -168,6 +217,13 @@ class Scanner:
             if time.time() - mtime < RECENT_SECONDS:
                 # fichier probablement en cours de copie (Radarr, Sonarr…) : on le reprendra au prochain passage
                 deferred += 1
+                continue
+            kind = extra_kind(path, root)
+            if kind:
+                old = existing.get(path)
+                if old and old["type"] != "extra":  # indexé à tort comme film/épisode par une version précédente
+                    db.run("DELETE FROM items WHERE id=?", (old["id"],))
+                extras.append((root, path, size, mtime, kind))
                 continue
             try:
                 if lib["kind"] == "movie":
@@ -187,6 +243,12 @@ class Scanner:
         if gone:
             with self.lock:
                 self.state["removed"] += len(gone)
+        for root, path, size, mtime, kind in extras:
+            try:
+                self._extra(lib, root, path, size, mtime, kind, dir_files)
+            except Exception as e:
+                log.warning("Bonus %s : %s", path, e)
+                self._err(f"{os.path.basename(path)} : {e}")
         # saisons et séries vides
         db.run("DELETE FROM items WHERE library_id=? AND type='season' AND NOT EXISTS "
                "(SELECT 1 FROM items e WHERE e.parent_id=items.id)", (lib["id"],))
@@ -200,6 +262,39 @@ class Scanner:
             watcher = getattr(self.ctx, "watcher", None)
             if watcher:
                 watcher.defer(lib["id"])
+
+    def _extra(self, lib, root, path, size, mtime, kind, dir_files):
+        """Bonus (bande-annonce, making-of…) rattaché au film ou à la série du même dossier."""
+        db = self.ctx.db
+        parent = None
+        folder = extra_owner_dir(path, root)
+        if lib["kind"] == "movie":
+            for r in db.all("SELECT id, key FROM items WHERE library_id=? AND type='movie' AND key LIKE ? ESCAPE '\\'",
+                            (lib["id"], like_prefix(folder))):
+                if os.path.dirname(r["key"]) == folder:
+                    parent = r["id"]
+                    break
+        else:
+            show_dir = os.path.join(root, os.path.relpath(path, root).split(os.sep)[0])
+            r = db.one("SELECT id FROM items WHERE library_id=? AND type='show' AND key=?", (lib["id"], show_dir))
+            parent = r["id"] if r else None
+        if not parent:
+            with self.lock:
+                if len(self.state["unrecognized"]) < 100:
+                    self.state["unrecognized"].append(os.path.relpath(path, root) + " (bonus sans film/série)")
+            return
+        row = db.one("SELECT id, key, file_size, file_mtime, probe FROM items WHERE library_id=? AND type='extra' AND key=?",
+                     (lib["id"], path))
+        info = self._probe(path, row, size, mtime, dir_files)
+        dur = int(info["duration"] * 1000)
+        if row:
+            db.run("UPDATE items SET parent_id=?, show_id=?, extra_kind=?, file_size=?, file_mtime=?, probe=?, "
+                   "duration_ms=? WHERE id=?", (parent, parent, kind, size, mtime, json.dumps(info), dur, row["id"]))
+            return
+        title = extra_title(path)
+        self._insert(library_id=lib["id"], type="extra", key=path, parent_id=parent, show_id=parent, title=title,
+                     extra_kind=kind, duration_ms=dur, file_size=size, file_mtime=mtime, probe=json.dumps(info),
+                     meta_state="local", added_at=int(time.time()))
 
     def _probe(self, path, row, size, mtime, dir_files):
         info = json.loads(row["probe"]) if row and row["probe"] else None

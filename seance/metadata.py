@@ -261,7 +261,8 @@ class Metadata:
         return state
 
     def _apply_movie(self, item, tmdb, tid):
-        d = tmdb.get(f"/movie/{tid}", append_to_response="credits,release_dates")
+        d = tmdb.get(f"/movie/{tid}", append_to_response="credits,release_dates,videos",
+                     include_video_language=f"{tmdb.language[:2]},en,null")
         overview = d.get("overview")
         if not overview and tmdb.language != "en-US":
             overview = tmdb.get(f"/movie/{tid}", lang="en-US").get("overview")
@@ -282,6 +283,42 @@ class Metadata:
             "people": self._people([c["name"] for c in crew if c.get("job") == "Director"][:3], cast),
         })
         self._images(item, poster=d.get("poster_path"), backdrop=d.get("backdrop_path"))
+        self._trailer(item, d, tmdb)
+        coll = d.get("belongs_to_collection")
+        if coll and coll.get("id"):
+            self._collection(item, coll, tmdb)
+
+    def _trailer(self, item, d, tmdb):
+        vids = [v for v in (d.get("videos") or {}).get("results", []) if v.get("site") == "YouTube" and v.get("key")]
+        if not vids:
+            return
+        lang = tmdb.language[:2]
+        rank = lambda v: (v.get("type") != "Trailer", v.get("iso_639_1") != lang, not v.get("official", False))
+        key = sorted(vids, key=rank)[0]["key"]
+        if re.match(r"^[A-Za-z0-9_-]{6,20}$", key):
+            self.ctx.db.run("UPDATE items SET trailer=? WHERE id=?", (key, item["id"]))
+
+    def _collection(self, item, coll, tmdb):
+        """Collection automatique (saga TMDB) dans la bibliothèque du film."""
+        db = self.ctx.db
+        lib = item["library_id"]
+        row = db.one("SELECT id FROM collections WHERE library_id=? AND tmdb_id=?", (lib, coll["id"]))
+        if row:
+            cid = row["id"]
+        else:
+            summary = None
+            try:
+                summary = tmdb.get(f"/collection/{coll['id']}").get("overview") or None
+            except MetaError:
+                pass
+            name = coll.get("name") or "Collection"
+            cid = db.run("INSERT INTO collections(library_id,title,sort_title,summary,tmdb_id,poster,backdrop,kind,created_at) "
+                         "VALUES(?,?,?,?,?,?,?,'auto',?)",
+                         (lib, name, sort_title(name), summary, coll["id"],
+                          "tmdb:" + coll["poster_path"] if coll.get("poster_path") else None,
+                          "tmdb:" + coll["backdrop_path"] if coll.get("backdrop_path") else None,
+                          int(time.time()))).lastrowid
+        db.run("INSERT OR IGNORE INTO collection_items(collection_id,item_id) VALUES(?,?)", (cid, item["id"]))
 
     def _images(self, item, poster=None, backdrop=None, still=None):
         """Les images locales (poster.jpg…) gardent la priorité sur celles de TMDB."""
@@ -296,7 +333,8 @@ class Metadata:
             db.run(f"UPDATE items SET {sets}, img_version=img_version+1 WHERE id=?", [*f.values(), item["id"]])
 
     def _apply_show(self, item, tmdb, tid):
-        d = tmdb.get(f"/tv/{tid}", append_to_response="credits,content_ratings")
+        d = tmdb.get(f"/tv/{tid}", append_to_response="credits,content_ratings,videos",
+                     include_video_language=f"{tmdb.language[:2]},en,null")
         overview = d.get("overview")
         if not overview and tmdb.language != "en-US":
             overview = tmdb.get(f"/tv/{tid}", lang="en-US").get("overview")
@@ -314,6 +352,7 @@ class Metadata:
             "people": self._people([c["name"] for c in d.get("created_by", [])][:3], cast),
         })
         self._images(item, poster=d.get("poster_path"), backdrop=d.get("backdrop_path"))
+        self._trailer(item, d, tmdb)
         item_seasons = {s["season_number"]: s for s in d.get("seasons", [])}
         for s in self.ctx.db.all("SELECT * FROM items WHERE parent_id=? AND type='season'", (item["id"],)):
             ts = item_seasons.get(s["idx"])
