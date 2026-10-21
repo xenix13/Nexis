@@ -192,7 +192,7 @@ class Ctx:
                 self._plex_sig = sig
             return self._plex
 
-    def stop_transcode(self, plex_session):
+    def stop_transcode(self, plex_session, wait=False):
         p = self.plex
 
         def run():
@@ -201,7 +201,10 @@ class Ctx:
                     r.read()
             except Exception:
                 pass
-        self.pool.submit(run)
+        if wait:
+            run()  # the old transcode must be gone before the next one starts (CPU, session limits)
+        else:
+            self.pool.submit(run)
 
 
 def build_app(ctx):
@@ -832,11 +835,11 @@ def build_app(ctx):
         return Response(data, 200, ctype, headers)
 
     # ----------------------------------------------------------- playback
-    def stop_stream(sid, uid=None):
+    def stop_stream(sid, uid=None, wait=False):
         row = db.one("SELECT * FROM streams WHERE id=?", (sid,))
         if row and (uid is None or row["user_id"] == uid):
             db.run("DELETE FROM streams WHERE id=?", (sid,))
-            ctx.stop_transcode(row["plex_session"])
+            ctx.stop_transcode(row["plex_session"], wait=wait)
             ctx.last_ping.pop(row["plex_session"], None)
 
     @app.route("POST", "/api/play")
@@ -880,7 +883,7 @@ def build_app(ctx):
         plex_call(ctx.plex.put, f"/library/parts/{int(part['id'])}", sel)
 
         if b.get("replace"):
-            stop_stream(str(b["replace"]), uid)
+            stop_stream(str(b["replace"]), uid, wait=True)
         plex_session = uuid.uuid4().hex
         params = {
             "hasMDE": 1, "path": f"/library/metadata/{rk}", "mediaIndex": 0, "partIndex": 0,

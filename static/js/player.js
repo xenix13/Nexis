@@ -107,32 +107,65 @@ export async function renderPlayer(root, rk, ctx) {
   volume.value = video.volume;
 
   // ------------------------------------------------------------ streaming
+  // Plex can take a while to produce the first segment after a jump (CPU transcode,
+  // burned-in ASS subtitles…): be much more patient than hls.js defaults.
+  const slow = (firstByte, total, retries) => ({ default: {
+    maxTimeToFirstByteMs: firstByte, maxLoadTimeMs: total,
+    timeoutRetry: { maxNumRetry: retries, retryDelayMs: 1000, maxRetryDelayMs: 4000 },
+    errorRetry: { maxNumRetry: retries, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+  } });
+  const HLS_CONFIG = {
+    maxBufferLength: 40, backBufferLength: 90, startPosition: 0,
+    manifestLoadPolicy: slow(60000, 90000, 2),
+    playlistLoadPolicy: slow(60000, 90000, 4),
+    fragLoadPolicy: slow(60000, 120000, 6),
+  };
+  let startSeq = 0, autoRetries = 0;
+
   async function start(offset) {
+    const seq = ++startSeq;
     switching = true;
     finished = false;
     loader.hidden = false;
     errorLayer.hidden = true;
     const previous = session && session.stream;
     if (hls) { hls.destroy(); hls = null; }
+    let s;
     try {
-      session = await post('/api/play', { id: item.id, offset: Math.round(offset), quality,
+      s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality,
         audio: audioSel ? audioSel.id : null, subtitle: subSel ? subSel.id : 0, replace: previous || undefined });
-    } catch (e) { showError(e.message); return; }
-    if (destroyed) { post('/api/stop', { stream: session.stream }).catch(() => {}); return; }
+    } catch (e) { if (seq === startSeq) showError(e.message, true); return; }
+    if (destroyed || seq !== startSeq) {
+      // a newer seek (or leaving the player) superseded this one
+      post('/api/stop', { stream: s.stream }).catch(() => {});
+      return;
+    }
+    session = s;
     base = session.offset;
     introSkipped = false;
     nextBtn.hidden = !session.next;
     updateIntroMark();
     await loadSubtitles();
+    if (seq !== startSeq || destroyed) return;
     const autoplay = () => video.play().catch(() => { loader.hidden = true; paintPlay(); });
     if (window.Hls && window.Hls.isSupported()) {
-      hls = new window.Hls({ maxBufferLength: 40, backBufferLength: 90, startPosition: 0 });
+      hls = new window.Hls(HLS_CONFIG);
       hls.on(window.Hls.Events.ERROR, (_, data) => {
-        if (!data.fatal) return;
+        if (!data.fatal || seq !== startSeq) return;
         if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
-        showError('Le flux a été interrompu.', true);
+        console.warn('[seance] erreur HLS', data.type, data.details, data.response && data.response.code);
+        const at = Math.max(base, pos());
+        if (autoRetries < 2) {
+          autoRetries += 1;
+          toast('Flux interrompu, reconnexion…');
+          start(at);
+          return;
+        }
+        const code = data.response && data.response.code ? ` ${data.response.code}` : '';
+        showError(`Le flux a été interrompu (${data.details}${code}).`, true, at);
       });
       hls.on(window.Hls.Events.MANIFEST_PARSED, autoplay);
+      hls.on(window.Hls.Events.FRAG_BUFFERED, () => { autoRetries = 0; });
       hls.loadSource(session.url);
       hls.attachMedia(video);
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -154,12 +187,12 @@ export async function renderPlayer(root, rk, ctx) {
     try { cues = (await get(session.subtitle_overlay)).cues; } catch (e) { toast(`Sous-titres : ${e.message}`, 'bad'); }
   }
 
-  function showError(msg, retry = false) {
+  function showError(msg, retry = false, at = null) {
     loader.hidden = true;
     errorLayer.hidden = false;
     clear(errorLayer, h('div.error-box', h('p', msg),
       h('div.actions-row',
-        retry ? h('button.btn.primary', { onclick: () => start(pos()) }, 'Réessayer') : null,
+        retry ? h('button.btn.primary', { onclick: () => { autoRetries = 0; start(at ?? pos()); } }, 'Réessayer') : null,
         h('button.btn', { onclick: goBack }, 'Retour'))));
   }
 

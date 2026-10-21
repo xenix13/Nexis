@@ -236,7 +236,13 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(start_req[2]["maxVideoBitrate"], "4000")
         self.assertEqual(self.admin.call("POST", "/api/play", {"id": "3112", "subtitle": 999})[0], 400)
         self.assertEqual(self.admin.call("POST", "/api/play", {"id": "3112", "quality": "8k"})[0], 400)
-        self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
+        # a seek restarts the stream: the old transcode is stopped before the new one starts
+        old_session = start_req[2]["session"]
+        st, p2 = self.admin.call("POST", "/api/play", {"id": "3112", "offset": 600000, "replace": p["stream"]})
+        self.assertEqual(st, 200)
+        self.assertIn(old_session, self.plex.stopped)
+        self.assertEqual(self.admin.call("GET", p["url"], raw=True)[0], 404)
+        self.admin.call("POST", "/api/stop", {"stream": p2["stream"]})
 
     def test_mark_show_watched(self):
         st, r = self.admin.call("POST", "/api/items/211/watched", {"watched": True})
