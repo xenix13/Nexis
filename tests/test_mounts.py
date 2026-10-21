@@ -35,6 +35,8 @@ if not line:
     print("mount: can't find in fstab", file=sys.stderr); sys.exit(1)
 if os.environ.get("FAKE_EPERM"):
     print("mount error(1): Operation not permitted", file=sys.stderr); sys.exit(32)
+if os.environ.get("FAKE_NEED_VERS") and "vers=" + os.environ["FAKE_NEED_VERS"] not in line:
+    print("mount error(13): Permission denied", file=sys.stderr); sys.exit(32)
 cred = re.search(r"credentials=([^,]+)", line).group(1)
 pw = dict(l.split("=", 1) for l in open(cred).read().splitlines())["password"]
 if pw != "secret":
@@ -159,6 +161,22 @@ class MountdTest(unittest.TestCase):
         self.assertTrue(self.call("status")["shares"][0]["mounted"])
         self.call("remount", name="anim")
         self.call("remove", name="anim")
+
+    def test_6_version_fallback_and_apparmor_hint(self):
+        os.environ["FAKE_NEED_VERS"] = "2.1"
+        try:
+            self.call("add", name="films2", host="192.168.1.5", share="Films", username="jellyfin", password="secret")
+            self.assertIn("vers=2.1", open(self.fstab).read())
+            self.call("remove", name="films2")
+            os.environ["FAKE_NEED_VERS"] = "9.9"
+            self.mounts.env.update(container="lxc", apparmor="lxc-container-default-cgns (enforce)")
+            before = open(self.fstab).read()
+            with self.assertRaisesRegex(self.m.MountError, "AppArmor.*lxc-container-default-cgns"):
+                self.call("add", name="films3", host="192.168.1.5", share="Films", username="jellyfin", password="secret")
+            self.assertEqual(open(self.fstab).read(), before)
+        finally:
+            os.environ.pop("FAKE_NEED_VERS", None)
+            self.mounts.env.update(container="", apparmor="")
 
     def test_5_peer_check(self):
         other = self.m.make_server(self.mounts, self.sock + "2", allowed_uids={99999})

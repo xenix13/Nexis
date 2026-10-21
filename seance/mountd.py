@@ -69,7 +69,17 @@ def environment():
         unprivileged = len(first) == 3 and first[1] != "0"
     except OSError:
         pass
+    apparmor = ""
+    for p in ("/proc/self/attr/apparmor/current", "/proc/self/attr/current"):
+        try:
+            with open(p) as f:
+                apparmor = f.read().strip().strip("\x00")
+            if apparmor:
+                break
+        except OSError:
+            continue
     return {"container": container if container != "none" else "", "unprivileged": unprivileged,
+            "apparmor": apparmor,
             "can_mount": not unprivileged,
             "tools": {"mount.cifs": bool(shutil.which("mount.cifs")), "smbclient": bool(shutil.which("smbclient"))}}
 
@@ -221,9 +231,12 @@ def explain_mount(err, env):
                 "puis redémarre le conteneur.")
     if "error(13)" in e or "permission denied" in e:
         if env["container"]:
-            return ("Montage refusé (identifiants valides). Dans Proxmox, active l'option du conteneur : "
-                    "pct set <ID> -features mount=cifs,nesting=1, puis redémarre-le.")
-        return "Accès refusé par le NAS"
+            prof = env.get("apparmor") or "inconnu"
+            return ("Le NAS accepte tes identifiants mais le noyau refuse le montage. Dans un conteneur LXC, "
+                    "c'est presque toujours AppArmor : vérifie que l'option « mount=cifs » est bien sur CE conteneur "
+                    "(pct config <ID> | grep features), puis ARRÊTE et DÉMARRE le conteneur depuis Proxmox "
+                    f"(un redémarrage interne ne suffit pas toujours). Profil AppArmor actuel : {prof}")
+        return "Accès refusé par le NAS (droits du compte sur ce partage, ou chiffrement SMB imposé)"
     if "error(2)" in e or "no such file" in e:
         return "Partage ou sous-dossier introuvable sur le NAS"
     if "error(112)" in e or "host is down" in e or "error(113)" in e or "no route" in e:
@@ -346,18 +359,34 @@ class Mounts:
                 run(["umount", "-l", old["path"]])
             cred = write_cred(v["name"], v["username"], v["password"], v["domain"])
             uid, gid = app_ids()
-            opts = [f"credentials={cred}", "ro", f"uid={uid}", f"gid={gid}", "file_mode=0444", "dir_mode=0555",
-                    "iocharset=utf8", "_netdev", "nofail", "x-systemd.mount-timeout=30"]
-            if VERSIONS[v["version"]]:
-                opts.append(f"vers={VERSIONS[v['version']]}")
             what = f"//{v['host']}/{v['share']}" + (f"/{v['subdir']}" if v["subdir"] else "")
-            lines = self._without(backup_lines, v["name"])
-            lines += [f"{MARK}{v['name']}", f"{fstab_escape(what)} {fstab_escape(path)} cifs {','.join(opts)} 0 0"]
+            base_lines = self._without(backup_lines, v["name"])
             os.makedirs(path, exist_ok=True)
-            write_fstab(lines)
-            code, out, err = run(["mount", path], timeout=45)
+            # En « automatique », on essaie aussi des versions SMB explicites : certains NAS
+            # refusent la négociation par défaut du noyau (erreur 13 ou 95 malgré de bons identifiants).
+            attempts = [VERSIONS[v["version"]]] if VERSIONS[v["version"]] else [None, "3.0", "2.1", "2.0"]
+            failures = []
+            for vers in attempts:
+                opts = [f"credentials={cred}", "ro", f"uid={uid}", f"gid={gid}", "file_mode=0444", "dir_mode=0555",
+                        "iocharset=utf8", "_netdev", "nofail", "x-systemd.mount-timeout=30"]
+                if vers:
+                    opts.append(f"vers={vers}")
+                write_fstab(base_lines + [f"{MARK}{v['name']}",
+                                          f"{fstab_escape(what)} {fstab_escape(path)} cifs {','.join(opts)} 0 0"])
+                code, out, err = run(["mount", path], timeout=45)
+                if code == 0:
+                    break
+                raw = (err + out).strip()
+                log.warning("Montage de %s (vers=%s) refusé : %s", what, vers or "auto", raw)
+                failures.append(raw)
+                if not re.search(r"error\((13|95|22)\)|permission denied|not supported|invalid argument", raw, re.I):
+                    break  # erreur sans rapport avec la version : inutile d'insister
             if code != 0:
-                msg = explain_mount(err + out, self.env)
+                raw = failures[0] if failures else ""
+                msg = explain_mount(raw, self.env)
+                detail = [l for l in raw.splitlines() if l.strip()]
+                if detail and detail[-1] not in msg:
+                    msg += f" (détail : {detail[-1][:200]})"
                 # retour arrière complet
                 write_fstab(backup_lines)
                 if old_cred is not None:
