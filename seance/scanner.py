@@ -10,6 +10,7 @@ from .names import (IMAGE_NAMES, SUB_EXT, VIDEO_EXT, clean_title, fold, parse_ep
                     sort_title, sub_language)
 
 log = logging.getLogger("seance.scan")
+RECENT_SECONDS = 45
 
 
 def walk_videos(root):
@@ -98,7 +99,7 @@ class Scanner:
         with self.lock:
             if self.state["running"]:
                 return False
-            self.state.update(running=True, phase="Préparation", library=None, done=0, total=0, added=0,
+            self.state.update(running=True, phase="Préparation", library=None, done=0, total=0, added=0, deferred=0,
                               removed=0, unrecognized=[], errors=[], finished_at=None)
         self.thread = threading.Thread(target=self._run, args=(library_ids, refresh_metadata), daemon=True)
         self.thread.start()
@@ -159,10 +160,15 @@ class Scanner:
             "SELECT id, key, file_size, file_mtime, probe, type FROM items WHERE library_id=? AND type IN ('movie','episode')",
             (lib["id"],))}
         seen = set()
+        deferred = 0
         self._set(phase="Analyse des fichiers", done=0, total=len(files))
         for n, (root, path, size, mtime) in enumerate(files, 1):
             self._set(done=n)
             seen.add(path)
+            if time.time() - mtime < RECENT_SECONDS:
+                # fichier probablement en cours de copie (Radarr, Sonarr…) : on le reprendra au prochain passage
+                deferred += 1
+                continue
             try:
                 if lib["kind"] == "movie":
                     self._movie(lib, root, path, size, mtime, existing.get(path), dir_files)
@@ -187,6 +193,13 @@ class Scanner:
         db.run("DELETE FROM items WHERE library_id=? AND type='show' AND NOT EXISTS "
                "(SELECT 1 FROM items s WHERE s.parent_id=items.id)", (lib["id"],))
         db.run("UPDATE libraries SET scanned_at=? WHERE id=?", (int(time.time()), lib["id"]))
+        if deferred:
+            log.info("%s : %d fichier(s) en cours de copie, nouveau passage prévu", lib["name"], deferred)
+            with self.lock:
+                self.state["deferred"] = self.state.get("deferred", 0) + deferred
+            watcher = getattr(self.ctx, "watcher", None)
+            if watcher:
+                watcher.defer(lib["id"])
 
     def _probe(self, path, row, size, mtime, dir_files):
         if row and row["file_size"] == size and row["file_mtime"] == mtime and row["probe"]:
@@ -234,11 +247,19 @@ class Scanner:
             db.run("UPDATE items SET file_size=?, file_mtime=?, probe=?, duration_ms=?, "
                    "poster=COALESCE(poster, ?), backdrop=COALESCE(backdrop, ?) WHERE id=?",
                    (size, mtime, json.dumps(info), dur, poster, backdrop, row["id"]))
+            if row["file_mtime"] != mtime:
+                self._new_media(row["id"], info)
             return
         title, year = parse_movie(path, root)
-        self._insert(library_id=lib["id"], type="movie", key=path, title=title, year=year, duration_ms=dur,
+        new_id = self._insert(library_id=lib["id"], type="movie", key=path, title=title, year=year, duration_ms=dur,
                      file_size=size, file_mtime=mtime, probe=json.dumps(info), poster=poster, backdrop=backdrop,
                      added_at=self._added_at(lib, mtime))
+        self._new_media(new_id, info)
+
+    def _new_media(self, item_id, info):
+        hook = getattr(self.ctx, "on_new_media", None)
+        if hook:
+            hook(item_id, info)
 
     def _episode(self, lib, root, path, size, mtime, row, dir_files):
         db = self.ctx.db
@@ -253,6 +274,8 @@ class Scanner:
         if row:
             db.run("UPDATE items SET file_size=?, file_mtime=?, probe=?, duration_ms=? WHERE id=?",
                    (size, mtime, json.dumps(info), dur, row["id"]))
+            if row["file_mtime"] != mtime:
+                self._new_media(row["id"], info)
             return
         # série
         show_key = os.path.join(root, parsed["show_dir"]) if parsed["show_dir"] else "name:" + fold(parsed["show"])
@@ -286,8 +309,9 @@ class Scanner:
             if base + "-thumb" + ext in dir_files.get(folder, []):
                 still = "local:" + os.path.join(folder, base + "-thumb" + ext)
         now = int(time.time())
-        self._insert(library_id=lib["id"], type="episode", key=path, parent_id=season_id, show_id=show_id,
+        new_id = self._insert(library_id=lib["id"], type="episode", key=path, parent_id=season_id, show_id=show_id,
                      idx=parsed["episode"], title=f"Épisode {parsed['episode']}", duration_ms=dur,
                      file_size=size, file_mtime=mtime, probe=json.dumps(info), still=still,
                      added_at=self._added_at(lib, mtime))
         db.run("UPDATE items SET updated_at=? WHERE id IN (?,?)", (now, show_id, season_id))
+        self._new_media(new_id, info)

@@ -107,6 +107,7 @@ with sync_playwright() as pw:
     page.click("section.panel:has-text('TMDB') button.primary")
     page.wait_for_selector("text=Clé TMDB configurée")
     page.screenshot(path=f"{out}/02-reglages-serveur.png", full_page=True)
+    check(page.locator("input[value*='/api/hooks/scan?token=']").count() == 1, "adresse du webhook affichée")
 
     # --- bibliothèque via l'interface, avec le sélecteur de dossier
     page.click("a.tab:has-text('Bibliothèques')")
@@ -190,8 +191,24 @@ with sync_playwright() as pw:
     ep1 = show["play_target"]["id"]
     page.goto(base + "/")
     page.wait_for_selector(".hero-title")
+    # extraction lente simulée : le lecteur doit attendre les sous-titres avant de démarrer
+    _row = ctx.db.one("SELECT * FROM items WHERE id=?", (int(ep1),))
+    shutil.rmtree(ctx.subtitles._dir(_row), ignore_errors=True)
+    _orig = ctx.subtitles._ffmpeg
+
+    def _slow(item, tracks, tmp, job):
+        for k in range(8):
+            job.progress = k / 10
+            time.sleep(0.5)
+        return _orig(item, tracks, tmp, job)
+    ctx.subtitles._ffmpeg = _slow
     page.goto(base + f"/#/play/{ep1}?t=500")
+    page.wait_for_selector(".subs-wait:not([hidden])", timeout=15000)
+    page.wait_for_timeout(1500)
+    check(page.evaluate("document.querySelector('video').paused"), "la vidéo attend les sous-titres")
+    page.screenshot(path=f"{out}/12a-attente-sous-titres.png")
     page.wait_for_function("document.querySelector('.sub-layer').textContent.includes('Le vent se lève')", timeout=30000)
+    ctx.subtitles._ffmpeg = _orig
     page.mouse.move(700, 420)
     page.screenshot(path=f"{out}/12-lecteur-sous-titres.png")
     page.goto(base + "/#/")

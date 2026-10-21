@@ -17,13 +17,15 @@ from .images import Images
 from .metadata import Metadata, MetaError
 from .names import LANG_WORDS, fold
 from .scanner import Scanner
+from .subcache import SubtitleCache, text_tracks
 from .subtitles import parse_subtitles
 from .transcoder import QUALITY, Busy, StreamError, Transcoder, plan
+from .watcher import Watcher
 from .web import App, HTTPError, Response
 
 log = logging.getLogger("seance")
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 RK = r"(?P<rk>\d{1,12})"
 SID = r"(?P<sid>[A-Za-z0-9_-]{8,40})"
 SORTS = {"title": "i.sort_title COLLATE NOCASE", "added": "i.added_at DESC", "year": "i.year DESC, i.sort_title",
@@ -159,6 +161,10 @@ class Ctx:
         self.images = Images(self)
         self.scanner = Scanner(self)
         self.transcoder = Transcoder(os.path.join(data_dir, "transcodes"), self.limits)
+        self.subtitles = SubtitleCache(self)
+        self.watcher = Watcher(self)
+        if not self.db.setting("webhook_token"):
+            self.db.set_setting("webhook_token", secrets.token_urlsafe(24))
         self.sub_locks = {}
         self.setup_code = None
         if not self.db.scalar("SELECT COUNT(*) FROM users"):
@@ -185,6 +191,25 @@ class Ctx:
     def on_library_changed(self):
         pass
 
+    def prefetch_missing_subtitles(self):
+        """Au démarrage : met en file les fichiers dont les sous-titres internes ne sont pas encore prêts."""
+        if self.db.setting("subs_prefetch", "1") != "1":
+            return
+        n = 0
+        for r in self.db.all("SELECT id, probe, file_mtime FROM items WHERE type IN ('movie','episode') "
+                             "ORDER BY added_at DESC"):
+            if text_tracks(json.loads(r["probe"] or "{}")) and self.subtitles.missing(r):
+                self.subtitles.enqueue(r["id"])
+                n += 1
+        if n:
+            log.info("%d fichier(s) en file pour la préparation des sous-titres", n)
+        self.db.release()
+
+    def on_new_media(self, item_id, info):
+        """Nouveau fichier (ou fichier remplacé) : on prépare ses sous-titres internes en tâche de fond."""
+        if self.db.setting("subs_prefetch", "1") == "1" and text_tracks(info):
+            self.subtitles.enqueue(item_id)
+
 
 def build_app(ctx):
     app = App()
@@ -200,6 +225,11 @@ def build_app(ctx):
         return bool(ctx.setup_code) and hmac.compare_digest(code.strip().upper(), ctx.setup_code)
 
     def before(req, opts):
+        if opts.get("auth") == "webhook":
+            token = req.arg("token") or ""
+            if not hmac.compare_digest(token, db.setting("webhook_token") or "\0"):
+                raise HTTPError(403, "Jeton invalide")
+            return
         if req.method != "GET" and req.headers.get("X-Seance") != "1":
             raise HTTPError(403, "En-tête de requête manquant")
         req.user = load_user(db, req)
@@ -603,6 +633,8 @@ def build_app(ctx):
         attach_state(uid, [d])
         if d["type"] in ("movie", "episode"):
             probe = json.loads(r["probe"] or "{}")
+            if text_tracks(probe):
+                ctx.subtitles.enqueue(r["id"], urgent=True)  # on prépare au cas où la lecture suit
             audio, subs = stream_lists(probe)
             v = probe.get("video") or {}
             first_audio = (probe.get("audio") or [{}])[0]
@@ -668,38 +700,51 @@ def build_app(ctx):
         r = require_item(req.user, req.params["rk"])
         sub = int(req.params["sub"])
         probe = json.loads(r["probe"] or "{}")
-        cache = os.path.join(ctx.data_dir, "cache", "subs", f"{r['id']}_{sub}_{r['file_mtime']}.json")
+        json_type = "application/json; charset=utf-8"
+        if sub < EXTERNAL_BASE:
+            # piste interne : préparée par le cache de sous-titres (une seule lecture du fichier)
+            s = next((x for x in probe.get("subs", []) if x["index"] == sub), None)
+            if not s or s["codec"] not in media.TEXT_SUB_CODECS:
+                raise HTTPError(404, "Sous-titres introuvables")
+            data = ctx.subtitles.read(r, sub)
+            if data is None:
+                job = ctx.subtitles.ensure_now(r)
+                if job and req.arg("wait") == "1":
+                    db.release()
+                    ctx.subtitles.wait(job, 900)
+                data = ctx.subtitles.read(r, sub)
+                if data is None:
+                    st = ctx.subtitles.status(r)
+                    if job and job.done.is_set() and job.error:
+                        raise HTTPError(502, f"Lecture des sous-titres impossible : {job.error}")
+                    return Response(json.dumps({"pending": True, "progress": st.get("progress", 0)}), 202,
+                                    json_type, {"Cache-Control": "no-store"})
+            return Response(data, 200, json_type, {"Cache-Control": "private, max-age=3600"})
+        ext = probe.get("external", [])
+        if sub - EXTERNAL_BASE >= len(ext):
+            raise HTTPError(404, "Sous-titres introuvables")
+        cache = os.path.join(ctx.data_dir, "cache", "subs", f"ext_{r['id']}_{sub}_{r['file_mtime']}.json")
         if os.path.isfile(cache):
             with open(cache, "rb") as f:
-                return Response(f.read(), 200, "application/json; charset=utf-8", {"Cache-Control": "private, max-age=3600"})
+                return Response(f.read(), 200, json_type, {"Cache-Control": "private, max-age=3600"})
         with sub_lock(cache):
             if os.path.isfile(cache):
                 with open(cache, "rb") as f:
-                    return Response(f.read(), 200, "application/json; charset=utf-8")
+                    return Response(f.read(), 200, json_type)
+            e = ext[sub - EXTERNAL_BASE]
             try:
-                if sub >= EXTERNAL_BASE:
-                    ext = probe.get("external", [])
-                    if sub - EXTERNAL_BASE >= len(ext):
-                        raise HTTPError(404, "Sous-titres introuvables")
-                    e = ext[sub - EXTERNAL_BASE]
-                    if e["codec"] in ("subrip", "webvtt"):
-                        with open(e["path"], "rb") as f:
-                            raw = f.read(10 * 1024 * 1024)
-                    else:
-                        raw = media.extract_subtitle(e["path"])
+                if e["codec"] in ("subrip", "webvtt"):
+                    with open(e["path"], "rb") as f:
+                        raw = f.read(10 * 1024 * 1024)
                 else:
-                    s = next((x for x in probe.get("subs", []) if x["index"] == sub), None)
-                    if not s or s["codec"] not in media.TEXT_SUB_CODECS:
-                        raise HTTPError(404, "Sous-titres introuvables")
-                    raw = media.extract_subtitle(r["key"], sub)
-            except (OSError, media.MediaError) as e:
-                raise HTTPError(502, f"Lecture des sous-titres impossible : {e}")
+                    raw = media.extract_subtitle(e["path"])
+            except (OSError, media.MediaError) as ex:
+                raise HTTPError(502, f"Lecture des sous-titres impossible : {ex}")
             data = json.dumps({"cues": parse_subtitles(raw)}, ensure_ascii=False).encode()
-            tmp = cache + ".tmp"
-            with open(tmp, "wb") as f:
+            with open(cache + ".tmp", "wb") as f:
                 f.write(data)
-            os.replace(tmp, cache)
-        return Response(data, 200, "application/json; charset=utf-8")
+            os.replace(cache + ".tmp", cache)
+        return Response(data, 200, json_type)
 
     # ------------------------------------------------------------- images
     @app.route("GET", "/api/img")
@@ -780,6 +825,10 @@ def build_app(ctx):
                "VALUES(?,?,?,?,?,?,?,?,?,?)", (sid, uid, sid, rk, json.dumps(p), title, quality, actual, now, now))
         upsert_meta(uid, c)
         nxt = next_episode(r)
+        if text_tracks(probe):
+            ctx.subtitles.ensure_now(r)
+        if nxt and text_tracks(json.loads(nxt["probe"] or "{}")):
+            ctx.subtitles.enqueue(nxt["id"], urgent=True)
         url = f"/api/stream/{sid}/file" if p["mode"] == "direct" else f"/api/stream/{sid}/index.m3u8"
         return {
             "stream": sid, "mode": p["mode"], "reasons": p["reasons"], "url": url, "offset": actual,
@@ -1126,10 +1175,36 @@ def build_app(ctx):
         return {"path": path, "parent": os.path.dirname(path) if path != "/" else None, "dirs": dirs}
 
     # ---------------------------------------------------- admin settings
+    @app.route("POST", "/api/hooks/scan", auth="webhook")
+    def hook_scan(req):
+        """Webhook pour Radarr / Sonarr / script : déclenche un scan (regroupé sur 10 s)."""
+        try:
+            event = (req.json() or {}).get("eventType", "")
+        except HTTPError:
+            event = ""
+        if event == "Test":
+            return {"ok": True, "message": "Séance a bien reçu le test"}
+        ctx.watcher.request_scan(f"webhook {event}".strip())
+        return {"ok": True}
+
+    @app.route("GET", "/api/hooks/scan", auth="webhook")
+    def hook_scan_get(req):
+        ctx.watcher.request_scan("webhook")
+        return {"ok": True}
+
+    @app.route("POST", "/api/admin/webhook/regenerate", auth="admin")
+    def admin_webhook_regenerate(req):
+        db.set_setting("webhook_token", secrets.token_urlsafe(24))
+        return admin_settings(req)
+
     @app.route("GET", "/api/admin/settings", auth="admin")
     def admin_settings(req):
         max_streams, max_transcodes = ctx.limits()
-        return {"tmdb_set": bool(db.setting("tmdb_key")), "language": db.setting("meta_language", "fr-FR"),
+        return {"watch_interval": ctx.setting_int("watch_interval", 60),
+                "subs_prefetch": db.setting("subs_prefetch", "1") == "1",
+                "subs_queue": len(ctx.subtitles.urgent) + len(ctx.subtitles.idle),
+                "webhook_path": f"/api/hooks/scan?token={db.setting('webhook_token')}",
+                "watch_events": ctx.watcher.events[:8],"tmdb_set": bool(db.setting("tmdb_key")), "language": db.setting("meta_language", "fr-FR"),
                 "scan_interval": ctx.setting_int("scan_interval", 6), "max_streams": max_streams,
                 "max_transcodes": max_transcodes, "cpus": os.cpu_count(), "ffmpeg": media.available(),
                 "version": VERSION}
@@ -1153,7 +1228,14 @@ def build_app(ctx):
                 raise HTTPError(400, "Langue invalide (ex. fr-FR)")
             db.set_setting("meta_language", b["language"])
             db.set_setting("meta_country", b["language"][-2:])
-        for k, lo, hi in (("scan_interval", 0, 168), ("max_streams", 1, 50), ("max_transcodes", 0, 16)):
+        if "subs_prefetch" in b:
+            db.set_setting("subs_prefetch", "1" if b["subs_prefetch"] else "0")
+            if b["subs_prefetch"]:
+                for r in db.all("SELECT id, probe FROM items WHERE type IN ('movie','episode') ORDER BY added_at DESC"):
+                    if text_tracks(json.loads(r["probe"] or "{}")):
+                        ctx.subtitles.enqueue(r["id"])
+        for k, lo, hi in (("scan_interval", 0, 168), ("max_streams", 1, 50), ("max_transcodes", 0, 16),
+                          ("watch_interval", 0, 3600)):
             if k in b:
                 try:
                     v = int(b[k])
@@ -1326,7 +1408,7 @@ def janitor(ctx, stop_event):
                     ctx.scanner.start()
             if now - last_cache > 86400:
                 last_cache = now
-                for sub in ("img", "subs"):
+                for sub in ("img",):
                     d = os.path.join(ctx.data_dir, "cache", sub)
                     for name in os.listdir(d):
                         p = os.path.join(d, name)

@@ -38,6 +38,7 @@ export async function renderPlayer(root, rk, ctx) {
   const video = h('video.video', { playsinline: true, preload: 'auto' });
   const subLayer = h('div.sub-layer', { style: { fontSize: `${(prefs.sub_size / 100) * 2.4}vmin` } });
   const loader = h('div.player-loader', spinner());
+  const subsWait = h('div.subs-wait', { hidden: true });
   const errorLayer = h('div.player-error', { hidden: true });
   const titleEl = h('div.player-title');
   const timeEl = h('span.time');
@@ -67,7 +68,7 @@ export async function renderPlayer(root, rk, ctx) {
       h('button.ctl', { 'aria-label': 'Avancer de 30 secondes', onclick: () => seekBy(30000) }, icon('forward')),
       h('div.vol', muteBtn, volume), timeEl, h('div.grow'), nextBtn, subsBtn, cogBtn, fullBtn));
   const top = h('div.player-top', backBtn, titleEl);
-  const player = h('div.player', video, subLayer, loader, errorLayer, top, skipBtn, nextCard, menu, controls);
+  const player = h('div.player', video, subLayer, loader, subsWait, errorLayer, top, skipBtn, nextCard, menu, controls);
   clear(root, player);
 
   // ------------------------------------------------------------ state
@@ -146,8 +147,13 @@ export async function renderPlayer(root, rk, ctx) {
     introSkipped = false;
     nextBtn.hidden = !session.next;
     updateIntroMark();
-    loadSubtitles(seq);  // en tâche de fond : l'extraction d'une piste interne peut prendre du temps
-    const autoplay = () => video.play().catch(() => { loader.hidden = true; paintPlay(); });
+    // la lecture ne démarre qu'une fois les sous-titres prêts (pas de trou au début de l'épisode)
+    const subsReady = loadSubtitles(seq);
+    const autoplay = async () => {
+      await subsReady;
+      if (seq !== startSeq || destroyed) return;
+      video.play().catch(() => { loader.hidden = true; paintPlay(); });
+    };
     if (session.mode === 'direct') {
       // le navigateur lit le fichier tel quel : position réelle = currentTime
       base = 0;
@@ -194,15 +200,50 @@ export async function renderPlayer(root, rk, ctx) {
     setupMediaSession();
   }
 
-  async function loadSubtitles(seq) {
+  function loadSubtitles(seq) {
     cues = [];
     cueIdx = -1;
     subLayer.replaceChildren();
-    if (!session.subtitle_overlay) return;
-    try {
-      const r = await get(session.subtitle_overlay);
-      if (seq === startSeq) { cues = r.cues; cueIdx = -1; }
-    } catch (e) { toast(`Sous-titres : ${e.message}`, 'bad'); }
+    subsWait.hidden = true;
+    if (!session.subtitle_overlay) return Promise.resolve();
+    const url = session.subtitle_overlay;
+    return new Promise((resolve) => {
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        subsWait.hidden = true;
+        resolve();
+      };
+      const poll = async () => {
+        if (seq !== startSeq || destroyed) { release(); return; }
+        try {
+          const r = await get(url);
+          if (seq !== startSeq || destroyed) { release(); return; }
+          if (r && r.pending) {
+            if (!released) {
+              const pct = Math.round((r.progress || 0) * 100);
+              clear(subsWait, h('div.subs-wait-box',
+                h('strong', 'Préparation des sous-titres…'),
+                h('div.bar', h('div.bar-fill', { style: { width: `${Math.max(3, pct)}%` } })),
+                h('p.small', pct ? `${pct} % — lecture du fichier sur le NAS` : 'Lecture du fichier sur le NAS'),
+                h('button.btn.ghost.small', { onclick: release }, 'Lancer sans attendre')));
+              subsWait.hidden = false;
+            }
+            setTimeout(poll, 1000);
+            return;
+          }
+          cues = r.cues || [];
+          cueIdx = -1;
+          if (released && cues.length) toast('Sous-titres prêts');
+          release();
+        } catch (e) {
+          toast(`Sous-titres : ${e.message}`, 'bad');
+          release();
+        }
+      };
+      poll();
+    });
   }
 
   function showError(msg, retry = false, at = null) {

@@ -90,6 +90,8 @@ class SeanceTest(unittest.TestCase):
         cls.work = tempfile.mkdtemp()
         cls.media = os.path.join(cls.work, "media")
         shutil.copytree(root, cls.media)
+        from seance import scanner
+        scanner.RECENT_SECONDS = 0  # les fichiers de test viennent d'être créés
         cls.ctx = Ctx(os.path.join(cls.work, "data"), STATIC)
         cls.server = Server(("127.0.0.1", 0), make_handler(build_app(cls.ctx)))
         threading.Thread(target=cls.server.serve_forever, daemon=True).start()
@@ -291,7 +293,7 @@ class SeanceTest(unittest.TestCase):
         self.assertTrue(ass["overlay"])
         st, p = self.admin.call("POST", "/api/play", {"id": e1["id"], "subtitle": ass["id"]})
         self.assertEqual(p["mode"], "copy")  # l'ASS est affiché par le navigateur : pas de transcodage
-        st, cues = self.admin.call("GET", p["subtitle_overlay"])
+        st, cues = self.admin.call("GET", p["subtitle_overlay"] + "?wait=1")
         self.assertEqual(cues["cues"][0]["t"], "Le vent se lève\nsur la montagne")
         self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
         st, e2 = self.admin.call("GET", f"/api/items/{eps[1]['id']}")
@@ -299,7 +301,7 @@ class SeanceTest(unittest.TestCase):
         # sous-titres internes SRT et externes
         m = self.movie("Nuit polaire")
         st, d = self.admin.call("GET", f"/api/items/{m['id']}")
-        st, c = self.admin.call("GET", f"/api/items/{m['id']}/subtitles/{d['subtitles'][0]['id']}")
+        st, c = self.admin.call("GET", f"/api/items/{m['id']}/subtitles/{d['subtitles'][0]['id']}?wait=1")
         self.assertEqual(c["cues"][0]["t"], "Bonjour tout le monde")
         self.assertAlmostEqual(c["cues"][0]["s"], 1000, delta=50)
         st, c = self.admin.call("GET", f"/api/items/{m['id']}/subtitles/{d['subtitles'][1]['id']}")
@@ -391,6 +393,85 @@ class SeanceTest(unittest.TestCase):
         st, r = self.admin.call("POST", "/api/admin/libraries", {"name": "X", "kind": "movie", "paths": ["/nope"]})
         self.assertEqual(st, 400)
         self.assertEqual(self.lea.call("GET", "/api/admin/browse?path=/")[0], 403)
+
+    # ------------------------------------------------- sous-titres préparés
+    def test_subtitles_prepared_in_background_and_on_demand(self):
+        show, d, eps = self.episodes("Kaze no Michi", "Animes")
+        row = self.ctx.db.one("SELECT * FROM items WHERE id=?", (int(eps[0]["id"]),))
+        for _ in range(100):  # préparés en tâche de fond après le scan (aucune lecture en cours)
+            if not self.ctx.subtitles.missing(row):
+                break
+            time.sleep(0.2)
+        self.assertEqual(self.ctx.subtitles.missing(row), [])
+        # cache vidé : la première demande répond 202 (en préparation) puis 200
+        m = self.movie("Nuit polaire")
+        mrow = self.ctx.db.one("SELECT * FROM items WHERE id=?", (int(m["id"]),))
+        shutil.rmtree(self.ctx.subtitles._dir(mrow), ignore_errors=True)
+        st, d = self.admin.call("GET", f"/api/items/{m['id']}")
+        url = f"/api/items/{m['id']}/subtitles/{d['subtitles'][0]['id']}"
+        codes = []
+        for _ in range(100):
+            st, r = self.admin.call("GET", url)
+            codes.append(st)
+            if st == 200:
+                break
+            self.assertTrue(r["pending"])
+            time.sleep(0.1)
+        self.assertEqual(codes[-1], 200)
+        self.assertEqual(r["cues"][0]["t"], "Bonjour tout le monde")
+
+    # ---------------------------------------------------- détection des nouveautés
+    def test_watcher_detects_new_episode_and_waits_for_copy(self):
+        from seance import scanner
+        lib = self.libs["Séries"]
+        season = os.path.join(self.media, "series", "Les Veilleurs", "Season 01")
+        src = os.path.join(season, "Les.Veilleurs.S01E01.720p.WEB.mkv")
+        new = os.path.join(season, "Les.Veilleurs.S01E04.720p.WEB.mkv")
+        w = self.ctx.watcher
+        self.ctx.db.set_setting("watch_interval", 1)
+        old_recent = scanner.RECENT_SECONDS
+        try:
+            t = time.time()
+            w.tick(t)                       # référence
+            scanner.RECENT_SECONDS = 45
+            shutil.copy(src, new)           # « copie en cours » : fichier tout récent
+            w.tick(t + 2)                   # changement détecté
+            self.assertIn(int(lib), w.pending)
+            w.tick(t + 4)                   # dossiers stables : scan
+            wait_scan(self.admin)
+            st, r = self.admin.call("GET", "/api/admin/libraries")
+            by = {l["name"]: l for l in r["libraries"]}
+            self.assertEqual(by["Séries"]["counts"]["episode"], 4)  # fichier trop récent : ignoré
+            self.assertIn(int(lib), w.pending)                   # … mais un nouveau passage est prévu
+            os.utime(new, (t - 600, t - 600))                     # copie terminée
+            w.tick(t + 6)
+            wait_scan(self.admin)
+            st, r = self.admin.call("GET", "/api/admin/libraries")
+            by = {l["name"]: l for l in r["libraries"]}
+            self.assertEqual(by["Séries"]["counts"]["episode"], 5)
+        finally:
+            scanner.RECENT_SECONDS = old_recent
+            self.ctx.db.set_setting("watch_interval", 0)
+            os.remove(new)
+            self.admin.call("POST", "/api/admin/scan", {"library": lib})
+            wait_scan(self.admin)
+
+    def test_webhook(self):
+        c = Client(self.base)
+        self.assertEqual(c.call("POST", "/api/hooks/scan?token=faux", {"eventType": "Download"}, csrf=False)[0], 403)
+        st, s = self.admin.call("GET", "/api/admin/settings")
+        path = s["webhook_path"]
+        st, r = c.call("POST", path, {"eventType": "Test"}, csrf=False)
+        self.assertEqual(st, 200)
+        self.assertIn("test", r["message"])
+        self.ctx.watcher.force_at = None
+        st, r = c.call("POST", path, {"eventType": "Download", "movie": {"title": "X"}}, csrf=False)
+        self.assertEqual(st, 200)
+        self.assertIsNotNone(self.ctx.watcher.force_at)
+        self.ctx.watcher.force_at = None
+        st, s2 = self.admin.call("POST", "/api/admin/webhook/regenerate")
+        self.assertNotEqual(s2["webhook_path"], path)
+        self.assertEqual(c.call("POST", path, {}, csrf=False)[0], 403)
 
     # ------------------------------------------------------------- auth / admin
     def test_setup_locked_and_csrf(self):

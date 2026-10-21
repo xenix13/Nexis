@@ -9,7 +9,7 @@ Un serveur multimédia **100 % auto-hébergé** pour tes films, séries et anime
 
 | | |
 |---|---|
-| **Bibliothèques** | Autant que tu veux (Films, Séries, Animes…), chacune avec un ou plusieurs dossiers. Scan incrémental automatique ou manuel. Un partage non monté ne vide jamais la bibliothèque |
+| **Bibliothèques** | Autant que tu veux (Films, Séries, Animes…), chacune avec un ou plusieurs dossiers. Nouveautés détectées automatiquement, webhook Radarr/Sonarr, scan incrémental. Un partage non monté ne vide jamais la bibliothèque |
 | **Reconnaissance** | `Titre (Année)/…`, noms « scène » (`Inception.2010.1080p.BluRay…`), `S01E02`, `1x02`, `Saison 1/…`, animes `[Groupe] Titre - 12 [1080p]`, numérotation absolue (`Episode 1071`), spéciaux (`Season 00`, `Specials`) |
 | **Métadonnées** | TMDB (affiches, fonds, résumés, genres, distribution, titres et images d'épisodes, classification) en français avec repli anglais. Lit aussi les `.nfo` et `poster.jpg` / `fanart.jpg` déjà présents (ceux de Jellyfin/Kodi, par exemple). Correction manuelle avec « Identifier… » |
 | **Comptes** | Comptes propres à Séance, administrateurs, accès par bibliothèque, désactivation |
@@ -132,6 +132,20 @@ Si un film ou une série est mal identifié, ouvre sa fiche puis **Identifier…
 
 Une série = un dossier sous la racine de la bibliothèque. Les numéros de saison viennent du dossier `Season XX` / `Saison XX` ou du `SxxEyy` du nom de fichier.
 
+## Nouveautés détectées automatiquement
+
+Sur un partage SMB, Linux n'est pas prévenu des fichiers ajoutés depuis une autre machine. Séance compare donc régulièrement les dates de modification des **dossiers** de chaque bibliothèque, ce qui reste très léger même avec des milliers de dossiers. Après un changement, il attend que les dossiers ne bougent plus (copie terminée) et rescanne seulement la bibliothèque concernée. Un fichier modifié il y a moins de 45 secondes est considéré comme en cours de copie : il est repris au passage suivant. La fréquence se règle dans **Administration → Métadonnées et lecture** (par défaut : toutes les minutes).
+
+**Ajout instantané depuis Radarr / Sonarr** : copie l'adresse du webhook affichée dans ce même écran, puis dans Radarr et Sonarr va dans *Paramètres → Connect → + → Webhook*. Colle l'adresse dans « URL », choisis la méthode POST et coche *On Import*, *On Upgrade*, *On Rename* et *On Delete*. Le bouton *Test* de Radarr doit répondre « Séance a bien reçu le test ».
+
+## Sous-titres prêts dès la première seconde
+
+Les sous-titres intégrés aux MKV (SRT, ASS…) ne peuvent être extraits qu'en lisant tout le fichier, ce qui prend parfois plus d'une minute sur un NAS. Séance les prépare donc à l'avance, toutes les pistes d'un fichier en **une seule lecture** :
+
+- en tâche de fond pour les nouveaux fichiers, et pour toute la médiathèque au premier démarrage, uniquement quand personne ne regarde quelque chose ;
+- en priorité quand on ouvre une fiche, et pour l'épisode suivant pendant qu'on regarde le précédent ;
+- au lancement, si rien n'est encore prêt, le lecteur affiche « Préparation des sous-titres… » avec une progression et ne démarre qu'une fois les sous-titres disponibles. Le bouton *Lancer sans attendre* permet de ne pas patienter.
+
 ## Accès depuis l'extérieur (HTTPS)
 
 Place Séance derrière un reverse proxy HTTPS (Caddy, nginx, Nginx Proxy Manager…). Dans `/etc/seance/seance.env` :
@@ -193,6 +207,7 @@ Arborescence de `seance/` :
 - `images.py` : images
 - `transcoder.py` : décision de lecture, ffmpeg et HLS
 - `mountd.py` : service root de montage des partages SMB
+- `watcher.py` : détection des nouveautés ; `subcache.py` : préparation des sous-titres
 - `api.py` : routes HTTP
 - `auth.py`, `db.py`, `web.py` : socle
 

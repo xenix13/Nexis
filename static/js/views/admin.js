@@ -329,8 +329,13 @@ async function settingsTab(body, ctx) {
     placeholder: s.tmdb_set ? 'Clé enregistrée (laisser vide pour la garder)' : 'Clé API (v3) ou jeton de lecture (v4)' });
   const lang = select([['fr-FR', 'Français (France)'], ['fr-CA', 'Français (Canada)'], ['en-US', 'Anglais'], ['de-DE', 'Allemand'],
     ['es-ES', 'Espagnol'], ['it-IT', 'Italien']], s.language);
-  const interval = select([['0', 'Jamais (manuel)'], ['1', 'Toutes les heures'], ['6', 'Toutes les 6 heures'], ['12', 'Toutes les 12 heures'],
+  const interval = select([['0', 'Jamais'], ['1', 'Toutes les heures'], ['6', 'Toutes les 6 heures'], ['12', 'Toutes les 12 heures'],
     ['24', 'Une fois par jour']], String(s.scan_interval));
+  const watch = select([['0', 'Désactivée'], ['30', 'Toutes les 30 secondes'], ['60', 'Toutes les minutes'], ['300', 'Toutes les 5 minutes'],
+    ['900', 'Toutes les 15 minutes']], String(s.watch_interval));
+  const hookInput = h('input', { readonly: true, value: `${location.origin}${s.webhook_path}`, onfocus: (e) => e.target.select() });
+  const prefetch = toggle('Préparer les sous-titres des nouveaux fichiers à l’avance', s.subs_prefetch);
+  prefetch.querySelector('input').addEventListener('change', (e) => save({ subs_prefetch: e.target.checked }, 'Enregistré'));
   const maxStreams = h('input', { type: 'number', min: 1, max: 50, value: s.max_streams });
   const maxTranscodes = h('input', { type: 'number', min: 0, max: 16, value: s.max_transcodes });
   const save = async (payload, msg) => {
@@ -348,9 +353,30 @@ async function settingsTab(body, ctx) {
           try { await post('/api/admin/scan', { refresh_metadata: true }); toast('Actualisation de toutes les métadonnées lancée', 'ok'); }
           catch (e) { toast(e.message, 'bad'); }
         } }, 'Tout réactualiser'))),
-    h('section.panel', h('h2', 'Scan automatique'),
-      field('Rechercher les nouveaux fichiers', interval),
-      h('button.btn.primary', { onclick: () => save({ scan_interval: Number(interval.value) }, 'Enregistré') }, 'Enregistrer')),
+    h('section.panel', h('h2', 'Détection des nouveautés'),
+      h('p.muted.small', 'Sur un partage réseau, le système n’est pas prévenu des fichiers ajoutés depuis une autre machine. Séance surveille donc les dossiers (très léger) et rescanne la bibliothèque concernée dès qu’une copie est terminée. Pour un ajout instantané depuis Radarr / Sonarr, utilise le webhook ci-dessous.'),
+      h('div.grid2',
+        field('Surveiller les dossiers', watch),
+        field('Scan complet de sécurité', interval)),
+      h('button.btn.primary', { onclick: () => save({ watch_interval: Number(watch.value), scan_interval: Number(interval.value) }, 'Enregistré') }, 'Enregistrer'),
+      h('h3.sub', 'Webhook Radarr / Sonarr'),
+      h('div.copy-row', hookInput,
+        h('button.btn.small', { onclick: async () => {
+          try { await navigator.clipboard.writeText(hookInput.value); toast('Adresse copiée', 'ok'); }
+          catch { hookInput.select(); }
+        } }, 'Copier'),
+        h('button.btn.small.ghost', { onclick: async () => {
+          if (!await confirmDialog('Nouvelle adresse ?', 'L’ancienne adresse cessera de fonctionner : il faudra la remplacer dans Radarr et Sonarr.', 'Régénérer')) return;
+          await post('/api/admin/webhook/regenerate'); settingsTab(body, ctx);
+        } }, 'Régénérer')),
+      h('p.muted.small', 'Dans Radarr et Sonarr : Paramètres → Connect → + → Webhook. Colle cette adresse dans « URL », méthode POST, et coche « On Import », « On Upgrade », « On Rename » et « On Delete ». Si Radarr est sur une autre machine, remplace l’adresse par celle du serveur Séance vue depuis Radarr.'),
+      s.watch_events.length ? h('details', h('summary.small', 'Derniers déclenchements'),
+        h('ul.small', s.watch_events.map((e) => h('li', `${new Date(e.t * 1000).toLocaleString('fr-FR')} — ${e.text}`)))) : null),
+    h('section.panel', h('h2', 'Sous-titres'),
+      h('p.muted.small', 'Les sous-titres intégrés aux fichiers (MKV) ne peuvent être lus qu’en parcourant tout le fichier. Séance les prépare à l’avance (toutes les pistes en une seule lecture), quand aucune lecture n’est en cours, pour qu’ils soient là dès la première seconde. Au lancement, le lecteur attend qu’ils soient prêts.'),
+      prefetch,
+      h('p.muted.small', s.subs_queue ? `${s.subs_queue} fichier(s) en attente de préparation.` : 'Aucun fichier en attente.'),
+      h('button.btn', { onclick: () => save({ subs_prefetch: true }, 'Préparation lancée pour toute la médiathèque') }, 'Tout préparer maintenant')),
     h('section.panel', h('h2', 'Lecture et processeur'),
       h('p.muted.small', `Ce serveur a ${s.cpus} cœur(s) et pas d’accélération matérielle. Une lecture directe ou un remux ne coûtent presque rien ; un transcodage (HEVC, 10 bits, sous-titres image, qualité réduite) occupe 1 à 2 cœurs par lecture en 1080p.`),
       s.ffmpeg ? null : h('div.plex-status.bad', 'ffmpeg est introuvable : installe-le (apt install ffmpeg).'),
