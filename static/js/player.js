@@ -27,6 +27,7 @@ export async function renderPlayer(root, rk, ctx) {
   const isAdmin = state.me.user.is_admin;
   const video = h('video.video', { playsinline: true, preload: 'auto' });
   const subLayer = h('div.sub-layer', { style: { fontSize: `${(prefs.sub_size / 100) * 2.4}vmin` } });
+  const subTop = h('div.sub-layer.sub-top', { style: { fontSize: `${(prefs.sub_size / 100) * 2.4}vmin` } });
   const loader = h('div.player-loader', spinner());
   const errorLayer = h('div.player-error', { hidden: true });
   const titleEl = h('div.player-title');
@@ -62,11 +63,12 @@ export async function renderPlayer(root, rk, ctx) {
       h('button.ctl', { 'aria-label': 'Avancer de 30 secondes', onclick: () => seekBy(30000) }, icon('forward')),
       h('div.vol', muteBtn, volume), timeEl, h('div.grow'), nextBtn, chaptersBtn, subsBtn, cogBtn, fullBtn));
   const top = h('div.player-top', backBtn, titleEl);
-  const player = h('div.player', video, subLayer, loader, errorLayer, top, skipBtn, nextCard, menu, controls);
+  const player = h('div.player', video, subLayer, subTop, loader, errorLayer, top, skipBtn, nextCard, menu, controls);
   clear(root, player);
 
   // ------------------------------------------------------------ state
-  let item, session = null, hls = null, base = 0, cues = [], cueIdx = -1;
+  let item, session = null, hls = null, base = 0, cues = [], cueKey = '', cueMax = 0;
+  let jassub = null, jassubKey = '';
   let audioSel = null, subSel = null, quality = prefs.quality;
   let lastReport = 0, introSkipped = false, nextTimer = null, nextDismissed = false, destroyed = false;
   let idleTimer = null, scrubbing = false, startedAt = 0;
@@ -265,15 +267,16 @@ export async function renderPlayer(root, rk, ctx) {
       rebuffering = false;
       if (seq === startSeq && !destroyed) video.play().catch(() => paintPlay());
     });
-    if (stalls.length >= 2 && session.mode === 'transcode' && ['original', '1080p'].includes(quality) && !lowerHinted) {
+    if (stalls.length >= 2 && ['original', '1080p'].includes(quality) && !lowerHinted) {
       lowerHinted = true;
-      suggestLowerQuality();
+      suggestLowerQuality(session.mode === 'transcode');
     }
   }
 
-  function suggestLowerQuality() {
+  function suggestLowerQuality(cpu) {
     const box = h('div.player-hint',
-      h('span', 'Le serveur n’arrive pas à convertir cette vidéo assez vite.'),
+      h('span', cpu ? 'Le serveur n’arrive pas à convertir cette vidéo assez vite.'
+        : 'La connexion n’arrive pas à suivre le débit de ce fichier.'),
       h('button.btn.primary.small', { onclick: () => { box.remove(); quality = '720p'; start(pos()); } }, 'Passer en 720p'),
       h('button.icon-btn', { 'aria-label': 'Fermer', onclick: () => box.remove() }, icon('close')));
     player.append(box);
@@ -298,13 +301,73 @@ export async function renderPlayer(root, rk, ctx) {
     if (hint) hint.remove();
   }
 
+  // ASS / SSA : rendu fidèle par libass (WebAssembly) — positions, polices du fichier, karaoké, panneaux.
+  let JassubClass;
+  async function jassubClass() {
+    if (JassubClass === undefined) {
+      try {
+        if (typeof WebAssembly !== 'object' || typeof Worker !== 'function') throw new Error('WebAssembly indisponible');
+        JassubClass = (await import('/vendor/jassub/jassub.es.js')).default;
+      } catch (e) {
+        console.warn('[seance] moteur ASS indisponible, sous-titres simplifiés', e.message);
+        JassubClass = null;
+      }
+    }
+    return JassubClass;
+  }
+  function dropJassub() {
+    if (jassub) { try { jassub.destroy(); } catch { /* déjà détruit */ } }
+    jassub = null;
+    jassubKey = '';
+  }
+  const syncJassub = () => { if (jassub) jassub.timeOffset = base / 1000; };
+
+  async function loadAss(seq) {
+    const url = session.subtitle_ass;
+    if (jassub && jassubKey === url) { syncJassub(); return true; }
+    dropJassub();
+    const J = await jassubClass();
+    if (!J || seq !== startSeq || destroyed) return false;
+    try {
+      const [res, fonts] = await Promise.all([fetch(url, { credentials: 'same-origin' }),
+        get(`${url.replace(/\/ass$/, '')}/fonts`).catch(() => ({ fonts: [] }))]);
+      if (!res.ok) throw new Error(`script ASS ${res.status}`);
+      const content = await res.text();
+      if (seq !== startSeq || destroyed) return false;
+      const inst = new J({
+        video, subContent: content, timeOffset: base / 1000,
+        workerUrl: '/vendor/jassub/jassub-worker.js', wasmUrl: '/vendor/jassub/jassub-worker.wasm',
+        modernWasmUrl: '/vendor/jassub/jassub-worker-modern.wasm',
+        availableFonts: { 'liberation sans': '/vendor/jassub/default.woff2' }, fallbackFont: 'liberation sans',
+        fonts: fonts.fonts || [], useLocalFonts: false, prescaleHeightLimit: 1080, maxRenderHeight: 2160,
+      });
+      const ok = await new Promise((resolve) => {
+        const t = setTimeout(() => resolve(false), 15000);
+        inst.addEventListener('ready', () => { clearTimeout(t); resolve(true); }, { once: true });
+        inst.addEventListener('error', (e) => { clearTimeout(t); console.warn('[seance] libass', e.error || e.message); resolve(false); }, { once: true });
+      });
+      if (!ok || seq !== startSeq || destroyed) { try { inst.destroy(); } catch { /* */ } return false; }
+      jassub = inst;
+      jassubKey = url;
+      syncJassub();
+      return true;
+    } catch (e) {
+      console.warn('[seance] sous-titres ASS', e.message);
+      return false;
+    }
+  }
+
   // Les sous-titres sont normalement déjà prêts (prepare) ; filet de sécurité pour les pistes externes.
   const SUBS_MAX_WAIT = 120000;
-  function loadSubtitles(seq) {
+  async function loadSubtitles(seq) {
     cues = [];
-    cueIdx = -1;
+    cueKey = '';
     subLayer.replaceChildren();
-    if (!session.subtitle_overlay) return Promise.resolve();
+    subTop.replaceChildren();
+    if (session.subtitle_ass && await loadAss(seq)) return;
+    if (seq !== startSeq || destroyed) return;
+    if (!session.subtitle_ass) dropJassub();
+    if (!session.subtitle_overlay) return;
     const url = session.subtitle_overlay;
     return new Promise((resolve) => {
       let released = false;
@@ -317,7 +380,8 @@ export async function renderPlayer(root, rk, ctx) {
           if (seq !== startSeq || destroyed) { clearTimeout(timer); release(); return; }
           if (r && r.pending) { setTimeout(poll, 800); return; }
           cues = r.cues || [];
-          cueIdx = -1;
+          cueKey = '';
+          cueMax = cues.reduce((m, c) => Math.max(m, c.e - c.s), 0);
         } catch (e) {
           console.warn('[seance] sous-titres', e.message);
         }
@@ -399,17 +463,20 @@ export async function renderPlayer(root, rk, ctx) {
 
   function paintSubtitles(p) {
     if (!cues.length) return;
-    if (cueIdx >= 0 && cues[cueIdx] && p >= cues[cueIdx].s && p <= cues[cueIdx].e) return;
     let lo = 0, hi = cues.length - 1, found = -1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
       if (cues[mid].s <= p) { found = mid; lo = mid + 1; } else hi = mid - 1;
     }
-    let idx = -1;
-    for (let i = found; i >= 0 && i >= found - 3; i--) if (p <= cues[i].e) { idx = i; break; }
-    if (idx === cueIdx) return;
-    cueIdx = idx;
-    subLayer.replaceChildren(...(idx >= 0 ? [h('span.sub-line', cues[idx].t)] : []));
+    // toutes les répliques affichées en même temps (dialogue + panneau, deux personnages…)
+    const active = [];
+    for (let i = found; i >= 0 && p - cues[i].s <= cueMax && active.length < 8; i--) if (p <= cues[i].e) active.unshift(i);
+    const key = active.join(',');
+    if (key === cueKey) return;
+    cueKey = key;
+    const line = (i) => h('div', h('span.sub-line', cues[i].t));
+    subLayer.replaceChildren(...active.filter((i) => !cues[i].top).map(line));
+    subTop.replaceChildren(...active.filter((i) => cues[i].top).map(line));
   }
 
   function paintMarkers(p) {
@@ -578,7 +645,7 @@ export async function renderPlayer(root, rk, ctx) {
   video.addEventListener('play', () => { paintPlay(); wake(); });
   video.addEventListener('pause', () => { paintPlay(); wake(); if (!rebuffering) report('paused', true); });
   video.addEventListener('waiting', () => { loader.hidden = false; onStall(); });
-  video.addEventListener('playing', () => { loader.hidden = true; switching = false; everPlayed = true; });
+  video.addEventListener('playing', () => { loader.hidden = true; switching = false; everPlayed = true; syncJassub(); });
   video.addEventListener('canplay', () => { if (!rebuffering && !switching) loader.hidden = true; });
   video.addEventListener('timeupdate', () => {
     const p = pos();
@@ -687,6 +754,7 @@ export async function renderPlayer(root, rk, ctx) {
     document.removeEventListener('visibilitychange', onHide);
     document.removeEventListener('fullscreenchange', onFullscreen);
     window.removeEventListener('pagehide', onUnload);
+    dropJassub();
     if (hls) hls.destroy();
     video.removeAttribute('src');
     video.load();

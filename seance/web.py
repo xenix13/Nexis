@@ -182,9 +182,14 @@ class App:
         with open(full, "rb") as f:
             data = f.read()
         cache = "no-cache" if full.endswith(".html") else "public, max-age=300"
+        headers = {"Cache-Control": cache}
         if "/vendor/" in full:
-            cache = "public, max-age=604800"
-        return Response(data, 200, ctype, {"Cache-Control": cache})
+            headers["Cache-Control"] = "public, max-age=604800"
+        if "/vendor/jassub/" in full:
+            # le moteur de sous-titres (libass compilé en WebAssembly) tourne dans un worker qui a besoin
+            # de compiler du WebAssembly ; cette politique ne vaut que pour ses propres fichiers
+            headers["Content-Security-Policy"] = JASSUB_CSP
+        return Response(data, 200, ctype, headers)
 
 
 SECURITY_HEADERS = {
@@ -198,6 +203,12 @@ SECURITY_HEADERS = {
         "base-uri 'none'; form-action 'self'"
     ),
 }
+
+
+JASSUB_CSP = ("default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; connect-src 'self'; "
+              "img-src 'self' data: blob:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'none'")
+mimetypes.add_type("application/wasm", ".wasm")
+mimetypes.add_type("font/woff2", ".woff2")
 
 
 def make_handler(app, trust_proxy=False):
@@ -260,7 +271,8 @@ def make_handler(app, trust_proxy=False):
                     self.close_connection = True
             self.send_response(resp.status)
             for k, v in SECURITY_HEADERS.items():
-                self.send_header(k, v)
+                if k not in resp.headers:
+                    self.send_header(k, v)
             for k, v in resp.headers.items():
                 self.send_header(k, v)
             for c in req.set_cookies:

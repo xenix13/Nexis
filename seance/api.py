@@ -29,7 +29,7 @@ from .web import App, HTTPError, Response
 
 log = logging.getLogger("seance")
 
-VERSION = "2.5.0"
+VERSION = "2.6.0"
 RK = r"(?P<rk>\d{1,12})"
 SID = r"(?P<sid>[A-Za-z0-9_-]{8,40})"
 SORTS = {"title": "i.sort_title COLLATE NOCASE", "added": "i.added_at DESC", "year": "i.year DESC, i.sort_title",
@@ -136,7 +136,7 @@ def stream_lists(probe):
         if not overlay and not burn:
             continue
         subs.append({"id": s["index"], "lang": lang, "title": label, "codec": codec, "forced": s.get("forced", False),
-                     "external": False, "overlay": overlay, "selected": False})
+                     "external": False, "overlay": overlay, "ass": codec in ("ass", "ssa"), "selected": False})
     for n, e in enumerate(probe.get("external", [])):
         lang = e.get("lang") or ""
         label = LANG_NAMES.get(lang, lang.upper() if lang else "Inconnu")
@@ -147,7 +147,7 @@ def stream_lists(probe):
             bits.append("SDH")
         subs.append({"id": EXTERNAL_BASE + n, "lang": lang, "title": f"{label} ({', '.join(bits)})",
                      "codec": e["codec"], "forced": e.get("forced", False), "external": True, "overlay": True,
-                     "selected": False})
+                     "ass": e["codec"] in ("ass", "ssa"), "selected": False})
     return audio, subs
 
 
@@ -914,6 +914,77 @@ def build_app(ctx):
             os.replace(cache + ".tmp", cache)
         return Response(data, 200, json_type)
 
+    # -- ASS d'origine (rendu fidèle par libass dans le navigateur) et polices jointes au MKV
+    ASS_FN = re.compile(rb"\\fn([^\\}]{1,100})")
+
+    def ass_fonts(raw):
+        names = set()
+        in_styles = False
+        fmt = None
+        for line in raw.decode("utf-8-sig", "replace").splitlines():
+            t = line.strip()
+            if t.startswith("["):
+                in_styles = "styles" in t.lower()
+                fmt = None
+                continue
+            if in_styles and t.lower().startswith("format:"):
+                fmt = [f.strip().lower() for f in t[7:].split(",")]
+            elif in_styles and t.lower().startswith("style:") and fmt and "fontname" in fmt:
+                parts = t[6:].split(",")
+                if len(parts) > fmt.index("fontname"):
+                    names.add(parts[fmt.index("fontname")].strip().lstrip("@").lower())
+        for m in ASS_FN.finditer(raw):
+            names.add(m.group(1).decode("utf-8", "replace").strip().lstrip("@").lower())
+        return names
+
+    def external_ass(r, sub):
+        probe = json.loads(r["probe"] or "{}")
+        ext = probe.get("external", [])
+        if sub - EXTERNAL_BASE >= len(ext) or ext[sub - EXTERNAL_BASE]["codec"] not in ("ass", "ssa"):
+            raise HTTPError(404, "Sous-titres introuvables")
+        try:
+            with open(ext[sub - EXTERNAL_BASE]["path"], "rb") as f:
+                return f.read(30 * 1024 * 1024)
+        except OSError as e:
+            raise HTTPError(502, f"Lecture des sous-titres impossible : {e}")
+
+    def raw_ass(req):
+        r = require_item(req.user, req.params["rk"])
+        sub = int(req.params["sub"])
+        if sub >= EXTERNAL_BASE:
+            return r, external_ass(r, sub)
+        data = ctx.subtitles.read_ass(r, sub)
+        if data is None:
+            raise HTTPError(404, "Script ASS indisponible")
+        return r, data
+
+    @app.route("GET", f"/api/items/{RK}/subtitles/(?P<sub>\\d{{1,6}})/ass")
+    def item_subtitles_ass(req):
+        r, data = raw_ass(req)
+        return Response(data, 200, "text/plain; charset=utf-8", {"Cache-Control": "private, max-age=3600"})
+
+    @app.route("GET", f"/api/items/{RK}/subtitles/(?P<sub>\\d{{1,6}})/fonts")
+    def item_subtitles_fonts(req):
+        r, data = raw_ass(req)
+        wanted = ass_fonts(data)
+        index = ctx.subtitles.fonts_index(r) or []
+        files = [f for f in index if wanted & set(f["names"])]
+        return {"fonts": [f"/api/items/{r['id']}/fonts/{f['file']}" for f in files], "wanted": sorted(wanted)[:50],
+                "embedded": len(index)}
+
+    @app.route("GET", f"/api/items/{RK}/fonts/(?P<name>font_\\d{{1,5}}\\.(?:ttf|otf|ttc|otc|woff2?))")
+    def item_font(req):
+        r = require_item(req.user, req.params["rk"])
+        names = {f["file"] for f in (ctx.subtitles.fonts_index(r) or [])}
+        if req.params["name"] not in names:
+            raise HTTPError(404, "Police introuvable")
+        try:
+            with open(ctx.subtitles.font_path(r, req.params["name"]), "rb") as f:
+                data = f.read()
+        except OSError:
+            raise HTTPError(404, "Police introuvable")
+        return Response(data, 200, "font/ttf", {"Cache-Control": "private, max-age=604800, immutable"})
+
     @app.route("GET", f"/api/items/{RK}/trickplay")
     def item_trickplay(req):
         r = require_item(req.user, req.params["rk"])
@@ -1032,6 +1103,7 @@ def build_app(ctx):
             "duration": duration, "quality": quality, "item": c, "audio": audio, "subtitles": subs,
             "audio_selected": p["audio_index"], "subtitle_selected": sub["id"] if sub else 0,
             "subtitle_overlay": f"/api/items/{rk}/subtitles/{sub['id']}" if sub and sub["overlay"] else None,
+            "subtitle_ass": f"/api/items/{rk}/subtitles/{sub['id']}/ass" if sub and sub.get("ass") else None,
             "markers": markers_for(r), "chapters": chapters_for(r), "next": card(nxt) if nxt else None,
         }
 
@@ -1485,6 +1557,7 @@ def build_app(ctx):
             p = json.loads(r.pop("params") or "{}")
             r["mode"] = p.get("mode")
             r["reasons"] = p.get("reasons", [])
+            r.update(ctx.transcoder.stats(r["id"]))
         return rows
 
     @app.route("DELETE", f"/api/admin/streams/{SID}", auth="admin")

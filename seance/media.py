@@ -57,6 +57,28 @@ def _lang(tags):
     return LANG_WORDS.get(code, code)
 
 
+FONT_EXT = (".ttf", ".otf", ".ttc", ".otc", ".woff", ".woff2")
+FONT_MIME = ("font/", "application/x-truetype-font", "application/x-font", "application/vnd.ms-opentype",
+             "application/font-sfnt", "application/x-opentype")
+
+
+def attachment_info(s, tags=None):
+    """Polices jointes au MKV (utilisées par les sous-titres ASS des animes)."""
+    tags = tags if tags is not None else {k.lower(): v for k, v in (s.get("tags") or {}).items()}
+    name = (tags.get("filename") or "").strip()
+    mime = (tags.get("mimetype") or "").lower()
+    ext = os.path.splitext(name)[1].lower()
+    if ext in FONT_EXT or mime.startswith(FONT_MIME) or s.get("codec_name") in ("ttf", "otf"):
+        return {"index": s["index"], "filename": name[:200], "ext": ext if ext in FONT_EXT else ".ttf"}
+    return None
+
+
+def attachments(path):
+    out = run([FFPROBE, "-v", "error", "-print_format", "json", "-show_streams", "-select_streams", "t", path],
+              timeout=60)
+    return [a for a in (attachment_info(s) for s in json.loads(out or b"{}").get("streams", [])) if a]
+
+
 def probe(path):
     out = run([FFPROBE, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters",
                path], timeout=90)
@@ -66,7 +88,7 @@ def probe(path):
         "container": fmt.get("format_name", ""),
         "duration": float(fmt.get("duration") or 0),
         "bitrate": int(fmt.get("bit_rate") or 0),
-        "video": None, "audio": [], "subs": [], "external": [], "chapters": [],
+        "video": None, "audio": [], "subs": [], "external": [], "chapters": [], "attachments": [],
     }
     for c in data.get("chapters", []):
         try:
@@ -91,6 +113,10 @@ def probe(path):
                 "index": s["index"], "codec": s.get("codec_name"), "channels": s.get("channels") or 2,
                 "lang": _lang(tags), "title": tags.get("title") or "", "default": bool(disp.get("default")),
             })
+        elif kind == "attachment":
+            att = attachment_info(s, tags)
+            if att:
+                info["attachments"].append(att)
         elif kind == "subtitle":
             info["subs"].append({
                 "index": s["index"], "codec": s.get("codec_name") or "", "lang": _lang(tags),

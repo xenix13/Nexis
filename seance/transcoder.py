@@ -20,9 +20,14 @@ log = logging.getLogger("seance.transcode")
 
 QUALITY = {"original": None, "1080p": (1080, 8000), "720p": (720, 4000), "480p": (480, 1500)}
 BROWSER_AUDIO = {"aac", "mp3"}
-# 5.1/7.1 -> stéréo sans écrêtage : rematrix normalisé, léger gain, puis limiteur
-DOWNMIX = "aresample=rematrix_maxval=1.0,volume=4dB,alimiter=limit=0.8:level=disabled"
+# 5.1/7.1 -> stéréo : d'abord la réduction en stéréo (matrice normalisée de ffmpeg, donc plus discrète),
+# puis un gain pour retrouver le niveau des dialogues et un limiteur APRÈS le mixage : aucun écrêtage possible.
+# (L'ancienne chaîne limitait chaque canal avant le mixage : la somme pouvait encore saturer.)
+DOWNMIX = "aformat=channel_layouts=stereo,volume=4dB,alimiter=limit=0.8:attack=5:release=80:level=disabled"
+# trous / chevauchements d'horodatage (fréquents dans les MKV, après un saut) : comblés plutôt que hachés
+AUDIO_SYNC = "aresample=async=1:min_hard_comp=0.100"
 SEGMENT = 4  # secondes
+COPY_SEEK_PAD = 0.15
 SEG_RE = re.compile(r"^s(\d{5})\.ts$")
 AHEAD_PAUSE = 45   # segments d'avance (~3 min) avant de mettre ffmpeg en pause
 AHEAD_RESUME = 20
@@ -95,7 +100,11 @@ def plan(probe, audio_index=None, burn_index=None, quality="original"):
 def build_command(path, p, start, out_dir):
     cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "warning", "-y"]
     if start > 0:
-        cmd += ["-ss", f"{start:.3f}"]
+        # En copie, ffmpeg recule de ~0,13 s avant de chercher (fichiers avec images B) et retombait sur
+        # l'image clé PRÉCÉDENTE : vidéo partant un GOP trop tôt, son muet pendant plusieurs secondes,
+        # position et sous-titres décalés. On vise donc juste après l'image clé voulue.
+        ss = start + COPY_SEEK_PAD if p["mode"] == "copy" else start
+        cmd += ["-ss", f"{ss:.3f}"]
     cmd += ["-i", path]
     vi = p["video_index"]
     if p["mode"] == "copy":
@@ -116,9 +125,8 @@ def build_command(path, p, start, out_dir):
         if p["acopy"]:
             cmd += ["-c:a", "copy"]
         else:
-            cmd += ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]
-            if p.get("audio_channels", 2) > 2:
-                cmd += ["-af", DOWNMIX]
+            chain = [DOWNMIX] if p.get("audio_channels", 2) > 2 else []
+            cmd += ["-af", ",".join(chain + [AUDIO_SYNC]), "-c:a", "aac", "-b:a", "192k", "-ac", "2", "-ar", "48000"]
     else:
         cmd += ["-an"]
     cmd += ["-sn", "-dn", "-max_muxing_queue_size", "4096", "-f", "hls", "-hls_time", str(SEGMENT),
@@ -137,6 +145,8 @@ class Session:
         self.dir = out_dir
         self.proc = None
         self.paused = False
+        self.active = 0.0       # secondes de travail réel de ffmpeg (hors pauses)
+        self.speed = None       # vitesse de production (x temps réel)
         self.last_seg = 0
         self.last_access = time.time()
         self.log_file = None
@@ -277,6 +287,20 @@ class Transcoder:
         for sid in list(self.sessions):
             self.stop(sid)
 
+    def stats(self, sid):
+        s = self.get(sid)
+        if not s:
+            return {}
+        warnings = ""
+        try:
+            with open(os.path.join(s.dir, "ffmpeg.log"), "rb") as f:
+                f.seek(0, os.SEEK_END)
+                f.seek(max(0, f.tell() - 1500))
+                warnings = f.read().decode("utf-8", "replace").strip().splitlines()[-4:]
+        except OSError:
+            warnings = []
+        return {"speed": s.speed, "paused": s.paused, "warnings": warnings}
+
     def idle(self, max_idle):
         now = time.time()
         with self.lock:
@@ -294,8 +318,12 @@ class Transcoder:
                 except OSError:
                     continue
                 idxs = sorted(int(m.group(1)) for m in map(SEG_RE.match, names) if m)
+                if not s.paused:
+                    s.active += 2
                 if not idxs:
                     continue
+                if s.active >= 10 and not s.paused:
+                    s.speed = round((idxs[-1] + 1) * SEGMENT / s.active, 2)
                 ahead = idxs[-1] - s.last_seg
                 if not s.paused and ahead > AHEAD_PAUSE:
                     try:

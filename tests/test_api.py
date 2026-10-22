@@ -28,7 +28,7 @@ from seance.transcoder import plan  # noqa: E402
 from seance.web import Server, make_handler  # noqa: E402
 
 STATIC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
-MEDIA_CACHE = os.path.join(tempfile.gettempdir(), "seance-test-media-v4")
+MEDIA_CACHE = os.path.join(tempfile.gettempdir(), "seance-test-media-v5")
 
 
 def media_root():
@@ -260,6 +260,14 @@ class SeanceTest(unittest.TestCase):
         st, ts, h = self.admin.call("GET", p["url"].rsplit("/", 1)[0] + "/" + seg, raw=True)
         self.assertEqual(st, 200)
         self.assertEqual(ffprobe_codec(ts), "h264")
+        # la vidéo copiée démarre bien sur l'image clé demandée, pas un GOP plus tôt : le son suit tout de suite
+        starts = {}
+        for kind in ("v", "a"):
+            out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", kind, "-show_entries", "frame=pts_time",
+                                  "-of", "csv=p=0", "-read_intervals", "%+#1", "-i", "-"], input=ts,
+                                 capture_output=True, timeout=30).stdout.decode().split()
+            starts[kind] = float(out[0].strip(","))
+        self.assertLess(abs(starts["a"] - starts["v"]), 0.35, starts)
         # saut : l'ancien ffmpeg est arrêté
         st, p2 = self.admin.call("POST", "/api/play", {"id": m["id"], "offset": 70000, "replace": p["stream"]})
         self.assertEqual(st, 200, p2)
@@ -295,6 +303,21 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(p["mode"], "copy")  # l'ASS est affiché par le navigateur : pas de transcodage
         st, cues = self.admin.call("GET", p["subtitle_overlay"] + "?wait=1")
         self.assertEqual(cues["cues"][0]["t"], "Le vent se lève\nsur la montagne")
+        # version texte de secours : le dessin vectoriel est écarté, le panneau va en haut
+        self.assertEqual([(c["t"], c.get("top", False)) for c in cues["cues"]],
+                         [("Le vent se lève\nsur la montagne", True), ("Guilde des aventuriers", True)])
+        # script ASS d'origine + polices jointes au MKV, pour le rendu fidèle (libass)
+        self.assertEqual(p["subtitle_ass"], f"/api/items/{e1['id']}/subtitles/{ass['id']}/ass")
+        st, raw, h = self.admin.call("GET", p["subtitle_ass"], raw=True)
+        self.assertEqual(st, 200)
+        self.assertIn(b"\\p1}m 0 0 l 60 0", raw)
+        st, f = self.admin.call("GET", p["subtitle_ass"].replace("/ass", "/fonts"))
+        self.assertIn("dejavu sans", f["wanted"])
+        if f["embedded"]:
+            self.assertEqual(len(f["fonts"]), 1)
+            st, font, h = self.admin.call("GET", f["fonts"][0], raw=True)
+            self.assertEqual((st, font[:4]), (200, b"\x00\x01\x00\x00"))
+        self.assertEqual(self.admin.call("GET", f"/api/items/{e1['id']}/fonts/font_99.ttf")[0], 404)
         self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
         st, e2 = self.admin.call("GET", f"/api/items/{eps[1]['id']}")
         self.assertTrue(e2["subtitles"][0]["overlay"])
@@ -478,8 +501,10 @@ class SeanceTest(unittest.TestCase):
         try:
             src = os.path.join(work, "in.mkv")
             subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=24:d=6", "-f", "lavfi",
-                            "-i", "anoisesrc=d=6:a=0.6", "-filter_complex",
-                            "[1]asplit=6[a][b][c][d][e][f];[a][b][c][d][e][f]join=inputs=6:channel_layout=5.1[o]",
+                            "-i", "anoisesrc=d=6:a=0.5:c=pink", "-f", "lavfi", "-i", "sine=f=180:d=6", "-filter_complex",
+                            # dialogue + ambiance très forts, identiques sur les 6 canaux (cas réel le plus exigeant)
+                            "[1][2]amix=inputs=2:normalize=0,volume=1.6,asplit=6[a][b][c][d][e][f];"
+                            "[a][b][c][d][e][f]join=inputs=6:channel_layout=5.1[o]",
                             "-map", "0:v", "-map", "[o]", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "ac3", src],
                            check=True, timeout=60)
             from seance import media
@@ -491,14 +516,14 @@ class SeanceTest(unittest.TestCase):
             out = os.path.join(work, "out")
             os.makedirs(out)
             cmd = build_command(src, p, 0, out)
-            self.assertIn(DOWNMIX, cmd)
+            self.assertTrue(any(DOWNMIX in c for c in cmd), cmd)
             subprocess.run(cmd, check=True, timeout=60)
             st = subprocess.run(["ffmpeg", "-hide_banner", "-i", os.path.join(out, "s00000.ts"), "-map", "0:a",
                                  "-af", "astats", "-f", "null", "-"], capture_output=True, timeout=60).stderr.decode()
             overall = st.split("Overall")[-1]
             peak = float(overall.split("Peak level dB:")[1].split()[0])
-            # sans protection, ce bruit 5.1 atteint environ +8 dB (saturation) ; le reste vient du codage AAC du bruit blanc
-            self.assertLess(peak, 2.0)
+            # sans protection, ce 5.1 dépasse largement 0 dB (saturation) ; marge pour le codage AAC
+            self.assertLess(peak, 0.5)
             # même une piste AAC 5.1 n'est plus copiée telle quelle
             info["audio"][0].update(codec="aac", channels=6)
             self.assertFalse(plan(info)["acopy"])

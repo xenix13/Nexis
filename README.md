@@ -18,7 +18,7 @@ Un serveur multimédia **100 % auto-hébergé** pour tes films, séries et anime
 | **Bonus** | Bandes-annonces (YouTube via TMDB ou fichiers locaux), coulisses, scènes coupées, interviews… rangés sous le film ou la série |
 | **Découvrir et demandes** | Catalogues Netflix, Prime Video, Disney+, Canal+… (via TMDB) avec ce qui est déjà sur le serveur, bouton « Demander » relié à Seerr / Overseerr / Jellyseerr, API compatible Jellyfin pour Seerr |
 | **Lecteur** | Choix audio, sous-titres et qualité en cours de lecture, raccourcis clavier, bandeau « Passer l'intro », épisode suivant avec compte à rebours |
-| **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou fichiers à côté de la vidéo, `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. PGS/VobSub incrustés |
+| **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou fichiers à côté de la vidéo, `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. Les ASS des animes sont rendus fidèlement par libass (panneaux positionnés, karaoké, polices jointes au MKV). PGS/VobSub incrustés |
 | **Administration** | Partages réseau SMB (montage depuis l'interface), bibliothèques (avec explorateur de dossiers), utilisateurs, clé TMDB, limites de lectures/transcodages, lectures en cours avec la raison d'un éventuel transcodage |
 
 ### Comment Séance ménage le processeur
@@ -151,6 +151,10 @@ Les sous-titres intégrés aux MKV (SRT, ASS…) ne peuvent être extraits qu'en
 
 Les vignettes d'aperçu ne sont fabriquées que lorsque personne ne regarde : une préparation de fond s'interrompt dès qu'une lecture démarre.
 
+### Sous-titres ASS des animes
+
+Les sous-titres ASS (fansubs, Crunchyroll, ADN…) contiennent bien plus que du texte : panneaux traduits placés sur l'image, dessins, karaoké des génériques, polices spéciales jointes au fichier MKV. Séance les fait rendre dans le navigateur par **libass** (le moteur de mpv/VLC, compilé en WebAssembly via [JASSUB](https://github.com/ThaUnknown/jassub), fourni dans `static/vendor/jassub`, licences dans ce dossier). Seules les polices réellement utilisées par la piste sont téléchargées. Sur un navigateur trop ancien, Séance retombe sur un affichage texte simplifié (sans dessins, panneaux en haut de l'image).
+
 ### Démarrage sans coupure
 
 La lecture ne démarre qu’avec une réserve de vidéo déjà chargée : 5 secondes en lecture directe, 12 secondes en remux, 20 secondes en transcodage (la conversion produit à peine plus vite que le temps réel). Après un saut dans la vidéo, la réserve demandée est plus courte (3 à 10 secondes). Si le réseau ou le processeur décroche en cours de route, le lecteur se met en pause le temps de refaire une vraie réserve (15 à 25 secondes) au lieu de repartir et de recouper aussitôt. Si cela se répète en transcodage, il propose de passer en 720p.
@@ -239,6 +243,9 @@ Sur la fiche d'un film, d'un épisode ou d'une série, deux listes permettent de
 Les pistes 5.1 / 7.1 (AC3, E-AC3, DTS, TrueHD, AAC 5.1…) sont réduites en stéréo par Séance avec une protection contre l'écrêtage. Le mixage par défaut de ffmpeg dépassait le niveau maximal et faisait saturer le son.
 
 ## Dépannage
+
+**Son haché ou saturé, sous-titres absents** : *Administration → Lectures en cours* affiche pour chaque lecture le mode (direct, remux, transcodage), la raison, la **vitesse de conversion** (en dessous de ×1, le processeur ne suit pas : baisse la qualité dans le menu ⚙ du lecteur) et les derniers messages de ffmpeg. *Informations sur le fichier* (menu ⋯ d'un film ou d'un épisode) liste les pistes audio et sous-titres du fichier.
+
 
 | Symptôme | Piste |
 |---|---|

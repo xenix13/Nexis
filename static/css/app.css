@@ -542,3 +542,8 @@ textarea { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px soli
 @media (max-width: 700px) {
   .discover-search { margin-left: 0; width: 100%; }
 }
+/* rendu ASS (libass) : canevas au-dessus de la vidéo, sous les commandes */
+.player .JASSUB { position: absolute !important; inset: 0; pointer-events: none; z-index: 2; }
+.sub-top { top: 6%; bottom: auto !important; }
+.player:not(.idle) .sub-top { top: 14%; }
+.sub-layer > div + div { margin-top: 0.25em; }

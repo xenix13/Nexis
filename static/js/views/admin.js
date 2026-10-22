@@ -490,7 +490,9 @@ async function streamsTab(body, ctx) {
     clear(body, list.length ? h('div.user-list', list.map((s) => h('div.user-row',
       h('div.grow', h('strong', s.title), h('div.muted.small',
         `${s.user} · ${s.state === 'paused' ? 'en pause' : 'en lecture'} à ${fmtTime(s.position_ms)} · ${MODES[s.mode] || s.mode}`,
-        s.reasons && s.reasons.length ? ` (${s.reasons.join(', ')})` : '')),
+        s.reasons && s.reasons.length ? ` (${s.reasons.join(', ')})` : '',
+        s.speed ? h('span', { class: s.speed < 1.05 && s.mode === 'transcode' ? 'tag bad' : 'tag ok' }, `vitesse ×${s.speed}`) : null),
+        s.warnings && s.warnings.length ? h('details.small', h('summary', 'Messages de ffmpeg'), h('pre.log', s.warnings.join('\n'))) : null),
       h('button.btn.small.danger', { onclick: async () => { await del(`/api/admin/streams/${s.id}`); load(); } }, 'Arrêter'))))
       : h('div.empty', 'Aucune lecture en cours.'));
   };

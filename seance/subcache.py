@@ -22,6 +22,7 @@ import threading
 import time
 
 from . import media
+from .fonts import font_names
 from .subtitles import parse_subtitles
 
 log = logging.getLogger("seance.subs")
@@ -49,8 +50,19 @@ TRICK_W = 240
 TRICK_COLS = TRICK_ROWS = 10
 
 
+ASS_CODECS = {"ass", "ssa"}
+
+
 def text_tracks(probe):
     return [s["index"] for s in (probe or {}).get("subs", []) if s.get("codec") in media.TEXT_SUB_CODECS]
+
+
+def ass_tracks(probe):
+    return [s["index"] for s in (probe or {}).get("subs", []) if s.get("codec") in ASS_CODECS]
+
+
+def _probe(item):
+    return (json.loads(item["probe"] or "{}") if isinstance(item["probe"], str) else item["probe"]) or {}
 
 
 class SubtitleCache:
@@ -76,9 +88,35 @@ class SubtitleCache:
     def path(self, item, index):
         return os.path.join(self._dir(item), f"{int(index)}.json")
 
+    def ass_path(self, item, index):
+        return os.path.join(self._dir(item), f"{int(index)}.ass")
+
+    def fonts_index(self, item):
+        try:
+            with open(os.path.join(self._dir(item), "fonts.json"), encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return None
+
+    def font_path(self, item, name):
+        return os.path.join(self._dir(item), "fonts", os.path.basename(name))
+
     def missing(self, item):
-        probe = json.loads(item["probe"] or "{}") if isinstance(item["probe"], str) else item["probe"]
-        return [i for i in text_tracks(probe) if not os.path.isfile(self.path(item, i))]
+        """Pistes à extraire : texte (JSON), ASS d'origine (rendu fidèle) et polices jointes."""
+        probe = _probe(item)
+        ass = ass_tracks(probe)
+        need = [i for i in text_tracks(probe) if not os.path.isfile(self.path(item, i))
+                or (i in ass and not os.path.isfile(self.ass_path(item, i)) and not self._failed(item, i))]
+        if ass and self.fonts_index(item) is None:
+            need = sorted(set(need) | set(ass))
+        return need
+
+    def _failed(self, item, index):
+        try:
+            with open(self.path(item, index), encoding="utf-8") as f:
+                return bool(json.load(f).get("error"))
+        except (OSError, ValueError):
+            return False
 
     # -- vignettes d'aperçu
     def trick_dir(self, item):
@@ -109,6 +147,13 @@ class SubtitleCache:
     def read(self, item, index):
         try:
             with open(self.path(item, index), "rb") as f:
+                return f.read()
+        except OSError:
+            return None
+
+    def read_ass(self, item, index):
+        try:
+            with open(self.ass_path(item, index), "rb") as f:
                 return f.read()
         except OSError:
             return None
@@ -251,28 +296,68 @@ class SubtitleCache:
                         log.warning("Vignettes de %s : %s", item["key"], e2)
                 for i in tracks:
                     try:
-                        self._ffmpeg(item, [i], False, tmp, job)
+                        self._ffmpeg(item, [i], False, tmp, job, fonts=False)
                     except media.MediaError as e2:
                         log.warning("Piste %s de %s : %s", i, item["key"], e2)
             if tracks:
                 os.makedirs(self._dir(item), exist_ok=True)
+            still = []
             for i in tracks:
                 src = os.path.join(tmp, f"{i}.srt")
-                if not os.path.isfile(src):
-                    continue
-                with open(src, "rb") as f:
-                    cues = parse_subtitles(f.read())
                 dest = self.path(item, i)
+                if os.path.isfile(src):
+                    with open(src, "rb") as f:
+                        data = {"cues": parse_subtitles(f.read())}
+                else:
+                    # piste illisible : on le note pour ne pas relire tout le fichier à chaque lecture
+                    still.append(i)
+                    data = {"cues": [], "error": "piste illisible"}
                 with open(dest + ".tmp", "wb") as f:
-                    f.write(json.dumps({"cues": cues}, ensure_ascii=False).encode())
+                    f.write(json.dumps(data, ensure_ascii=False).encode())
                 os.replace(dest + ".tmp", dest)
+                raw_ass = os.path.join(tmp, f"{i}.ass")
+                if os.path.isfile(raw_ass) and os.path.getsize(raw_ass) > 0:
+                    os.replace(raw_ass, self.ass_path(item, i))
+            if self._want_fonts(item):
+                self._store_fonts(item, tmp)
             if trick:
                 self._store_trick(item, tmp)
-            still = [i for i in tracks if not os.path.isfile(self.path(item, i))]
             if still:
                 raise media.MediaError(f"{len(still)} piste(s) de sous-titres illisible(s)")
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+    def _want_fonts(self, item):
+        return bool(ass_tracks(_probe(item))) and self.fonts_index(item) is None
+
+    def _attachments(self, item):
+        probe = _probe(item)
+        if "attachments" in probe:
+            return probe["attachments"]
+        try:  # médias scannés avant la prise en charge des polices
+            return media.attachments(item["key"])
+        except media.MediaError:
+            return []
+
+    def _store_fonts(self, item, tmp):
+        dest = os.path.join(self._dir(item), "fonts")
+        os.makedirs(dest, exist_ok=True)
+        index = []
+        for f in sorted(os.listdir(tmp)):
+            if not f.startswith("font_"):
+                continue
+            src = os.path.join(tmp, f)
+            try:
+                with open(src, "rb") as fh:
+                    names = font_names(fh.read(64 * 1024 * 1024))
+            except OSError:
+                continue
+            if not names:
+                continue
+            os.replace(src, os.path.join(dest, f))
+            index.append({"file": f, "names": sorted(names), "size": os.path.getsize(os.path.join(dest, f))})
+        with open(os.path.join(self._dir(item), "fonts.json"), "w", encoding="utf-8") as fh:
+            json.dump(index, fh, ensure_ascii=False)
 
     def _trick_size(self, item):
         probe = json.loads(item["probe"] or "{}") if isinstance(item["probe"], str) else item["probe"]
@@ -296,12 +381,15 @@ class SubtitleCache:
         with open(os.path.join(dest, "index.json"), "w", encoding="utf-8") as f:
             json.dump(index, f)
 
-    def _ffmpeg(self, item, tracks, trick, tmp, job):
+    def _ffmpeg(self, item, tracks, trick, tmp, job, fonts=True):
         cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-v", "error", "-y"]
         if trick:
             cmd += ["-skip_frame", "nokey"]  # seules les images clés sont décodées : très peu de calcul
         if job.kind == "soon" and self._streaming() and media.has_option("readrate"):
             cmd += ["-readrate", str(SOON_READRATE)]  # laisse de la bande passante au flux en cours
+        if fonts and tracks and self._want_fonts(item):
+            for a in self._attachments(item)[:200]:
+                cmd += [f"-dump_attachment:{int(a['index'])}", os.path.join(tmp, f"font_{int(a['index'])}{a['ext']}")]
         cmd += ["-i", item["key"]]
         if not trick:
             cmd += ["-vn", "-an", "-dn"]
@@ -310,8 +398,11 @@ class SubtitleCache:
             cmd += ["-map", "0:v:0", "-an", "-sn",
                     "-vf", f"fps=1/{TRICK_INTERVAL},scale={w}:{h},tile={TRICK_COLS}x{TRICK_ROWS}",
                     "-q:v", "6", "-f", "image2", os.path.join(tmp, "t%04d.jpg")]
+        ass = set(ass_tracks(_probe(item)))
         for i in tracks:
             cmd += ["-map", f"0:{i}", "-c:s", "srt", "-f", "srt", os.path.join(tmp, f"{i}.srt")]
+            if i in ass:  # le script ASS d'origine, pour un rendu fidèle (positions, polices, karaoké)
+                cmd += ["-map", f"0:{i}", "-c:s", "copy", "-f", "ass", os.path.join(tmp, f"{i}.ass")]
         cmd += ["-progress", "pipe:1", "-nostats"]
         duration = (item["duration_ms"] or 0) * 1000  # en microsecondes
         nice = 0 if job.kind == "play" else 10

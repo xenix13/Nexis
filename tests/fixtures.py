@@ -19,11 +19,15 @@ PlayResY: 288
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,2,10,10,10,1
+Style: Sign,DejaVu Sans,14,&H0000FFFF,&H000000FF,&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,1,0,7,10,10,10,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 Dialogue: 0,0:00:01.00,0:00:04.00,Default,,0,0,0,,{\\an8}Le vent se lève\\Nsur la montagne
+Dialogue: 1,0:00:01.00,0:00:12.00,Sign,,0,0,0,,{\\pos(20,200)\\p1}m 0 0 l 60 0 60 30 0 30{\\p0}
+Dialogue: 2,0:00:01.00,0:00:12.00,Sign,,0,0,0,,{\\pos(30,240)}Guilde des aventuriers
 """
+FONT_CANDIDATES = ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
 
 
 def ff(*args):
@@ -89,8 +93,11 @@ def make_media(root, long_seconds=90):
         for start, end, title in ((0, 10, "Prologue"), (10, 40, "Opening"), (40, 70, "Partie A"), (70, 85, "Ending"),
                                   (85, long_seconds, "Preview")):
             f.write(f"[CHAPTER]\nTIMEBASE=1/1000\nSTART={start * 1000}\nEND={end * 1000}\ntitle={title}\n")
+    font = next((f for f in FONT_CANDIDATES if os.path.isfile(f)), None)
+    attach = ["-attach", font, "-metadata:s:t:0", "mimetype=application/x-truetype-font",
+              "-metadata:s:t:0", "filename=KazeSign.ttf"] if font else []
     ff(*src, "-i", os.path.join(tmp, "a.ass"), "-i", os.path.join(tmp, "chapters.txt"), "-t", str(long_seconds),
-       "-map", "0:v", "-map", "1:a", "-map", "2:s", "-map_chapters", "3",
+       "-map", "0:v", "-map", "1:a", "-map", "2:s", "-map_chapters", "3", *attach,
        *x264, "-c:a", "aac", "-c:s", "ass", "-metadata:s:a:0", "language=jpn", "-metadata:s:s:0", "language=fre",
        os.path.join(d, "[Groupe] Kaze no Michi - 01 [1080p].mkv"))
     ff(*src, "-i", os.path.join(tmp, "fr.srt"), "-t", "15", "-map", "0:v", "-map", "1:a", "-map", "2:s", *x264,

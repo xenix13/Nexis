@@ -290,17 +290,26 @@ with sync_playwright() as pw:
     shutil.rmtree(ctx.subtitles._dir(_row), ignore_errors=True)
     _orig = ctx.subtitles._ffmpeg
 
-    def _slow(item, tracks, trick, tmp, job):
+    def _slow(item, tracks, trick, tmp, job, fonts=True):
         time.sleep(3)
-        return _orig(item, tracks, trick, tmp, job)
+        return _orig(item, tracks, trick, tmp, job, fonts)
     ctx.subtitles._ffmpeg = _slow
     page.click(".detail-actions a.btn.primary")
     page.wait_for_selector(".player .controls")
     page.wait_for_timeout(1500)
     check(page.evaluate("document.querySelector('video').paused"), "la vidéo attend les sous-titres en silence")
     check(page.locator(".subs-wait").count() == 0, "aucune fenêtre de chargement des sous-titres")
-    page.wait_for_function("document.querySelector('.sub-layer').textContent.includes('Le vent se lève')", timeout=30000)
+    # ASS rendu par libass (WebAssembly) : panneau jaune positionné + police jointe au MKV
+    page.wait_for_selector(".player .JASSUB canvas", state="attached", timeout=30000)
+    page.wait_for_function("document.querySelector('video').currentTime > 2", timeout=30000)
+    page.wait_for_timeout(800)
     ctx.subtitles._ffmpeg = _orig
+    from PIL import Image
+    import io
+    shot = Image.open(io.BytesIO(page.screenshot(path=f"{out}/12d-ass-libass.png"))).convert("RGB")
+    yellow = sum(1 for px in shot.getdata() if px[0] > 200 and px[1] > 200 and px[2] < 90)
+    check(yellow > 300, f"panneau ASS dessiné par libass ({yellow} pixels jaunes)")
+    check(page.locator(".sub-layer .sub-line").count() == 0, "pas de doublon en texte simplifié")
     # aperçu au survol de la barre, avec le chapitre
     page.mouse.move(700, 420)
     tl = page.locator(".timeline").bounding_box()
