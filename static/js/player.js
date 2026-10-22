@@ -7,6 +7,12 @@ import { clear, episodeCode, errorBox, fmtTime, h, icon, img, spinner, toast } f
 
 const REPORT_EVERY = 10000;
 const HIDE_AFTER = 3000;
+// Secondes de vidéo à avoir en réserve avant de démarrer / de reprendre après une coupure.
+// Une conversion à la volée produit à peine plus vite que le temps réel : on prend de l'avance.
+const PREROLL = { direct: 5, copy: 12, transcode: 20 };
+const PREROLL_SEEK = { direct: 3, copy: 6, transcode: 10 }; // après un saut : réserve plus courte
+const REBUFFER = { direct: 6, copy: 15, transcode: 25 };
+const PREPARE_MAX = 10 * 60 * 1000;
 
 function store(key, value) {
   try {
@@ -65,6 +71,7 @@ export async function renderPlayer(root, rk, ctx) {
   let lastReport = 0, introSkipped = false, nextTimer = null, nextDismissed = false, destroyed = false;
   let idleTimer = null, scrubbing = false, startedAt = 0;
   let switching = true, finished = false; // no progress reports while a stream is (re)starting or after the end
+  let rebuffering = false, stalls = [], lowerHinted = false, everPlayed = false;
 
   const duration = () => (session && session.duration) || (item && item.duration) || 0;
   const pos = () => base + Math.round((video.currentTime || 0) * 1000);
@@ -126,7 +133,7 @@ export async function renderPlayer(root, rk, ctx) {
     errorRetry: { maxNumRetry: retries, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
   } });
   const HLS_CONFIG = {
-    maxBufferLength: 40, backBufferLength: 90, startPosition: 0,
+    maxBufferLength: 60, maxMaxBufferLength: 180, backBufferLength: 90, startPosition: 0,
     manifestLoadPolicy: slow(60000, 90000, 2),
     playlistLoadPolicy: slow(60000, 90000, 4),
     fragLoadPolicy: slow(60000, 120000, 6),
@@ -160,8 +167,14 @@ export async function renderPlayer(root, rk, ctx) {
     updateIntroMark();
     // la lecture ne démarre qu'une fois les sous-titres prêts (pas de trou au début de l'épisode)
     const subsReady = loadSubtitles(seq);
+    let autoplayed = false;
     const autoplay = async () => {
+      if (autoplayed) return;
+      autoplayed = true;
       await subsReady;
+      if (seq !== startSeq || destroyed) return;
+      // on laisse le tampon se remplir avant de démarrer : pas de coupure dans les premières secondes
+      await waitBuffer((everPlayed ? PREROLL_SEEK : PREROLL)[session.mode] ?? 12, 90000, seq);
       if (seq !== startSeq || destroyed) return;
       video.play().catch(() => { loader.hidden = true; paintPlay(); });
     };
@@ -211,9 +224,82 @@ export async function renderPlayer(root, rk, ctx) {
     setupMediaSession();
   }
 
-  // Les sous-titres se préparent en silence pendant l'ouverture (simple roue de chargement).
-  // On attend au plus SUBS_MAX_WAIT ; au-delà la lecture démarre et ils apparaissent dès qu'ils sont prêts.
-  const SUBS_MAX_WAIT = 30000;
+  // ---------------------------------------------------------- tampon vidéo
+  const aheadSec = () => {
+    const b = video.buffered, t = video.currentTime;
+    for (let i = 0; i < b.length; i++) {
+      if (t >= b.start(i) - 0.3 && t <= b.end(i)) return b.end(i) - t;
+      // tout début d'un flux : la première plage peut commencer un peu après la position
+      if (b.start(i) >= t && b.start(i) - t < 1.5) return b.end(i) - t;
+    }
+    return 0;
+  };
+  const nearEnd = () => { const d = duration(); return d > 0 && pos() + aheadSec() * 1000 >= d - 5000; };
+  function waitBuffer(target, maxMs, seq) {
+    return new Promise((resolve) => {
+      const t0 = Date.now();
+      const tick = () => {
+        if (destroyed || seq !== startSeq) { resolve(false); return; }
+        const enough = aheadSec() >= target || nearEnd()
+          || (session && session.mode === 'direct' && video.readyState >= 4 && aheadSec() >= Math.min(target, 2));
+        if (enough || Date.now() - t0 > maxMs) { resolve(true); return; }
+        setTimeout(tick, 250);
+      };
+      tick();
+    });
+  }
+
+  // Coupure en cours de lecture : on met en pause le temps de refaire une vraie réserve,
+  // plutôt que de repartir dès la première seconde reçue et de recouper aussitôt.
+  function onStall() {
+    if (switching || video.seeking || rebuffering || finished || destroyed || !session || video.paused) return;
+    rebuffering = true;
+    const seq = startSeq;
+    const now = Date.now();
+    stalls = stalls.filter((t) => now - t < 180000);
+    stalls.push(now);
+    video.pause();
+    paintPlay();
+    waitBuffer(REBUFFER[session.mode] ?? 15, 45000, seq).then(() => {
+      if (!rebuffering) return; // l'utilisateur a repris la main entre-temps
+      rebuffering = false;
+      if (seq === startSeq && !destroyed) video.play().catch(() => paintPlay());
+    });
+    if (stalls.length >= 2 && session.mode === 'transcode' && ['original', '1080p'].includes(quality) && !lowerHinted) {
+      lowerHinted = true;
+      suggestLowerQuality();
+    }
+  }
+
+  function suggestLowerQuality() {
+    const box = h('div.player-hint',
+      h('span', 'Le serveur n’arrive pas à convertir cette vidéo assez vite.'),
+      h('button.btn.primary.small', { onclick: () => { box.remove(); quality = '720p'; start(pos()); } }, 'Passer en 720p'),
+      h('button.icon-btn', { 'aria-label': 'Fermer', onclick: () => box.remove() }, icon('close')));
+    player.append(box);
+    setTimeout(() => box.remove(), 20000);
+  }
+
+  // Avant la toute première lecture : toutes les pistes de sous-titres sont extraites du fichier
+  // (une seule lecture, à pleine vitesse, sans flux vidéo en concurrence sur le partage réseau).
+  async function prepare() {
+    const t0 = Date.now();
+    let hint = null;
+    while (!destroyed && ctx.isCurrent()) {
+      let r;
+      try { r = await get(`/api/items/${item.id}/prepare?wait=10`); } catch (e) {
+        console.warn('[seance] préparation', e.message);
+        break;
+      }
+      if (r.ready) break;
+      if (!hint && Date.now() - t0 > 4000) { hint = h('div.loader-hint', 'Préparation de la lecture…'); loader.append(hint); }
+      if (Date.now() - t0 > PREPARE_MAX) break;
+    }
+    if (hint) hint.remove();
+  }
+
+  // Les sous-titres sont normalement déjà prêts (prepare) ; filet de sécurité pour les pistes externes.
+  const SUBS_MAX_WAIT = 120000;
   function loadSubtitles(seq) {
     cues = [];
     cueIdx = -1;
@@ -282,8 +368,9 @@ export async function renderPlayer(root, rk, ctx) {
 
   // ------------------------------------------------------------ UI updates
   function paintPlay() {
-    playBtn.replaceChildren(icon(video.paused ? 'play' : 'pause'));
-    player.classList.toggle('paused', video.paused);
+    playBtn.replaceChildren(icon(video.paused && !rebuffering ? 'play' : 'pause'));
+    player.classList.toggle('paused', video.paused && !rebuffering);
+    if (rebuffering) loader.hidden = false;
   }
 
   function paintTime() {
@@ -456,7 +543,10 @@ export async function renderPlayer(root, rk, ctx) {
   }
 
   // ------------------------------------------------------------ events
-  const togglePlay = () => { if (video.paused) video.play().catch(() => {}); else video.pause(); };
+  const togglePlay = () => {
+    if (rebuffering) { rebuffering = false; paintPlay(); return; } // reste en pause : la reprise auto est annulée
+    if (video.paused) video.play().catch(() => {}); else video.pause();
+  };
   const toggleFull = () => {
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     else player.requestFullscreen().catch(() => {});
@@ -486,10 +576,10 @@ export async function renderPlayer(root, rk, ctx) {
   video.addEventListener('click', () => { if (!menu.hidden) { menu.hidden = true; return; } togglePlay(); });
   video.addEventListener('dblclick', toggleFull);
   video.addEventListener('play', () => { paintPlay(); wake(); });
-  video.addEventListener('pause', () => { paintPlay(); wake(); report('paused', true); });
-  video.addEventListener('waiting', () => { loader.hidden = false; });
-  video.addEventListener('playing', () => { loader.hidden = true; switching = false; });
-  video.addEventListener('canplay', () => { loader.hidden = true; });
+  video.addEventListener('pause', () => { paintPlay(); wake(); if (!rebuffering) report('paused', true); });
+  video.addEventListener('waiting', () => { loader.hidden = false; onStall(); });
+  video.addEventListener('playing', () => { loader.hidden = true; switching = false; everPlayed = true; });
+  video.addEventListener('canplay', () => { if (!rebuffering && !switching) loader.hidden = true; });
   video.addEventListener('timeupdate', () => {
     const p = pos();
     paintTime();
@@ -582,6 +672,8 @@ export async function renderPlayer(root, rk, ctx) {
   const onUnload = () => report('stopped', true);
   window.addEventListener('pagehide', onUnload);
 
+  await prepare();
+  if (destroyed || !ctx.isCurrent()) return () => {};
   await start(startAt);
   wake();
 

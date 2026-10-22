@@ -274,7 +274,8 @@ class Metadata:
         cast = [{"name": c.get("name"), "role": c.get("character")} for c in (d.get("credits") or {}).get("cast", [])[:20]]
         date = d.get("release_date") or ""
         self._update(item["id"], {
-            "tmdb_id": tid, "title": d.get("title") or item["title"], "original_title": d.get("original_title"),
+            "tmdb_id": tid, "imdb_id": d.get("imdb_id") or None,
+            "title": d.get("title") or item["title"], "original_title": d.get("original_title"),
             "summary": overview, "tagline": d.get("tagline") or None,
             "rating": round(d["vote_average"], 1) if d.get("vote_average") else None,
             "content_rating": cert, "released": date or None, "year": int(date[:4]) if date[:4].isdigit() else None,
@@ -287,6 +288,15 @@ class Metadata:
         coll = d.get("belongs_to_collection")
         if coll and coll.get("id"):
             self._collection(item, coll, tmdb)
+        self._fulfil_wishes(item, "movie", tid)
+
+    def _fulfil_wishes(self, item, media_type, tid):
+        """Un titre attendu (« À regarder » hors bibliothèque) vient d'arriver : il rejoint la vraie liste."""
+        db = self.ctx.db
+        for w in db.all("SELECT user_id, added_at FROM wishlist WHERE media_type=? AND tmdb_id=?", (media_type, tid)):
+            db.run("INSERT OR IGNORE INTO watchlist(user_id,item_id,added_at) VALUES(?,?,?)",
+                   (w["user_id"], item["id"], w["added_at"]))
+        db.run("DELETE FROM wishlist WHERE media_type=? AND tmdb_id=?", (media_type, tid))
 
     def _trailer(self, item, d, tmdb):
         vids = [v for v in (d.get("videos") or {}).get("results", []) if v.get("site") == "YouTube" and v.get("key")]
@@ -333,7 +343,7 @@ class Metadata:
             db.run(f"UPDATE items SET {sets}, img_version=img_version+1 WHERE id=?", [*f.values(), item["id"]])
 
     def _apply_show(self, item, tmdb, tid):
-        d = tmdb.get(f"/tv/{tid}", append_to_response="credits,content_ratings,videos",
+        d = tmdb.get(f"/tv/{tid}", append_to_response="credits,content_ratings,videos,external_ids",
                      include_video_language=f"{tmdb.language[:2]},en,null")
         overview = d.get("overview")
         if not overview and tmdb.language != "en-US":
@@ -343,7 +353,9 @@ class Metadata:
         cast = [{"name": c.get("name"), "role": c.get("character")} for c in (d.get("credits") or {}).get("cast", [])[:20]]
         date = d.get("first_air_date") or ""
         self._update(item["id"], {
-            "tmdb_id": tid, "title": d.get("name") or item["title"], "original_title": d.get("original_name"),
+            "tmdb_id": tid, "imdb_id": (d.get("external_ids") or {}).get("imdb_id") or None,
+            "tvdb_id": (d.get("external_ids") or {}).get("tvdb_id") or None,
+            "title": d.get("name") or item["title"], "original_title": d.get("original_name"),
             "summary": overview, "tagline": d.get("tagline") or None,
             "rating": round(d["vote_average"], 1) if d.get("vote_average") else None, "content_rating": cert,
             "released": date or None, "year": int(date[:4]) if date[:4].isdigit() else None,
@@ -353,6 +365,7 @@ class Metadata:
         })
         self._images(item, poster=d.get("poster_path"), backdrop=d.get("backdrop_path"))
         self._trailer(item, d, tmdb)
+        self._fulfil_wishes(item, "tv", tid)
         item_seasons = {s["season_number"]: s for s in d.get("seasons", [])}
         for s in self.ctx.db.all("SELECT * FROM items WHERE parent_id=? AND type='season'", (item["id"],)):
             ts = item_seasons.get(s["idx"])

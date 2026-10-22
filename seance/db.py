@@ -211,6 +211,34 @@ MIGRATIONS = [
     ALTER TABLE items ADD COLUMN trailer TEXT;
     ALTER TABLE items ADD COLUMN extra_kind TEXT;
     """,
+    # 6 : compatibilité Jellyfin (Seerr), identifiants externes, envies hors bibliothèque
+    """
+    ALTER TABLE items ADD COLUMN imdb_id TEXT;
+    ALTER TABLE items ADD COLUMN tvdb_id INTEGER;
+    CREATE INDEX items_tmdb ON items(tmdb_id, type);
+    CREATE TABLE jf_tokens(
+        token_hash TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,              -- session | apikey
+        secret TEXT,                     -- clé d'API (Jellyfin les ré-affiche : Seerr la relit)
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        app TEXT NOT NULL DEFAULT '',
+        device TEXT NOT NULL DEFAULT '',
+        ip TEXT,
+        created_at INTEGER NOT NULL,
+        last_used INTEGER NOT NULL
+    );
+    CREATE TABLE wishlist(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        media_type TEXT NOT NULL,        -- movie | tv
+        tmdb_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        year INTEGER,
+        poster TEXT,
+        added_at INTEGER NOT NULL,
+        requested_at INTEGER,
+        PRIMARY KEY(user_id, media_type, tmdb_id)
+    );
+    """,
 ]
 
 

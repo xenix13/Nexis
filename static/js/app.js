@@ -3,6 +3,7 @@ import { avatar, clear, errorBox, h, icon, spinner, toast } from './ui.js';
 import { renderLogin, renderSetup } from './views/auth.js';
 import { renderProfiles } from './views/profiles.js';
 import { renderCollection, renderPlaylist, renderPlaylists, renderWatchlist } from './views/lists.js';
+import { renderDiscover } from './views/discover.js';
 import { renderHome } from './views/home.js';
 import { renderLibrary } from './views/library.js';
 import { renderItem } from './views/item.js';
@@ -66,6 +67,7 @@ function shell(active) {
   const header = h('header.topbar',
     h('a.logo', { href: '#/' }, h('span.logo-mark'), 'Séance'),
     h('nav.nav', navLink('#/', 'Accueil', active === 'home'), navLink('#/watchlist', 'À regarder', active === 'watchlist'),
+      me.features && me.features.discover ? navLink('#/discover', 'Découvrir', active === 'discover') : null,
       me.libraries.map((l) => navLink(`#/library/${l.id}`, l.title, active === `lib:${l.id}`))),
     h('div.topbar-right', h('label.search', icon('search'), search), h('div.user-wrap', userBtn, menu)));
   const main = h('main.content');
@@ -130,7 +132,7 @@ async function route() {
   const active = page === '' ? 'home' : page === 'library' ? `lib:${parts[1]}` : page;
   const main = shell(active);
   main.append(spinner());
-  const titles = { '': 'Accueil', watchlist: 'À regarder', playlists: 'Mes playlists', search: 'Recherche', history: 'Historique', settings: 'Réglages', admin: 'Administration' };
+  const titles = { '': 'Accueil', watchlist: 'À regarder', discover: 'Découvrir', playlists: 'Mes playlists', search: 'Recherche', history: 'Historique', settings: 'Réglages', admin: 'Administration' };
   document.title = `${titles[page] || 'Séance'} · Séance`;
   try {
     switch (page) {
@@ -140,6 +142,7 @@ async function route() {
       case 'search': await renderSearch(main, query.get('q') || '', ctx); break;
       case 'collection': await renderCollection(main, parts[1], ctx); break;
       case 'watchlist': await renderWatchlist(main, ctx); break;
+      case 'discover': await renderDiscover(main, ctx); break;
       case 'playlists': await renderPlaylists(main, ctx); break;
       case 'playlist': await renderPlaylist(main, parts[1], ctx); break;
       case 'history': await renderHistory(main, ctx); break;

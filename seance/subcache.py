@@ -3,11 +3,14 @@
 Extraire une piste de sous-titres d'un MKV oblige ffmpeg à lire tout le fichier : sur un
 partage réseau, cela peut prendre une à plusieurs minutes. On extrait donc toutes les pistes
 texte d'un fichier en UNE seule lecture, et le plus tôt possible :
-- en priorité quand quelqu'un lance la lecture (le lecteur attend, avec une progression) ;
-- en urgence quand on ouvre une fiche ou que l'épisode suivant approche ;
-- en tâche de fond pour les nouveaux fichiers, uniquement quand aucune lecture n'est en cours.
+- en priorité, à pleine vitesse, avant de lancer une lecture (le lecteur attend que tout soit prêt) ;
+- en urgence pour l'épisode suivant, avec un débit de lecture plafonné (-readrate) pour ne pas
+  priver le flux en cours de bande passante sur le partage réseau ;
+- en tâche de fond (avec les vignettes) uniquement quand aucune lecture n'est en cours : une
+  tâche de fond s'interrompt dès qu'une lecture démarre et reprendra plus tard.
 """
 import collections
+import contextlib
 import json
 import math
 import logging
@@ -25,11 +28,20 @@ log = logging.getLogger("seance.subs")
 
 
 class Job:
-    def __init__(self, item_id):
+    def __init__(self, item_id, kind="play"):
         self.item_id = item_id
+        self.kind = kind          # play (pleine vitesse) | soon (plafonné) | idle (avec vignettes)
         self.progress = 0.0
         self.done = threading.Event()
         self.error = None
+        self.aborted = False
+
+
+class Aborted(Exception):
+    pass
+
+
+SOON_READRATE = 8     # x temps réel : ~40 Mb/s pour un fichier à 5 Mb/s
 
 
 TRICK_INTERVAL = 10   # une vignette toutes les 10 s
@@ -90,6 +102,10 @@ class SubtitleCache:
     def has_work(self, item):
         return bool(self.missing(item)) or self.needs_trick(item)
 
+    def ready(self, item):
+        """Toutes les pistes texte internes sont-elles extraites ?"""
+        return not self.missing(item)
+
     def read(self, item, index):
         try:
             with open(self.path(item, index), "rb") as f:
@@ -112,13 +128,15 @@ class SubtitleCache:
     # ------------------------------------------------------------ demandes
     def ensure_now(self, item):
         """Extraction prioritaire (lancement d'une lecture). Renvoie le Job (ou None si tout est prêt)."""
-        if not self.has_work(item):
+        if not self.missing(item):
             return None
         with self.lock:
             job = self.jobs.get(item["id"])
             if job and not job.done.is_set():
-                return job
-            job = Job(item["id"])
+                if job.kind != "idle":
+                    return job
+                job.aborted = True  # une tâche de fond lente : on la remplace par une extraction prioritaire
+            job = Job(item["id"], "play")
             self.jobs[item["id"]] = job
             self.urgent.pop(item["id"], None)
             self.idle.pop(item["id"], None)
@@ -129,7 +147,7 @@ class SubtitleCache:
     def enqueue(self, item_id, urgent=False):
         with self.lock:
             job = self.jobs.get(item_id)
-            if job and not job.done.is_set():
+            if job and not job.done.is_set() and not (urgent and job.kind == "idle"):
                 return
             if urgent:
                 self.idle.pop(item_id, None)
@@ -152,52 +170,70 @@ class SubtitleCache:
     def _next(self):
         with self.lock:
             if self.urgent:
-                return self.urgent.popitem(last=False)[0]
+                return self.urgent.popitem(last=False)[0], "soon"
         if self.idle and not self._streaming():
             with self.lock:
                 if self.idle:
-                    return self.idle.popitem(last=False)[0]
-        return None
+                    return self.idle.popitem(last=False)[0], "idle"
+        return None, None
 
     def _worker(self):
         while not self.stopped.is_set():
             self.wake.wait(10)
             self.wake.clear()
             while not self.stopped.is_set():
-                item_id = self._next()
+                item_id, kind = self._next()
                 if item_id is None:
                     break
                 try:
                     row = self.ctx.db.one("SELECT id, key, probe, file_mtime, duration_ms FROM items WHERE id=?", (item_id,))
+                    if not row:
+                        continue
+                    todo = self.missing(row) if kind == "soon" else self.has_work(row)
+                    if not todo:
+                        if kind == "soon" and self.needs_trick(row):
+                            self.enqueue(item_id)
+                        continue
                 finally:
                     self.ctx.db.release()
-                if not row or not self.has_work(row):
-                    continue
                 with self.lock:
                     if item_id in self.jobs and not self.jobs[item_id].done.is_set():
                         continue
-                    job = Job(item_id)
+                    job = Job(item_id, kind)
                     self.jobs[item_id] = job
                 self._run_slot(row, job)
 
     def _run_slot(self, item, job):
-        with self.slots:
+        # une lecture qui attend ne fait jamais la queue derrière les tâches de fond
+        slot = contextlib.nullcontext() if job.kind == "play" else self.slots
+        aborted = False
+        with slot:
             try:
                 self._extract(item, job)
+            except Aborted:
+                aborted = True
+                log.debug("Préparation de %s interrompue (lecture en cours)", item.get("key"))
             except Exception as e:
                 log.warning("Sous-titres de %s : %s", item.get("key"), e)
                 job.error = str(e)
             finally:
                 job.progress = 1.0 if not job.error else job.progress
-                job.done.set()
                 with self.lock:
                     # on garde les jobs terminés en erreur un moment pour l'afficher, pas les autres
-                    if not job.error:
+                    if not job.error and self.jobs.get(item["id"]) is job:
                         self.jobs.pop(item["id"], None)
+                job.done.set()
+        try:
+            if aborted and job.kind == "idle" and not job.aborted:
+                self.enqueue(item["id"])  # reprendra quand plus personne ne regarde
+            elif job.kind != "idle" and not job.error and self.needs_trick(item):
+                self.enqueue(item["id"])  # vignettes plus tard, en tâche de fond
+        finally:
+            self.ctx.db.release()
 
     def _extract(self, item, job):
         tracks = self.missing(item)
-        trick = self.needs_trick(item)
+        trick = job.kind == "idle" and self.needs_trick(item)
         if not tracks and not trick:
             return
         if not item["key"] or not os.path.isfile(item["key"]):
@@ -264,7 +300,11 @@ class SubtitleCache:
         cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-v", "error", "-y"]
         if trick:
             cmd += ["-skip_frame", "nokey"]  # seules les images clés sont décodées : très peu de calcul
+        if job.kind == "soon" and self._streaming() and media.has_option("readrate"):
+            cmd += ["-readrate", str(SOON_READRATE)]  # laisse de la bande passante au flux en cours
         cmd += ["-i", item["key"]]
+        if not trick:
+            cmd += ["-vn", "-an", "-dn"]
         if trick:
             w, h = self._trick_size(item)
             cmd += ["-map", "0:v:0", "-an", "-sn",
@@ -274,12 +314,23 @@ class SubtitleCache:
             cmd += ["-map", f"0:{i}", "-c:s", "srt", "-f", "srt", os.path.join(tmp, f"{i}.srt")]
         cmd += ["-progress", "pipe:1", "-nostats"]
         duration = (item["duration_ms"] or 0) * 1000  # en microsecondes
+        nice = 0 if job.kind == "play" else 10
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
-                             preexec_fn=lambda: os.nice(10))
+                             preexec_fn=lambda: os.nice(nice))
         err = []
         t = threading.Thread(target=lambda: err.append(p.stderr.read()), daemon=True)
         t.start()
+        checked = time.time()
         for line in p.stdout:
+            if job.kind == "idle" and (job.aborted or time.time() - checked > 3):
+                checked = time.time()
+                if job.aborted or self._streaming():
+                    p.kill()
+                    p.wait()
+                    t.join(5)
+                    p.stdout.close()
+                    p.stderr.close()
+                    raise Aborted()
             if line.startswith(b"out_time_us=") or line.startswith(b"out_time_ms="):
                 try:
                     us = int(line.split(b"=", 1)[1])
@@ -289,6 +340,8 @@ class SubtitleCache:
                     job.progress = max(job.progress, min(0.99, us / duration))
         p.wait()
         t.join(5)
+        p.stdout.close()
+        p.stderr.close()
         if p.returncode != 0:
             msg = (err[0] if err else b"").decode("utf-8", "replace").strip().splitlines()
             raise media.MediaError(msg[-1] if msg else "échec de l'extraction")

@@ -13,7 +13,7 @@ import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from tests.fixtures import FakeTMDB  # noqa: E402
+from tests.fixtures import FakeSeerr, FakeTMDB  # noqa: E402
 
 TMDB = FakeTMDB()
 os.environ["SEANCE_TMDB_API"] = TMDB.url
@@ -135,7 +135,7 @@ with sync_playwright() as pw:
     page.wait_for_selector(".user-row:has-text('Animes')")
     page.wait_for_timeout(500)
     page.screenshot(path=f"{out}/05-bibliotheques.png", full_page=True)
-    check(page.locator(".nav-link").all_inner_texts() == ["Accueil", "À regarder", "Films", "Séries", "Animes"], "onglets des bibliothèques")
+    check(page.locator(".nav-link").all_inner_texts() == ["Accueil", "À regarder", "Découvrir", "Films", "Séries", "Animes"], "onglets des bibliothèques")
 
     # --- navigation
     page.goto(base + "/#/")
@@ -211,6 +211,47 @@ with sync_playwright() as pw:
     page.wait_for_selector(".episode")
     check(page.locator(".episode").count() == 1, "playlist avec 1 élément")
     page.screenshot(path=f"{out}/18d-playlist.png")
+
+    # --- Découvrir : catalogues des plateformes et demandes via Seerr
+    from seance.jellyfin import guid
+    seerr = FakeSeerr()
+    seerr.users[0]["jellyfinUserId"] = guid(1, 1)
+    admin.call("PUT", "/api/admin/jellyfin", {"enabled": True})
+    page.goto(base + "/#/admin/requests")
+    page.wait_for_selector("text=Relier Seerr à Séance")
+    page.fill("input[placeholder='http://192.168.1.20:5055']", seerr.url)
+    page.fill("input[type=password]", seerr.key)
+    page.click("button:has-text('Enregistrer et tester')")
+    page.wait_for_selector(".toast:has-text('Connecté à Seerr')")
+    page.wait_for_selector("text=Seerr est configuré")
+    page.screenshot(path=f"{out}/19a-admin-demandes.png", full_page=True)
+    page.goto(base + "/#/discover")
+    page.wait_for_selector(".provider-title")
+    check("Découvrir" in page.locator(".nav-link").all_inner_texts(), "onglet Découvrir")
+    check(page.locator(".provider-title").count() == 1, "Netflix (Prime Video vide : rangée masquée)")
+    page.wait_for_function("[...document.images].every((i) => i.complete && i.naturalWidth)", timeout=15000)
+    check(page.locator(".dcard:has(.dbadge.available)").count() >= 2, "titres déjà disponibles signalés")
+    page.screenshot(path=f"{out}/19b-decouvrir.png")
+    page.click(".row:has-text('Sur Netflix') .dcard[title='Film Netflix']")
+    page.wait_for_selector(".detail-title:text-is('Film Netflix')")
+    page.wait_for_load_state("networkidle")
+    page.click(".detail-actions button:has-text('Demander')")
+    page.wait_for_selector(".request-status.pending")
+    check(seerr.requests and seerr.requests[-1]["mediaId"] == 9101 and seerr.requests[-1]["user"] == 1, "demande transmise à Seerr")
+    page.screenshot(path=f"{out}/19c-demande.png")
+    page.goto(base + "/#/discover/title/tv/9201")
+    page.wait_for_selector(".detail-actions button:has-text('Demander')")
+    page.click(".detail-actions button:has-text('Demander')")
+    page.wait_for_selector(".modal .check-row")
+    page.locator(".modal .check-row input").nth(1).uncheck()
+    page.screenshot(path=f"{out}/19d-saisons.png")
+    page.click(".modal button.primary")
+    page.wait_for_selector(".request-status.pending")
+    check(seerr.requests[-1]["seasons"] == [1], "saison 1 seulement")
+    page.goto(base + "/#/discover?provider=8&type=tv")
+    page.wait_for_selector(".browse-title:has-text('Netflix')")
+    check(page.locator(".grid .dcard").count() == 2, "catalogue séries Netflix")
+    seerr.httpd.shutdown()
 
     # --- lecteur : MP4 en lecture directe -> refusé par ce Chromium (pas de H.264) -> bascule HLS
     page.goto(base + "/#/library/1")
@@ -292,7 +333,7 @@ with sync_playwright() as pw:
         page.click(f".pin-key:text-is('{d}')")
     page.wait_for_selector(".hero-title, .empty", timeout=15000)
     page.wait_for_load_state("networkidle")
-    check(page.locator(".nav-link").all_inner_texts() == ["Accueil", "À regarder", "Films", "Séries", "Animes"], "onglets du profil enfant")
+    check(page.locator(".nav-link").all_inner_texts() == ["Accueil", "À regarder", "Découvrir", "Films", "Séries", "Animes"], "onglets du profil enfant")
     page.click(".nav-link:has-text('Animes')")
     page.wait_for_selector(".empty, .grid")
     check(page.locator(".grid .card").count() == 0, "animes classés 12 masqués pour l'enfant")

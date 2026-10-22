@@ -5,7 +5,7 @@ import { avatar, clear, confirmDialog, field, fmtTime, h, icon, modal, select, t
 function tabs(active) {
   const t = (id, label) => h('a.tab', { href: `#/admin/${id}`, class: id === active ? 'tab active' : 'tab' }, label);
   return h('div.tabs', t('libraries', 'Bibliothèques'), t('shares', 'Partages réseau'), t('users', 'Utilisateurs'), t('settings', 'Métadonnées et lecture'),
-    t('streams', 'Lectures en cours'));
+    t('requests', 'Demandes'), t('streams', 'Lectures en cours'));
 }
 
 function since(ts) {
@@ -420,6 +420,66 @@ async function settingsTab(body, ctx) {
     h('p.muted.small', `Séance ${s.version}`));
 }
 
+// --------------------------------------------------------------- demandes
+async function requestsTab(body, ctx) {
+  const [cfg, jf] = await Promise.all([get('/api/admin/requests'), get('/api/admin/jellyfin')]);
+  if (!ctx.isCurrent()) return;
+  const reload = () => requestsTab(body, ctx);
+  const url = h('input', { value: cfg.seerr_url, placeholder: 'http://192.168.1.20:5055', autocomplete: 'off' });
+  const key = h('input', { type: 'password', autocomplete: 'off',
+    placeholder: cfg.seerr_key_set ? 'Clé enregistrée (laisser vide pour la garder)' : 'Paramètres → Général → Clé d’API' });
+  const auto = toggle('Demander automatiquement les titres ajoutés à « À regarder » qui ne sont pas sur le serveur', cfg.auto_request);
+  auto.querySelector('input').addEventListener('change', async (e) => {
+    try { await put('/api/admin/requests', { auto_request: e.target.checked }); toast('Enregistré', 'ok'); } catch (err) { toast(err.message, 'bad'); }
+  });
+  const jfToggle = toggle('Activer l’API compatible Jellyfin', jf.enabled);
+  jfToggle.querySelector('input').addEventListener('change', async (e) => {
+    try { await put('/api/admin/jellyfin', { enabled: e.target.checked }); toast('Enregistré', 'ok'); reload(); } catch (err) { toast(err.message, 'bad'); }
+  });
+  const status = h('div.plex-status', { class: cfg.enabled ? 'plex-status ok' : 'plex-status' },
+    cfg.enabled ? 'Seerr est configuré : les utilisateurs peuvent demander des films et des séries.' : 'Seerr n’est pas encore configuré.');
+  const host = location.hostname;
+  const port = location.port || (location.protocol === 'https:' ? '443' : '80');
+  clear(body,
+    h('section.panel', h('h2', '1. Relier Seerr à Séance'),
+      h('p.muted.small', 'Seerr (le successeur d’Overseerr et de Jellyseerr) gère les demandes et les envoie à Radarr / Sonarr. Il a besoin d’un serveur multimédia pour savoir ce que tu possèdes déjà : Séance se présente à lui comme un serveur Jellyfin.'),
+      jfToggle,
+      jf.enabled ? h('div.steps.small',
+        h('p', 'Dans Seerr, à l’installation (ou Paramètres → Jellyfin) : choisis ', h('strong', 'Jellyfin'), ', puis :'),
+        h('ul',
+          h('li', 'Adresse : ', h('code', host), ' — port : ', h('code', port), location.protocol === 'https:' ? ' — SSL activé' : ' — sans SSL'),
+          h('li', 'Base d’URL : laisser vide'),
+          h('li', 'Identifiant et mot de passe : ton compte administrateur Séance')),
+        h('p', 'Active ensuite les bibliothèques dans Seerr et lance une synchronisation. Chaque membre du foyer se connecte à Seerr avec son compte Séance.')) : null,
+      jf.tokens.length ? h('details', h('summary.small', `Applications connectées (${jf.tokens.length})`),
+        h('div.user-list', jf.tokens.map((t) => h('div.user-row',
+          h('div.grow', h('strong', t.app || 'Application'), h('span.muted.small', ` ${t.kind === 'apikey' ? 'clé d’API' : 'session'} · ${t.user} · utilisée ${since(t.last_used)}`)),
+          h('button.btn.small.danger', { onclick: async () => { await del(`/api/admin/jellyfin/tokens/${t.id}`); reload(); } }, 'Révoquer'))))) : null),
+    h('section.panel', h('h2', '2. Brancher Séance sur Seerr'),
+      h('p.muted.small', 'Pour que le bouton « Demander » de l’onglet Découvrir envoie les demandes à Seerr, au nom de la personne qui demande.'),
+      status,
+      h('div.grid2', field('Adresse de Seerr', url), field('Clé d’API de Seerr', key)),
+      h('div.actions-row',
+        h('button.btn.primary', { onclick: async () => {
+          try {
+            await put('/api/admin/requests', { seerr_url: url.value.trim(), ...(key.value.trim() ? { seerr_key: key.value.trim() } : {}) });
+            const t = await post('/api/admin/requests/test');
+            toast(`Connecté à ${t.title} (serveur : ${t.media_server})`, 'ok');
+            await refreshMe();
+            reload();
+          } catch (e) { toast(e.message, 'bad'); reload(); }
+        } }, 'Enregistrer et tester'),
+        cfg.enabled ? h('button.btn', { onclick: async () => {
+          try { const t = await post('/api/admin/requests/test'); toast(`Connecté à ${t.title} (serveur : ${t.media_server})`, 'ok'); }
+          catch (e) { toast(e.message, 'bad'); }
+        } }, 'Tester') : null,
+        cfg.enabled ? h('button.btn.ghost', { onclick: async () => {
+          await put('/api/admin/requests', { seerr_url: '', seerr_key: '' }); await refreshMe(); reload();
+        } }, 'Déconnecter') : null),
+      auto,
+      h('p.muted.small', `Catalogues affichés pour le pays : ${cfg.region} (celui des métadonnées).`)));
+}
+
 // ---------------------------------------------------------------- streams
 const MODES = { direct: 'Lecture directe', copy: 'Remux (vidéo copiée)', transcode: 'Transcodage' };
 
@@ -445,6 +505,7 @@ export async function renderAdmin(main, tab, ctx) {
   if (tab === 'users') await usersTab(body, ctx);
   else if (tab === 'settings') await settingsTab(body, ctx);
   else if (tab === 'streams') await streamsTab(body, ctx);
+  else if (tab === 'requests') await requestsTab(body, ctx);
   else if (tab === 'shares') await sharesTab(body, ctx);
   else await librariesTab(body, ctx);
 }

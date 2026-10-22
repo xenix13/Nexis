@@ -16,6 +16,7 @@ Un serveur multimédia **100 % auto-hébergé** pour tes films, séries et anime
 | **Espace personnel** | Reprise de lecture, « Reprendre et à suivre », historique, épisodes vus/non vus, langues audio/sous-titres préférées, thème, couleur, taille des affiches |
 | **Collections et listes** | Sagas créées automatiquement depuis TMDB (*Harry Potter*, *Le Seigneur des anneaux*…), collections manuelles, liste « À regarder » par utilisateur, playlists personnelles lues à la suite |
 | **Bonus** | Bandes-annonces (YouTube via TMDB ou fichiers locaux), coulisses, scènes coupées, interviews… rangés sous le film ou la série |
+| **Découvrir et demandes** | Catalogues Netflix, Prime Video, Disney+, Canal+… (via TMDB) avec ce qui est déjà sur le serveur, bouton « Demander » relié à Seerr / Overseerr / Jellyseerr, API compatible Jellyfin pour Seerr |
 | **Lecteur** | Choix audio, sous-titres et qualité en cours de lecture, raccourcis clavier, bandeau « Passer l'intro », épisode suivant avec compte à rebours |
 | **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou fichiers à côté de la vidéo, `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. PGS/VobSub incrustés |
 | **Administration** | Partages réseau SMB (montage depuis l'interface), bibliothèques (avec explorateur de dossiers), utilisateurs, clé TMDB, limites de lectures/transcodages, lectures en cours avec la raison d'un éventuel transcodage |
@@ -145,8 +146,14 @@ Sur un partage SMB, Linux n'est pas prévenu des fichiers ajoutés depuis une au
 Les sous-titres intégrés aux MKV (SRT, ASS…) ne peuvent être extraits qu'en lisant tout le fichier, ce qui prend parfois plus d'une minute sur un NAS. Séance les prépare donc à l'avance, toutes les pistes d'un fichier en **une seule lecture** :
 
 - en tâche de fond pour les nouveaux fichiers, et pour toute la médiathèque au premier démarrage, uniquement quand personne ne regarde quelque chose ;
-- en priorité quand on ouvre une fiche, et pour l'épisode suivant pendant qu'on regarde le précédent ;
-- au lancement, si rien n'est encore prêt, le lecteur affiche « Préparation des sous-titres… » avec une progression et ne démarre qu'une fois les sous-titres disponibles. Le bouton *Lancer sans attendre* permet de ne pas patienter.
+- pour l'épisode suivant pendant qu'on regarde le précédent, avec un débit de lecture plafonné pour ne pas ralentir l'épisode en cours sur le partage réseau ;
+- au lancement, si rien n'est encore prêt, le lecteur attend que **toutes** les pistes soient extraites (simple roue de chargement, « Préparation de la lecture… » si cela dure), à pleine vitesse et avant de démarrer le flux vidéo, pour que les deux ne se disputent pas le NAS.
+
+Les vignettes d'aperçu ne sont fabriquées que lorsque personne ne regarde : une préparation de fond s'interrompt dès qu'une lecture démarre.
+
+### Démarrage sans coupure
+
+La lecture ne démarre qu’avec une réserve de vidéo déjà chargée : 5 secondes en lecture directe, 12 secondes en remux, 20 secondes en transcodage (la conversion produit à peine plus vite que le temps réel). Après un saut dans la vidéo, la réserve demandée est plus courte (3 à 10 secondes). Si le réseau ou le processeur décroche en cours de route, le lecteur se met en pause le temps de refaire une vraie réserve (15 à 25 secondes) au lieu de repartir et de recouper aussitôt. Si cela se répète en transcodage, il propose de passer en 720p.
 
 ## Accès depuis l'extérieur (HTTPS)
 
@@ -171,7 +178,7 @@ Pour nginx, ajoute `proxy_read_timeout 120s;` et `proxy_buffering off;`.
 
 - **Aperçus au survol** : en survolant ou en faisant glisser la barre de lecture, une vignette de la scène s'affiche, avec le nom du chapitre. Les vignettes sont fabriquées à partir des images clés seulement, donc avec peu de calcul, et pendant la même lecture du fichier que la préparation des sous-titres.
 - **Chapitres** : repères sur la barre et menu « Chapitres » dans le lecteur.
-- **Passer l'intro / épisode suivant** : l'intro et le générique de fin sont repérés grâce aux chapitres du fichier. Les chapitres nommés (`Opening`, `OP`, `Intro`, `Générique`, `Ending`, `ED`, `Credits`…) sont reconnus. Pour les chapitres sans nom, typiques des animes, Séance cherche les blocs de 70 à 115 secondes en début et en fin d'épisode. Le bandeau « Passer l'intro » apparaît pendant l'intro ; la carte « Épisode suivant » apparaît au début du générique de fin. Un administrateur peut toujours corriger ces repères à la main pendant la lecture (menu ⚙), et ses repères priment.
+- **Passer l'intro / épisode suivant** : l'opening et le générique de fin sont repérés grâce aux chapitres du fichier. Les chapitres nommés (`Opening`, `OP`, `Intro`, `Générique`, `Ending`, `ED`, `Credits`…) sont reconnus. Dans les animes, « Intro » ou « Prologue » désigne souvent la scène d'avant-générique : un chapitre `OP` / `Opening` a donc toujours la priorité, et un « Intro » trop court pour être une chanson laisse la place au chapitre suivant s'il en a la durée. Pour les chapitres sans nom, typiques des animes, Séance cherche les blocs de 70 à 115 secondes en début et en fin d'épisode. Le bandeau « Passer l'intro » apparaît pendant l'intro ; la carte « Épisode suivant » apparaît au début du générique de fin. Un administrateur peut toujours corriger ces repères à la main pendant la lecture (menu ⚙), et ses repères priment.
 
 Les fichiers sans chapitres n'ont pas encore de détection automatique : la comparaison audio entre les épisodes d'une saison est la prochaine étape.
 
@@ -207,6 +214,23 @@ Séance reconnaît les bonus rangés comme pour Plex ou Jellyfin, à côté du f
 | `Extras/`, `Bonus/`, `Other/` | `-other` | Bonus |
 
 Exemple : `Films/Inception (2010)/Trailers/Bande-annonce VF.mkv` ou `Films/Inception (2010)/Inception (2010)-trailer.mp4`. Les bonus ne sont jamais comptés comme des films ou des épisodes. Sans bande-annonce locale, le bouton *Bande-annonce* lit celle de TMDB depuis YouTube (mode sans cookies).
+
+## Découvrir et demander (Netflix, Prime Video, Disney+…)
+
+L'onglet **Découvrir** montre ce qui est proposé sur les plateformes de streaming en France (Netflix, Prime Video, Disney+, Canal+, Max, Apple TV+, Paramount+, Crunchyroll, ADN), les tendances de la semaine et une recherche. Chaque titre indique s'il est **déjà sur ton serveur** (le clic l'ouvre directement), **demandé** ou **en cours de téléchargement**. Il faut une clé TMDB.
+
+Le bouton **Demander** passe par [Seerr](https://docs.seerr.dev) (le successeur d'Overseerr et de Jellyseerr), qui envoie la demande à Radarr / Sonarr. Pour une série, on choisit les saisons. Le bouton signet ajoute aussi à **À regarder** un titre absent : il est alors demandé automatiquement (désactivable) et rejoint la liste habituelle dès son arrivée sur le serveur.
+
+### Installer et relier Seerr
+
+Seerr a besoin d'un serveur multimédia pour savoir ce que tu possèdes déjà. **Séance se présente à lui comme un serveur Jellyfin** (lecture seule : comptes, bibliothèques, identifiants TMDB/IMDb/TVDB, saisons, épisodes, résolution).
+
+1. Dans Séance : *Administration → Demandes* → active **l'API compatible Jellyfin**.
+2. Installe Seerr, de préférence dans un conteneur LXC à part, en suivant [sa documentation](https://docs.seerr.dev). À l'assistant, choisis **Jellyfin** et indique l'adresse IP du conteneur Séance, son port (8420 par défaut, celui de l'interface web), sans SSL et sans base d'URL, puis ton identifiant et mot de passe **administrateur Séance**.
+3. Dans Seerr, active les bibliothèques et lance une synchronisation, puis branche Radarr et Sonarr (*Paramètres → Services*).
+4. Dans Seerr, *Paramètres → Général*, copie la **clé d'API**. Dans Séance, *Administration → Demandes*, colle l'adresse de Seerr (ex. `http://192.168.1.20:5055`) et la clé, puis *Enregistrer et tester*.
+
+Chacun peut ensuite se connecter à Seerr avec son compte Séance. Quand on demande depuis Séance, la demande est faite **au nom de la personne** (son compte est importé dans Seerr au besoin), donc les règles de Seerr s'appliquent : validation automatique ou par l'administrateur, quotas… Les applications connectées à l'API Jellyfin sont listées dans *Administration → Demandes* et peuvent être révoquées.
 
 ## Langue audio et sous-titres
 
@@ -266,5 +290,6 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 4. Import de l'historique « vu » depuis Jellyfin, par utilisateur
 5. ~~Profils, PIN, contrôle parental~~ ✔
 6. ~~Collections, « À regarder », playlists, bonus et bandes-annonces~~ ✔
-7. Appli installable sur téléphone (PWA), Chromecast / Google TV, téléchargement pour le hors ligne
-8. Accélération matérielle optionnelle (VAAPI / Quick Sync) pour les serveurs équipés d'un GPU
+7. ~~Découvrir les plateformes de streaming et demander via Seerr~~ ✔
+8. Appli installable sur téléphone (PWA), Chromecast / Google TV, téléchargement pour le hors ligne
+9. Accélération matérielle optionnelle (VAAPI / Quick Sync) pour les serveurs équipés d'un GPU

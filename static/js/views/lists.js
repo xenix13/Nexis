@@ -1,6 +1,7 @@
 // Collections, playlists et « À regarder ».
 import { del, get, put } from '../api.js';
 import { state } from '../app.js';
+import { discoverCard } from './discover.js';
 import { clear, confirmDialog, episodeCode, fmtDuration, h, icon, img, modal, field, posterCard, progressBar, toast } from '../ui.js';
 
 export async function renderCollection(main, cid, ctx) {
@@ -35,11 +36,17 @@ export async function renderCollection(main, cid, ctx) {
 }
 
 export async function renderWatchlist(main, ctx) {
-  const items = await get('/api/watchlist');
+  const discover = state.me.features && state.me.features.discover;
+  const [items, wishes] = await Promise.all([get('/api/watchlist'), discover ? get('/api/wishlist').catch(() => []) : []]);
   if (!ctx.isCurrent()) return;
-  clear(main, h('div.page-head', h('h1', 'À regarder'), h('span.muted', `${items.length} élément(s)`)),
-    items.length ? h('div.grid', items.map((x) => posterCard(x)))
-      : h('div.empty', 'Ta liste est vide. Utilise le bouton ', icon('bookmark'), ' sur un film ou une série pour l’y ajouter.'));
+  const total = items.length + wishes.length;
+  clear(main, h('div.page-head', h('h1', 'À regarder'), h('span.muted', `${total} élément(s)`)),
+    items.length ? h('div.grid', items.map((x) => posterCard(x))) : null,
+    wishes.length ? h('section.block', h('h2', 'Pas encore dans la médiathèque'),
+      h('p.muted.small', 'Ces titres rejoindront ta liste dès leur arrivée sur le serveur.'),
+      h('div.grid', wishes.map(discoverCard))) : null,
+    total ? null : h('div.empty', 'Ta liste est vide. Utilise le bouton ', icon('bookmark'), ' sur un film ou une série pour l’y ajouter',
+      discover ? h('span', ', même s’il n’est pas encore sur le serveur (onglet ', h('a', { href: '#/discover' }, 'Découvrir'), ').') : '.'));
 }
 
 export async function renderPlaylists(main, ctx) {

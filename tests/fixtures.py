@@ -7,6 +7,7 @@ import socketserver
 import subprocess
 import threading
 import urllib.parse
+import urllib.request
 
 SRT_FR = "1\n00:00:01,000 --> 00:00:04,000\nBonjour <i>tout le monde</i>\n\n2\n00:00:05,500 --> 00:00:07,000\nDeuxième ligne\n"
 SRT_EN = "1\n00:00:01,000 --> 00:00:03,000\nHello everyone\n"
@@ -122,6 +123,22 @@ SHOWS = {
 }
 
 
+# catalogue « streaming » (titres absents de la bibliothèque, sauf 5001 et 7002)
+STREAM = {
+    "movie": [{"id": 9101, "title": "Film Netflix", "release_date": "2024-03-01", "poster_path": "/p9101.jpg",
+               "overview": "Un film du catalogue.", "vote_average": 7.1, "popularity": 90},
+              {"id": 5001, "title": "Le Grand Voyage", "release_date": "2019-05-02", "poster_path": "/p5001.jpg",
+               "overview": "Un voyage immense.", "vote_average": 7.4, "popularity": 50}],
+    "tv": [{"id": 9201, "name": "Série Netflix", "first_air_date": "2023-01-01", "poster_path": "/p9201.jpg",
+            "overview": "Une série du catalogue.", "vote_average": 8.0, "popularity": 80},
+           {"id": 7002, "name": "Kaze no Michi", "first_air_date": "2021-04-01", "poster_path": "/p7002.jpg",
+            "overview": "Le vent.", "vote_average": 8.1, "popularity": 40}],
+}
+PROVIDERS = [{"provider_id": 8, "provider_name": "Netflix", "logo_path": "/logo8.jpg"},
+             {"provider_id": 119, "provider_name": "Amazon Prime Video", "logo_path": "/logo119.jpg"},
+             {"provider_id": 999, "provider_name": "Service obscur", "logo_path": "/logo999.jpg"}]
+
+
 class FakeTMDB:
     def __init__(self, key="cle-de-test"):
         self.key = key
@@ -180,14 +197,43 @@ class FakeTMDB:
                                 "first_air_date": m.get("first_air_date"), "overview": m["overview"],
                                 "poster_path": f"/p{i}.jpg"})
             return self.send(h, 200, {"results": res})
+        if path.startswith("/watch/providers/"):
+            return self.send(h, 200, {"results": PROVIDERS})
+        if path.startswith("/discover/"):
+            kind = path.rsplit("/", 1)[1]
+            res = STREAM[kind] if q.get("with_watch_providers") in (None, "8") else []
+            return self.send(h, 200, {"page": 1, "total_pages": 1, "results": res})
+        if path == "/trending/all/week":
+            return self.send(h, 200, {"results": [dict(r, media_type="movie") for r in STREAM["movie"]] +
+                                                 [dict(r, media_type="tv") for r in STREAM["tv"]] +
+                                                 [{"id": 1, "media_type": "person", "name": "Quelqu'un"}]})
+        if path == "/search/multi":
+            needle = q.get("query", "").lower()
+            res = [dict(r, media_type=k) for k in ("movie", "tv") for r in STREAM[k]
+                   if needle in (r.get("title") or r.get("name")).lower()]
+            return self.send(h, 200, {"results": res})
         parts = path.strip("/").split("/")
+        if parts[0] in ("movie", "tv") and int(parts[1]) in (9101, 9201):
+            base = next(r for r in STREAM[parts[0]] if r["id"] == int(parts[1]))
+            d = dict(base, genres=[{"name": "Drame"}], runtime=101, tagline="Accroche.",
+                     backdrop_path=f"/b{parts[1]}.jpg",
+                     credits={"cast": [{"name": "Acteur Deux"}]},
+                     videos={"results": [{"site": "YouTube", "key": "trailer9999", "type": "Trailer",
+                                          "iso_639_1": "fr"}]},
+                     **{"watch/providers": {"results": {"FR": {"flatrate": [PROVIDERS[0]]}}}})
+            if parts[0] == "tv":
+                d["seasons"] = [{"season_number": 0, "name": "Spéciaux", "episode_count": 1},
+                                {"season_number": 1, "name": "Saison 1", "episode_count": 8, "air_date": "2023-01-01"},
+                                {"season_number": 2, "name": "Saison 2", "episode_count": 8, "air_date": "2024-01-01"}]
+            return self.send(h, 200, d)
         if parts[0] == "collection" and int(parts[1]) == SAGA["id"]:
             return self.send(h, 200, {"id": SAGA["id"], "name": SAGA["name"], "overview": "Deux films de démonstration."})
         if parts[0] == "movie" and int(parts[1]) in MOVIES:
             m = dict(MOVIES[int(parts[1])])
             if lang == "en-US" and not m["overview"]:
                 m["overview"] = "English overview."
-            m.update(id=int(parts[1]), vote_average=7.4, tagline="Une accroche.", poster_path=f"/p{parts[1]}.jpg",
+            m.update(id=int(parts[1]), imdb_id=f"tt{int(parts[1]):07d}", vote_average=7.4, tagline="Une accroche.",
+                     poster_path=f"/p{parts[1]}.jpg",
                      backdrop_path=f"/b{parts[1]}.jpg", production_companies=[{"name": "Studio Démo"}],
                      credits={"cast": [{"name": "Actrice Une", "character": "Héroïne"}],
                               "crew": [{"job": "Director", "name": "Réalisatrice"}]},
@@ -204,6 +250,88 @@ class FakeTMDB:
             m = dict(SHOWS[sid])
             m.update(id=sid, vote_average=8.1, poster_path=f"/p{sid}.jpg", backdrop_path=f"/b{sid}.jpg",
                      genres=[{"name": "Animation" if sid == 7002 else "Thriller"}], networks=[{"name": "Canal"}],
-                     credits={"cast": []}, content_ratings={"results": [{"iso_3166_1": "FR", "rating": "12"}]})
+                     credits={"cast": []}, content_ratings={"results": [{"iso_3166_1": "FR", "rating": "12"}]},
+                     external_ids={"imdb_id": f"tt{sid:07d}", "tvdb_id": 70000 + sid})
             return self.send(h, 200, m)
         return self.send(h, 404, {"status_message": "not found"})
+
+
+# ------------------------------------------------------------------ faux Seerr
+class FakeSeerr:
+    """Imite l'API de Seerr (Overseerr / Jellyseerr) ; l'import d'utilisateurs interroge vraiment
+    l'API compatible Jellyfin de Séance, comme le ferait Seerr."""
+
+    def __init__(self, key="cle-seerr-0123456789"):
+        self.key = key
+        self.jf_url = None
+        self.jf_key = None
+        self.users = [{"id": 1, "displayName": "colas", "jellyfinUserId": None}]
+        self.media = {("movie", 5003): 5}   # disponible côté Seerr (déjà téléchargé)
+        self.requests = []
+        server = self
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                server.handle(self, "GET")
+
+            def do_POST(self):
+                server.handle(self, "POST")
+
+        class S(socketserver.ThreadingMixIn, http.server.HTTPServer):
+            daemon_threads = True
+        self.httpd = S(("127.0.0.1", 0), H)
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def send(self, h, code, body):
+        data = json.dumps(body).encode()
+        h.send_response(code)
+        h.send_header("Content-Type", "application/json")
+        h.send_header("Content-Length", str(len(data)))
+        h.end_headers()
+        h.wfile.write(data)
+
+    def jf(self, path):
+        req = urllib.request.Request(self.jf_url + path, headers={
+            "Authorization": f'MediaBrowser Client="Seerr", Device="Seerr", DeviceId="x", Version="1", Token="{self.jf_key}"'})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read())
+
+    def handle(self, h, method):
+        u = urllib.parse.urlsplit(h.path)
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()}
+        n = int(h.headers.get("Content-Length") or 0)
+        body = json.loads(h.rfile.read(n)) if n else None
+        if h.headers.get("X-Api-Key") != self.key:
+            return self.send(h, 401, {"message": "Unauthorized"})
+        acting = int(h.headers.get("X-API-User") or 1)
+        path = u.path
+        if path == "/api/v1/auth/me":
+            return self.send(h, 200, {"id": 1, "displayName": "colas"})
+        if path == "/api/v1/settings/public":
+            return self.send(h, 200, {"applicationTitle": "Seerr", "mediaServerType": 2})
+        if path == "/api/v1/media":
+            res = [{"tmdbId": t, "mediaType": k, "status": st} for (k, t), st in self.media.items()]
+            return self.send(h, 200, {"pageInfo": {"pages": 1, "results": len(res)}, "results": res})
+        if path == "/api/v1/user" and method == "GET":
+            return self.send(h, 200, {"pageInfo": {"pages": 1}, "results": self.users})
+        if path == "/api/v1/user/import-from-jellyfin" and method == "POST":
+            jf_users = {x["Id"]: x for x in self.jf("/Users")}
+            created = []
+            for jid in body["jellyfinUserIds"]:
+                if jid in jf_users and not any(x["jellyfinUserId"] == jid for x in self.users):
+                    new = {"id": len(self.users) + 1, "displayName": jf_users[jid]["Name"], "jellyfinUserId": jid}
+                    self.users.append(new)
+                    created.append(new)
+            return self.send(h, 201, created)
+        if path == "/api/v1/request" and method == "POST":
+            key = (body["mediaType"], body["mediaId"])
+            if self.media.get(key) in (2, 3, 5):
+                return self.send(h, 409, {"message": "Request for this media already exists."})
+            self.requests.append({"user": acting, **body})
+            self.media[key] = 2
+            return self.send(h, 201, {"id": len(self.requests), "status": 1, "media": {"status": 2}})
+        return self.send(h, 404, {"message": "not found"})

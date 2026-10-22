@@ -19,6 +19,20 @@ class MediaError(Exception):
     pass
 
 
+_options = {}
+
+
+def has_option(name):
+    """ffmpeg connaît-il cette option ? (-readrate n'existe que depuis ffmpeg 5)"""
+    if name not in _options:
+        try:
+            out = subprocess.run([FFMPEG, "-hide_banner", "-h", "full"], capture_output=True, timeout=20).stdout
+            _options[name] = f"-{name} ".encode() in out
+        except (OSError, subprocess.SubprocessError):
+            _options[name] = False
+    return _options[name]
+
+
 def available():
     return bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
 

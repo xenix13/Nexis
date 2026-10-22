@@ -11,7 +11,7 @@ import time
 
 import types
 
-from . import collections_api, media, mountd
+from . import collections_api, discover, jellyfin, media, mountd
 from .auth import (Throttle, check_credentials, clear_session, create_session, hash_password,
                    load_user, validate_password, verify_password)
 from .db import DB
@@ -29,7 +29,7 @@ from .web import App, HTTPError, Response
 
 log = logging.getLogger("seance")
 
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 RK = r"(?P<rk>\d{1,12})"
 SID = r"(?P<sid>[A-Za-z0-9_-]{8,40})"
 SORTS = {"title": "i.sort_title COLLATE NOCASE", "added": "i.added_at DESC", "year": "i.year DESC, i.sort_title",
@@ -500,7 +500,9 @@ def build_app(ctx):
         allowed = allowed_set(req.user)
         warning = None if media.available() else "ffmpeg n'est pas installé sur le serveur : la lecture est impossible."
         return {"user": user_view(req.user), "prefs": get_prefs(req.user["id"]),
-                "libraries": [l for l in libraries_all() if l["id"] in allowed], "plex_error": warning}
+                "libraries": [l for l in libraries_all() if l["id"] in allowed], "plex_error": warning,
+                "features": {"discover": bool(db.setting("tmdb_key")),
+                             "requests": bool(db.setting("seerr_url") and db.setting("seerr_key"))}}
 
     @app.route("PUT", "/api/me/prefs")
     def me_prefs(req):
@@ -844,6 +846,23 @@ def build_app(ctx):
         with ctx.lock:
             return ctx.sub_locks.setdefault(key, threading.Lock())
 
+    @app.route("GET", f"/api/items/{RK}/prepare")
+    def item_prepare(req):
+        """Avant de lancer la lecture : toutes les pistes de sous-titres internes doivent être extraites."""
+        r = require_item(req.user, req.params["rk"])
+        if r["type"] not in ("movie", "episode", "extra"):
+            raise HTTPError(400, "Élément non lisible")
+        job = ctx.subtitles.ensure_now(r)
+        if not job:
+            return {"ready": True, "progress": 1}
+        if req.arg("wait"):
+            db.release()
+            ctx.subtitles.wait(job, min(25, max(1, req.int_arg("wait", 10))))
+        if job.done.is_set():
+            # en cas d'échec on n'empêche pas la lecture : les pistes illisibles seront simplement absentes
+            return {"ready": True, "progress": 1, "warning": job.error}
+        return {"ready": False, "progress": round(job.progress, 3)}
+
     @app.route("GET", f"/api/items/{RK}/subtitles/(?P<sub>\\d{{1,6}})")
     def item_subtitles(req):
         r = require_item(req.user, req.params["rk"])
@@ -1002,11 +1021,11 @@ def build_app(ctx):
         if b.get("playlist"):
             nxt = x.playlist_next(req.user, b["playlist"], r["id"]) if str(b["playlist"]).isdigit() else None
         if ctx.subtitles.missing(r):
-            ctx.subtitles.ensure_now(r)  # sous-titres + vignettes en une lecture
-        elif ctx.subtitles.has_work(r):
-            ctx.subtitles.enqueue(r["id"], urgent=True)
-        if nxt and ctx.subtitles.has_work(nxt):
-            ctx.subtitles.enqueue(nxt["id"], urgent=True)
+            ctx.subtitles.ensure_now(r)
+        elif ctx.subtitles.needs_trick(r):
+            ctx.subtitles.enqueue(r["id"])  # vignettes : en tâche de fond, après la lecture
+        if nxt and ctx.subtitles.missing(nxt):
+            ctx.subtitles.enqueue(nxt["id"], urgent=True)  # débit plafonné pour ne pas gêner ce flux
         url = f"/api/stream/{sid}/file" if p["mode"] == "direct" else f"/api/stream/{sid}/index.m3u8"
         return {
             "stream": sid, "mode": p["mode"], "reasons": p["reasons"], "url": url, "offset": actual,
@@ -1601,6 +1620,8 @@ def build_app(ctx):
                       visible=visible, age_filter=age_filter, allowed_set=allowed_set, require_section=require_section,
                       leaves=leaves, libraries_all=libraries_all, ITEM_SQL=ITEM_SQL, EPISODE_ORDER=EPISODE_ORDER)
     collections_api.register(app, ctx, x)
+    jellyfin.register(app, ctx, x)
+    discover.register(app, ctx, x)
     return app
 
 
