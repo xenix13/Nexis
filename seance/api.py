@@ -16,6 +16,7 @@ from .auth import (Throttle, check_credentials, clear_session, create_session, h
                    load_user, validate_password, verify_password)
 from .db import DB
 from .images import Images
+from .keyframes import mkv_keyframes
 from .markers import from_chapters as chapter_markers
 from .metadata import Metadata, MetaError
 from .names import LANG_WORDS, fold
@@ -23,13 +24,13 @@ from .ratings import age_of
 from .scanner import EXTRA_LABELS, Scanner
 from .subcache import SubtitleCache, text_tracks
 from .subtitles import parse_subtitles
-from .transcoder import QUALITY, Busy, StreamError, Transcoder, plan
+from .transcoder import DOWNMIX_ALGOS, QUALITY, Busy, StreamError, Transcoder, plan
 from .watcher import Watcher
 from .web import App, HTTPError, Response
 
 log = logging.getLogger("seance")
 
-VERSION = "2.6.0"
+VERSION = "2.7.0"
 RK = r"(?P<rk>\d{1,12})"
 SID = r"(?P<sid>[A-Za-z0-9_-]{8,40})"
 SORTS = {"title": "i.sort_title COLLATE NOCASE", "added": "i.added_at DESC", "year": "i.year DESC, i.sort_title",
@@ -136,7 +137,8 @@ def stream_lists(probe):
         if not overlay and not burn:
             continue
         subs.append({"id": s["index"], "lang": lang, "title": label, "codec": codec, "forced": s.get("forced", False),
-                     "external": False, "overlay": overlay, "ass": codec in ("ass", "ssa"), "selected": False})
+                     "external": False, "overlay": overlay, "ass": codec in ("ass", "ssa"),
+                     "pgs": codec in ("hdmv_pgs_subtitle", "pgssub"), "selected": False})
     for n, e in enumerate(probe.get("external", [])):
         lang = e.get("lang") or ""
         label = LANG_NAMES.get(lang, lang.upper() if lang else "Inconnu")
@@ -1068,15 +1070,20 @@ def build_app(ctx):
         if sub_id not in (None, 0) and sub_id not in sub_map:
             raise HTTPError(400, "Sous-titres invalides")
         sub = sub_map.get(sub_id) if sub_id else None
-        burn = sub["id"] if sub and not sub["overlay"] else None
+        caps = parse_caps(b.get("caps"))
+        # PGS : rendu par le navigateur quand il le peut (comme Jellyfin), incrusté sinon
+        pgs_client = bool(sub and sub.get("pgs") and caps.get("pgs") and not b.get("burn"))
+        burn = sub["id"] if sub and not sub["overlay"] and not pgs_client else None
         if b.get("replace"):
             stop_stream(str(b["replace"]), uid)
-        p = plan(probe, audio_id, burn, quality)
+        p = plan(probe, audio_id, burn, quality, caps, db.setting("downmix_algo", "none"),
+                 float(db.setting("downmix_boost", "2") or 2))
         if p["mode"] == "direct" and b.get("no_direct"):
             p["mode"] = "copy"  # le navigateur a refusé la lecture directe
         sid = secrets.token_urlsafe(12)
         try:
-            actual = ctx.transcoder.start(sid, r["key"], p, offset)
+            kf = keyframes_for(r) if p["mode"] == "copy" else None
+            actual = ctx.transcoder.start(sid, r["key"], p, offset, duration, kf)
         except Busy as e:
             raise HTTPError(503, str(e))
         except media.MediaError as e:
@@ -1097,15 +1104,38 @@ def build_app(ctx):
             ctx.subtitles.enqueue(r["id"])  # vignettes : en tâche de fond, après la lecture
         if nxt and ctx.subtitles.missing(nxt):
             ctx.subtitles.enqueue(nxt["id"], urgent=True)  # débit plafonné pour ne pas gêner ce flux
-        url = f"/api/stream/{sid}/file" if p["mode"] == "direct" else f"/api/stream/{sid}/index.m3u8"
+        url = f"/api/stream/{sid}/file" if p["mode"] == "direct" else f"/api/stream/{sid}/main.m3u8"
         return {
             "stream": sid, "mode": p["mode"], "reasons": p["reasons"], "url": url, "offset": actual,
             "duration": duration, "quality": quality, "item": c, "audio": audio, "subtitles": subs,
             "audio_selected": p["audio_index"], "subtitle_selected": sub["id"] if sub else 0,
             "subtitle_overlay": f"/api/items/{rk}/subtitles/{sub['id']}" if sub and sub["overlay"] else None,
             "subtitle_ass": f"/api/items/{rk}/subtitles/{sub['id']}/ass" if sub and sub.get("ass") else None,
+            "subtitle_pgs": f"/api/items/{rk}/subtitles/{sub['id']}/sup" if pgs_client else None,
             "markers": markers_for(r), "chapters": chapters_for(r), "next": card(nxt) if nxt else None,
         }
+
+    VIDEO_CAPS = {"h264", "hevc", "hevc10", "av1", "av1_10", "vp9"}
+    AUDIO_CAPS = {"aac", "mp3", "ac3", "eac3", "flac", "opus"}
+    CONTAINER_CAPS = {"mp4", "mov", "webm", "matroska"}
+
+    def parse_caps(c):
+        """Profil déclaré par le navigateur (comme browserDeviceProfile de Jellyfin)."""
+        if not isinstance(c, dict):
+            return {"video": {"h264"}, "audio": {"aac", "mp3"}, "containers": {"mp4", "mov"}, "pgs": False}
+        pick = lambda key, allowed: {x for x in (c.get(key) or []) if isinstance(x, str) and x in allowed}
+        return {"video": pick("video", VIDEO_CAPS) or {"h264"}, "audio": pick("audio", AUDIO_CAPS) or {"aac"},
+                "containers": pick("containers", CONTAINER_CAPS) or {"mp4"}, "pgs": bool(c.get("pgs"))}
+
+    kf_cache = {}
+
+    def keyframes_for(r):
+        key = (r["id"], r["file_mtime"])
+        if key not in kf_cache:
+            if len(kf_cache) > 200:
+                kf_cache.clear()
+            kf_cache[key] = mkv_keyframes(r["key"]) if (r["key"] or "").lower().endswith((".mkv", ".mk3d")) else None
+        return kf_cache[key]
 
     def own_stream(req, sid):
         st = db.one("SELECT * FROM streams WHERE id=? AND user_id=?", (sid, req.user["id"]))
@@ -1116,29 +1146,48 @@ def build_app(ctx):
             db.run("UPDATE streams SET last_seen=? WHERE id=?", (now, sid))
         return st
 
-    @app.route("GET", f"/api/stream/{SID}/index.m3u8")
+    @app.route("GET", f"/api/stream/{SID}/main.m3u8")
     def stream_playlist(req):
+        sid = req.params["sid"]
+        own_stream(req, sid)
+        try:
+            text = ctx.transcoder.playlist(sid)
+        except StreamError as e:
+            raise HTTPError(404, str(e))
+        return Response(text, 200, "application/vnd.apple.mpegurl", {"Cache-Control": "no-store"})
+
+    def segment_response(path, ctype):
+        with open(path, "rb") as f:
+            data = f.read()
+        return Response(data, 200, ctype, {"Cache-Control": "no-store"})
+
+    @app.route("GET", f"/api/stream/{SID}/init.mp4")
+    def stream_init(req):
         sid = req.params["sid"]
         own_stream(req, sid)
         db.release()  # l'attente peut durer : on ne garde pas la connexion SQLite
         try:
-            text = ctx.transcoder.playlist(sid)
+            return segment_response(ctx.transcoder.init(sid), "video/mp4")
         except StreamError as e:
             raise HTTPError(502, str(e))
-        return Response(text, 200, "application/vnd.apple.mpegurl", {"Cache-Control": "no-store"})
 
-    @app.route("GET", f"/api/stream/{SID}/(?P<seg>s\\d{{5}}\\.ts)")
+    @app.route("GET", f"/api/stream/{SID}/(?P<seg>\\d{{1,6}}\\.m4s)")
     def stream_segment(req):
         sid = req.params["sid"]
         own_stream(req, sid)
         db.release()
         try:
-            path = ctx.transcoder.segment(sid, req.params["seg"])
+            return segment_response(ctx.transcoder.segment(sid, req.params["seg"]), "video/iso.segment")
         except StreamError as e:
             raise HTTPError(404, str(e))
-        with open(path, "rb") as f:
-            data = f.read()
-        return Response(data, 200, "video/mp2t", {"Cache-Control": "no-store"})
+
+    @app.route("GET", f"/api/items/{RK}/subtitles/(?P<sub>\\d{{1,6}})/sup")
+    def item_subtitles_sup(req):
+        r = require_item(req.user, req.params["rk"])
+        data = ctx.subtitles.read_sup(r, int(req.params["sub"]))
+        if data is None:
+            raise HTTPError(404, "Sous-titres PGS indisponibles")
+        return Response(data, 200, "application/octet-stream", {"Cache-Control": "private, max-age=3600"})
 
     @app.route("GET", f"/api/stream/{SID}/file")
     def stream_file(req):
@@ -1500,6 +1549,8 @@ def build_app(ctx):
         return {"watch_interval": ctx.setting_int("watch_interval", 60),
                 "subs_prefetch": db.setting("subs_prefetch", "1") == "1",
                 "trickplay": db.setting("trickplay", "1") == "1",
+                "downmix_algo": db.setting("downmix_algo", "none"),
+                "downmix_boost": float(db.setting("downmix_boost", "2") or 2),
                 "subs_queue": len(ctx.subtitles.urgent) + len(ctx.subtitles.idle),
                 "webhook_path": f"/api/hooks/scan?token={db.setting('webhook_token')}",
                 "watch_events": ctx.watcher.events[:8],"tmdb_set": bool(db.setting("tmdb_key")), "language": db.setting("meta_language", "fr-FR"),
@@ -1526,6 +1577,18 @@ def build_app(ctx):
                 raise HTTPError(400, "Langue invalide (ex. fr-FR)")
             db.set_setting("meta_language", b["language"])
             db.set_setting("meta_country", b["language"][-2:])
+        if "downmix_algo" in b:
+            if b["downmix_algo"] not in DOWNMIX_ALGOS:
+                raise HTTPError(400, "Algorithme de mixage inconnu")
+            db.set_setting("downmix_algo", b["downmix_algo"])
+        if "downmix_boost" in b:
+            try:
+                boost = float(b["downmix_boost"])
+            except (TypeError, ValueError):
+                raise HTTPError(400, "Gain invalide")
+            if not 0.5 <= boost <= 4:
+                raise HTTPError(400, "Gain : entre 0,5 et 4")
+            db.set_setting("downmix_boost", f"{boost:g}")
         if "trickplay" in b:
             db.set_setting("trickplay", "1" if b["trickplay"] else "0")
             if b["trickplay"]:

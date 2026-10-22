@@ -28,7 +28,7 @@ from seance.transcoder import plan  # noqa: E402
 from seance.web import Server, make_handler  # noqa: E402
 
 STATIC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
-MEDIA_CACHE = os.path.join(tempfile.gettempdir(), "seance-test-media-v5")
+MEDIA_CACHE = os.path.join(tempfile.gettempdir(), "seance-test-media-v6")
 
 
 def media_root():
@@ -64,6 +64,33 @@ class Client:
             return status, json.loads(content)
         except json.JSONDecodeError:
             return status, content
+
+
+def hls_segment(client, url, n=None, at=None):
+    """Playlist VOD + init fMP4 + segment n (ou celui qui contient `at` secondes) -> (n, octets lisibles)."""
+    st, pl, _ = client.call("GET", url, raw=True)
+    assert st == 200, pl
+    durs = [float(l[8:].split(",")[0]) for l in pl.decode().splitlines() if l.startswith("#EXTINF:")]
+    if n is None:
+        t, n = 0.0, 0
+        for i, d in enumerate(durs):
+            if t <= at < t + d:
+                n = i
+                break
+            t += d
+    base = url.rsplit("/", 1)[0]
+    st, init, _ = client.call("GET", base + "/init.mp4", raw=True)
+    assert st == 200, init
+    st, seg, _ = client.call("GET", f"{base}/{n}.m4s", raw=True)
+    assert st == 200, seg
+    return n, init + seg, durs
+
+
+def first_pts(data, kind):
+    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", kind, "-show_entries", "packet=pts_time",
+                          "-of", "csv=p=0", "-read_intervals", "%+#1", "-i", "-"], input=data,
+                         capture_output=True, timeout=30).stdout.decode().split()
+    return float(out[0].strip(","))
 
 
 def wait_scan(client, timeout=180):
@@ -209,19 +236,39 @@ class SeanceTest(unittest.TestCase):
              "audio": [{"index": 1, "codec": "flac", "channels": 2}]}
         r = plan(p)
         self.assertEqual(r["mode"], "transcode")
-        self.assertIn("H.264 10 bits", r["reasons"])
+        self.assertIn("10 bits", " ".join(r["reasons"]))
         p["video"].update(profile="High", pix_fmt="yuv420p")
         self.assertEqual(plan(p)["mode"], "copy")
         self.assertEqual(plan(p, quality="720p")["mode"], "transcode")
         # sous-titres image (PGS) : incrustation par overlay, donc transcodage
         from seance.transcoder import build_command
         p["subs"] = [{"index": 2, "codec": "hdmv_pgs_subtitle"}]
+        p["video"]["width"] = 1920
         r = plan(p, burn_index=2)
         self.assertEqual(r["mode"], "transcode")
         self.assertIn("sous-titres incrustés", r["reasons"])
-        cmd = build_command("/x.mkv", r, 12.5, "/tmp/out")
-        self.assertIn("[0:0][0:2]overlay=eof_action=pass[o];[o]format=yuv420p[v]", cmd)
+        cmd = build_command("/x.mkv", r, 12.5, "/tmp/out", 2)
+        self.assertIn("[0:2]format=yuva420p[s];[0:0][s]overlay=eof_action=pass:repeatlast=0[o];[o]format=yuv420p[v]", cmd)
         self.assertEqual(cmd[cmd.index("-ss") + 1], "12.500")
+        self.assertEqual(cmd[cmd.index("-canvas_size") + 1], "1920x1080")  # « unspecified size » évité
+        self.assertEqual(cmd[cmd.index("-start_number") + 1], "2")
+        self.assertIn("-copyts", cmd)
+        # remux : on vise juste après l'image clé
+        cmd = build_command("/x.mkv", plan(dict(p, video=dict(p["video"], profile="High", pix_fmt="yuv420p"))), 12.0,
+                            "/tmp/out")
+        self.assertEqual(cmd[cmd.index("-ss") + 1], "12.250")
+        # profil du navigateur : HEVC lu tel quel s'il le sait, sinon converti ; 10 bits à part
+        hevc = {"container": "matroska,webm", "bitrate": 0, "video": {"index": 0, "codec": "hevc", "profile": "Main 10",
+                "pix_fmt": "yuv420p10le", "height": 1080}, "audio": [{"index": 1, "codec": "eac3", "channels": 6,
+                                                                       "layout": "5.1(side)"}]}
+        caps = {"video": {"h264", "hevc"}, "audio": {"aac", "eac3"}, "containers": {"mp4"}}
+        self.assertEqual(plan(hevc, caps=caps)["mode"], "transcode")
+        caps["video"].add("hevc10")
+        r = plan(hevc, caps=caps, algo="dave750", boost=1.5)
+        self.assertEqual((r["mode"], r["acopy"]), ("copy", False))  # 5.1 : mixé en stéréo par Séance
+        self.assertTrue(r["audio_filter"].startswith("pan=stereo|c0=0.5*c2+0.707*c0"), r["audio_filter"])
+        self.assertIn("volume=1.5", r["audio_filter"])
+        self.assertIn("hvc1", build_command("/x.mkv", r, 0, "/tmp/out"))
         # un MP4 H.264/AAC est lu directement, sauf si on choisit la 2e piste audio
         mp4 = {"container": "mov,mp4,m4a,3gp,3g2,mj2", "bitrate": 0,
                "video": {"index": 0, "codec": "h264", "profile": "High", "pix_fmt": "yuv420p", "height": 720},
@@ -253,21 +300,21 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(st, 200, p)
         self.assertEqual(p["mode"], "copy")
         self.assertIn("audio AC3 converti", p["reasons"])
-        self.assertTrue(38000 <= p["offset"] <= 41000, p["offset"])  # calé sur une image clé (GOP 2 s)
-        st, pl, _ = self.admin.call("GET", p["url"], raw=True)
-        self.assertEqual(st, 200)
-        seg = [l for l in pl.decode().splitlines() if l and not l.startswith("#")][0]
-        st, ts, h = self.admin.call("GET", p["url"].rsplit("/", 1)[0] + "/" + seg, raw=True)
-        self.assertEqual(st, 200)
-        self.assertEqual(ffprobe_codec(ts), "h264")
-        # la vidéo copiée démarre bien sur l'image clé demandée, pas un GOP plus tôt : le son suit tout de suite
-        starts = {}
-        for kind in ("v", "a"):
-            out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", kind, "-show_entries", "frame=pts_time",
-                                  "-of", "csv=p=0", "-read_intervals", "%+#1", "-i", "-"], input=ts,
-                                 capture_output=True, timeout=30).stdout.decode().split()
-            starts[kind] = float(out[0].strip(","))
-        self.assertLess(abs(starts["a"] - starts["v"]), 0.35, starts)
+        self.assertEqual(p["offset"], 41000)  # chronologie complète : la position est absolue
+        self.assertTrue(p["url"].endswith("/main.m3u8"))
+        n, data, durs = hls_segment(self.admin, p["url"], at=41.0)
+        self.assertEqual(ffprobe_codec(data), "h264")
+        # segments calés sur les images clés du MKV (GOP de 2 s -> 6 s), horodatages d'origine
+        self.assertTrue(all(abs(d - 6.0) < 0.01 for d in durs[:-1]), durs)
+        start = sum(durs[:n])
+        v, a = first_pts(data, "v"), first_pts(data, "a")
+        self.assertLess(abs(v - start), 0.1, (v, start))
+        self.assertLess(abs(a - v), 0.35, (a, v))  # le son suit tout de suite
+        # saut loin devant : le serveur relance ffmpeg au bon segment (comme Jellyfin)
+        last = len(durs) - 2
+        n2, data2, _ = hls_segment(self.admin, p["url"], n=last)
+        self.assertLess(abs(first_pts(data2, "v") - sum(durs[:last])), 0.1)
+        self.assertEqual(self.ctx.transcoder.get(p["stream"]).run_start, last)
         # saut : l'ancien ffmpeg est arrêté
         st, p2 = self.admin.call("POST", "/api/play", {"id": m["id"], "offset": 70000, "replace": p["stream"]})
         self.assertEqual(st, 200, p2)
@@ -282,17 +329,42 @@ class SeanceTest(unittest.TestCase):
         st, p = self.admin.call("POST", "/api/play", {"id": m["id"]})
         self.assertEqual(st, 200, p)
         self.assertEqual(p["mode"], "transcode")
-        self.assertIn("vidéo HEVC", p["reasons"])
+        self.assertIn("vidéo HEVC", " ".join(p["reasons"]))
         st, p2 = self.admin.call("POST", "/api/play", {"id": m["id"]})
         self.assertEqual(st, 503)
         self.assertIn("transcodages simultanés", p2["error"])
-        st, pl, _ = self.admin.call("GET", p["url"], raw=True)
-        self.assertEqual(st, 200)
-        seg = [l for l in pl.decode().splitlines() if l and not l.startswith("#")][0]
-        st, ts, _ = self.admin.call("GET", p["url"].rsplit("/", 1)[0] + "/" + seg, raw=True)
-        self.assertEqual(ffprobe_codec(ts), "h264")
+        n, data, durs = hls_segment(self.admin, p["url"], n=0)
+        self.assertEqual(ffprobe_codec(data), "h264")
+        self.assertAlmostEqual(sum(durs), 20.0, delta=0.5)
         self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
         self.admin.call("PUT", "/api/admin/settings", {"max_transcodes": 2})
+
+    def test_pgs_rendered_by_browser(self):
+        m = self.movie("Brume")
+        st, d = self.admin.call("GET", f"/api/items/{m['id']}")
+        pgs = d["subtitles"][0]
+        self.assertTrue(pgs["pgs"])
+        self.assertFalse(pgs["overlay"])
+        # navigateur capable : pas d'incrustation, le .sup est envoyé tel quel
+        caps = {"video": ["h264"], "audio": ["aac"], "containers": ["mp4"], "pgs": True}
+        for _ in range(20):
+            st, r = self.admin.call("GET", f"/api/items/{m['id']}/prepare?wait=5")
+            if r["ready"]:
+                break
+        st, p = self.admin.call("POST", "/api/play", {"id": m["id"], "subtitle": pgs["id"], "caps": caps})
+        self.assertEqual(st, 200, p)
+        self.assertNotIn("sous-titres incrustés", p["reasons"])
+        self.assertEqual(p["subtitle_pgs"], f"/api/items/{m['id']}/subtitles/{pgs['id']}/sup")
+        st, sup, _ = self.admin.call("GET", p["subtitle_pgs"], raw=True)
+        self.assertEqual((st, sup[:2]), (200, b"PG"))
+        self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
+        # navigateur sans rendu PGS : incrustation (avec la taille du canevas, sinon « unspecified size »)
+        st, p = self.admin.call("POST", "/api/play", {"id": m["id"], "subtitle": pgs["id"], "offset": 2000})
+        self.assertIn("sous-titres incrustés", p["reasons"])
+        self.assertIsNone(p["subtitle_pgs"])
+        n, data, durs = hls_segment(self.admin, p["url"], n=0)
+        self.assertEqual(ffprobe_codec(data), "h264")
+        self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
 
     def test_subtitles_overlay_and_burn(self):
         show, d, eps = self.episodes("Kaze no Michi", "Animes")
@@ -518,7 +590,12 @@ class SeanceTest(unittest.TestCase):
             cmd = build_command(src, p, 0, out)
             self.assertTrue(any(DOWNMIX in c for c in cmd), cmd)
             subprocess.run(cmd, check=True, timeout=60)
-            st = subprocess.run(["ffmpeg", "-hide_banner", "-i", os.path.join(out, "s00000.ts"), "-map", "0:a",
+            with open(os.path.join(out, "all.mp4"), "wb") as f:
+                for name in ["init.mp4"] + sorted((x for x in os.listdir(out) if x.endswith(".m4s")),
+                                                  key=lambda x: int(x.split(".")[0])):
+                    with open(os.path.join(out, name), "rb") as g:
+                        f.write(g.read())
+            st = subprocess.run(["ffmpeg", "-hide_banner", "-i", os.path.join(out, "all.mp4"), "-map", "0:a",
                                  "-af", "astats", "-f", "null", "-"], capture_output=True, timeout=60).stderr.decode()
             overall = st.split("Overall")[-1]
             peak = float(overall.split("Peak level dB:")[1].split()[0])
@@ -916,10 +993,11 @@ class UnitTests(unittest.TestCase):
         old = (tr.AHEAD_PAUSE, tr.AHEAD_RESUME, tr.KEEP_BEHIND)
         tr.AHEAD_PAUSE, tr.AHEAD_RESUME, tr.KEEP_BEHIND = 5, 3, 2
         try:
-            s = tr.Session("abcdefgh", "/x", {"mode": "copy"}, 0, os.path.join(work, "t", "abcdefgh"))
+            s = tr.Session("abcdefgh", "/x", {"mode": "copy"}, [(i * 6.0, 6.0) for i in range(20)],
+                           os.path.join(work, "t", "abcdefgh"))
             os.makedirs(s.dir)
             for i in range(12):
-                open(os.path.join(s.dir, f"s{i:05d}.ts"), "wb").close()
+                open(os.path.join(s.dir, f"{i}.m4s"), "wb").close()
             s.proc = subprocess.Popen(["sleep", "30"])
             t.sessions[s.sid] = s
             state = lambda: open(f"/proc/{s.proc.pid}/stat").read().split()[2]
@@ -929,10 +1007,10 @@ class UnitTests(unittest.TestCase):
                 time.sleep(0.2)
             self.assertTrue(s.paused)
             self.assertEqual(state(), "T")  # processus suspendu
-            t.segment(s.sid, "s00010.ts")   # le lecteur rattrape : reprise
+            t.segment(s.sid, "10.m4s")   # le lecteur rattrape : reprise
             self.assertFalse(s.paused)
             time.sleep(2.5)
-            self.assertFalse(os.path.exists(os.path.join(s.dir, "s00002.ts")))  # vieux segments purgés
+            self.assertFalse(os.path.exists(os.path.join(s.dir, "2.m4s")))  # vieux segments purgés
             t.stop(s.sid)
             self.assertIsNotNone(s.proc.poll())
             self.assertFalse(os.path.exists(s.dir))

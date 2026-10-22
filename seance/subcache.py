@@ -57,6 +57,13 @@ def text_tracks(probe):
     return [s["index"] for s in (probe or {}).get("subs", []) if s.get("codec") in media.TEXT_SUB_CODECS]
 
 
+PGS_CODECS = {"hdmv_pgs_subtitle", "pgssub"}
+
+
+def pgs_tracks(probe):
+    return [s["index"] for s in (probe or {}).get("subs", []) if s.get("codec") in PGS_CODECS]
+
+
 def ass_tracks(probe):
     return [s["index"] for s in (probe or {}).get("subs", []) if s.get("codec") in ASS_CODECS]
 
@@ -88,6 +95,9 @@ class SubtitleCache:
     def path(self, item, index):
         return os.path.join(self._dir(item), f"{int(index)}.json")
 
+    def sup_path(self, item, index):
+        return os.path.join(self._dir(item), f"{int(index)}.sup")
+
     def ass_path(self, item, index):
         return os.path.join(self._dir(item), f"{int(index)}.ass")
 
@@ -107,6 +117,9 @@ class SubtitleCache:
         ass = ass_tracks(probe)
         need = [i for i in text_tracks(probe) if not os.path.isfile(self.path(item, i))
                 or (i in ass and not os.path.isfile(self.ass_path(item, i)) and not self._failed(item, i))]
+        # PGS (Blu-ray) : flux .sup d'origine, rendu dans le navigateur (comme Jellyfin) plutôt qu'incrusté
+        need += [i for i in pgs_tracks(probe) if not os.path.isfile(self.sup_path(item, i))
+                 and not os.path.isfile(self.path(item, i))]
         if ass and self.fonts_index(item) is None:
             need = sorted(set(need) | set(ass))
         return need
@@ -147,6 +160,13 @@ class SubtitleCache:
     def read(self, item, index):
         try:
             with open(self.path(item, index), "rb") as f:
+                return f.read()
+        except OSError:
+            return None
+
+    def read_sup(self, item, index):
+        try:
+            with open(self.sup_path(item, index), "rb") as f:
                 return f.read()
         except OSError:
             return None
@@ -302,7 +322,17 @@ class SubtitleCache:
             if tracks:
                 os.makedirs(self._dir(item), exist_ok=True)
             still = []
+            pgs = set(pgs_tracks(_probe(item)))
             for i in tracks:
+                if i in pgs:
+                    sup = os.path.join(tmp, f"{i}.sup")
+                    if os.path.isfile(sup) and os.path.getsize(sup) > 0:
+                        os.replace(sup, self.sup_path(item, i))
+                    else:
+                        still.append(i)
+                        with open(self.path(item, i), "w", encoding="utf-8") as f:
+                            json.dump({"cues": [], "error": "piste illisible"}, f)
+                    continue
                 src = os.path.join(tmp, f"{i}.srt")
                 dest = self.path(item, i)
                 if os.path.isfile(src):
@@ -390,7 +420,7 @@ class SubtitleCache:
         if fonts and tracks and self._want_fonts(item):
             for a in self._attachments(item)[:200]:
                 cmd += [f"-dump_attachment:{int(a['index'])}", os.path.join(tmp, f"font_{int(a['index'])}{a['ext']}")]
-        cmd += ["-i", item["key"]]
+        cmd += ["-analyzeduration", "200M", "-probesize", "1G", "-i", item["key"]]
         if not trick:
             cmd += ["-vn", "-an", "-dn"]
         if trick:
@@ -399,7 +429,11 @@ class SubtitleCache:
                     "-vf", f"fps=1/{TRICK_INTERVAL},scale={w}:{h},tile={TRICK_COLS}x{TRICK_ROWS}",
                     "-q:v", "6", "-f", "image2", os.path.join(tmp, "t%04d.jpg")]
         ass = set(ass_tracks(_probe(item)))
+        pgs = set(pgs_tracks(_probe(item)))
         for i in tracks:
+            if i in pgs:
+                cmd += ["-map", f"0:{i}", "-c:s", "copy", "-f", "sup", os.path.join(tmp, f"{i}.sup")]
+                continue
             cmd += ["-map", f"0:{i}", "-c:s", "srt", "-f", "srt", os.path.join(tmp, f"{i}.srt")]
             if i in ass:  # le script ASS d'origine, pour un rendu fidèle (positions, polices, karaoké)
                 cmd += ["-map", f"0:{i}", "-c:s", "copy", "-f", "ass", os.path.join(tmp, f"{i}.ass")]

@@ -68,7 +68,7 @@ export async function renderPlayer(root, rk, ctx) {
 
   // ------------------------------------------------------------ state
   let item, session = null, hls = null, base = 0, cues = [], cueKey = '', cueMax = 0;
-  let jassub = null, jassubKey = '';
+  let jassub = null, jassubKey = '', pgs = null, pgsKey = '';
   let audioSel = null, subSel = null, quality = prefs.quality;
   let lastReport = 0, introSkipped = false, nextTimer = null, nextDismissed = false, destroyed = false;
   let idleTimer = null, scrubbing = false, startedAt = 0;
@@ -134,8 +134,9 @@ export async function renderPlayer(root, rk, ctx) {
     timeoutRetry: { maxNumRetry: retries, retryDelayMs: 1000, maxRetryDelayMs: 4000 },
     errorRetry: { maxNumRetry: retries, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
   } });
+  // Flux « à la Jellyfin » : playlist VOD complète, horodatages d'origine -> currentTime = position réelle.
   const HLS_CONFIG = {
-    maxBufferLength: 60, maxMaxBufferLength: 180, backBufferLength: 90, startPosition: 0,
+    maxBufferLength: 60, maxMaxBufferLength: 120, backBufferLength: 90,
     manifestLoadPolicy: slow(60000, 90000, 2),
     playlistLoadPolicy: slow(60000, 90000, 4),
     fragLoadPolicy: slow(60000, 120000, 6),
@@ -154,6 +155,7 @@ export async function renderPlayer(root, rk, ctx) {
     let s;
     try {
       s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality, no_direct: forceHls || undefined,
+        caps: browserCaps(),
         playlist: ctx.query.get('playlist') || undefined,
         audio: audioSel ? audioSel.id : null, subtitle: subSel ? subSel.id : 0, replace: previous || undefined });
     } catch (e) { if (seq === startSeq) showError(e.message, true); return; }
@@ -163,7 +165,7 @@ export async function renderPlayer(root, rk, ctx) {
       return;
     }
     session = s;
-    base = session.offset;
+    base = 0;
     introSkipped = false;
     nextBtn.hidden = !session.next;
     updateIntroMark();
@@ -181,8 +183,7 @@ export async function renderPlayer(root, rk, ctx) {
       video.play().catch(() => { loader.hidden = true; paintPlay(); });
     };
     if (session.mode === 'direct') {
-      // le navigateur lit le fichier tel quel : position réelle = currentTime
-      base = 0;
+      // le navigateur lit le fichier tel quel
       video.src = session.url;
       video.addEventListener('loadedmetadata', () => {
         if (session.offset) video.currentTime = session.offset / 1000;
@@ -196,12 +197,12 @@ export async function renderPlayer(root, rk, ctx) {
         }
       }, { once: true });
     } else if (window.Hls && window.Hls.isSupported()) {
-      hls = new window.Hls(HLS_CONFIG);
+      hls = new window.Hls({ ...HLS_CONFIG, startPosition: session.offset / 1000 });
       hls.on(window.Hls.Events.ERROR, (_, data) => {
         if (!data.fatal || seq !== startSeq) return;
         if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
         console.warn('[seance] erreur HLS', data.type, data.details, data.response && data.response.code);
-        const at = Math.max(base, pos());
+        const at = pos() || session.offset;
         if (autoRetries < 2) {
           autoRetries += 1;
           toast('Flux interrompu, reconnexion…');
@@ -216,14 +217,43 @@ export async function renderPlayer(root, rk, ctx) {
       hls.loadSource(session.url);
       hls.attachMedia(video);
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = session.url;
-      video.addEventListener('loadedmetadata', autoplay, { once: true });
+      video.src = session.url;  // Safari : HLS natif
+      video.addEventListener('loadedmetadata', () => {
+        if (session.offset) video.currentTime = session.offset / 1000;
+        autoplay();
+      }, { once: true });
     } else {
       showError('Ce navigateur ne lit pas le HLS et hls.js est absent (static/vendor/hls.min.js). Relance le script d’installation.');
       return;
     }
     startedAt = Date.now();
     setupMediaSession();
+  }
+
+  // ---------------------------------------------------------- profil du navigateur
+  // Comme browserDeviceProfile de Jellyfin : ce que ce navigateur sait décoder, pour ne transcoder
+  // que le nécessaire (HEVC, AV1, AC3… sont lus tels quels quand c'est possible).
+  let capsCache = null;
+  function browserCaps() {
+    if (capsCache) return capsCache;
+    const MS = window.ManagedMediaSource || window.MediaSource;
+    const ok = (type) => {
+      try { return !!(MS && MS.isTypeSupported(type)); } catch { return false; }
+    };
+    const video = ['h264'];
+    if (ok('video/mp4; codecs="hvc1.1.6.L120.90"')) video.push('hevc');
+    if (ok('video/mp4; codecs="hvc1.2.4.L120.90"')) video.push('hevc10');
+    if (ok('video/mp4; codecs="av01.0.08M.08"')) video.push('av1');
+    if (ok('video/mp4; codecs="av01.0.08M.10"')) video.push('av1_10');
+    if (ok('video/mp4; codecs="vp09.00.40.08"')) video.push('vp9');
+    const audio = ['aac', 'mp3'];
+    if (ok('audio/mp4; codecs="ac-3"')) audio.push('ac3');
+    if (ok('audio/mp4; codecs="ec-3"')) audio.push('eac3');
+    if (ok('audio/mp4; codecs="flac"')) audio.push('flac');
+    if (ok('audio/mp4; codecs="opus"')) audio.push('opus');
+    const pgs = typeof Worker === 'function';
+    capsCache = { video, audio, containers: ['mp4', 'mov'], pgs };
+    return capsCache;
   }
 
   // ---------------------------------------------------------- tampon vidéo
@@ -357,6 +387,34 @@ export async function renderPlayer(root, rk, ctx) {
     }
   }
 
+  // PGS (Blu-ray) : images rendues dans le navigateur par libpgs, comme le fait Jellyfin (libbitsub)
+  function dropPgs() {
+    if (pgs) { try { pgs.dispose(); } catch { /* */ } if (pgs.ownCanvas) pgs.ownCanvas.remove(); }
+    pgs = null;
+    pgsKey = '';
+  }
+  async function loadPgs(seq) {
+    const url = session.subtitle_pgs;
+    if (pgs && pgsKey === url) return true;
+    dropPgs();
+    try {
+      const { PgsRenderer } = await import('/vendor/libpgs/libpgs.js');
+      if (seq !== startSeq || destroyed) return false;
+      const canvas = h('canvas.pgs-layer');
+      video.after(canvas);  // sous les commandes, au-dessus de l'image
+      const r = new PgsRenderer({ video, canvas, subUrl: url, workerUrl: '/vendor/libpgs/libpgs.worker.js', aspectRatio: 'contain' });
+      r.ownCanvas = canvas;
+      pgs = r;
+      pgsKey = url;
+      await Promise.race([r.ready || Promise.resolve(), new Promise((res) => setTimeout(res, 20000))]);
+      return true;
+    } catch (e) {
+      console.warn('[seance] sous-titres PGS', e.message);
+      dropPgs();
+      return false;
+    }
+  }
+
   // Les sous-titres sont normalement déjà prêts (prepare) ; filet de sécurité pour les pistes externes.
   const SUBS_MAX_WAIT = 120000;
   async function loadSubtitles(seq) {
@@ -364,6 +422,8 @@ export async function renderPlayer(root, rk, ctx) {
     cueKey = '';
     subLayer.replaceChildren();
     subTop.replaceChildren();
+    if (!session.subtitle_pgs) dropPgs();
+    if (session.subtitle_pgs) { await loadPgs(seq); dropJassub(); return; }
     if (session.subtitle_ass && await loadAss(seq)) return;
     if (seq !== startSeq || destroyed) return;
     if (!session.subtitle_ass) dropJassub();
@@ -404,17 +464,9 @@ export async function renderPlayer(root, rk, ctx) {
   function seekTo(ms) {
     const d = duration();
     ms = Math.max(0, d ? Math.min(ms, d - 3000) : ms);
-    if (session && session.mode === 'direct') { video.currentTime = ms / 1000; return; }
-    const rel = (ms - base) / 1000;
-    const b = video.buffered;
-    for (let i = 0; i < b.length; i++) {
-      if (rel >= b.start(i) - 0.5 && rel <= b.end(i) + 0.5) {
-        video.currentTime = Math.max(0, rel);
-        return;
-      }
-    }
-    report('paused', true);
-    start(ms);
+    // la playlist couvre toute la vidéo : le lecteur va chercher les bons segments, le serveur relance
+    // ffmpeg au bon endroit si besoin (comme Jellyfin) — plus besoin de recréer le flux
+    video.currentTime = ms / 1000;
   }
   const seekBy = (delta) => seekTo(pos() + delta);
 
@@ -755,6 +807,7 @@ export async function renderPlayer(root, rk, ctx) {
     document.removeEventListener('fullscreenchange', onFullscreen);
     window.removeEventListener('pagehide', onUnload);
     dropJassub();
+    dropPgs();
     if (hls) hls.destroy();
     video.removeAttribute('src');
     video.load();

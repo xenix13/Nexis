@@ -72,8 +72,13 @@ def make_media(root, long_seconds=90):
     # 3. HEVC -> transcodage
     d = os.path.join(films, "Brume (2022)")
     os.makedirs(d, exist_ok=True)
-    ff(*src, "-t", "20", "-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=none",
-       "-pix_fmt", "yuv420p", "-c:a", "aac", os.path.join(d, "Brume.2022.HEVC.mkv"))
+    # avec des sous-titres PGS (Blu-ray) : rectangle rouge de 1 à 4 s
+    from tests.pgs import make_sup
+    make_sup(os.path.join(tmp, "brume.sup"), size=(320, 180), box=(80, 20), pos=(120, 140))
+    ff("-copyts", *src, "-i", os.path.join(tmp, "brume.sup"), "-t", "20", "-map", "0:v", "-map", "1:a", "-map", "2:s",
+       "-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=none",
+       "-pix_fmt", "yuv420p", "-c:a", "aac", "-c:s", "copy", "-metadata:s:s:0", "language=fre",
+       os.path.join(d, "Brume.2022.HEVC.mkv"))
     # un .nfo avec un identifiant TMDB
     with open(os.path.join(d, "Brume.2022.HEVC.nfo"), "w") as f:
         f.write("<movie><title>Brume</title><year>2022</year><uniqueid type=\"tmdb\">5003</uniqueid></movie>")

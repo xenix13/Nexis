@@ -18,18 +18,22 @@ Un serveur multimédia **100 % auto-hébergé** pour tes films, séries et anime
 | **Bonus** | Bandes-annonces (YouTube via TMDB ou fichiers locaux), coulisses, scènes coupées, interviews… rangés sous le film ou la série |
 | **Découvrir et demandes** | Catalogues Netflix, Prime Video, Disney+, Canal+… (via TMDB) avec ce qui est déjà sur le serveur, bouton « Demander » relié à Seerr / Overseerr / Jellyseerr, API compatible Jellyfin pour Seerr |
 | **Lecteur** | Choix audio, sous-titres et qualité en cours de lecture, raccourcis clavier, bandeau « Passer l'intro », épisode suivant avec compte à rebours |
-| **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou fichiers à côté de la vidéo, `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. Les ASS des animes sont rendus fidèlement par libass (panneaux positionnés, karaoké, polices jointes au MKV). PGS/VobSub incrustés |
+| **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou fichiers à côté de la vidéo, `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. Les ASS des animes sont rendus fidèlement par libass (panneaux positionnés, karaoké, polices jointes au MKV). Les PGS des Blu-ray sont dessinés par le navigateur (libpgs), sans transcodage. VobSub incrustés |
 | **Administration** | Partages réseau SMB (montage depuis l'interface), bibliothèques (avec explorateur de dossiers), utilisateurs, clé TMDB, limites de lectures/transcodages, lectures en cours avec la raison d'un éventuel transcodage |
 
 ### Comment Séance ménage le processeur
 
-Pour chaque lecture, Séance choisit le mode le plus léger :
+La lecture reprend les choix de **Jellyfin** (son serveur et son lecteur web), avec quelques ajouts.
+
+**Le navigateur dit ce qu'il sait lire.** Au lancement, le lecteur annonce les codecs que le navigateur décode (H.264, HEVC 8/10 bits, AV1, VP9, AAC, AC3, E-AC3, FLAC, Opus…), comme le profil d'appareil de Jellyfin. Séance choisit alors le mode le plus léger :
 
 | Mode | Quand | Coût CPU |
 |---|---|---|
-| **Lecture directe** | MP4 en H.264 + AAC | nul : le navigateur lit le fichier |
-| **Remux** | Vidéo H.264 8 bits dans un MKV, ou piste audio non lisible par le navigateur (AC3, DTS, FLAC…) | très faible : la vidéo est recopiée, seul l'audio est converti |
-| **Transcodage** | HEVC/x265, H.264 10 bits (fréquent en anime), sous-titres image, qualité réduite choisie | 1 à 2 cœurs par lecture en 1080p |
+| **Lecture directe** | MP4 dont la vidéo et le son sont lisibles par le navigateur | nul : le navigateur lit le fichier |
+| **Remux** | Vidéo lisible par le navigateur (H.264 ; HEVC ou AV1 s'il les décode) dans un MKV, ou piste audio à convertir (DTS, TrueHD, 5.1…) | très faible : la vidéo est recopiée, seul l'audio est converti |
+| **Transcodage** | Vidéo que ce navigateur ne décode pas (HEVC sur Firefox, H.264 10 bits…), sous-titres VobSub, qualité réduite choisie | 1 à 2 cœurs par lecture en 1080p |
+
+**Un flux « à la Jellyfin ».** Le lecteur reçoit d'emblée une playlist de toute la vidéo, découpée en segments de 6 s (en remux, calés sur les images clés lues dans l'index du MKV). Les segments sont fabriqués à la demande au format fMP4, avec les horodatages d'origine : le navigateur n'a rien à reconvertir, la position affichée est toujours la vraie, et un saut dans la vidéo ne recrée pas le flux — si le lecteur demande un segment éloigné, ffmpeg est relancé à cet endroit.
 
 Le menu ⚙ du lecteur indique le mode en cours et pourquoi. ffmpeg est mis en pause quand il a pris 3 minutes d'avance, et tourne avec une priorité réduite. Un nombre maximal de transcodages simultanés protège le serveur (Administration → Métadonnées et lecture).
 
@@ -240,7 +244,7 @@ Chacun peut ensuite se connecter à Seerr avec son compte Séance. Quand on dema
 
 Sur la fiche d'un film, d'un épisode ou d'une série, deux listes permettent de choisir l'audio et les sous-titres avant de lancer la lecture. Le choix est **retenu pour toute la série** (ou pour le film), et pour chaque utilisateur : les épisodes suivants se lancent dans la même langue. Un changement fait dans le lecteur est retenu de la même façon.
 
-Les pistes 5.1 / 7.1 (AC3, E-AC3, DTS, TrueHD, AAC 5.1…) sont réduites en stéréo par Séance avec une protection contre l'écrêtage. Le mixage par défaut de ffmpeg dépassait le niveau maximal et faisait saturer le son.
+Les pistes 5.1 / 7.1 (AC3, E-AC3, DTS, TrueHD, AAC 5.1…) sont réduites en stéréo par Séance avec les mixages de Jellyfin (*Administration → Métadonnées et lecture → Son multicanal*) : ffmpeg par défaut, Dave750, Dialogues (nuit), RFC 7845 ou AC-4, suivis d'un gain réglable. Séance ajoute un limiteur après le gain : le son ne peut pas saturer, quel que soit le réglage.
 
 ## Dépannage
 
@@ -275,6 +279,7 @@ db.run('DELETE FROM sessions')"
 python3 -m seance --data ./data --port 8420        # serveur local
 python3 -m unittest discover -s tests -t .          # tests : vrais fichiers générés par ffmpeg + faux TMDB
 python3 tests/ui_smoke.py ./captures video.webm     # parcours navigateur (Playwright) + captures
+python3 tests/hls_real.py chemin/vers/hls.min.js     # lecture réelle hls.js (VP9/Opus) : reprise, sauts, PGS
 ```
 
 Arborescence de `seance/` :

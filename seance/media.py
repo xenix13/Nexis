@@ -62,6 +62,14 @@ FONT_MIME = ("font/", "application/x-truetype-font", "application/x-font", "appl
              "application/font-sfnt", "application/x-opentype")
 
 
+def _fps(rate):
+    try:
+        num, den = (rate or "0/1").split("/")
+        return round(int(num) / int(den), 3) if int(den) else 0
+    except (ValueError, ZeroDivisionError):
+        return 0
+
+
 def attachment_info(s, tags=None):
     """Polices jointes au MKV (utilisées par les sous-titres ASS des animes)."""
     tags = tags if tags is not None else {k.lower(): v for k, v in (s.get("tags") or {}).items()}
@@ -106,11 +114,12 @@ def probe(path):
             info["video"] = {
                 "index": s["index"], "codec": s.get("codec_name"), "profile": s.get("profile") or "",
                 "pix_fmt": s.get("pix_fmt") or "", "width": s.get("width") or 0, "height": s.get("height") or 0,
-                "bitrate": int(s.get("bit_rate") or 0),
+                "bitrate": int(s.get("bit_rate") or 0), "fps": _fps(s.get("avg_frame_rate") or s.get("r_frame_rate")),
             }
         elif kind == "audio":
             info["audio"].append({
                 "index": s["index"], "codec": s.get("codec_name"), "channels": s.get("channels") or 2,
+                "layout": s.get("channel_layout") or "", "rate": int(s.get("sample_rate") or 0),
                 "lang": _lang(tags), "title": tags.get("title") or "", "default": bool(disp.get("default")),
             })
         elif kind == "attachment":

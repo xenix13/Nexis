@@ -298,8 +298,9 @@ class Scanner:
 
     def _probe(self, path, row, size, mtime, dir_files):
         info = json.loads(row["probe"]) if row and row["probe"] else None
-        if info and row["file_size"] == size and row["file_mtime"] == mtime and "chapters" in info:
-            pass  # inchangé (les anciennes analyses sans chapitres sont refaites une fois)
+        current = info and "attachments" in info and (not info.get("video") or "fps" in info["video"])
+        if info and row["file_size"] == size and row["file_mtime"] == mtime and current:
+            pass  # inchangé (les analyses d'anciennes versions sont refaites une fois)
         else:
             info = media.probe(path)
         info["external"] = external_subs(path, dir_files)
