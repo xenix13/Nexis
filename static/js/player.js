@@ -4,7 +4,10 @@ import { get, post, put } from './api.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from './tracks.js';
 import { state } from './app.js';
 import { chapterStrip, chapterTitle } from './chapters.js';
-import { avatar, clear, episodeCode, errorBox, fmtTime, h, icon, img, spinner, store, toast } from './ui.js';
+import { browserCaps } from './player/caps.js';
+import { SubtitleRenderer } from './player/subtitles.js';
+import { WatchTogether, createGroupMenu, paintGroupButton } from './player/together.js';
+import { clear, episodeCode, errorBox, fmtTime, h, icon, img, spinner, store, toast } from './ui.js';
 
 const REPORT_EVERY = 10000;
 const HIDE_AFTER = 3000;
@@ -67,11 +70,7 @@ export async function renderPlayer(root, rk, ctx) {
   clear(root, player);
 
   // ------------------------------------------------------------ state
-  let item, session = null, hls = null, base = 0, cues = [], cueKey = '', cueMax = 0;
-  let jassub = null, jassubKey = '', pgs = null, pgsKey = '';
-  // sous-titres encore en cours d'extraction : prêts jusqu'à subsUntil (ms), rechargés régulièrement
-  let subsUntil = null, subsRefresh = null;
-  const SUBS_REFRESH = 20000;
+  let item, session = null, hls = null, base = 0;
   let audioSel = null, subSel = null, quality = prefs.quality;
   let lastReport = 0, introSkipped = false, nextTimer = null, nextDismissed = false, destroyed = false;
   let idleTimer = null, scrubbing = false, startedAt = 0;
@@ -81,6 +80,9 @@ export async function renderPlayer(root, rk, ctx) {
   // « Regarder ensemble » : position partagée par le groupe (voir seance/syncplay.py)
   const groupId = ctx.query.get('group');
   let group = null;
+
+  let startSeq = 0, autoRetries = 0, forceHls = false;
+  const subs = new SubtitleRenderer({ video, bottom: subLayer, top: subTop, isCurrent: (seq) => seq === startSeq && !destroyed });
 
   const duration = () => (session && session.duration) || (item && item.duration) || 0;
   const pos = () => base + Math.round((video.currentTime || 0) * 1000);
@@ -129,20 +131,26 @@ export async function renderPlayer(root, rk, ctx) {
   if (ctx.query.get('t')) startAt = Number(ctx.query.get('t')) || 0;
   else if (ctx.query.get('resume') && item.position && !item.watched) startAt = item.position;
   if (groupId) {
+    group = new WatchTogether(groupId, {
+      video, itemId: item.id, me: state.me.user, banner: groupBanner, button: groupBtn, badge: groupCount,
+      pos, seekTo: (ms) => seekTo(ms, true), ready: () => !!session && !switching, seq: () => startSeq,
+      waitBuffer: (seq) => waitBuffer(PREROLL_SEEK[session.mode] ?? 6, 30000, seq), paintPlay,
+      leaveFor: (id) => { finished = true; report('stopped', true); location.replace(`#/play/${id}?group=${groupId}`); },
+      onMenuChange: () => { if (!menu.hidden && menu.dataset.kind === 'group') { menu.hidden = true; openMenu('group'); } },
+      onEnd: () => { group = null; },
+    });
     try {
-      const g = await post(`/api/together/${groupId}/join`);
-      group = { id: groupId, name: g.name, state: g, members: g.members, hostOnly: g.host_only, isHost: g.is_host, offset: 0, es: null };
-      await syncClock();
+      const g = await group.join();
       if (destroyed || !ctx.isCurrent()) return () => {};
       if (g.item_id && g.item_id !== String(item.id)) { location.replace(`#/play/${g.item_id}?group=${groupId}`); return () => {}; }
-      if (g.item_id) startAt = groupTarget(g);
-      openGroupEvents();
+      if (g.item_id) startAt = group.target(g);
+      group.open();
     } catch (e) {
       toast(e.message, 'bad');
       group = null;
     }
   }
-  paintGroup();
+  paintGroupButton(groupBtn, groupCount, group);
 
   const savedVol = Number(store('seance.volume'));
   video.volume = Number.isFinite(savedVol) && store('seance.volume') !== null ? savedVol : 1;
@@ -164,7 +172,6 @@ export async function renderPlayer(root, rk, ctx) {
     playlistLoadPolicy: slow(60000, 90000, 4),
     fragLoadPolicy: slow(60000, 120000, 6),
   };
-  let startSeq = 0, autoRetries = 0, forceHls = false;
 
   async function start(offset) {
     const seq = ++startSeq;
@@ -189,11 +196,12 @@ export async function renderPlayer(root, rk, ctx) {
     }
     session = s;
     base = 0;
+    subs.sync(base);
     introSkipped = false;
     nextBtn.hidden = !session.next;
     updateIntroMark();
     // la lecture ne démarre qu'une fois les sous-titres prêts (pas de trou au début de l'épisode)
-    const subsReady = loadSubtitles(seq);
+    const subsReady = subs.load(session, seq);
     let autoplayed = false;
     const autoplay = async () => {
       if (autoplayed) return;
@@ -207,8 +215,8 @@ export async function renderPlayer(root, rk, ctx) {
         // en groupe : on signale qu'on est prêt, la lecture part quand tout le monde l'est
         loader.hidden = true;
         switching = false;
-        gsend('ready');
-        applyGroup(group.state);
+        group.send('ready');
+        group.apply();
         return;
       }
       video.play().catch(() => { loader.hidden = true; paintPlay(); });
@@ -261,32 +269,6 @@ export async function renderPlayer(root, rk, ctx) {
     setupMediaSession();
   }
 
-  // ---------------------------------------------------------- profil du navigateur
-  // Comme browserDeviceProfile de Jellyfin : ce que ce navigateur sait décoder, pour ne transcoder
-  // que le nécessaire (HEVC, AV1, AC3… sont lus tels quels quand c'est possible).
-  let capsCache = null;
-  function browserCaps() {
-    if (capsCache) return capsCache;
-    const MS = window.ManagedMediaSource || window.MediaSource;
-    const ok = (type) => {
-      try { return !!(MS && MS.isTypeSupported(type)); } catch { return false; }
-    };
-    const video = ['h264'];
-    if (ok('video/mp4; codecs="hvc1.1.6.L120.90"')) video.push('hevc');
-    if (ok('video/mp4; codecs="hvc1.2.4.L120.90"')) video.push('hevc10');
-    if (ok('video/mp4; codecs="av01.0.08M.08"')) video.push('av1');
-    if (ok('video/mp4; codecs="av01.0.08M.10"')) video.push('av1_10');
-    if (ok('video/mp4; codecs="vp09.00.40.08"')) video.push('vp9');
-    const audio = ['aac', 'mp3'];
-    if (ok('audio/mp4; codecs="ac-3"')) audio.push('ac3');
-    if (ok('audio/mp4; codecs="ec-3"')) audio.push('eac3');
-    if (ok('audio/mp4; codecs="flac"')) audio.push('flac');
-    if (ok('audio/mp4; codecs="opus"')) audio.push('opus');
-    const pgs = typeof Worker === 'function';
-    capsCache = { video, audio, containers: ['mp4', 'mov'], pgs };
-    return capsCache;
-  }
-
   // ---------------------------------------------------------- tampon vidéo
   const aheadSec = () => {
     const b = video.buffered, t = video.currentTime;
@@ -314,13 +296,12 @@ export async function renderPlayer(root, rk, ctx) {
 
   // Coupure en cours de lecture : on met en pause le temps de refaire une vraie réserve,
   // plutôt que de repartir dès la première seconde reçue et de recouper aussitôt.
-  let groupQuietUntil = 0;   // juste après un ordre du groupe (lecture, saut) : un court chargement est normal
   let stallTimer = null;
   function onStall() {
     if (switching || video.seeking || rebuffering || finished || destroyed || !session || video.paused) return;
     if (group) {
       // en groupe, une coupure met tout le monde en attente : on ne la signale que si elle dure
-      if (Date.now() < groupQuietUntil || stallTimer) return;
+      if (Date.now() < group.quietUntil || stallTimer) return;
       stallTimer = setTimeout(() => {
         stallTimer = null;
         if (!group || video.paused || video.readyState >= 3 || destroyed) return;
@@ -338,12 +319,12 @@ export async function renderPlayer(root, rk, ctx) {
     stalls.push(now);
     video.pause();
     paintPlay();
-    if (group) gsend('buffering');
+    if (group) group.send('buffering');
     waitBuffer(REBUFFER[session.mode] ?? 15, 45000, seq).then(() => {
       if (!rebuffering) return; // l'utilisateur a repris la main entre-temps
       rebuffering = false;
       if (seq !== startSeq || destroyed) return;
-      if (group) { paintPlay(); gsend('ready'); return; } // le groupe repart quand tout le monde est prêt
+      if (group) { paintPlay(); group.send('ready'); return; } // le groupe repart quand tout le monde est prêt
       video.play().catch(() => paintPlay());
     });
     if (stalls.length >= 2 && ['original', '1080p'].includes(quality) && !lowerHinted) {
@@ -381,178 +362,6 @@ export async function renderPlayer(root, rk, ctx) {
     if (hint) hint.remove();
   }
 
-  // ASS / SSA : rendu fidèle par libass (WebAssembly) — positions, polices du fichier, karaoké, panneaux.
-  let JassubClass;
-  async function jassubClass() {
-    if (JassubClass === undefined) {
-      try {
-        if (typeof WebAssembly !== 'object' || typeof Worker !== 'function') throw new Error('WebAssembly indisponible');
-        JassubClass = (await import('/vendor/jassub/jassub.es.js')).default;
-      } catch (e) {
-        console.warn('[seance] moteur ASS indisponible, sous-titres simplifiés', e.message);
-        JassubClass = null;
-      }
-    }
-    return JassubClass;
-  }
-  function dropJassub() {
-    if (jassub) { try { jassub.destroy(); } catch { /* déjà détruit */ } }
-    jassub = null;
-    jassubKey = '';
-  }
-  const syncJassub = () => { if (jassub) jassub.timeOffset = base / 1000; };
-
-  function keepRefreshing(seq, fn) {
-    clearTimeout(subsRefresh);
-    subsRefresh = setTimeout(() => { if (seq === startSeq && !destroyed) fn(seq); }, SUBS_REFRESH);
-  }
-  const partialOf = (res) => {
-    const v = res.headers.get('X-Seance-Partial');
-    return v === null ? null : Number(v);
-  };
-  async function refreshAss(seq) {
-    try {
-      const res = await fetch(session.subtitle_ass, { credentials: 'same-origin' });
-      if (!res.ok || seq !== startSeq || !jassub) return;
-      const content = await res.text();
-      jassub.setTrack(content);
-      subsUntil = partialOf(res);
-    } catch { /* on réessaie au prochain tour */ }
-    if (subsUntil !== null) keepRefreshing(seq, refreshAss);
-  }
-
-  async function loadAss(seq) {
-    const url = session.subtitle_ass;
-    if (jassub && jassubKey === url) {
-      syncJassub();
-      if (subsUntil !== null) keepRefreshing(seq, refreshAss);
-      return true;
-    }
-    dropJassub();
-    const J = await jassubClass();
-    if (!J || seq !== startSeq || destroyed) return false;
-    try {
-      const [res, fonts] = await Promise.all([fetch(url, { credentials: 'same-origin' }),
-        get(`${url.replace(/\/ass$/, '')}/fonts`).catch(() => ({ fonts: [] }))]);
-      if (!res.ok) throw new Error(`script ASS ${res.status}`);
-      const content = await res.text();
-      const until = partialOf(res);
-      if (seq !== startSeq || destroyed) return false;
-      const inst = new J({
-        video, subContent: content, timeOffset: base / 1000,
-        workerUrl: '/vendor/jassub/jassub-worker.js', wasmUrl: '/vendor/jassub/jassub-worker.wasm',
-        modernWasmUrl: '/vendor/jassub/jassub-worker-modern.wasm',
-        availableFonts: { 'liberation sans': '/vendor/jassub/default.woff2' }, fallbackFont: 'liberation sans',
-        fonts: fonts.fonts || [], useLocalFonts: false, prescaleHeightLimit: 1080, maxRenderHeight: 2160,
-      });
-      const ok = await new Promise((resolve) => {
-        const t = setTimeout(() => resolve(false), 15000);
-        inst.addEventListener('ready', () => { clearTimeout(t); resolve(true); }, { once: true });
-        inst.addEventListener('error', (e) => { clearTimeout(t); console.warn('[seance] libass', e.error || e.message); resolve(false); }, { once: true });
-      });
-      if (!ok || seq !== startSeq || destroyed) { try { inst.destroy(); } catch { /* */ } return false; }
-      jassub = inst;
-      jassubKey = url;
-      syncJassub();
-      subsUntil = until;
-      if (until !== null) keepRefreshing(seq, refreshAss);
-      return true;
-    } catch (e) {
-      console.warn('[seance] sous-titres ASS', e.message);
-      return false;
-    }
-  }
-
-  // PGS (Blu-ray) : images rendues dans le navigateur par libpgs, comme le fait Jellyfin (libbitsub)
-  function dropPgs() {
-    if (pgs) { try { pgs.dispose(); } catch { /* */ } if (pgs.ownCanvas) pgs.ownCanvas.remove(); }
-    pgs = null;
-    pgsKey = '';
-  }
-  async function fetchSup(seq) {
-    const res = await fetch(session.subtitle_pgs, { credentials: 'same-origin' });
-    if (!res.ok) throw new Error(`PGS ${res.status}`);
-    const buf = await res.arrayBuffer();
-    return { buf, until: partialOf(res) };
-  }
-  async function refreshPgs(seq) {
-    try {
-      const { buf, until } = await fetchSup(seq);
-      if (seq !== startSeq || !pgs) return;
-      await pgs.loadFromBuffer(buf);
-      subsUntil = until;
-    } catch { /* prochain tour */ }
-    if (subsUntil !== null) keepRefreshing(seq, refreshPgs);
-  }
-  async function loadPgs(seq) {
-    const url = session.subtitle_pgs;
-    if (pgs && pgsKey === url) {
-      if (subsUntil !== null) keepRefreshing(seq, refreshPgs);
-      return true;
-    }
-    dropPgs();
-    try {
-      const [{ PgsRenderer }, data] = await Promise.all([import('/vendor/libpgs/libpgs.js'), fetchSup(seq)]);
-      if (seq !== startSeq || destroyed) return false;
-      const canvas = h('canvas.pgs-layer');
-      video.after(canvas);  // sous les commandes, au-dessus de l'image
-      const r = new PgsRenderer({ video, canvas, workerUrl: '/vendor/libpgs/libpgs.worker.js', aspectRatio: 'contain' });
-      r.ownCanvas = canvas;
-      pgs = r;
-      pgsKey = url;
-      await Promise.race([r.loadFromBuffer(data.buf), new Promise((res) => setTimeout(res, 20000))]);
-      subsUntil = data.until;
-      if (data.until !== null) keepRefreshing(seq, refreshPgs);
-      return true;
-    } catch (e) {
-      console.warn('[seance] sous-titres PGS', e.message);
-      dropPgs();
-      return false;
-    }
-  }
-
-  // Les sous-titres sont normalement déjà prêts (prepare) ; filet de sécurité pour les pistes externes.
-  const SUBS_MAX_WAIT = 120000;
-  async function loadSubtitles(seq) {
-    clearTimeout(subsRefresh);
-    subsUntil = null;
-    subsPending.hidden = true;
-    cues = [];
-    cueKey = '';
-    subLayer.replaceChildren();
-    subTop.replaceChildren();
-    if (!session.subtitle_pgs) dropPgs();
-    if (session.subtitle_pgs) { await loadPgs(seq); dropJassub(); return; }
-    if (session.subtitle_ass && await loadAss(seq)) return;
-    if (seq !== startSeq || destroyed) return;
-    if (!session.subtitle_ass) dropJassub();
-    if (!session.subtitle_overlay) return;
-    const url = session.subtitle_overlay;
-    return new Promise((resolve) => {
-      let released = false;
-      const release = () => { if (!released) { released = true; resolve(); } };
-      const timer = setTimeout(release, SUBS_MAX_WAIT);
-      const poll = async () => {
-        if (seq !== startSeq || destroyed) { clearTimeout(timer); release(); return; }
-        try {
-          const r = await get(url);
-          if (seq !== startSeq || destroyed) { clearTimeout(timer); release(); return; }
-          if (r && r.pending) { setTimeout(poll, 800); return; }
-          cues = r.cues || [];
-          cueKey = '';
-          cueMax = cues.reduce((m, c) => Math.max(m, c.e - c.s), 0);
-          subsUntil = r.partial ? r.until : null;
-          if (r.partial) keepRefreshing(seq, poll);  // la suite arrive pendant la lecture
-        } catch (e) {
-          console.warn('[seance] sous-titres', e.message);
-        }
-        clearTimeout(timer);
-        release();
-      };
-      poll();
-    });
-  }
-
   function showError(msg, retry = false, at = null) {
     loader.hidden = true;
     errorLayer.hidden = false;
@@ -565,7 +374,7 @@ export async function renderPlayer(root, rk, ctx) {
   function seekTo(ms, remote = false) {
     const d = duration();
     ms = Math.max(0, d ? Math.min(ms, d - 3000) : ms);
-    if (group && !remote) gsend('seek', { position: Math.round(ms) });
+    if (group && !remote) group.send('seek', { position: Math.round(ms) });
     // la playlist couvre toute la vidéo : le lecteur va chercher les bons segments, le serveur relance
     // ffmpeg au bon endroit si besoin (comme Jellyfin) — plus besoin de recréer le flux
     video.currentTime = ms / 1000;
@@ -613,24 +422,6 @@ export async function renderPlayer(root, rk, ctx) {
       introMark.style.left = `${(intro.start / d) * 100}%`;
       introMark.style.width = `${((intro.end - intro.start) / d) * 100}%`;
     }
-  }
-
-  function paintSubtitles(p) {
-    if (!cues.length) return;
-    let lo = 0, hi = cues.length - 1, found = -1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (cues[mid].s <= p) { found = mid; lo = mid + 1; } else hi = mid - 1;
-    }
-    // toutes les répliques affichées en même temps (dialogue + panneau, deux personnages…)
-    const active = [];
-    for (let i = found; i >= 0 && p - cues[i].s <= cueMax && active.length < 8; i--) if (p <= cues[i].e) active.unshift(i);
-    const key = active.join(',');
-    if (key === cueKey) return;
-    cueKey = key;
-    const line = (i) => h('div', h('span.sub-line', cues[i].t));
-    subLayer.replaceChildren(...active.filter((i) => !cues[i].top).map(line));
-    subTop.replaceChildren(...active.filter((i) => cues[i].top).map(line));
   }
 
   function paintMarkers(p) {
@@ -685,7 +476,7 @@ export async function renderPlayer(root, rk, ctx) {
     report('stopped', true, { ended: true });
     finished = true;
     if (group) {
-      gsend('item', { item_id: session.next.id, position: 0 });
+      group.send('item', { item_id: session.next.id, position: 0 });
       location.replace(`#/play/${session.next.id}?group=${group.id}`);
       return;
     }
@@ -707,7 +498,8 @@ export async function renderPlayer(root, rk, ctx) {
     const restart = () => start(pos());
     chapterPanel.hidden = true;
     if (kind === 'group') {
-      clear(menu, groupMenu(opt));
+      clear(menu, group ? group.menu(opt) : createGroupMenu(opt, {
+        itemId: item.id, position: pos, beforeLeave: () => { finished = true; report('stopped', true); } }));
     } else if (kind === 'tracks') {
       const audio = session ? session.audio : item.audio;
       const subs = session ? session.subtitles : item.subtitles;
@@ -772,165 +564,6 @@ export async function renderPlayer(root, rk, ctx) {
     if (on) requestAnimationFrame(() => { on.scrollIntoView({ block: 'nearest', inline: 'center' }); on.focus({ preventScroll: true }); });
   }
 
-  // ------------------------------------------------------------ regarder ensemble
-  async function syncClock() {
-    // décalage entre l'horloge du serveur et la nôtre : on garde la mesure au plus court aller-retour
-    let best = null;
-    for (let i = 0; i < 3; i++) {
-      const t0 = Date.now();
-      try {
-        const r = await get('/api/together/time');
-        const t1 = Date.now();
-        if (!best || t1 - t0 < best.rtt) best = { rtt: t1 - t0, offset: r.now - (t0 + t1) / 2 };
-      } catch { break; }
-    }
-    if (best && group) group.offset = best.offset;
-  }
-  function serverNow() { return Date.now() + (group ? group.offset : 0); }
-  function groupTarget(st) {
-    return st.position + (st.playing && !st.waiting ? Math.max(0, serverNow() - st.ref) : 0);
-  }
-  function gsend(action, extra = {}) {
-    if (!group) return Promise.resolve();
-    return post(`/api/together/${group.id}/cmd`, { action, ...extra }).catch((e) => {
-      if (e.status === 403 && ['play', 'pause', 'seek'].includes(action)) {
-        toast(e.message, 'bad');
-        applyGroup(group.state); // on revient à la position du groupe
-      } else if (e.status === 404) leaveGroupMode('Le groupe est terminé');
-    });
-  }
-  function openGroupEvents() {
-    const es = new EventSource(`/api/together/${group.id}/events`);
-    group.es = es;
-    es.onmessage = (ev) => {
-      let m;
-      try { m = JSON.parse(ev.data); } catch { return; }
-      if (!group) return;
-      if (m.type === 'state') {
-        if (group.state && m.seq && group.state.seq && m.seq < group.state.seq) return;
-        const prev = group.state;
-        group.state = m;
-        remoteNotice(m, prev);
-        applyGroup(m);
-      } else if (m.type === 'members') {
-        group.members = m.members;
-        group.hostOnly = m.host_only;
-        group.name = m.name;
-        group.isHost = m.members.some((x) => x.host && x.id === state.me.user.id);
-        paintGroup();
-        if (!menu.hidden && menu.dataset.kind === 'group') { menu.hidden = true; openMenu('group'); }
-      } else if (m.type === 'notice') {
-        toast(m.text);
-      } else if (m.type === 'closed') {
-        leaveGroupMode('Le groupe est terminé');
-      }
-    };
-    es.onerror = () => { if (es.readyState === EventSource.CLOSED && group) leaveGroupMode('Connexion au groupe perdue'); };
-  }
-  function leaveGroupMode(msg) {
-    if (!group) return;
-    if (group.es) group.es.close();
-    group = null;
-    video.playbackRate = 1;
-    groupBanner.hidden = true;
-    paintGroup();
-    if (msg) toast(msg);
-  }
-  function remoteNotice(m, prev) {
-    if (!m.by || m.by === state.me.user.display_name) return;
-    if (m.action === 'pause') toast(`${m.by} a mis en pause`);
-    else if (m.action === 'play') toast(`${m.by} a repris la lecture`);
-    else if (m.action === 'seek') toast(`${m.by} a ${prev && m.position < groupTarget(prev) ? 'reculé' : 'avancé'} jusqu’à ${fmtTime(m.position)}`);
-    else if (m.action === 'item' && prev && prev.item_id !== m.item_id) toast(`${m.by} lance une autre vidéo`);
-    if (m.notice) toast(m.notice);
-  }
-  let groupReadyPending = false;
-  function applyGroup(st) {
-    if (!group || !st || !session) return;
-    if (st.item_id && st.item_id !== String(item.id)) {
-      finished = true;
-      report('stopped', true);
-      location.replace(`#/play/${st.item_id}?group=${group.id}`);
-      return;
-    }
-    if (switching) return; // la vidéo se charge encore : on appliquera l'état une fois prête
-    const target = groupTarget(st);
-    const meWaited = st.waiting && (st.waiting_ids || []).includes(state.me.user.id);
-    groupBanner.hidden = !st.waiting;
-    if (st.waiting) groupBanner.textContent = st.waiting_for.length ? `En attente de ${st.waiting_for.join(', ')}…` : 'Synchronisation…';
-    if (!st.playing || st.waiting) {
-      if (!video.paused) video.pause();
-      video.playbackRate = 1;
-      groupQuietUntil = Date.now() + 4000;
-      if (Math.abs(pos() - target) > 400) seekTo(target, true);
-      if (meWaited && !groupReadyPending) {
-        // on recharge à la nouvelle position, puis on prévient le groupe
-        groupReadyPending = true;
-        const seq = startSeq;
-        waitBuffer(PREROLL_SEEK[session.mode] ?? 6, 30000, seq).then(() => {
-          groupReadyPending = false;
-          if (group && seq === startSeq) gsend('ready');
-        });
-      }
-    } else {
-      groupQuietUntil = Date.now() + 4000;
-      if (Math.abs(pos() - target) > 1500) seekTo(target, true);
-      if (video.paused) video.play().catch(() => { paintPlay(); });
-    }
-    paintPlay();
-  }
-  let lastDrift = 0;
-  function driftCorrect(p) {
-    const st = group.state;
-    if (!st || !st.playing || st.waiting || video.paused || video.seeking || switching) return;
-    const now = Date.now();
-    if (now - lastDrift < 1000) return;
-    lastDrift = now;
-    const diff = p - groupTarget(st);
-    if (Math.abs(diff) > 2500) { video.playbackRate = 1; seekTo(groupTarget(st), true); return; }
-    // petit écart : on accélère ou ralentit à peine, sans saut visible
-    video.playbackRate = Math.abs(diff) < 200 ? 1 : Math.min(1.05, Math.max(0.95, 1 - diff / 5000));
-  }
-  function paintGroup() {
-    groupBtn.classList.toggle('on', !!group);
-    groupCount.hidden = !group;
-    if (group) groupCount.textContent = String((group.members || []).filter((m) => m.online !== false).length || 1);
-  }
-  function groupMenu(opt) {
-    if (!group) {
-      return h('div.menu-col.group-col', h('h4', 'Regarder ensemble'),
-        h('p.menu-info', 'Crée un groupe : chacun suit la même lecture depuis son écran, les pauses et les sauts sont partagés.'),
-        opt('Créer un groupe avec cette vidéo', false, async () => {
-          try {
-            const g = await post('/api/together', { item_id: item.id, position: pos() });
-            finished = true;
-            report('stopped', true);
-            location.replace(`#/play/${item.id}?group=${g.id}`);
-          } catch (e) { toast(e.message, 'bad'); }
-        }),
-        opt('Voir les groupes en cours', false, () => { location.hash = '#/together'; }));
-    }
-    const status = (m) => (m.online === false ? 'hors ligne' : (m.ready ? 'prêt' : 'chargement…'));
-    return h('div.menu-col.group-col', h('h4', group.name),
-      h('div.group-members', (group.members || []).map((m) => h('div.group-member', avatar({ display_name: m.name, avatar_color: m.color }, 26),
-        h('span.grow', m.name, m.host ? h('span.tag.accent', 'Hôte') : null), h('span.muted.small', status(m))))),
-      group.hostOnly ? h('p.menu-info', 'Seul l’hôte contrôle la lecture.') : null,
-      opt('Copier le lien d’invitation', false, async () => {
-        const link = `${location.origin}/#/together/${group.id}`;
-        try { await navigator.clipboard.writeText(link); toast('Lien copié : envoie-le aux autres membres du foyer', 'ok'); }
-        catch { toast(link); }
-      }),
-      group.isHost ? opt(group.hostOnly ? 'Tout le monde peut contrôler' : 'Seul l’hôte contrôle la lecture', false, async () => {
-        try { await put(`/api/together/${group.id}`, { host_only: !group.hostOnly }); } catch (e) { toast(e.message, 'bad'); }
-      }) : null,
-      opt('Quitter le groupe', false, async () => {
-        const id = group.id;
-        leaveGroupMode();
-        await post(`/api/together/${id}/leave`).catch(() => {});
-        history.replaceState(null, '', `#/play/${item.id}`);
-      }));
-  }
-
   function setupMediaSession() {
     if (!('mediaSession' in navigator) || !window.MediaMetadata) return;
     const art = item.type === 'episode' ? (item.show_thumb || item.thumb) : item.thumb;
@@ -947,9 +580,9 @@ export async function renderPlayer(root, rk, ctx) {
   // ------------------------------------------------------------ events
   const togglePlay = () => {
     if (group) {
-      if (group.state && group.state.waiting && group.state.playing) { gsend('pause', { position: pos() }); return; }
-      if (video.paused) { gsend('play', { position: pos() }); rebuffering = false; video.play().catch(() => {}); }
-      else { gsend('pause', { position: pos() }); video.pause(); }
+      if (group.waitingWhilePlaying) { group.send('pause', { position: pos() }); return; }
+      if (video.paused) { group.send('play', { position: pos() }); rebuffering = false; video.play().catch(() => {}); }
+      else { group.send('pause', { position: pos() }); video.pause(); }
       return;
     }
     if (rebuffering) { rebuffering = false; paintPlay(); return; } // reste en pause : la reprise auto est annulée
@@ -990,16 +623,16 @@ export async function renderPlayer(root, rk, ctx) {
   video.addEventListener('play', () => { paintPlay(); wake(); });
   video.addEventListener('pause', () => { paintPlay(); wake(); if (!rebuffering) report('paused', true); });
   video.addEventListener('waiting', () => { loader.hidden = false; onStall(); });
-  video.addEventListener('playing', () => { loader.hidden = true; switching = false; everPlayed = true; syncJassub(); });
+  video.addEventListener('playing', () => { loader.hidden = true; switching = false; everPlayed = true; subs.sync(base); });
   video.addEventListener('canplay', () => { if (!rebuffering && !switching) loader.hidden = true; });
   video.addEventListener('timeupdate', () => {
     const p = pos();
-    if (group) driftCorrect(p);
+    if (group) group.drift(p);
     paintTime();
-    paintSubtitles(p);
+    subs.paint(p);
     paintMarkers(p);
     // saut au-delà de ce qui est déjà extrait : on le dit plutôt que d'afficher un écran sans sous-titres
-    subsPending.hidden = subsUntil === null || p <= subsUntil;
+    subsPending.hidden = subs.until === null || p <= subs.until;
     if (!video.paused) report('playing');
   });
   video.addEventListener('progress', paintTime);
@@ -1113,20 +746,14 @@ export async function renderPlayer(root, rk, ctx) {
     if (Date.now() - startedAt > 3000 && !switching) report('stopped', true);
     if (session) post('/api/stop', { stream: session.stream }, { keepalive: true }).catch(() => {});
     destroyed = true;
-    if (group) {
-      if (group.es) group.es.close();
-      // on reste dans le groupe si on enchaîne sur un autre épisode du groupe
-      if (!location.hash.includes(`group=${group.id}`)) post(`/api/together/${group.id}/leave`, {}, { keepalive: true }).catch(() => {});
-    }
+    if (group) group.dispose();
     clearInterval(nextTimer);
     clearTimeout(idleTimer);
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('visibilitychange', onHide);
     document.removeEventListener('fullscreenchange', onFullscreen);
     window.removeEventListener('pagehide', onUnload);
-    clearTimeout(subsRefresh);
-    dropJassub();
-    dropPgs();
+    subs.destroy();
     if (hls) hls.destroy();
     video.removeAttribute('src');
     video.load();
