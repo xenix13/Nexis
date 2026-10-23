@@ -191,23 +191,29 @@ class ChapterImagesTask(Task):
     def run(self, ctx, job, opts):
         db = ctx.db
         where, args = lib_clause(opts)
-        rows = db.all("SELECT i.id, i.key, i.probe, i.file_size, i.file_mtime, i.title FROM items i "
+        rows = db.all("SELECT i.id, i.key, i.probe, i.file_size, i.file_mtime, i.duration_ms, i.title FROM items i "
                       f"WHERE i.type IN ('movie','episode') AND i.probe LIKE '%\"chapters\": [{{%'{where} "
                       "ORDER BY i.added_at DESC", args)
         todo = [r for r in rows if len(chapter_list(r)) >= 2 and not analysis_done(db, r, "chapters")]
         db.release()
-        made = files = 0
+        made = files = failed = 0
         for n, r in enumerate(todo, 1):
             job.wait_idle()
             job.progress = (n - 1) / max(1, len(todo))
             job.message = r["title"]
-            made += ctx.chapter_images.extract_all(r, cancelled=job.cancel.is_set)
+            try:
+                made += ctx.chapter_images.extract_all(r, cancelled=job.cancel.is_set)
+            except Exception as e:  # un fichier en défaut ne doit pas arrêter la tâche
+                log.warning("Images de chapitres de %s : %s", r["title"], e)
+                failed += 1
             job.check()
             if ctx.chapter_images.has_all(r):
                 mark_analysis(db, r, "chapters")
                 files += 1
             db.release()
-        return f"{made} image(s) pour {files} fichier(s)" if todo else "Toutes les images sont prêtes"
+        if not todo:
+            return "Toutes les images sont prêtes"
+        return f"{made} image(s) pour {files} fichier(s)" + (f", {failed} fichier(s) en échec" if failed else "")
 
 
 class IntroTask(Task):

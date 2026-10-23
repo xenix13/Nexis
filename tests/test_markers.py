@@ -1,3 +1,4 @@
+import os
 import unittest
 
 from seance.markers import from_chapters
@@ -45,3 +46,36 @@ class MarkersTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChapterImagesTest(unittest.TestCase):
+    """Chapitres annoncés après la fin réelle de la vidéo : pas d'erreur, et rien à refaire au passage suivant."""
+
+    def test_chapter_past_end_of_video(self):
+        import json
+        import subprocess
+        import tempfile
+        import types
+        from seance.chapters import ChapterImages
+        from seance import media
+        d = tempfile.mkdtemp()
+        meta = os.path.join(d, "meta.txt")
+        with open(meta, "w") as f:
+            f.write(";FFMETADATA1\n")
+            for s, e in ((0, 2000), (2000, 4000), (4000, 30000), (30000, 60000)):
+                f.write(f"[CHAPTER]\nTIMEBASE=1/1000\nSTART={s}\nEND={e}\ntitle=C{s}\n")
+        raw, video = os.path.join(d, "raw.mkv"), os.path.join(d, "v.mkv")
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=320x180:r=24", "-t", "5",
+                        "-c:v", "libx264", "-preset", "ultrafast", raw], check=True)
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", raw, "-i", meta, "-map", "0", "-map_chapters", "1",
+                        "-c", "copy", video], check=True)
+        probe = media.probe(video)
+        self.assertGreater(probe["chapters"][-1]["start"], probe["duration"])  # chapitre après la fin
+        item = {"id": 1, "key": video, "probe": json.dumps(probe), "file_size": os.path.getsize(video),
+                "file_mtime": 1, "duration_ms": 5000}
+        ci = ChapterImages(types.SimpleNamespace(data_dir=d))
+        made = ci.extract_all(item)
+        self.assertGreaterEqual(made, 3)
+        self.assertTrue(ci.has_all(item))
+        self.assertEqual(ci.extract_all(item), 0)  # tout est fait (ou noté impossible)
+        self.assertTrue(os.path.isfile(ci.get(item, 0)))

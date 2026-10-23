@@ -178,7 +178,7 @@ def resize_image(src, dest, w, h, crop=True):
     tmp = f"{dest}.{threading.get_ident()}.tmp.jpg"
     with _image_slots:
         run([FFMPEG, "-y", "-v", "error", "-i", src, "-vf", vf, "-frames:v", "1", "-q:v", "4", tmp], timeout=60)
-    os.replace(tmp, dest)
+    _keep_image(tmp, dest)
 
 
 def grab_frame(video, dest, at_seconds, w, h):
@@ -187,6 +187,17 @@ def grab_frame(video, dest, at_seconds, w, h):
     with _image_slots:
         run([FFMPEG, "-y", "-v", "error", *LOCAL_ONLY, "-ss", f"{at_seconds:.2f}", "-i", video, "-vf", vf,
              "-frames:v", "1", "-q:v", "4", tmp], timeout=90)
+    _keep_image(tmp, dest)
+
+
+def _keep_image(tmp, dest):
+    """ffmpeg peut réussir sans rien écrire (instant après la dernière image, piste vidéo vide)."""
+    if not os.path.isfile(tmp) or os.path.getsize(tmp) == 0:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise MediaError("aucune image à cet instant de la vidéo")
     os.replace(tmp, dest)
 
 
