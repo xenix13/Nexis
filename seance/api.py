@@ -21,7 +21,7 @@ from .markers import from_chapters as chapter_markers
 from .metadata import Metadata, MetaError
 from .names import LANG_WORDS, fold
 from .ratings import age_of
-from .scanner import EXTRA_LABELS, Scanner
+from .scanner import EXTRA_LABELS, Scanner, like_prefix
 from .subcache import SubtitleCache, pgs_tracks, text_tracks
 from .subtitles import parse_subtitles
 from .transcoder import DOWNMIX_ALGOS, QUALITY, Busy, StreamError, Transcoder, plan
@@ -30,7 +30,7 @@ from .web import App, HTTPError, Response
 
 log = logging.getLogger("seance")
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 RK = r"(?P<rk>\d{1,12})"
 SID = r"(?P<sid>[A-Za-z0-9_-]{8,40})"
 SORTS = {"title": "i.sort_title COLLATE NOCASE", "added": "i.added_at DESC", "year": "i.year DESC, i.sort_title",
@@ -208,7 +208,7 @@ class Ctx:
         if self.db.setting("subs_prefetch", "1") != "1" and self.db.setting("trickplay", "1") != "1":
             return
         n = 0
-        for r in self.db.all("SELECT id, probe, file_mtime, duration_ms FROM items WHERE type IN ('movie','episode') "
+        for r in self.db.all("SELECT id, probe, file_size, file_mtime, duration_ms FROM items WHERE type IN ('movie','episode') "
                              "ORDER BY added_at DESC"):
             if self.subtitles.has_work(r):
                 self.subtitles.enqueue(r["id"])
@@ -1545,17 +1545,67 @@ def build_app(ctx):
         return {"path": path, "parent": os.path.dirname(path) if path != "/" else None, "dirs": dirs}
 
     # ---------------------------------------------------- admin settings
+    def webhook_folders(payload):
+        """Dossiers cités par Radarr / Sonarr (vus depuis leur machine)."""
+        out = []
+        for obj, key in (("movie", "folderPath"), ("series", "path")):
+            v = (payload.get(obj) or {}).get(key) if isinstance(payload.get(obj), dict) else None
+            if isinstance(v, str) and v:
+                out.append(v)
+        for obj in ("movieFile", "episodeFile"):
+            f = payload.get(obj)
+            if isinstance(f, dict) and isinstance(f.get("path"), str) and f["path"]:
+                out.append(os.path.dirname(f["path"]))
+        for f in payload.get("episodeFiles") or []:
+            if isinstance(f, dict) and isinstance(f.get("path"), str):
+                out.append(os.path.dirname(f["path"]))
+        return out[:50]
+
+    def local_dirs(remote):
+        """Retrouve le dossier local correspondant (chemins différents entre Radarr et Séance) en comparant
+        la fin du chemin : /movies/Inception (2010) -> /mnt/films/Inception (2010)."""
+        parts = [p for p in remote.replace("\\", "/").split("/") if p]
+        found = []
+        for lib in db.all("SELECT id, paths FROM libraries"):
+            for root in json.loads(lib["paths"]):
+                for k in range(len(parts), 0, -1):
+                    cand = os.path.join(root, *parts[-k:])
+                    if os.path.isdir(cand):
+                        found.append((lib["id"], cand))
+                        break
+                    # dossier supprimé : on le retrouve par les fichiers indexés dessous
+                    like = like_prefix(cand)
+                    if db.scalar("SELECT 1 FROM items WHERE library_id=? AND key LIKE ? ESCAPE '\\' LIMIT 1",
+                                 (lib["id"], like)):
+                        found.append((lib["id"], cand))
+                        break
+        return found
+
+    def webhook_scope(payload):
+        scope = {}
+        for remote in webhook_folders(payload):
+            for lib_id, d in local_dirs(remote):
+                dirs = scope.setdefault(lib_id, set())
+                dirs.add(d)
+                dirs.add(os.path.dirname(d))
+                for dp, dn, _ in os.walk(d):  # nouveau dossier : ses sous-dossiers (saisons…) aussi
+                    dirs.update(os.path.join(dp, x) for x in dn)
+        return scope
+
     @app.route("POST", "/api/hooks/scan", auth="webhook")
     def hook_scan(req):
-        """Webhook pour Radarr / Sonarr / script : déclenche un scan (regroupé sur 10 s)."""
+        """Webhook pour Radarr / Sonarr / script : scan limité aux dossiers cités (regroupé sur 10 s)."""
         try:
-            event = (req.json() or {}).get("eventType", "")
+            payload = req.json() or {}
         except HTTPError:
-            event = ""
+            payload = {}
+        payload = payload if isinstance(payload, dict) else {}
+        event = payload.get("eventType", "")
         if event == "Test":
             return {"ok": True, "message": "Séance a bien reçu le test"}
-        ctx.watcher.request_scan(f"webhook {event}".strip())
-        return {"ok": True}
+        scope = webhook_scope(payload)
+        ctx.watcher.request_scan(f"webhook {event}".strip(), scope=scope or None)
+        return {"ok": True, "partial": bool(scope)}
 
     @app.route("GET", "/api/hooks/scan", auth="webhook")
     def hook_scan_get(req):
@@ -1578,7 +1628,7 @@ def build_app(ctx):
                 "subs_queue": len(ctx.subtitles.urgent) + len(ctx.subtitles.idle),
                 "webhook_path": f"/api/hooks/scan?token={db.setting('webhook_token')}",
                 "watch_events": ctx.watcher.events[:8],"tmdb_set": bool(db.setting("tmdb_key")), "language": db.setting("meta_language", "fr-FR"),
-                "scan_interval": ctx.setting_int("scan_interval", 6), "max_streams": max_streams,
+                "scan_interval": ctx.setting_int("scan_interval", 24), "max_streams": max_streams,
                 "max_transcodes": max_transcodes, "cpus": os.cpu_count(), "ffmpeg": media.available(),
                 "version": VERSION}
 
@@ -1620,7 +1670,7 @@ def build_app(ctx):
         if "subs_prefetch" in b:
             db.set_setting("subs_prefetch", "1" if b["subs_prefetch"] else "0")
             if b["subs_prefetch"]:
-                for r in db.all("SELECT id, probe, file_mtime, duration_ms FROM items WHERE type IN ('movie','episode') "
+                for r in db.all("SELECT id, probe, file_size, file_mtime, duration_ms FROM items WHERE type IN ('movie','episode') "
                                 "ORDER BY added_at DESC"):
                     if ctx.subtitles.has_work(r):
                         ctx.subtitles.enqueue(r["id"])
@@ -1797,7 +1847,7 @@ def janitor(ctx, stop_event):
                 ctx.transcoder.stop(sid)
             db.run("DELETE FROM streams WHERE last_seen < ?", (now - 600,))
             db.run("DELETE FROM sessions WHERE expires_at < ?", (now,))
-            interval = ctx.setting_int("scan_interval", 6)
+            interval = ctx.setting_int("scan_interval", 24)
             if interval and db.scalar("SELECT COUNT(*) FROM libraries"):
                 last = ctx.setting_int("last_scan", 0)
                 if now - last > interval * 3600:

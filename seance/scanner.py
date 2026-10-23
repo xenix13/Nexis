@@ -14,27 +14,48 @@ log = logging.getLogger("seance.scan")
 RECENT_SECONDS = 45
 
 
+SKIP_DIRS = ("@eadir", "#recycle", "$recycle.bin", "lost+found", ".trickplay")
+
+
+def _videos_in(dirpath, filenames, videos):
+    for f in sorted(filenames):
+        if f.startswith("."):
+            continue
+        ext = os.path.splitext(f)[1].lower()
+        if ext not in VIDEO_EXT:
+            continue
+        full = os.path.join(dirpath, f)
+        try:
+            st = os.stat(full)
+        except OSError:
+            continue
+        if "sample" in f.lower() and st.st_size < 150 * 1024 * 1024:
+            continue
+        videos.append((full, st.st_size, int(st.st_mtime)))
+
+
 def walk_videos(root):
     """-> liste de (chemin, taille, mtime) et dict dossier -> fichiers (pour sous-titres/images)."""
     videos, dir_files = [], {}
     for dirpath, dirnames, filenames in os.walk(root, followlinks=True):
-        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d.lower() not in
-                             ("@eadir", "#recycle", "$recycle.bin", "lost+found", ".trickplay"))
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d.lower() not in SKIP_DIRS)
         dir_files[dirpath] = filenames
-        for f in sorted(filenames):
-            if f.startswith("."):
-                continue
-            ext = os.path.splitext(f)[1].lower()
-            if ext not in VIDEO_EXT:
-                continue
-            full = os.path.join(dirpath, f)
-            try:
-                st = os.stat(full)
-            except OSError:
-                continue
-            if "sample" in f.lower() and st.st_size < 150 * 1024 * 1024:
-                continue
-            videos.append((full, st.st_size, int(st.st_mtime)))
+        _videos_in(dirpath, filenames, videos)
+    return videos, dir_files
+
+
+def list_dirs(dirs):
+    """Scan partiel : seulement les fichiers DIRECTEMENT dans ces dossiers (les sous-dossiers nouveaux
+    font eux-mêmes partie de la liste)."""
+    videos, dir_files = [], {}
+    for d in sorted(dirs):
+        try:
+            with os.scandir(d) as it:
+                names = [e.name for e in it if not e.is_dir(follow_symlinks=True)]
+        except OSError:
+            continue
+        dir_files[d] = names
+        _videos_in(d, names, videos)
     return videos, dir_files
 
 
@@ -142,17 +163,18 @@ class Scanner:
         with self.lock:
             self.state.update(kw)
 
-    def start(self, library_ids=None, refresh_metadata=False):
+    def start(self, library_ids=None, refresh_metadata=False, scope=None):
+        """scope : {id de bibliothèque: dossiers à revoir} pour un scan partiel (nouveautés détectées)."""
         with self.lock:
             if self.state["running"]:
                 return False
             self.state.update(running=True, phase="Préparation", library=None, done=0, total=0, added=0, deferred=0,
-                              removed=0, unrecognized=[], errors=[], finished_at=None)
-        self.thread = threading.Thread(target=self._run, args=(library_ids, refresh_metadata), daemon=True)
+                              removed=0, unrecognized=[], errors=[], finished_at=None, partial=bool(scope))
+        self.thread = threading.Thread(target=self._run, args=(library_ids, refresh_metadata, scope), daemon=True)
         self.thread.start()
         return True
 
-    def _run(self, library_ids, refresh_metadata):
+    def _run(self, library_ids, refresh_metadata, scope=None):
         db = self.ctx.db
         try:
             libs = db.all("SELECT * FROM libraries ORDER BY position, id")
@@ -161,7 +183,7 @@ class Scanner:
             for lib in libs:
                 self._set(library=lib["name"])
                 try:
-                    self.scan_library(lib)
+                    self.scan_library(lib, (scope or {}).get(lib["id"]))
                 except Exception as e:
                     log.exception("Scan de %s", lib["name"])
                     self._err(f"{lib['name']} : {e}")
@@ -186,7 +208,8 @@ class Scanner:
                 self.state["errors"].append(msg)
 
     # ------------------------------------------------------------------
-    def scan_library(self, lib):
+    def scan_library(self, lib, scope=None):
+        """Scan complet, ou partiel si `scope` (dossiers modifiés, ajoutés ou supprimés) est donné."""
         db = self.ctx.db
         paths = [p for p in json.loads(lib["paths"]) if p]
         self._set(phase="Recherche des fichiers", done=0, total=0)
@@ -197,7 +220,11 @@ class Scanner:
                 self._err(f"Dossier inaccessible : {root}")
                 continue
             reachable.append(root)
-            v, d = walk_videos(root)
+            if scope is not None:
+                mine = [d for d in scope if d == root or d.startswith(os.path.join(root, ""))]
+                v, d = list_dirs(mine)
+            else:
+                v, d = walk_videos(root)
             files += [(root, *x) for x in v]
             dir_files.update(d)
         if paths and not reachable:
@@ -207,8 +234,15 @@ class Scanner:
             "SELECT id, key, file_size, file_mtime, probe, type FROM items WHERE library_id=? "
             "AND type IN ('movie','episode','extra')",
             (lib["id"],))}
+        if scope is not None:
+            # seuls les fichiers des dossiers revus (ou d'un dossier disparu) peuvent avoir changé
+            scoped = set(scope)
+            prefixes = tuple(os.path.join(d, "") for d in scope)
+            existing = {k: r for k, r in existing.items()
+                        if os.path.dirname(k) in scoped or k.startswith(prefixes)}
         seen = set()
         deferred = 0
+        deferred_dirs = set()
         extras = []
         self._set(phase="Analyse des fichiers", done=0, total=len(files))
         for n, (root, path, size, mtime) in enumerate(files, 1):
@@ -217,6 +251,7 @@ class Scanner:
             if time.time() - mtime < RECENT_SECONDS:
                 # fichier probablement en cours de copie (Radarr, Sonarr…) : on le reprendra au prochain passage
                 deferred += 1
+                deferred_dirs.add(os.path.dirname(path))
                 continue
             kind = extra_kind(path, root)
             if kind:
@@ -261,7 +296,7 @@ class Scanner:
                 self.state["deferred"] = self.state.get("deferred", 0) + deferred
             watcher = getattr(self.ctx, "watcher", None)
             if watcher:
-                watcher.defer(lib["id"])
+                watcher.defer(lib["id"], deferred_dirs)
 
     def _extra(self, lib, root, path, size, mtime, kind, dir_files):
         """Bonus (bande-annonce, making-of…) rattaché au film ou à la série du même dossier."""
@@ -295,6 +330,15 @@ class Scanner:
         self._insert(library_id=lib["id"], type="extra", key=path, parent_id=parent, show_id=parent, title=title,
                      extra_kind=kind, duration_ms=dur, file_size=size, file_mtime=mtime, probe=json.dumps(info),
                      meta_state="local", added_at=int(time.time()))
+
+    @staticmethod
+    def _unchanged(row, size, mtime, info):
+        if row["file_size"] != size or row["file_mtime"] != mtime or not row["probe"]:
+            return False
+        try:
+            return json.loads(row["probe"]) == info
+        except ValueError:
+            return False
 
     def _probe(self, path, row, size, mtime, dir_files):
         info = json.loads(row["probe"]) if row and row["probe"] else None
@@ -340,6 +384,11 @@ class Scanner:
         else:
             poster = local_image(folder, "poster", [f for f in files if f.startswith(base)], base)
             backdrop = local_image(folder, "backdrop", [f for f in files if f.startswith(base)], base)
+        if row and self._unchanged(row, size, mtime, info):
+            if poster or backdrop:
+                db.run("UPDATE items SET poster=COALESCE(poster, ?), backdrop=COALESCE(backdrop, ?) WHERE id=? "
+                       "AND (poster IS NULL OR backdrop IS NULL)", (poster, backdrop, row["id"]))
+            return
         if row:
             db.run("UPDATE items SET file_size=?, file_mtime=?, probe=?, duration_ms=?, "
                    "poster=COALESCE(poster, ?), backdrop=COALESCE(backdrop, ?) WHERE id=?",
@@ -368,6 +417,8 @@ class Scanner:
             return
         info = self._probe(path, row, size, mtime, dir_files)
         dur = int(info["duration"] * 1000)
+        if row and self._unchanged(row, size, mtime, info):
+            return  # rien à écrire : fichier, analyse et sous-titres externes identiques
         if row:
             db.run("UPDATE items SET file_size=?, file_mtime=?, probe=?, duration_ms=? WHERE id=?",
                    (size, mtime, json.dumps(info), dur, row["id"]))

@@ -106,8 +106,28 @@ class SubtitleCache:
         threading.Thread(target=self._worker, daemon=True).start()
 
     # ------------------------------------------------------------ cache
+    @staticmethod
+    def content_key(item):
+        """Le cache suit le FICHIER (taille + date), pas sa fiche : un fichier renommé, déplacé ou réindexé
+        retrouve ses sous-titres et ses vignettes déjà exportés, sans relire le fichier."""
+        size = item["file_size"] if "file_size" in item.keys() else None
+        return f"f{size}_{item['file_mtime'] or 0}" if size else None
+
+    def _keyed(self, base, item):
+        key = self.content_key(item)
+        legacy = os.path.join(base, f"{item['id']}_{item['file_mtime'] or 0}")
+        if not key:
+            return legacy
+        path = os.path.join(base, key)
+        if not os.path.isdir(path) and os.path.isdir(legacy):
+            try:  # cache d'une version précédente (rangé par numéro de fiche) : on le reprend tel quel
+                os.replace(legacy, path)
+            except OSError:
+                return legacy
+        return path
+
     def _dir(self, item):
-        return os.path.join(self.base, f"{item['id']}_{item['file_mtime'] or 0}")
+        return self._keyed(self.base, item)
 
     def path(self, item, index):
         return os.path.join(self._dir(item), f"{int(index)}.json")
@@ -150,7 +170,7 @@ class SubtitleCache:
 
     # -- vignettes d'aperçu
     def trick_dir(self, item):
-        return os.path.join(self.trick_base, f"{item['id']}_{item['file_mtime'] or 0}")
+        return self._keyed(self.trick_base, item)
 
     def trick_index(self, item):
         try:
@@ -297,7 +317,7 @@ class SubtitleCache:
                 if item_id is None:
                     break
                 try:
-                    row = self.ctx.db.one("SELECT id, key, probe, file_mtime, duration_ms FROM items WHERE id=?", (item_id,))
+                    row = self.ctx.db.one("SELECT id, key, probe, file_size, file_mtime, duration_ms FROM items WHERE id=?", (item_id,))
                     if not row:
                         continue
                     todo = self.missing(row) if kind in ("soon", "gentle") else self.has_work(row)

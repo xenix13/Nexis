@@ -549,6 +549,35 @@ class SeanceTest(unittest.TestCase):
         finally:
             subcache.SOON_READRATE, sc._streaming, api_mod.PREPARE_WINDOW_MS = old
 
+    def test_renamed_file_keeps_exported_subtitles(self):
+        """Un fichier renommé ou réindexé retrouve ses sous-titres déjà exportés : rien n'est relu."""
+        m = self.movie("Nuit polaire")
+        for _ in range(50):
+            st, r = self.admin.call("GET", f"/api/items/{m['id']}/prepare?wait=5")
+            if r["ready"]:
+                break
+        row = self.ctx.db.one("SELECT * FROM items WHERE id=?", (int(m["id"]),))
+        self.assertEqual(self.ctx.subtitles.missing(row), [])
+        self.assertTrue(os.path.isfile(self.ctx.subtitles.path(row, 3)))  # piste SRT interne exportée
+        old, new = row["key"], row["key"].replace(".x264.mkv", ".x264.REPACK.mkv")
+        os.rename(old, new)
+        try:
+            self.admin.call("POST", "/api/admin/scan", {"library": self.libs["Films"]})
+            wait_scan(self.admin)
+            row2 = self.ctx.db.one("SELECT * FROM items WHERE key=?", (new,))
+            self.assertNotEqual(row2["id"], row["id"])     # nouvelle fiche…
+            self.assertEqual(self.ctx.subtitles.missing(row2), [])  # … mêmes sous-titres, déjà prêts
+            # un second scan sans changement n'écrit rien
+            before = self.ctx.db.one("SELECT updated_at, probe FROM items WHERE id=?", (row2["id"],))
+            time.sleep(1.1)
+            self.admin.call("POST", "/api/admin/scan", {"library": self.libs["Films"]})
+            wait_scan(self.admin)
+            self.assertEqual(self.ctx.db.one("SELECT updated_at, probe FROM items WHERE id=?", (row2["id"],)), before)
+        finally:
+            os.rename(new, old)
+            self.admin.call("POST", "/api/admin/scan", {"library": self.libs["Films"]})
+            wait_scan(self.admin)
+
     def test_prepare_waits_for_all_subtitles(self):
         m = self.movie("Nuit polaire")
         mrow = self.ctx.db.one("SELECT * FROM items WHERE id=?", (int(m["id"]),))
@@ -658,7 +687,10 @@ class SeanceTest(unittest.TestCase):
             shutil.copy(src, new)           # « copie en cours » : fichier tout récent
             w.tick(t + 2)                   # changement détecté
             self.assertIn(int(lib), w.pending)
+            self.assertEqual(w.pending[int(lib)]["dirs"], {season})  # seul le dossier de la saison a bougé
             w.tick(t + 4)                   # dossiers stables : scan
+            st, sc = self.admin.call("GET", "/api/admin/scan")
+            self.assertTrue(sc.get("partial"), sc)  # scan partiel : uniquement ce dossier
             wait_scan(self.admin)
             st, r = self.admin.call("GET", "/api/admin/libraries")
             by = {l["name"]: l for l in r["libraries"]}
@@ -689,7 +721,17 @@ class SeanceTest(unittest.TestCase):
         st, r = c.call("POST", path, {"eventType": "Download", "movie": {"title": "X"}}, csrf=False)
         self.assertEqual(st, 200)
         self.assertIsNotNone(self.ctx.watcher.force_at)
+        self.assertIsNone(self.ctx.watcher.force_scope)  # dossier inconnu : scan complet
         self.ctx.watcher.force_at = None
+        # Sonarr cite ses propres chemins (/tv/…) : Séance retrouve le dossier local et ne revoit que lui
+        st, r = c.call("POST", path, {"eventType": "Download", "series": {"title": "Les Veilleurs", "path": "/tv/Les Veilleurs"},
+                                      "episodeFile": {"path": "/tv/Les Veilleurs/Season 01/Les.Veilleurs.S01E01.mkv"}},
+                       csrf=False)
+        self.assertTrue(r["partial"])
+        show_dir = os.path.join(self.media, "series", "Les Veilleurs")
+        self.assertEqual(self.ctx.watcher.force_scope[int(self.libs["Séries"])] >= {show_dir, os.path.join(show_dir, "Season 01")},
+                         True)
+        self.ctx.watcher.force_at, self.ctx.watcher.force_scope = None, None
         st, s2 = self.admin.call("POST", "/api/admin/webhook/regenerate")
         self.assertNotEqual(s2["webhook_path"], path)
         self.assertEqual(c.call("POST", path, {}, csrf=False)[0], 403)
