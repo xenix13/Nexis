@@ -5,7 +5,7 @@ import time
 
 import ipaddress
 
-from ..auth import Throttle, check_credentials, hash_password, validate_password, verify_password
+from ..auth import Throttle, check_credentials, find_user, normalize_username, hash_password, validate_password, verify_password
 from ..catalog import validate_prefs
 from ..web import HTTPError, Response
 from .common import GUID_RE, JF_VERSION, LANG2, iso, no_content, result, token_hash
@@ -174,11 +174,11 @@ def register(app, ctx, x, jf):
         b = jf.body(req)
         username = str(b.get("Username") or b.get("username") or "").strip()[:64]
         password = str(b.get("Pw") or b.get("pw") or b.get("Password") or "")[:256]
-        keys = ("ip:" + req.client_ip, "u:" + username.lower())
+        keys = ("ip:" + req.client_ip, "u:" + normalize_username(username).casefold())
         ctx.throttle.check(*keys)
         user = None
         if username and password:
-            row = db.one("SELECT * FROM users WHERE username=?", (username,))
+            row = find_user(db, username)
             if row and row.get("managed"):
                 # profil géré (sans mot de passe) : connexion avec son code PIN, s'il en a un, et seulement
                 # depuis le réseau local (un code de 4 chiffres ne doit pas être exposé à Internet)

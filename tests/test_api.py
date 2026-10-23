@@ -168,6 +168,20 @@ class SeanceTest(unittest.TestCase):
             out += eps
         return show, d, out
 
+    def test_accented_usernames(self):
+        import unicodedata
+        st, u = self.admin.call("POST", "/api/admin/users", {"username": "Héloïse", "password": "M0t$de@passe!?%"})
+        self.assertEqual(st, 200, u)
+        # même compte quelle que soit la casse ou la forme des accents (é en un ou deux caractères)
+        self.assertEqual(self.admin.call("POST", "/api/admin/users", {"username": "HÉLOÏSE", "password": "motdepasse9"})[0], 409)
+        for name in ("Héloïse", "héloïse", "HÉLOÏSE", unicodedata.normalize("NFD", "Héloïse")):
+            c = Client(self.base)
+            st, r = c.call("POST", "/api/login", {"username": name, "password": "M0t$de@passe!?%"})
+            self.assertEqual(st, 200, (name, r))
+        self.assertEqual(self.admin.call("POST", "/api/admin/users", {"username": "a b", "password": "motdepasse9"})[0], 400)
+        self.assertEqual(self.admin.call("POST", "/api/admin/users", {"username": "x@y", "password": "motdepasse9"})[0], 400)
+        self.admin.call("DELETE", f"/api/admin/users/{u['id']}")
+
     # ------------------------------------------------------------- scan / meta
     def test_scan_counts_and_unrecognized(self):
         st, r = self.admin.call("GET", "/api/admin/libraries")

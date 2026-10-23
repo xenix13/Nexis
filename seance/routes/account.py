@@ -5,8 +5,9 @@ import re
 import time
 
 from .. import __version__ as VERSION, media
-from ..auth import check_credentials, clear_session, create_session, hash_password, validate_password, verify_password
-from ..catalog import HEX, USERNAME, validate_prefs
+from ..auth import (USERNAME, USERNAME_RULE, check_credentials, clear_session, create_session, hash_password,
+                    normalize_username, validate_password, verify_password)
+from ..catalog import HEX, validate_prefs
 from ..web import HTTPError
 
 
@@ -27,9 +28,9 @@ def register(app, ctx, x):
         if db.scalar("SELECT COUNT(*) FROM users"):
             raise HTTPError(409, "Déjà configuré")
         b = req.json()
-        username = (b.get("username") or "").strip()
+        username = normalize_username(b.get("username"))
         if not USERNAME.match(username):
-            raise HTTPError(400, "Identifiant : 2 à 32 caractères (lettres, chiffres, . _ -)")
+            raise HTTPError(400, USERNAME_RULE)
         validate_password(b.get("password"))
         with db.tx():
             if db.scalar("SELECT COUNT(*) FROM users"):
@@ -50,7 +51,7 @@ def register(app, ctx, x):
         b = req.json()
         username = str(b.get("username") or "").strip()[:64]
         password = str(b.get("password") or "")[:256]
-        keys = ("ip:" + req.client_ip, "u:" + username.lower())
+        keys = ("ip:" + req.client_ip, "u:" + normalize_username(username).casefold())
         ctx.throttle.check(*keys)
         user = check_credentials(db, username, password)
         if not user:

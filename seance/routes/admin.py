@@ -8,8 +8,8 @@ import threading
 import time
 
 from .. import __version__ as VERSION, media, mountd
-from ..auth import hash_password, validate_password
-from ..catalog import HEX, RK, SID, USERNAME
+from ..auth import USERNAME, USERNAME_RULE, find_user, hash_password, normalize_username, validate_password
+from ..catalog import HEX, RK, SID
 from ..metadata import MetaError
 from ..scanner import like_prefix
 from ..transcoder import DOWNMIX_ALGOS
@@ -86,12 +86,12 @@ def register(app, ctx, x):
     @app.route("POST", "/api/admin/users", auth="admin")
     def admin_create_user(req):
         b = req.json()
-        username = str(b.get("username") or "").strip()
+        username = normalize_username(b.get("username"))
         if not USERNAME.match(username):
-            raise HTTPError(400, "Identifiant : 2 à 32 caractères (lettres, chiffres, . _ -)")
+            raise HTTPError(400, USERNAME_RULE)
         if not b.get("managed"):
             validate_password(b.get("password"))
-        if db.scalar("SELECT 1 FROM users WHERE username=?", (username,)):
+        if find_user(db, username):
             raise HTTPError(409, "Cet identifiant existe déjà")
         with db.tx():
             uid = db.run("INSERT INTO users(username,display_name,password_hash,created_at) VALUES(?,?,?,?)",

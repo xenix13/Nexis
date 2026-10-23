@@ -21,7 +21,6 @@ PREPARE_WINDOW_MS = 4 * 60 * 1000  # au départ : sous-titres prêts sur les 4 m
 EXTERNAL_BASE = 1000  # identifiants des sous-titres externes
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 LANG = re.compile(r"^[a-z]{2,3}$")
-USERNAME = re.compile(r"^[A-Za-z0-9._-]{2,32}$")
 IMG_PATH = re.compile(r"^/library/metadata/(\d{1,12})/(thumb|art)/\d{1,14}$")
 LANG_NAMES = {"fra": "Français", "eng": "Anglais", "jpn": "Japonais", "deu": "Allemand", "spa": "Espagnol",
               "ita": "Italien", "por": "Portugais", "kor": "Coréen", "zho": "Chinois", "rus": "Russe",

@@ -2,8 +2,10 @@
 import base64
 import hashlib
 import hmac
+import re
 import secrets
 import threading
+import unicodedata
 import time
 
 from .web import HTTPError
@@ -36,8 +38,29 @@ def verify_password(password, stored):
 _DUMMY_HASH = hash_password(secrets.token_hex(8))
 
 
-def check_credentials(db, username, password):
+USERNAME = re.compile(r"^[\w.-]{2,32}$")  # lettres (accents compris), chiffres, . _ -
+USERNAME_RULE = "Identifiant : 2 à 32 caractères (lettres, accents compris, chiffres, . _ -)"
+
+
+def normalize_username(name):
+    """Forme unique d'un identifiant (« é » saisi en un ou deux caractères selon le clavier)."""
+    return unicodedata.normalize("NFC", str(name or "")).strip()
+
+
+def find_user(db, username):
+    """Compte par identifiant, sans tenir compte des majuscules, accents compris (« Léa » = « LÉA »)."""
+    username = normalize_username(username)
+    if not username:
+        return None
     user = db.one("SELECT * FROM users WHERE username=?", (username,))
+    if user or username.isascii():
+        return user
+    key = username.casefold()
+    return next((u for u in db.all("SELECT * FROM users") if u["username"].casefold() == key), None)
+
+
+def check_credentials(db, username, password):
+    user = find_user(db, username)
     if not user:
         verify_password(password, _DUMMY_HASH)
         return None
