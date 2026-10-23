@@ -28,6 +28,7 @@ export async function renderPlayer(root, rk, ctx) {
   const video = h('video.video', { playsinline: true, preload: 'auto' });
   const subLayer = h('div.sub-layer', { style: { fontSize: `${(prefs.sub_size / 100) * 2.4}vmin` } });
   const subTop = h('div.sub-layer.sub-top', { style: { fontSize: `${(prefs.sub_size / 100) * 2.4}vmin` } });
+  const subsPending = h('div.subs-pending', { hidden: true }, 'Sous-titres en préparation…');
   const loader = h('div.player-loader', spinner());
   const errorLayer = h('div.player-error', { hidden: true });
   const titleEl = h('div.player-title');
@@ -63,12 +64,15 @@ export async function renderPlayer(root, rk, ctx) {
       h('button.ctl', { 'aria-label': 'Avancer de 30 secondes', onclick: () => seekBy(30000) }, icon('forward')),
       h('div.vol', muteBtn, volume), timeEl, h('div.grow'), nextBtn, chaptersBtn, subsBtn, cogBtn, fullBtn));
   const top = h('div.player-top', backBtn, titleEl);
-  const player = h('div.player', video, subLayer, subTop, loader, errorLayer, top, skipBtn, nextCard, menu, controls);
+  const player = h('div.player', video, subLayer, subTop, subsPending, loader, errorLayer, top, skipBtn, nextCard, menu, controls);
   clear(root, player);
 
   // ------------------------------------------------------------ state
   let item, session = null, hls = null, base = 0, cues = [], cueKey = '', cueMax = 0;
   let jassub = null, jassubKey = '', pgs = null, pgsKey = '';
+  // sous-titres encore en cours d'extraction : prêts jusqu'à subsUntil (ms), rechargés régulièrement
+  let subsUntil = null, subsRefresh = null;
+  const SUBS_REFRESH = 20000;
   let audioSel = null, subSel = null, quality = prefs.quality;
   let lastReport = 0, introSkipped = false, nextTimer = null, nextDismissed = false, destroyed = false;
   let idleTimer = null, scrubbing = false, startedAt = 0;
@@ -315,12 +319,13 @@ export async function renderPlayer(root, rk, ctx) {
 
   // Avant la toute première lecture : toutes les pistes de sous-titres sont extraites du fichier
   // (une seule lecture, à pleine vitesse, sans flux vidéo en concurrence sur le partage réseau).
-  async function prepare() {
+  async function prepare(at = 0) {
     const t0 = Date.now();
     let hint = null;
     while (!destroyed && ctx.isCurrent()) {
       let r;
-      try { r = await get(`/api/items/${item.id}/prepare?wait=10`); } catch (e) {
+      // prêt dès que les sous-titres couvrent les premières minutes à regarder : la suite arrive pendant la lecture
+      try { r = await get(`/api/items/${item.id}/prepare?wait=10&at=${Math.round(at)}`); } catch (e) {
         console.warn('[seance] préparation', e.message);
         break;
       }
@@ -352,9 +357,32 @@ export async function renderPlayer(root, rk, ctx) {
   }
   const syncJassub = () => { if (jassub) jassub.timeOffset = base / 1000; };
 
+  function keepRefreshing(seq, fn) {
+    clearTimeout(subsRefresh);
+    subsRefresh = setTimeout(() => { if (seq === startSeq && !destroyed) fn(seq); }, SUBS_REFRESH);
+  }
+  const partialOf = (res) => {
+    const v = res.headers.get('X-Seance-Partial');
+    return v === null ? null : Number(v);
+  };
+  async function refreshAss(seq) {
+    try {
+      const res = await fetch(session.subtitle_ass, { credentials: 'same-origin' });
+      if (!res.ok || seq !== startSeq || !jassub) return;
+      const content = await res.text();
+      jassub.setTrack(content);
+      subsUntil = partialOf(res);
+    } catch { /* on réessaie au prochain tour */ }
+    if (subsUntil !== null) keepRefreshing(seq, refreshAss);
+  }
+
   async function loadAss(seq) {
     const url = session.subtitle_ass;
-    if (jassub && jassubKey === url) { syncJassub(); return true; }
+    if (jassub && jassubKey === url) {
+      syncJassub();
+      if (subsUntil !== null) keepRefreshing(seq, refreshAss);
+      return true;
+    }
     dropJassub();
     const J = await jassubClass();
     if (!J || seq !== startSeq || destroyed) return false;
@@ -363,6 +391,7 @@ export async function renderPlayer(root, rk, ctx) {
         get(`${url.replace(/\/ass$/, '')}/fonts`).catch(() => ({ fonts: [] }))]);
       if (!res.ok) throw new Error(`script ASS ${res.status}`);
       const content = await res.text();
+      const until = partialOf(res);
       if (seq !== startSeq || destroyed) return false;
       const inst = new J({
         video, subContent: content, timeOffset: base / 1000,
@@ -380,6 +409,8 @@ export async function renderPlayer(root, rk, ctx) {
       jassub = inst;
       jassubKey = url;
       syncJassub();
+      subsUntil = until;
+      if (until !== null) keepRefreshing(seq, refreshAss);
       return true;
     } catch (e) {
       console.warn('[seance] sous-titres ASS', e.message);
@@ -393,20 +424,40 @@ export async function renderPlayer(root, rk, ctx) {
     pgs = null;
     pgsKey = '';
   }
+  async function fetchSup(seq) {
+    const res = await fetch(session.subtitle_pgs, { credentials: 'same-origin' });
+    if (!res.ok) throw new Error(`PGS ${res.status}`);
+    const buf = await res.arrayBuffer();
+    return { buf, until: partialOf(res) };
+  }
+  async function refreshPgs(seq) {
+    try {
+      const { buf, until } = await fetchSup(seq);
+      if (seq !== startSeq || !pgs) return;
+      await pgs.loadFromBuffer(buf);
+      subsUntil = until;
+    } catch { /* prochain tour */ }
+    if (subsUntil !== null) keepRefreshing(seq, refreshPgs);
+  }
   async function loadPgs(seq) {
     const url = session.subtitle_pgs;
-    if (pgs && pgsKey === url) return true;
+    if (pgs && pgsKey === url) {
+      if (subsUntil !== null) keepRefreshing(seq, refreshPgs);
+      return true;
+    }
     dropPgs();
     try {
-      const { PgsRenderer } = await import('/vendor/libpgs/libpgs.js');
+      const [{ PgsRenderer }, data] = await Promise.all([import('/vendor/libpgs/libpgs.js'), fetchSup(seq)]);
       if (seq !== startSeq || destroyed) return false;
       const canvas = h('canvas.pgs-layer');
       video.after(canvas);  // sous les commandes, au-dessus de l'image
-      const r = new PgsRenderer({ video, canvas, subUrl: url, workerUrl: '/vendor/libpgs/libpgs.worker.js', aspectRatio: 'contain' });
+      const r = new PgsRenderer({ video, canvas, workerUrl: '/vendor/libpgs/libpgs.worker.js', aspectRatio: 'contain' });
       r.ownCanvas = canvas;
       pgs = r;
       pgsKey = url;
-      await Promise.race([r.ready || Promise.resolve(), new Promise((res) => setTimeout(res, 20000))]);
+      await Promise.race([r.loadFromBuffer(data.buf), new Promise((res) => setTimeout(res, 20000))]);
+      subsUntil = data.until;
+      if (data.until !== null) keepRefreshing(seq, refreshPgs);
       return true;
     } catch (e) {
       console.warn('[seance] sous-titres PGS', e.message);
@@ -418,6 +469,9 @@ export async function renderPlayer(root, rk, ctx) {
   // Les sous-titres sont normalement déjà prêts (prepare) ; filet de sécurité pour les pistes externes.
   const SUBS_MAX_WAIT = 120000;
   async function loadSubtitles(seq) {
+    clearTimeout(subsRefresh);
+    subsUntil = null;
+    subsPending.hidden = true;
     cues = [];
     cueKey = '';
     subLayer.replaceChildren();
@@ -442,6 +496,8 @@ export async function renderPlayer(root, rk, ctx) {
           cues = r.cues || [];
           cueKey = '';
           cueMax = cues.reduce((m, c) => Math.max(m, c.e - c.s), 0);
+          subsUntil = r.partial ? r.until : null;
+          if (r.partial) keepRefreshing(seq, poll);  // la suite arrive pendant la lecture
         } catch (e) {
           console.warn('[seance] sous-titres', e.message);
         }
@@ -704,6 +760,8 @@ export async function renderPlayer(root, rk, ctx) {
     paintTime();
     paintSubtitles(p);
     paintMarkers(p);
+    // saut au-delà de ce qui est déjà extrait : on le dit plutôt que d'afficher un écran sans sous-titres
+    subsPending.hidden = subsUntil === null || p <= subsUntil;
     if (!video.paused) report('playing');
   });
   video.addEventListener('progress', paintTime);
@@ -791,7 +849,7 @@ export async function renderPlayer(root, rk, ctx) {
   const onUnload = () => report('stopped', true);
   window.addEventListener('pagehide', onUnload);
 
-  await prepare();
+  await prepare(startAt);
   if (destroyed || !ctx.isCurrent()) return () => {};
   await start(startAt);
   wake();
@@ -806,6 +864,7 @@ export async function renderPlayer(root, rk, ctx) {
     document.removeEventListener('visibilitychange', onHide);
     document.removeEventListener('fullscreenchange', onFullscreen);
     window.removeEventListener('pagehide', onUnload);
+    clearTimeout(subsRefresh);
     dropJassub();
     dropPgs();
     if (hls) hls.destroy();

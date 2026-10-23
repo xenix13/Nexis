@@ -31,8 +31,10 @@ log = logging.getLogger("seance.subs")
 class Job:
     def __init__(self, item_id, kind="play"):
         self.item_id = item_id
-        self.kind = kind          # play (pleine vitesse) | soon (plafonné) | idle (avec vignettes)
+        self.kind = kind          # play | soon (plafonné) | idle (avec vignettes) | gentle (fond pendant une lecture)
         self.progress = 0.0
+        self.until_ms = 0         # instant jusqu'où les sous-titres sont déjà extraits (lecture progressive)
+        self.tmp = None           # dossier où ffmpeg écrit au fil de l'eau
         self.done = threading.Event()
         self.error = None
         self.aborted = False
@@ -43,6 +45,8 @@ class Aborted(Exception):
 
 
 SOON_READRATE = 8     # x temps réel : ~40 Mb/s pour un fichier à 5 Mb/s
+GENTLE_READRATE = 2   # préparation de fond pendant qu'on regarde : très peu de bande passante
+PARTIAL_MARGIN_MS = 5000
 
 
 TRICK_INTERVAL = 10   # une vignette toutes les 10 s
@@ -66,6 +70,19 @@ def pgs_tracks(probe):
 
 def ass_tracks(probe):
     return [s["index"] for s in (probe or {}).get("subs", []) if s.get("codec") in ASS_CODECS]
+
+
+def _complete_sup(data):
+    """Coupe un .sup en cours d'écriture après le dernier « display set » complet (segment END)."""
+    i, end = 0, 0
+    while i + 13 <= len(data) and data[i:i + 2] == b"PG":
+        size = int.from_bytes(data[i + 11:i + 13], "big")
+        if i + 13 + size > len(data):
+            break
+        if data[i + 10] == 0x80:
+            end = i + 13 + size
+        i += 13 + size
+    return data[:end]
 
 
 def _probe(item):
@@ -198,9 +215,9 @@ class SubtitleCache:
         with self.lock:
             job = self.jobs.get(item["id"])
             if job and not job.done.is_set():
-                if job.kind != "idle":
+                if job.kind not in ("idle", "gentle"):
                     return job
-                job.aborted = True  # une tâche de fond lente : on la remplace par une extraction prioritaire
+                job.aborted = True  # une tâche de fond : on la remplace par une extraction prioritaire
             job = Job(item["id"], "play")
             self.jobs[item["id"]] = job
             self.urgent.pop(item["id"], None)
@@ -212,8 +229,10 @@ class SubtitleCache:
     def enqueue(self, item_id, urgent=False):
         with self.lock:
             job = self.jobs.get(item_id)
-            if job and not job.done.is_set() and not (urgent and job.kind == "idle"):
-                return
+            if job and not job.done.is_set():
+                if not (urgent and job.kind in ("idle", "gentle")):
+                    return
+                job.aborted = True  # on la relance en priorité
             if urgent:
                 self.idle.pop(item_id, None)
                 self.urgent[item_id] = True
@@ -224,6 +243,30 @@ class SubtitleCache:
 
     def wait(self, job, timeout):
         return job.done.wait(timeout)
+
+    # ------------------------------------------------------------ lecture progressive
+    def running(self, item):
+        with self.lock:
+            job = self.jobs.get(item["id"])
+        return job if job and not job.done.is_set() else None
+
+    def partial(self, item, index, ext):
+        """Pendant l'extraction : (données déjà extraites, jusqu'à quel instant en ms) ou None."""
+        job = self.running(item)
+        if not job or not job.tmp:
+            return None
+        try:
+            with open(os.path.join(job.tmp, f"{int(index)}.{ext}"), "rb") as f:
+                data = f.read()
+        except OSError:
+            return None
+        if ext == "srt":
+            data = data[:data.rfind(b"\n\n") + 2] if b"\n\n" in data else b""
+        elif ext == "ass":
+            data = data[:data.rfind(b"\n") + 1]
+        elif ext == "sup":
+            data = _complete_sup(data)
+        return data, job.until_ms
 
     # ------------------------------------------------------------ travail
     def _streaming(self):
@@ -236,10 +279,13 @@ class SubtitleCache:
         with self.lock:
             if self.urgent:
                 return self.urgent.popitem(last=False)[0], "soon"
-        if self.idle and not self._streaming():
-            with self.lock:
-                if self.idle:
-                    return self.idle.popitem(last=False)[0], "idle"
+        streaming = self._streaming()
+        with self.lock:
+            if self.idle:
+                # pendant une lecture, la file de fond avance quand même, doucement et un fichier à la fois
+                if streaming and any(j.kind == "gentle" and not j.done.is_set() for j in self.jobs.values()):
+                    return None, None
+                return self.idle.popitem(last=False)[0], ("gentle" if streaming else "idle")
         return None, None
 
     def _worker(self):
@@ -254,13 +300,20 @@ class SubtitleCache:
                     row = self.ctx.db.one("SELECT id, key, probe, file_mtime, duration_ms FROM items WHERE id=?", (item_id,))
                     if not row:
                         continue
-                    todo = self.missing(row) if kind == "soon" else self.has_work(row)
+                    todo = self.missing(row) if kind in ("soon", "gentle") else self.has_work(row)
                     if not todo:
                         if kind == "soon" and self.needs_trick(row):
                             self.enqueue(item_id)
+                        if kind == "gentle" and self.needs_trick(row):
+                            with self.lock:  # vignettes seulement : on attend que plus personne ne regarde
+                                self.idle[item_id] = True
+                            break
                         continue
                 finally:
                     self.ctx.db.release()
+                prev = self.jobs.get(item_id)
+                if prev and prev.aborted:
+                    prev.done.wait(10)  # tâche de fond interrompue pour être relancée en priorité
                 with self.lock:
                     if item_id in self.jobs and not self.jobs[item_id].done.is_set():
                         continue
@@ -304,6 +357,7 @@ class SubtitleCache:
         if not item["key"] or not os.path.isfile(item["key"]):
             raise media.MediaError("fichier introuvable")
         tmp = tempfile.mkdtemp(dir=self.base, prefix=".tmp-")
+        job.tmp = tmp
         try:
             try:
                 self._ffmpeg(item, tracks, trick, tmp, job)  # une seule lecture du fichier pour tout
@@ -355,6 +409,7 @@ class SubtitleCache:
             if still:
                 raise media.MediaError(f"{len(still)} piste(s) de sous-titres illisible(s)")
         finally:
+            job.tmp = None
             shutil.rmtree(tmp, ignore_errors=True)
 
     def _want_fonts(self, item):
@@ -415,14 +470,19 @@ class SubtitleCache:
         cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-v", "error", "-y"]
         if trick:
             cmd += ["-skip_frame", "nokey"]  # seules les images clés sont décodées : très peu de calcul
-        if job.kind == "soon" and self._streaming() and media.has_option("readrate"):
-            cmd += ["-readrate", str(SOON_READRATE)]  # laisse de la bande passante au flux en cours
+        if job.kind in ("soon", "gentle") and self._streaming() and media.has_option("readrate"):
+            # laisse de la bande passante au flux en cours
+            cmd += ["-readrate", str(SOON_READRATE if job.kind == "soon" else GENTLE_READRATE)]
         if fonts and tracks and self._want_fonts(item):
             for a in self._attachments(item)[:200]:
                 cmd += [f"-dump_attachment:{int(a['index'])}", os.path.join(tmp, f"font_{int(a['index'])}{a['ext']}")]
         cmd += ["-analyzeduration", "200M", "-probesize", "1G", "-i", item["key"]]
-        if not trick:
-            cmd += ["-vn", "-an", "-dn"]
+        probe = _probe(item)
+        if not trick and tracks:
+            # horloge : une piste audio recopiée vers nulle part (sans décodage) indique précisément
+            # jusqu'où le fichier a été lu, même pendant un long passage sans sous-titres
+            clock = "0:a:0" if probe.get("audio") else "0:v:0"
+            cmd += ["-map", clock, "-c", "copy", "-f", "null", "-"]
         if trick:
             w, h = self._trick_size(item)
             cmd += ["-map", "0:v:0", "-an", "-sn",
@@ -431,12 +491,15 @@ class SubtitleCache:
         ass = set(ass_tracks(_probe(item)))
         pgs = set(pgs_tracks(_probe(item)))
         for i in tracks:
+            # -flush_packets : chaque réplique est écrite tout de suite (lecture progressive)
             if i in pgs:
-                cmd += ["-map", f"0:{i}", "-c:s", "copy", "-f", "sup", os.path.join(tmp, f"{i}.sup")]
+                cmd += ["-map", f"0:{i}", "-c:s", "copy", "-flush_packets", "1", "-f", "sup",
+                        os.path.join(tmp, f"{i}.sup")]
                 continue
-            cmd += ["-map", f"0:{i}", "-c:s", "srt", "-f", "srt", os.path.join(tmp, f"{i}.srt")]
+            cmd += ["-map", f"0:{i}", "-c:s", "srt", "-flush_packets", "1", "-f", "srt", os.path.join(tmp, f"{i}.srt")]
             if i in ass:  # le script ASS d'origine, pour un rendu fidèle (positions, polices, karaoké)
-                cmd += ["-map", f"0:{i}", "-c:s", "copy", "-f", "ass", os.path.join(tmp, f"{i}.ass")]
+                cmd += ["-map", f"0:{i}", "-c:s", "copy", "-flush_packets", "1", "-f", "ass",
+                        os.path.join(tmp, f"{i}.ass")]
         cmd += ["-progress", "pipe:1", "-nostats"]
         duration = (item["duration_ms"] or 0) * 1000  # en microsecondes
         nice = 0 if job.kind == "play" else 10
@@ -446,10 +509,11 @@ class SubtitleCache:
         t = threading.Thread(target=lambda: err.append(p.stderr.read()), daemon=True)
         t.start()
         checked = time.time()
+        fonts_stored = False
         for line in p.stdout:
-            if job.kind == "idle" and (job.aborted or time.time() - checked > 3):
+            if job.kind in ("idle", "gentle") and (job.aborted or time.time() - checked > 3):
                 checked = time.time()
-                if job.aborted or self._streaming():
+                if job.aborted or (job.kind == "idle" and self._streaming()):
                     p.kill()
                     p.wait()
                     t.join(5)
@@ -461,6 +525,14 @@ class SubtitleCache:
                     us = int(line.split(b"=", 1)[1])
                 except ValueError:
                     continue
+                job.until_ms = max(job.until_ms, us // 1000 - PARTIAL_MARGIN_MS)
+                if fonts and not fonts_stored and tracks and self._want_fonts(item):
+                    # les polices jointes sont écrites dès l'ouverture : disponibles avant la fin de l'extraction
+                    fonts_stored = True
+                    try:
+                        self._store_fonts(item, tmp)
+                    except OSError as e:
+                        log.debug("Polices de %s : %s", item.get("key"), e)
                 if duration > 0:
                     job.progress = max(job.progress, min(0.99, us / duration))
         p.wait()

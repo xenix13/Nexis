@@ -147,11 +147,13 @@ Sur un partage SMB, Linux n'est pas prévenu des fichiers ajoutés depuis une au
 
 ## Sous-titres prêts dès la première seconde
 
-Les sous-titres intégrés aux MKV (SRT, ASS…) ne peuvent être extraits qu'en lisant tout le fichier, ce qui prend parfois plus d'une minute sur un NAS. Séance les prépare donc à l'avance, toutes les pistes d'un fichier en **une seule lecture** :
+Les sous-titres intégrés aux MKV (SRT, ASS, PGS…) ne peuvent être extraits qu'en lisant tout le fichier, ce qui prend plusieurs minutes pour un film de 30 Go sur un NAS. Séance les **exporte une fois pour toutes** (toutes les pistes d'un fichier en une seule lecture, avec les polices jointes) et les garde dans son cache (`/var/lib/seance/cache/subs`) :
 
-- en tâche de fond pour les nouveaux fichiers, et pour toute la médiathèque au premier démarrage, uniquement quand personne ne regarde quelque chose ;
-- pour l'épisode suivant pendant qu'on regarde le précédent, avec un débit de lecture plafonné pour ne pas ralentir l'épisode en cours sur le partage réseau ;
-- au lancement, si rien n'est encore prêt, le lecteur attend que **toutes** les pistes soient extraites (simple roue de chargement, « Préparation de la lecture… » si cela dure), à pleine vitesse et avant de démarrer le flux vidéo, pour que les deux ne se disputent pas le NAS.
+- **dès le scan**, pour chaque nouveau fichier, en tâche de fond. Pendant qu'on regarde quelque chose, cette file continue d'avancer doucement (débit de lecture plafonné, un fichier à la fois) au lieu de s'arrêter ; *Administration → Métadonnées et lecture → Tout préparer maintenant* met toute la médiathèque en file ;
+- **dès qu'on ouvre la fiche** d'un film, d'un épisode ou d'une série (l'épisode qui sera lancé), en priorité ;
+- pour l'épisode suivant pendant qu'on regarde le précédent.
+
+Si l'on lance un film dont les sous-titres ne sont pas encore prêts, **la lecture n'attend plus la fin de l'extraction** : elle démarre dès que les sous-titres couvrent les 4 premières minutes à regarder. L'extraction lit le fichier bien plus vite que le temps réel et reste devant ; le lecteur récupère la suite toutes les 20 secondes. Changer de langue de sous-titres est immédiat : toutes les pistes sont extraites en même temps. En cas de saut plus loin que ce qui est déjà prêt, le lecteur affiche « Sous-titres en préparation… » le temps que l'extraction y arrive.
 
 Les vignettes d'aperçu ne sont fabriquées que lorsque personne ne regarde : une préparation de fond s'interrompt dès qu'une lecture démarre.
 

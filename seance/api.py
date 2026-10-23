@@ -22,7 +22,7 @@ from .metadata import Metadata, MetaError
 from .names import LANG_WORDS, fold
 from .ratings import age_of
 from .scanner import EXTRA_LABELS, Scanner
-from .subcache import SubtitleCache, text_tracks
+from .subcache import SubtitleCache, pgs_tracks, text_tracks
 from .subtitles import parse_subtitles
 from .transcoder import DOWNMIX_ALGOS, QUALITY, Busy, StreamError, Transcoder, plan
 from .watcher import Watcher
@@ -30,13 +30,14 @@ from .web import App, HTTPError, Response
 
 log = logging.getLogger("seance")
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 RK = r"(?P<rk>\d{1,12})"
 SID = r"(?P<sid>[A-Za-z0-9_-]{8,40})"
 SORTS = {"title": "i.sort_title COLLATE NOCASE", "added": "i.added_at DESC", "year": "i.year DESC, i.sort_title",
          "rating": "i.rating DESC, i.sort_title", "release": "i.released DESC, i.sort_title"}
 WATCHED_RATIO = 0.90
 MIN_RESUME_MS = 30_000
+PREPARE_WINDOW_MS = 4 * 60 * 1000  # au départ : sous-titres prêts sur les 4 minutes qui suivent
 EXTERNAL_BASE = 1000  # identifiants des sous-titres externes
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 LANG = re.compile(r"^[a-z]{2,3}$")
@@ -217,8 +218,8 @@ class Ctx:
         self.db.release()
 
     def on_new_media(self, item_id, info):
-        """Nouveau fichier (ou fichier remplacé) : on prépare ses sous-titres internes en tâche de fond."""
-        if (self.db.setting("subs_prefetch", "1") == "1" and text_tracks(info)) or \
+        """Nouveau fichier (ou fichier remplacé) : ses sous-titres sont exportés dès le scan, en tâche de fond."""
+        if (self.db.setting("subs_prefetch", "1") == "1" and (text_tracks(info) or pgs_tracks(info))) or \
                 (self.db.setting("trickplay", "1") == "1" and info.get("video")):
             self.subtitles.enqueue(item_id)
 
@@ -789,7 +790,9 @@ def build_app(ctx):
             d["play_target"] = target or (eps[0] if eps else None)
             d["track_prefs"] = track_prefs(uid, r)
             if d["play_target"]:
-                trow = db.one("SELECT probe FROM items WHERE id=?", (int(d["play_target"]["id"]),))
+                trow = db.one("SELECT * FROM items WHERE id=?", (int(d["play_target"]["id"]),))
+                if ctx.subtitles.has_work(trow):
+                    ctx.subtitles.enqueue(trow["id"], urgent=True)  # l'épisode à lancer : sous-titres préparés d'avance
                 d["audio"], d["subtitles"] = stream_lists(json.loads(trow["probe"] or "{}"))
         elif d["type"] == "season":
             d["show_id"] = str(r["show_id"])
@@ -863,7 +866,12 @@ def build_app(ctx):
         if job.done.is_set():
             # en cas d'échec on n'empêche pas la lecture : les pistes illisibles seront simplement absentes
             return {"ready": True, "progress": 1, "warning": job.error}
-        return {"ready": False, "progress": round(job.progress, 3)}
+        # lecture progressive : on démarre dès que les sous-titres couvrent largement le début du visionnage
+        # (l'extraction lit le fichier bien plus vite que le temps réel, elle reste devant)
+        at = max(0, req.int_arg("at", 0))
+        if job.until_ms >= at + PREPARE_WINDOW_MS or (r["duration_ms"] and job.until_ms >= r["duration_ms"] - 10000):
+            return {"ready": True, "partial": True, "until": job.until_ms, "progress": round(job.progress, 3)}
+        return {"ready": False, "progress": round(job.progress, 3), "until": job.until_ms}
 
     @app.route("GET", f"/api/items/{RK}/subtitles/(?P<sub>\\d{{1,6}})")
     def item_subtitles(req):
@@ -884,6 +892,11 @@ def build_app(ctx):
                     ctx.subtitles.wait(job, 900)
                 data = ctx.subtitles.read(r, sub)
                 if data is None:
+                    part = ctx.subtitles.partial(r, sub, "srt")
+                    if part:
+                        return Response(json.dumps({"cues": parse_subtitles(part[0]), "partial": True,
+                                                    "until": part[1]}, ensure_ascii=False), 200, json_type,
+                                        {"Cache-Control": "no-store"})
                     st = ctx.subtitles.status(r)
                     if job and job.done.is_set() and job.error:
                         raise HTTPError(502, f"Lecture des sous-titres impossible : {job.error}")
@@ -954,20 +967,28 @@ def build_app(ctx):
         r = require_item(req.user, req.params["rk"])
         sub = int(req.params["sub"])
         if sub >= EXTERNAL_BASE:
-            return r, external_ass(r, sub)
+            return r, external_ass(r, sub), None
         data = ctx.subtitles.read_ass(r, sub)
         if data is None:
+            part = ctx.subtitles.partial(r, sub, "ass")
+            if part and part[0]:
+                return r, part[0], part[1]
             raise HTTPError(404, "Script ASS indisponible")
-        return r, data
+        return r, data, None
+
+    def until_headers(until):
+        if until is None:
+            return {"Cache-Control": "private, max-age=3600"}
+        return {"Cache-Control": "no-store", "X-Seance-Partial": str(int(until))}
 
     @app.route("GET", f"/api/items/{RK}/subtitles/(?P<sub>\\d{{1,6}})/ass")
     def item_subtitles_ass(req):
-        r, data = raw_ass(req)
-        return Response(data, 200, "text/plain; charset=utf-8", {"Cache-Control": "private, max-age=3600"})
+        r, data, until = raw_ass(req)
+        return Response(data, 200, "text/plain; charset=utf-8", until_headers(until))
 
     @app.route("GET", f"/api/items/{RK}/subtitles/(?P<sub>\\d{{1,6}})/fonts")
     def item_subtitles_fonts(req):
-        r, data = raw_ass(req)
+        r, data, _ = raw_ass(req)
         wanted = ass_fonts(data)
         index = ctx.subtitles.fonts_index(r) or []
         files = [f for f in index if wanted & set(f["names"])]
@@ -1184,10 +1205,13 @@ def build_app(ctx):
     @app.route("GET", f"/api/items/{RK}/subtitles/(?P<sub>\\d{{1,6}})/sup")
     def item_subtitles_sup(req):
         r = require_item(req.user, req.params["rk"])
-        data = ctx.subtitles.read_sup(r, int(req.params["sub"]))
+        data, until = ctx.subtitles.read_sup(r, int(req.params["sub"])), None
         if data is None:
-            raise HTTPError(404, "Sous-titres PGS indisponibles")
-        return Response(data, 200, "application/octet-stream", {"Cache-Control": "private, max-age=3600"})
+            part = ctx.subtitles.partial(r, int(req.params["sub"]), "sup")
+            if not part:
+                raise HTTPError(404, "Sous-titres PGS indisponibles")
+            data, until = part
+        return Response(data, 200, "application/octet-stream", until_headers(until))
 
     @app.route("GET", f"/api/stream/{SID}/file")
     def stream_file(req):
@@ -1596,8 +1620,9 @@ def build_app(ctx):
         if "subs_prefetch" in b:
             db.set_setting("subs_prefetch", "1" if b["subs_prefetch"] else "0")
             if b["subs_prefetch"]:
-                for r in db.all("SELECT id, probe FROM items WHERE type IN ('movie','episode') ORDER BY added_at DESC"):
-                    if text_tracks(json.loads(r["probe"] or "{}")):
+                for r in db.all("SELECT id, probe, file_mtime, duration_ms FROM items WHERE type IN ('movie','episode') "
+                                "ORDER BY added_at DESC"):
+                    if ctx.subtitles.has_work(r):
                         ctx.subtitles.enqueue(r["id"])
         for k, lo, hi in (("scan_interval", 0, 168), ("max_streams", 1, 50), ("max_transcodes", 0, 16),
                           ("watch_interval", 0, 3600)):

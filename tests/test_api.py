@@ -515,6 +515,40 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(codes[-1], 200)
         self.assertEqual(r["cues"][0]["t"], "Bonjour tout le monde")
 
+    def test_progressive_subtitles(self):
+        """Gros fichier : la lecture démarre dès que les premières minutes sont prêtes, la suite arrive en route."""
+        import seance.api as api_mod
+        from seance import subcache
+        m = self.movie("Nuit polaire")
+        row = self.ctx.db.one("SELECT * FROM items WHERE id=?", (int(m["id"]),))
+        st, d = self.admin.call("GET", f"/api/items/{m['id']}")
+        sub = d["subtitles"][0]["id"]
+        sc = self.ctx.subtitles
+        old = (subcache.SOON_READRATE, sc._streaming, api_mod.PREPARE_WINDOW_MS)
+        subcache.SOON_READRATE, sc._streaming, api_mod.PREPARE_WINDOW_MS = 6, (lambda: True), 20000
+        try:
+            shutil.rmtree(sc._dir(row), ignore_errors=True)
+            sc.enqueue(row["id"], urgent=True)  # comme à l'ouverture de la fiche : débit plafonné (lecture en cours)
+            partial_seen, ready_partial = None, None
+            for _ in range(300):
+                st, r = self.admin.call("GET", f"/api/items/{m['id']}/subtitles/{sub}")
+                if st == 200 and r.get("partial") and r["cues"] and partial_seen is None:
+                    partial_seen = r
+                if ready_partial is None:
+                    st2, pr = self.admin.call("GET", f"/api/items/{m['id']}/prepare?at=0")
+                    if pr.get("partial"):
+                        ready_partial = pr
+                if st == 200 and not r.get("partial"):
+                    break
+                time.sleep(0.1)
+            self.assertIsNotNone(partial_seen, "sous-titres servis pendant l'extraction")
+            self.assertLess(partial_seen["until"], 85000)
+            self.assertEqual(partial_seen["cues"][0]["t"], "Bonjour tout le monde")
+            self.assertTrue(ready_partial and ready_partial["ready"], ready_partial)  # lecture lancée avant la fin
+            self.assertFalse(r.get("partial"))  # puis version complète, mise en cache
+        finally:
+            subcache.SOON_READRATE, sc._streaming, api_mod.PREPARE_WINDOW_MS = old
+
     def test_prepare_waits_for_all_subtitles(self):
         m = self.movie("Nuit polaire")
         mrow = self.ctx.db.one("SELECT * FROM items WHERE id=?", (int(m["id"]),))
