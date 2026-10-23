@@ -1,6 +1,6 @@
 # Séance
 
-Un serveur multimédia **100 % auto-hébergé** pour tes films, séries et animes : il scanne tes dossiers, récupère affiches et résumés, et diffuse dans le navigateur avec une interface multi-utilisateurs. Aucun compte externe, aucun abonnement, pas besoin de Plex ni de Jellyfin.
+Un serveur multimédia **100 % auto-hébergé** pour tes films, séries et animes : il scanne tes dossiers, récupère affiches et résumés, et diffuse dans le navigateur avec une interface multi-utilisateurs — et sur la TV, le PC ou le téléphone avec les **applications Jellyfin**. Aucun compte externe, aucun abonnement, pas besoin de Plex ni de Jellyfin.
 
 - **Zéro dépendance Python** : Python 3 (bibliothèque standard) + **ffmpeg**. Le lecteur [hls.js](https://github.com/video-dev/hls.js) (1.5.15) est fourni dans le dépôt, avec son empreinte SHA-256 vérifiée à l'installation.
 - Pensé pour un **conteneur LXC** ou une VM Ubuntu/Debian, **sans GPU** : Séance évite le transcodage dès qu'il peut.
@@ -18,6 +18,7 @@ Un serveur multimédia **100 % auto-hébergé** pour tes films, séries et anime
 | **Bonus** | Bandes-annonces (YouTube via TMDB ou fichiers locaux), coulisses, scènes coupées, interviews… rangés sous le film ou la série |
 | **Découvrir et demandes** | Catalogues Netflix, Prime Video, Disney+, Canal+… (via TMDB) avec ce qui est déjà sur le serveur, bouton « Demander » relié à Seerr / Overseerr / Jellyseerr |
 | **Lecteur** | Choix audio, sous-titres et qualité en cours de lecture, raccourcis clavier, sélection de chapitre en vignettes, bandeau « Passer l'intro », épisode suivant avec compte à rebours |
+| **Applications Jellyfin** | Séance se présente comme un serveur Jellyfin : **Jellyfin Media Player** (Windows, macOS, Linux), **Jellyfin pour Android TV / Google TV / Fire TV** et les applications **téléphone** s'y connectent avec un compte Séance. Reprise, vus, « Ma liste », sous-titres et saut d'intro partagés avec Séance |
 | **Regarder ensemble** | Lecture synchronisée à plusieurs, chacun sur son écran (comme SyncPlay de Jellyfin) : pauses, sauts et épisode suivant partagés, attente automatique de celui dont la connexion décroche |
 | **TV en direct** | Listes de chaînes M3U (IPTV, box opérateur…) et guide des programmes XMLTV, configurées par l'administrateur et proposées à tous : grille des chaînes avec le programme en cours, guide, favoris, zapping |
 | **Tâches planifiées** | Scan, actualisation des métadonnées, images de chapitres, détection des intros et génériques par empreinte audio, sous-titres, guide TV, nettoyage : chacune avec sa planification et ses options |
@@ -233,6 +234,30 @@ Comme **SyncPlay** dans Jellyfin : plusieurs personnes regardent la même vidéo
 - Chaque membre garde sa propre reprise de lecture et son historique. Il faut avoir accès au contenu (bibliothèques, restriction d'âge) pour le regarder dans un groupe.
 - Les événements passent par une connexion HTTP ouverte (*Server-Sent Events*). Derrière nginx, désactive le tampon pour `/api/together/` (`proxy_buffering off;`, déjà conseillé plus haut).
 
+## Applications Jellyfin (Windows, TV, téléphone)
+
+Pas besoin d'une application Séance pour chaque appareil : Séance parle le langage des serveurs **Jellyfin 10.11**, et les applications officielles de Jellyfin s'y connectent comme à un vrai serveur Jellyfin.
+
+1. *Administration → Applications Jellyfin* : active **« Autoriser les applications Jellyfin »** (désactivé par défaut).
+2. Installe l'application et donne-lui l'adresse de Séance (celle affichée dans cet onglet, par exemple `http://192.168.1.10:8420`), puis connecte-toi avec ton **compte Séance**. Un profil géré (enfant, invité) se connecte avec son nom et son **code PIN**.
+
+| Appareil | Application | Remarque |
+|---|---|---|
+| Windows, macOS, Linux | [Jellyfin Media Player](https://github.com/jellyfin/jellyfin-media-player/releases) | Lit presque tout directement (mpv) |
+| Android TV, Google TV, Fire TV | Jellyfin pour Android TV (Play Store, Amazon) | Trouve Séance tout seul sur le réseau local |
+| Téléphones et tablettes | Jellyfin pour Android ou iOS | |
+| Navigateur | `http://<adresse>:8420/web/` | L'interface web de Jellyfin, en plus de celle de Séance |
+
+**Ce qui est partagé avec Séance** : bibliothèques et droits d'accès, **restriction d'âge** des profils, reprise de lecture et « vu », « Ma liste » (les **favoris** de Jellyfin), langues audio et sous-titres préférées, chapitres en vignettes, aperçus au survol de la barre de lecture, **saut d'intro et de générique** (Android TV, Jellyfin Web), bonus et bandes-annonces.
+
+**Lecture** : l'application envoie la liste de ce qu'elle sait lire (codecs, profils, HDR, sous-titres). Séance choisit comme Jellyfin : **lecture directe** du fichier quand c'est possible (une TV Android lit en général HEVC, AC3/E-AC3 et les sous-titres PGS tels quels), sinon **remux** HLS (vidéo recopiée), sinon **transcodage** en H.264, avec les mêmes limites de lectures et de transcodages que l'interface de Séance. Les lectures apparaissent dans *Lectures en cours*.
+
+**Interface web de Jellyfin** : Jellyfin Media Player et l'application pour téléphone affichent l'interface web fournie par le serveur. `deploy/install.sh` la télécharge depuis le dépôt APT officiel de Jellyfin (signature vérifiée, rien n'est ajouté aux sources APT du système) dans `/opt/seance/jellyfin-web`. Pour s'en passer : `SEANCE_JELLYFIN_WEB=0 ./deploy/install.sh` (Android TV n'en a pas besoin). Un autre emplacement peut être indiqué avec `SEANCE_JELLYFIN_WEB=/chemin` dans `/etc/seance/seance.env`.
+
+**Ports** : les applications Jellyfin proposent le port 8096 par défaut. Saisis l'adresse complète avec le port de Séance, ou ajoute `SEANCE_JELLYFIN_PORT=8096` dans `/etc/seance/seance.env` pour que Séance réponde aussi sur ce port. La découverte automatique utilise le port **UDP 7359** (réseau local seulement ; `SEANCE_JELLYFIN_DISCOVERY=0` pour la couper).
+
+**Limites** : l'administration (bibliothèques, utilisateurs, tâches) se fait dans Séance — les comptes n'apparaissent jamais administrateurs dans les applications Jellyfin. La TV en direct, la musique, la synchronisation « SyncPlay », Quick Connect et le téléchargement hors ligne ne sont pas proposés aux applications Jellyfin. Derrière un reverse proxy, laisse passer les chemins Jellyfin (`/Users`, `/Items`, `/Videos`, `/web`…) : le plus simple est de tout transmettre à Séance, comme conseillé plus haut.
+
 ## Profils, code PIN et contrôle parental
 
 Comme Plex Home :
@@ -307,6 +332,8 @@ Le rapport d'audit, les correctifs et les risques acceptés sont décrits dans [
 | Épisodes « non reconnus » | Ajouter `S01E02` ou ` - 02` dans le nom |
 | « Trop de transcodages simultanés » | Le processeur est déjà pris : augmente la limite si ton CPU le permet, ou choisis une source H.264 |
 | Lecture qui ne démarre pas | `journalctl -u seance -f` pendant l'essai ; `SEANCE_DEBUG=1` dans `/etc/seance/seance.env` affiche les commandes ffmpeg |
+| Application Jellyfin : « serveur introuvable » | *Applications Jellyfin* activé ? Adresse complète avec le port (`http://<ip>:8420`) ou `SEANCE_JELLYFIN_PORT=8096` |
+| Jellyfin Media Player / téléphone : page blanche | Interface web Jellyfin absente : relance `deploy/install.sh` (l'onglet *Applications Jellyfin* indique si elle est installée) |
 | Code d'installation perdu | `cat /var/lib/seance/setup-code.txt` (tant qu'aucun compte n'existe) |
 
 Réinitialiser un mot de passe en ligne de commande :
@@ -339,6 +366,7 @@ Arborescence de `seance/` :
 - `tasks.py` : tâches planifiées ; `chapters.py` : images de chapitres ; `introdetect.py` : intros par empreinte audio
 - `livetv.py` : TV en direct (M3U, XMLTV, flux HLS) ; `syncplay.py` : « Regarder ensemble »
 - `api.py` : assemblage du serveur (contexte partagé, contrôles d'accès communs)
+- `jellyfin/` : compatibilité avec les applications Jellyfin (`profile.py` : décision de lecture selon le profil de l'appareil, `dto.py` : objets Jellyfin, `library.py`, `playback.py`, `system.py`, `discovery.py`, `webclient.py`)
 - `catalog.py` : outils partagés par les routes (droits, cartes, état de lecture) ; `routes/` : routes HTTP par thème (`account`, `library`, `media`, `admin`)
 - `auth.py`, `db.py`, `web.py` : socle
 
@@ -354,5 +382,6 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 6. ~~Collections, « À regarder », playlists, bonus et bandes-annonces~~ ✔
 7. ~~Découvrir les plateformes de streaming et demander via Seerr~~ ✔
 10. ~~Tâches planifiées, TV en direct (IPTV), regarder ensemble~~ ✔
-8. Appli installable sur téléphone (PWA), Chromecast / Google TV, téléchargement pour le hors ligne
+11. ~~Applications Jellyfin (Windows, Android TV, téléphones)~~ ✔
+8. Appli installable sur téléphone (PWA), Chromecast, téléchargement pour le hors ligne
 9. Accélération matérielle optionnelle (VAAPI / Quick Sync) pour les serveurs équipés d'un GPU

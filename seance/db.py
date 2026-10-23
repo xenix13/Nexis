@@ -309,6 +309,20 @@ MIGRATIONS = [
     CREATE INDEX live_programmes_time ON live_programmes(stop, start);
     CREATE INDEX progress_watched ON progress(user_id, watched, last_watched_at);
     """,
+    # 9 : clients Jellyfin (appareils connectés, préférences d'affichage propres à chaque application)
+    """
+    DELETE FROM jf_tokens;
+    ALTER TABLE jf_tokens ADD COLUMN device_id TEXT NOT NULL DEFAULT '';
+    ALTER TABLE jf_tokens ADD COLUMN version TEXT NOT NULL DEFAULT '';
+    CREATE INDEX jf_tokens_user ON jf_tokens(user_id, device_id);
+    CREATE TABLE jf_prefs(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        client TEXT NOT NULL,
+        pref_id TEXT NOT NULL,
+        data TEXT NOT NULL,
+        PRIMARY KEY(user_id, client, pref_id)
+    );
+    """,
 ]
 
 

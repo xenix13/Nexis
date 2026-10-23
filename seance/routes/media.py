@@ -421,6 +421,42 @@ def register(app, ctx, x):
         return Response(stream=gen(), status=status, content_type=ctype, length=length, headers=headers,
                         on_close=f.close)
 
+    def record_progress(user, r, pos, dur, state="playing", sid="", ended=False):
+        """Position de lecture d'un utilisateur (interface de Séance et clients Jellyfin). -> vu à l'instant ?"""
+        uid = user["id"]
+        rk = str(r["id"])
+        if r["type"] == "extra":  # les bonus ne laissent ni reprise ni historique
+            if sid and state == "stopped":
+                stop_stream(sid, uid)
+            elif sid:
+                ctx.transcoder.touch(sid)
+                db.run("UPDATE streams SET last_seen=? WHERE id=? AND user_id=?", (int(time.time()), sid, uid))
+            return False
+        row = db.one("SELECT * FROM progress WHERE user_id=? AND rating_key=?", (uid, rk))
+        if not row:
+            upsert_meta(uid, card(r))
+            row = db.one("SELECT * FROM progress WHERE user_id=? AND rating_key=?", (uid, rk))
+        dur = dur or row["duration_ms"]
+        finished = bool(ended) or (dur > 0 and pos >= dur * WATCHED_RATIO)
+        watched_now = False
+        now = int(time.time())
+        if finished:
+            if row["position_ms"] > 0 or not row["watched"]:
+                c = json.loads(row["meta"])
+                c["id"] = rk
+                set_watched(uid, c, True)
+                watched_now = True
+        else:
+            db.run("UPDATE progress SET position_ms=?, duration_ms=?, updated_at=? WHERE user_id=? AND rating_key=?",
+                   (pos, dur, now, uid, rk))
+        if sid and db.scalar("SELECT 1 FROM streams WHERE id=? AND user_id=?", (sid, uid)):
+            if state == "stopped":
+                stop_stream(sid, uid)
+            else:
+                db.run("UPDATE streams SET position_ms=?, state=?, last_seen=? WHERE id=?", (pos, state, now, sid))
+                ctx.transcoder.touch(sid)
+        return watched_now
+
     @app.route("POST", "/api/progress")
     def progress(req):
         b = req.json()
@@ -433,45 +469,14 @@ def register(app, ctx, x):
         except (TypeError, ValueError):
             raise HTTPError(400, "Position invalide")
         state = b.get("state") if b.get("state") in ("playing", "paused", "stopped") else "playing"
-        uid = req.user["id"]
         r = require_item(req.user, rk)
-        if r["type"] == "extra":  # les bonus ne laissent ni reprise ni historique
-            sid = str(b.get("stream") or "")
-            if sid and state == "stopped":
-                stop_stream(sid, uid)
-            elif sid:
-                ctx.transcoder.touch(sid)
-                db.run("UPDATE streams SET last_seen=? WHERE id=? AND user_id=?", (int(time.time()), sid, uid))
-            return {"ok": True, "watched": False}
-        row = db.one("SELECT * FROM progress WHERE user_id=? AND rating_key=?", (uid, rk))
-        if not row:
-            upsert_meta(uid, card(r))
-            row = db.one("SELECT * FROM progress WHERE user_id=? AND rating_key=?", (uid, rk))
-        dur = dur or row["duration_ms"]
-        finished = bool(b.get("ended")) or (dur > 0 and pos >= dur * WATCHED_RATIO)
-        watched_now = False
-        now = int(time.time())
-        if finished:
-            if row["position_ms"] > 0 or not row["watched"]:
-                c = json.loads(row["meta"])
-                c["id"] = rk
-                set_watched(uid, c, True)
-                watched_now = True
-        else:
-            db.run("UPDATE progress SET position_ms=?, duration_ms=?, updated_at=? WHERE user_id=? AND rating_key=?",
-                   (pos, dur, now, uid, rk))
-        sid = str(b.get("stream") or "")
-        if sid and db.scalar("SELECT 1 FROM streams WHERE id=? AND user_id=?", (sid, uid)):
-            if state == "stopped":
-                stop_stream(sid, uid)
-            else:
-                db.run("UPDATE streams SET position_ms=?, state=?, last_seen=? WHERE id=?", (pos, state, now, sid))
-                ctx.transcoder.touch(sid)
-        return {"ok": True, "watched": watched_now}
+        watched = record_progress(req.user, r, pos, dur, state, str(b.get("stream") or ""), b.get("ended"))
+        return {"ok": True, "watched": watched}
 
     @app.route("POST", "/api/stop")
     def stop(req):
         stop_stream(str(req.json().get("stream") or ""), req.user["id"])
         return {"ok": True}
 
-    x.__dict__.update(stop_stream=stop_stream)
+    x.__dict__.update(stop_stream=stop_stream, record_progress=record_progress, file_response=file_response,
+                      keyframes_for=keyframes_for)

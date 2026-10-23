@@ -79,8 +79,9 @@ def register(app, ctx, x):
             db.run("DELETE FROM user_libraries WHERE user_id=?", (uid,))
             for sid in set(libs):
                 db.run("INSERT INTO user_libraries(user_id,section_id) VALUES(?,?)", (uid, sid))
-        if not creating and (fields.get("disabled") or "password_hash" in fields):
+        if not creating and (fields.get("disabled") or "password_hash" in fields or "pin_hash" in fields):
             db.run("DELETE FROM sessions WHERE user_id=?", (uid,))
+            x.jf_revoke_user(uid)  # applications Jellyfin de ce compte : déconnectées aussi
 
     @app.route("POST", "/api/admin/users", auth="admin")
     def admin_create_user(req):

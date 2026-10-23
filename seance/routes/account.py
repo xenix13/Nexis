@@ -111,6 +111,7 @@ def register(app, ctx, x):
         validate_password(b.get("new"))
         db.run("UPDATE users SET password_hash=? WHERE id=?", (hash_password(b["new"]), req.user["id"]))
         db.run("DELETE FROM sessions WHERE user_id=? AND token_hash<>?", (req.user["id"], req.session_hash))
+        x.jf_revoke_user(req.user["id"])
         return {"ok": True}
 
     # ------------------------------------------------------------ profils
@@ -189,6 +190,8 @@ def register(app, ctx, x):
             if not verify_password(str(b.get("password") or ""), row["password_hash"]):
                 raise HTTPError(400, "Mot de passe actuel incorrect")
         db.run("UPDATE users SET pin_hash=? WHERE id=?", (hash_pin(b.get("pin")), req.user["id"]))
+        if req.user["managed"]:
+            x.jf_revoke_user(req.user["id"])  # le code PIN sert de mot de passe aux applications Jellyfin
         return {"ok": True, "has_pin": bool(b.get("pin"))}
 
     x.__dict__.update(user_view=user_view, hash_pin=hash_pin)
