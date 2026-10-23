@@ -1,6 +1,6 @@
 import { del, get, post, put } from '../api.js';
 import { state } from '../app.js';
-import { pickAudio, pickSubtitle, trackPayload } from '../tracks.js';
+import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from '../tracks.js';
 import { clear, episodeCode, field, fmtDuration, fmtTime, h, icon, img, modal, moreMenu, posterCard, progressBar, select, spinner, toast } from '../ui.js';
 
 async function identify(d, onDone) {
@@ -166,10 +166,14 @@ function trackChooser(d, target, onChange) {
   let a = pickAudio(audio, prefs, d.track_prefs);
   let s = pickSubtitle(subs, a, prefs, d.track_prefs);
   const aSel = select(audio.map((x) => [x.id, x.title]), a ? a.id : '', { 'aria-label': 'Langue audio' });
-  const sSel = select([['0', 'Aucun'], ...subs.map((x) => [x.id, x.title])], s ? s.id : '0', { 'aria-label': 'Sous-titres' });
+  const subOptions = () => [['0', 'Aucun'], ...menuSubs(subs, a).map((x) => [x.id, x.forced ? `${x.title} — ${SIGNS_HINT}` : x.title])];
+  const sSel = select(subOptions(), s ? s.id : '0', { 'aria-label': 'Sous-titres' });
   const save = () => {
     a = audio.find((x) => String(x.id) === aSel.value) || null;
     s = sSel.value === '0' ? null : subs.find((x) => String(x.id) === sSel.value) || null;
+    s = fixForced(s, a, subs);
+    // la liste dépend de l'audio (pistes forcées visibles seulement si elles servent)
+    sSel.replaceChildren(...subOptions().map(([v, l]) => h('option', { value: v, selected: String(v) === String(s ? s.id : '0') }, l)));
     put(`/api/items/${d.id}/tracks`, trackPayload(a, s)).catch((e) => toast(e.message, 'bad'));
     onChange(a, s);
   };

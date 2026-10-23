@@ -248,6 +248,8 @@ Chacun peut ensuite se connecter à Seerr avec son compte Séance. Quand on dema
 
 Sur la fiche d'un film, d'un épisode ou d'une série, deux listes permettent de choisir l'audio et les sous-titres avant de lancer la lecture. Le choix est **retenu pour toute la série** (ou pour le film), et pour chaque utilisateur : les épisodes suivants se lancent dans la même langue. Un changement fait dans le lecteur est retenu de la même façon.
 
+**Sous-titres « forcés »** (« FR Forced », « Signs & Songs »…) : ils ne traduisent que les panneaux, inscriptions et chansons, pour qui regarde déjà dans cette langue (la VF d'un anime, par exemple). Avec la VO japonaise, ils semblent vides ou très lents à apparaître. Séance ne les propose donc que si l'audio est dans leur langue, et les choisit alors tout seul ; avec un autre audio, c'est la piste complète qui est utilisée (y compris si une ancienne préférence désignait la piste forcée).
+
 Les pistes 5.1 / 7.1 (AC3, E-AC3, DTS, TrueHD, AAC 5.1…) sont réduites en stéréo par Séance avec les mixages de Jellyfin (*Administration → Métadonnées et lecture → Son multicanal*) : ffmpeg par défaut, Dave750, Dialogues (nuit), RFC 7845 ou AC-4, suivis d'un gain réglable. Séance ajoute un limiteur après le gain : le son ne peut pas saturer, quel que soit le réglage.
 
 ## Dépannage

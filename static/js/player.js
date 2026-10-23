@@ -1,7 +1,7 @@
 // Web player: HLS stream proxied through Séance, custom controls, resume,
 // per-user track preferences, "skip intro" banner and next-episode countdown.
 import { get, post, put } from './api.js';
-import { pickAudio, pickSubtitle, trackPayload } from './tracks.js';
+import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from './tracks.js';
 import { state } from './app.js';
 import { clear, episodeCode, errorBox, fmtTime, h, icon, img, spinner, toast } from './ui.js';
 
@@ -103,6 +103,7 @@ export async function renderPlayer(root, rk, ctx) {
   const qa = ctx.query.get('a'), qs = ctx.query.get('s');
   if (qa !== null) audioSel = (item.audio || []).find((a) => String(a.id) === qa) || audioSel;
   if (qs !== null) subSel = qs === '0' ? null : ((item.subtitles || []).find((x) => String(x.id) === qs) || subSel);
+  subSel = fixForced(subSel, audioSel, item.subtitles || []);
   const chapters = (item.chapters || []).filter((c) => c.end > c.start);
   let trick = null;
   const paintChapters = () => {
@@ -663,11 +664,11 @@ export async function renderPlayer(root, rk, ctx) {
       const subs = session ? session.subtitles : item.subtitles;
       clear(menu,
         h('div.menu-col', h('h4', 'Audio'), audio.length ? audio.map((a) => opt(a.title, audioSel && a.id === audioSel.id,
-          () => { audioSel = a; rememberTracks(); restart(); })) : h('p.muted.small', 'Piste unique')),
+          () => { audioSel = a; subSel = fixForced(subSel, a, subs); rememberTracks(); restart(); })) : h('p.muted.small', 'Piste unique')),
         h('div.menu-col', h('h4', 'Sous-titres'),
           opt('Aucun', !subSel, () => { subSel = null; rememberTracks(); restart(); }),
-          subs.map((s) => opt(s.title, subSel && s.id === subSel.id, () => { subSel = s; rememberTracks(); restart(); },
-            s.overlay ? null : 'incrusté'))));
+          menuSubs(subs, audioSel).map((s) => opt(s.title, subSel && s.id === subSel.id, () => { subSel = s; rememberTracks(); restart(); },
+            s.forced ? SIGNS_HINT : (s.overlay || s.pgs ? null : 'incrusté')))));
     } else {
       const q = [['original', 'Originale'], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p']];
       const modeLabel = { direct: 'Lecture directe', copy: 'Remux (vidéo copiée)', transcode: 'Transcodage' }[session.mode] || '';
