@@ -40,7 +40,7 @@ DEFAULT_PREFS = {
     "sub_size": 100,
     "autoplay_next": True,
     "auto_skip_intro": False,
-    "accent": "#e0a84f",
+    "accent": "#ffa43a",
     "theme": "dark",
     "poster_size": "m",
     "hidden_libraries": [],

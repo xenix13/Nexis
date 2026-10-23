@@ -1,4 +1,4 @@
-// Web player: HLS stream proxied through Séance, custom controls, resume,
+// Web player: HLS stream proxied through Nexis, custom controls, resume,
 // per-user track preferences, "skip intro" banner and next-episode countdown.
 import { get, post, put } from './api.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from './tracks.js';
@@ -94,7 +94,7 @@ export async function renderPlayer(root, rk, ctx) {
   }
   if (destroyed || !ctx.isCurrent()) return () => {};
   if (!['movie', 'episode', 'extra'].includes(item.type)) { location.replace(`#/item/${rk}`); return () => {}; }
-  document.title = `${item.type === 'episode' ? `${item.show} ${episodeCode(item)}` : item.title} · Séance`;
+  document.title = `${item.type === 'episode' ? `${item.show} ${episodeCode(item)}` : item.title} · Nexis`;
   titleEl.append(h('strong', item.type === 'episode' ? item.show : item.title),
     item.type === 'episode' ? h('span', `${episodeCode(item)} · ${item.title}`) : (item.year ? h('span', String(item.year)) : null));
   const poster = item.type === 'episode' ? (item.show_art || item.art) : item.art;

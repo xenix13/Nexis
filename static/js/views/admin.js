@@ -164,7 +164,7 @@ async function libraryForm(lib) {
   const err = h('p.form-error');
   const body = h('div.form',
     h('div.grid2', field('Nom', name), field('Type de contenu', kind)),
-    field('Dossiers', paths, 'Chemins vus depuis le serveur Séance (ex. /mnt/films). Un dossier par sous-dossier de film ou de série.'),
+    field('Dossiers', paths, 'Chemins vus depuis le serveur Nexis (ex. /mnt/films). Un dossier par sous-dossier de film ou de série.'),
     h('button.btn.small.ghost', { type: 'button', onclick: () => addPath() }, '+ Ajouter un dossier'),
     isNew ? null : h('p.muted.small', 'Changer le type vide la bibliothèque avant de la rescanner.'), err);
   return modal(isNew ? 'Nouvelle bibliothèque' : `Modifier « ${lib.name} »`, body, [
@@ -221,7 +221,7 @@ async function librariesTab(body, ctx) {
       h('button.btn.small', { onclick: () => startScan({ library: l.id }) }, 'Scanner'),
       h('button.btn.small', { onclick: async () => { if (await libraryForm(l)) { await refreshMe(); reload(); } } }, 'Modifier'),
       h('button.icon-btn', { title: 'Supprimer', onclick: async () => {
-        if (!await confirmDialog('Supprimer cette bibliothèque ?', `« ${l.name} » disparaîtra de Séance. Tes fichiers ne sont pas touchés.`, 'Supprimer')) return;
+        if (!await confirmDialog('Supprimer cette bibliothèque ?', `« ${l.name} » disparaîtra de Nexis. Tes fichiers ne sont pas touchés.`, 'Supprimer')) return;
         try { await del(`/api/admin/libraries/${l.id}`); await refreshMe(); reload(); } catch (e) { toast(e.message, 'bad'); }
       } }, icon('trash')))))
       : h('div.empty', h('p', 'Aucune bibliothèque.'), h('p.muted.small', 'Ajoute par exemple « Films » → /mnt/films, « Séries » → /mnt/series, « Animes » → /mnt/animes.')));
@@ -281,7 +281,7 @@ async function shareForm(existing) {
     h('div.grid2', field('Partage', share), field('Nom local', name, 'Monté dans /mnt/seance/<nom>')),
     h('details.advanced', h('summary', 'Options avancées'),
       h('div.grid2', field('Sous-dossier du partage', subdir), field('Version SMB', version)), field('Domaine', domain)),
-    h('p.muted.small', 'Le partage est monté en lecture seule : Séance ne peut ni modifier ni supprimer tes fichiers. Le mot de passe est stocké côté système (lisible par root uniquement), jamais dans la base de Séance.'),
+    h('p.muted.small', 'Le partage est monté en lecture seule : Nexis ne peut ni modifier ni supprimer tes fichiers. Le mot de passe est stocké côté système (lisible par root uniquement), jamais dans la base de Nexis.'),
     err);
   return modal(isNew ? 'Ajouter un partage réseau (SMB)' : `Modifier « ${e.name} »`, body, [
     { label: 'Annuler', value: null },
@@ -316,12 +316,12 @@ async function sharesTab(body, ctx) {
     h('h2', 'Ce conteneur ne peut pas monter de partages'),
     h('p', 'Linux interdit le montage SMB dans un conteneur LXC non privilégié, quelle que soit l’application. Tu peux quand même lister les partages de ton NAS ici, mais le montage échouera. Deux solutions :'),
     h('ol',
-      h('li', h('strong', 'Conteneur privilégié'), ' (le plus simple pour gérer les partages depuis Séance) : sauvegarde le conteneur puis restaure-le en « privilégié » (Proxmox : Sauvegarde → Restaurer, décocher « Non privilégié »), et active l’option ', h('code', 'pct set <ID> -features mount=cifs,nesting=1'), '.'),
+      h('li', h('strong', 'Conteneur privilégié'), ' (le plus simple pour gérer les partages depuis Nexis) : sauvegarde le conteneur puis restaure-le en « privilégié » (Proxmox : Sauvegarde → Restaurer, décocher « Non privilégié »), et active l’option ', h('code', 'pct set <ID> -features mount=cifs,nesting=1'), '.'),
       h('li', h('strong', 'Garder le conteneur non privilégié'), ' : monter les partages sur l’hôte Proxmox et les prêter au conteneur (méthode détaillée dans le README). Ils apparaîtront alors directement dans l’explorateur de dossiers des bibliothèques.'))) : null;
   const tools = env.tools && (!env.tools['mount.cifs'] || !env.tools.smbclient)
     ? h('div.plex-status.bad', 'cifs-utils ou smbclient manquant : relance le script d’installation.') : null;
   clear(body,
-    h('div.toolbar', h('p.muted', 'Monte les dossiers partagés de ton NAS (SMB/CIFS) directement depuis Séance, puis crée tes bibliothèques dessus.'),
+    h('div.toolbar', h('p.muted', 'Monte les dossiers partagés de ton NAS (SMB/CIFS) directement depuis Nexis, puis crée tes bibliothèques dessus.'),
       h('button.btn.primary', { onclick: async () => {
         const path = await shareForm(null);
         if (path) {
@@ -353,7 +353,7 @@ async function sharesTab(body, ctx) {
         if (!await confirmDialog('Retirer ce partage ?', `Le partage sera démonté et oublié. Tes fichiers sur le NAS ne sont pas touchés.${used}`, 'Retirer')) return;
         try { await del(`/api/admin/shares/${sh.name}`); toast('Partage retiré', 'ok'); reload(); } catch (e) { toast(e.message, 'bad'); }
       } }, icon('trash')))))
-      : h('div.empty', 'Aucun partage réseau géré par Séance.'));
+      : h('div.empty', 'Aucun partage réseau géré par Nexis.'));
 }
 
 // --------------------------------------------------------------- settings
@@ -376,7 +376,7 @@ async function settingsTab(body, ctx) {
   };
   clear(body,
     h('section.panel', h('h2', 'Métadonnées (TMDB)'),
-      h('p.muted.small', 'Affiches, résumés, distribution et titres d’épisodes viennent de The Movie Database. Crée un compte gratuit sur themoviedb.org, puis Paramètres → API → « Clé d’API ». Sans clé, Séance utilise les noms de fichiers, les .nfo et les images présents dans tes dossiers.'),
+      h('p.muted.small', 'Affiches, résumés, distribution et titres d’épisodes viennent de The Movie Database. Crée un compte gratuit sur themoviedb.org, puis Paramètres → API → « Clé d’API ». Sans clé, Nexis utilise les noms de fichiers, les .nfo et les images présents dans tes dossiers.'),
       h('div.plex-status', { class: s.tmdb_set ? 'plex-status ok' : 'plex-status' }, s.tmdb_set ? 'Clé TMDB configurée.' : 'Aucune clé TMDB.'),
       h('div.grid2', field('Clé TMDB', key), field('Langue des métadonnées', lang)),
       h('div.actions-row',
@@ -388,7 +388,7 @@ async function settingsTab(body, ctx) {
         } }, 'Tout réactualiser'),
         h('a.btn.ghost', { href: '#/admin/tasks' }, 'Planifier l’actualisation…'))),
     h('section.panel', h('h2', 'Détection des nouveautés'),
-      h('p.muted.small', 'Sur un partage réseau, le système n’est pas prévenu des fichiers ajoutés depuis une autre machine. Séance surveille donc les dossiers (très léger) et rescanne la bibliothèque concernée dès qu’une copie est terminée. Pour un ajout instantané depuis Radarr / Sonarr, utilise le webhook ci-dessous.'),
+      h('p.muted.small', 'Sur un partage réseau, le système n’est pas prévenu des fichiers ajoutés depuis une autre machine. Nexis surveille donc les dossiers (très léger) et rescanne la bibliothèque concernée dès qu’une copie est terminée. Pour un ajout instantané depuis Radarr / Sonarr, utilise le webhook ci-dessous.'),
       h('div.grid2',
         field('Surveiller les dossiers', watch, 'Le scan complet de sécurité se règle dans « Tâches planifiées ».')),
       h('button.btn.primary', { onclick: () => save({ watch_interval: Number(watch.value) }, 'Enregistré') }, 'Enregistrer'),
@@ -402,16 +402,16 @@ async function settingsTab(body, ctx) {
           if (!await confirmDialog('Nouvelle adresse ?', 'L’ancienne adresse cessera de fonctionner : il faudra la remplacer dans Radarr et Sonarr.', 'Régénérer')) return;
           await post('/api/admin/webhook/regenerate'); settingsTab(body, ctx);
         } }, 'Régénérer')),
-      h('p.muted.small', 'Dans Radarr et Sonarr : Paramètres → Connect → + → Webhook. Colle cette adresse dans « URL », méthode POST, et coche « On Import », « On Upgrade », « On Rename » et « On Delete ». Si Radarr est sur une autre machine, remplace l’adresse par celle du serveur Séance vue depuis Radarr.'),
+      h('p.muted.small', 'Dans Radarr et Sonarr : Paramètres → Connect → + → Webhook. Colle cette adresse dans « URL », méthode POST, et coche « On Import », « On Upgrade », « On Rename » et « On Delete ». Si Radarr est sur une autre machine, remplace l’adresse par celle du serveur Nexis vue depuis Radarr.'),
       s.watch_events.length ? h('details', h('summary.small', 'Derniers déclenchements'),
         h('ul.small', s.watch_events.map((e) => h('li', `${new Date(e.t * 1000).toLocaleString('fr-FR')} — ${e.text}`)))) : null),
     h('section.panel', h('h2', 'Sous-titres'),
-      h('p.muted.small', 'Les sous-titres intégrés aux fichiers (MKV) ne peuvent être lus qu’en parcourant tout le fichier. Séance les prépare à l’avance (toutes les pistes en une seule lecture), quand aucune lecture n’est en cours, pour qu’ils soient là dès la première seconde. Au lancement, le lecteur attend qu’ils soient prêts.'),
+      h('p.muted.small', 'Les sous-titres intégrés aux fichiers (MKV) ne peuvent être lus qu’en parcourant tout le fichier. Nexis les prépare à l’avance (toutes les pistes en une seule lecture), quand aucune lecture n’est en cours, pour qu’ils soient là dès la première seconde. Au lancement, le lecteur attend qu’ils soient prêts.'),
       prefetch,
       h('p.muted.small', s.subs_queue ? `${s.subs_queue} fichier(s) en attente de préparation.` : 'Aucun fichier en attente.'),
       h('button.btn', { onclick: () => save({ subs_prefetch: true }, 'Préparation lancée pour toute la médiathèque') }, 'Tout préparer maintenant')),
     h('section.panel', h('h2', 'Son multicanal (5.1 / 7.1) sur des enceintes stéréo'),
-      h('p.muted.small', 'Mêmes réglages que Jellyfin. « ffmpeg » garde un équilibre neutre ; « Dave750 » met un peu plus en avant les dialogues ; « Dialogues (nuit) » réduit fortement les effets et la musique ; « RFC 7845 » et « AC-4 » sont les mixages normalisés. Le gain remonte le volume après le mixage ; Séance ajoute toujours un limiteur pour qu’il ne puisse pas saturer.'),
+      h('p.muted.small', 'Mêmes réglages que Jellyfin. « ffmpeg » garde un équilibre neutre ; « Dave750 » met un peu plus en avant les dialogues ; « Dialogues (nuit) » réduit fortement les effets et la musique ; « RFC 7845 » et « AC-4 » sont les mixages normalisés. Le gain remonte le volume après le mixage ; Nexis ajoute toujours un limiteur pour qu’il ne puisse pas saturer.'),
       h('div.grid2',
         field('Mixage', select([['none', 'ffmpeg (Jellyfin par défaut)'], ['dave750', 'Dave750'], ['nightmode', 'Dialogues (nuit)'],
           ['rfc7845', 'RFC 7845'], ['ac4', 'AC-4']], s.downmix_algo, { id: 'downmix-algo' })),
@@ -425,7 +425,7 @@ async function settingsTab(body, ctx) {
       h('div.grid2', field('Lectures simultanées (max.)', maxStreams), field('Transcodages simultanés (max.)', maxTranscodes,
         '0 = interdire le transcodage (seules les lectures directes et remux passent).')),
       h('button.btn.primary', { onclick: () => save({ max_streams: Number(maxStreams.value), max_transcodes: Number(maxTranscodes.value) }, 'Enregistré') }, 'Enregistrer')),
-    h('p.muted.small', `Séance ${s.version}`));
+    h('p.muted.small', `Nexis ${s.version}`));
 }
 
 // --------------------------------------------------------------- demandes
@@ -444,7 +444,7 @@ async function requestsTab(body, ctx) {
     cfg.enabled ? 'Seerr est configuré : les utilisateurs peuvent demander des films et des séries.' : 'Seerr n’est pas encore configuré.');
   clear(body,
     h('section.panel', h('h2', 'Seerr'),
-      h('p.muted.small', 'Seerr (le successeur d’Overseerr et de Jellyseerr) reçoit les demandes du bouton « Demander » de l’onglet Découvrir et les envoie à Radarr / Sonarr. Si un compte Seerr porte le même nom qu’un compte Séance, la demande est faite à son nom ; sinon, au nom du propriétaire de la clé d’API.'),
+      h('p.muted.small', 'Seerr (le successeur d’Overseerr et de Jellyseerr) reçoit les demandes du bouton « Demander » de l’onglet Découvrir et les envoie à Radarr / Sonarr. Si un compte Seerr porte le même nom qu’un compte Nexis, la demande est faite à son nom ; sinon, au nom du propriétaire de la clé d’API.'),
       status,
       h('div.grid2', field('Adresse de Seerr', url), field('Clé d’API de Seerr', key)),
       h('div.actions-row',
@@ -676,7 +676,7 @@ async function liveTab(body, ctx) {
       } }, icon('trash')))))
       : h('div.empty', 'Aucune source. Ajoute l’adresse de ta liste M3U.')),
     h('section.panel', h('h2', 'Lecture'),
-      h('p.muted.small', 'Le navigateur ne lit pas directement les flux TV (MPEG-TS) : Séance les reçoit et les redécoupe pour lui. Une chaîne regardée par plusieurs personnes n’est reçue qu’une fois. Beaucoup de fournisseurs limitent le nombre de connexions simultanées.'),
+      h('p.muted.small', 'Le navigateur ne lit pas directement les flux TV (MPEG-TS) : Nexis les reçoit et les redécoupe pour lui. Une chaîne regardée par plusieurs personnes n’est reçue qu’une fois. Beaucoup de fournisseurs limitent le nombre de connexions simultanées.'),
       h('div.grid2', field('Chaînes regardées en même temps (max.)', maxS), field('Vidéo', vmode)),
       hide,
       h('button.btn.primary', { onclick: async () => {
@@ -695,7 +695,7 @@ async function jellyfinTab(body, ctx) {
   if (!ctx.isCurrent()) return;
   const reload = () => jellyfinTab(body, ctx);
   const address = `${location.protocol}//${location.host}`;
-  const sw = toggle('Autoriser les applications Jellyfin à se connecter à Séance', cfg.enabled);
+  const sw = toggle('Autoriser les applications Jellyfin à se connecter à Nexis', cfg.enabled);
   sw.querySelector('input').addEventListener('change', async (e) => {
     try { await put('/api/admin/jellyfin', { enabled: e.target.checked }); toast('Enregistré', 'ok'); reload(); }
     catch (err) { toast(err.message, 'bad'); reload(); }
@@ -710,7 +710,7 @@ async function jellyfinTab(body, ctx) {
   ];
   clear(body,
     h('section.panel', h('h2', 'Applications Jellyfin'),
-      h('p.muted.small', 'Séance se présente comme un serveur Jellyfin : les applications officielles s’y connectent avec un compte Séance (un profil géré se connecte avec son code PIN, depuis le réseau local). Bibliothèques, droits d’accès et contrôle parental, reprise de lecture, « vu », « Ma liste » (favoris), sous-titres et saut d’intro sont partagés avec Séance. L’administration reste ici.'),
+      h('p.muted.small', 'Nexis se présente comme un serveur Jellyfin : les applications officielles s’y connectent avec un compte Nexis (un profil géré se connecte avec son code PIN, depuis le réseau local). Bibliothèques, droits d’accès et contrôle parental, reprise de lecture, « vu », « Ma liste » (favoris), sous-titres et saut d’intro sont partagés avec Nexis. L’administration reste ici.'),
       sw,
       cfg.enabled ? h('div', h('p', 'Adresse du serveur à saisir dans l’application : ', h('code', address)),
         h('ul.small', apps.map(([where, what]) => h('li', h('strong', where), ' : ', what)))) : null,

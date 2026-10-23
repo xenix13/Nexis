@@ -258,7 +258,7 @@ export async function renderItem(main, rk, ctx) {
   const d = await get(`/api/items/${rk}`);
   if (!ctx.isCurrent()) return;
   if (d.type === 'season') { location.replace(`#/item/${d.show_id}?season=${d.id}`); return; }
-  document.title = `${d.type === 'episode' ? d.show : d.title} · Séance`;
+  document.title = `${d.type === 'episode' ? d.show : d.title} · Nexis`;
   const rerender = () => renderItem(main, rk, ctx);
   const art = d.type === 'episode' ? (d.show_art || d.art) : d.art;
   const poster = d.type === 'episode' ? d.show_thumb : d.thumb;

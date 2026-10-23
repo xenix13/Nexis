@@ -1,8 +1,8 @@
 """Outils communs de l'API compatible Jellyfin : identifiants, authentification, objets renvoyés aux clients.
 
-Identifiants : Jellyfin utilise des GUID (32 caractères hexadécimaux). Séance les dérive de ses propres
+Identifiants : Jellyfin utilise des GUID (32 caractères hexadécimaux). Nexis les dérive de ses propres
 numéros : 5eace0 + type (2) + numéro (24), ce qui les rend stables et réversibles. Les genres, personnes et
-studios (qui n'ont pas de numéro chez Séance) reçoivent un GUID tiré de leur nom.
+studios (qui n'ont pas de numéro chez Nexis) reçoivent un GUID tiré de leur nom.
 """
 import hashlib
 import hmac
@@ -103,7 +103,7 @@ class JF:
         return sid
 
     def server_name(self):
-        return self.db.setting("server_name") or "Séance"
+        return self.db.setting("server_name") or "Nexis"
 
     def secret(self):
         s = self.db.setting("jf_secret")
@@ -243,7 +243,7 @@ class JF:
                 "EnableNextEpisodeAutoPlay": bool(prefs.get("autoplay_next", True)), "CastReceiverId": None,
             },
             "Policy": {
-                # jamais administrateur côté Jellyfin : l'administration se fait dans Séance
+                # jamais administrateur côté Jellyfin : l'administration se fait dans Nexis
                 "IsAdministrator": False, "IsHidden": True, "EnableCollectionManagement": False,
                 "EnableSubtitleManagement": False, "EnableLyricManagement": False, "IsDisabled": bool(u["disabled"]),
                 "MaxParentalRating": u.get("max_age"), "BlockedTags": [], "AllowedTags": [],
@@ -323,7 +323,7 @@ class JF:
 
 
 def people_of(row):
-    """[(nom, rôle, type)] des métadonnées de Séance (réalisateurs puis distribution)."""
+    """[(nom, rôle, type)] des métadonnées de Nexis (réalisateurs puis distribution)."""
     try:
         people = json.loads(row["people"] or "{}")
     except (TypeError, ValueError):

@@ -1,4 +1,4 @@
-"""Séance — assemblage du serveur : contexte partagé (base, scanner, lecture…) et application HTTP.
+"""Nexis — assemblage du serveur : contexte partagé (base, scanner, lecture…) et application HTTP.
 
 Les routes sont rangées par thème dans seance/routes/ (comptes, bibliothèque, lecture, administration) et
 dans les modules des fonctions (collections_api, discover, tasks, livetv, syncplay).

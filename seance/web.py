@@ -235,6 +235,7 @@ JASSUB_CSP = ("default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-
               "img-src 'self' data: blob:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'none'")
 mimetypes.add_type("application/wasm", ".wasm")
 mimetypes.add_type("font/woff2", ".woff2")
+mimetypes.add_type("font/woff", ".woff")
 
 
 def make_handler(app, trust_proxy=False, hsts=False):

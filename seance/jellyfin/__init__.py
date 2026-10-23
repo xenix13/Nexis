@@ -1,11 +1,11 @@
 """Compatibilité avec les applications Jellyfin (Jellyfin Media Player sur Windows, Android TV, téléphones…).
 
-Séance se présente comme un serveur Jellyfin 10.11 : les applications officielles s'y connectent avec un
-compte Séance, parcourent les bibliothèques et lisent les vidéos (lecture directe, remux ou transcodage HLS),
+Nexis se présente comme un serveur Jellyfin 10.11 : les applications officielles s'y connectent avec un
+compte Nexis, parcourent les bibliothèques et lisent les vidéos (lecture directe, remux ou transcodage HLS),
 avec la reprise, les vus, les favoris (« Ma liste »), les sous-titres et le saut d'intro.
 
 Désactivée par défaut : l'administrateur l'active dans Administration > Applications Jellyfin.
-L'administration du serveur reste dans Séance (les comptes n'apparaissent jamais administrateurs côté Jellyfin).
+L'administration du serveur reste dans Nexis (les comptes n'apparaissent jamais administrateurs côté Jellyfin).
 """
 from ..web import HTTPError
 from . import library, playback, system, webclient
@@ -32,7 +32,7 @@ def register(app, ctx, x):
     for module in (system, library, playback):
         module.register(app, ctx, x, jf)
 
-    # le reste de l'API Jellyfin (fonctions absentes de Séance) : une erreur JSON, jamais la page de Séance
+    # le reste de l'API Jellyfin (fonctions absentes de Nexis) : une erreur JSON, jamais la page de Nexis
     def not_found(req):
         jf.require_enabled()
         raise HTTPError(404, "Not found")
@@ -40,7 +40,7 @@ def register(app, ctx, x):
     for method in ("GET", "POST", "PUT", "DELETE"):
         app.compat_route(method, rest)(not_found)
 
-    # ------------------------------------------------------------ administration (côté Séance)
+    # ------------------------------------------------------------ administration (côté Nexis)
     @app.route("GET", "/api/admin/jellyfin", auth="admin")
     def jf_admin(req):
         rows = db.all("SELECT t.token_hash, t.app, t.device, t.device_id, t.version, t.ip, t.created_at, t.last_used, "

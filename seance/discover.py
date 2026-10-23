@@ -1,9 +1,9 @@
 """« Découvrir » : catalogues des services de streaming (via TMDB) et demandes envoyées à Seerr.
 
 - Les catalogues (Netflix, Prime Video, Disney+, Canal+…) viennent de TMDB : ce qui est proposé en
-  abonnement dans le pays choisi. Chaque titre indique s'il est déjà dans Séance ou déjà demandé.
+  abonnement dans le pays choisi. Chaque titre indique s'il est déjà dans Nexis ou déjà demandé.
 - « Demander » transmet la demande à Seerr (ex-Overseerr / Jellyseerr) au nom de l'utilisateur, qui
-  la fait télécharger par Radarr / Sonarr. Séance retrouve le compte Seerr de chacun par son nom ;
+  la fait télécharger par Radarr / Sonarr. Nexis retrouve le compte Seerr de chacun par son nom ;
   sans correspondance, la demande part au nom du propriétaire de la clé d'API.
 - « À regarder » accepte aussi les titres absents de la bibliothèque : ils sont demandés
   automatiquement (si activé) et rejoignent la liste habituelle dès leur arrivée.

@@ -422,7 +422,7 @@ def register(app, ctx, x):
                         on_close=f.close)
 
     def record_progress(user, r, pos, dur, state="playing", sid="", ended=False):
-        """Position de lecture d'un utilisateur (interface de Séance et clients Jellyfin). -> vu à l'instant ?"""
+        """Position de lecture d'un utilisateur (interface de Nexis et clients Jellyfin). -> vu à l'instant ?"""
         uid = user["id"]
         rk = str(r["id"])
         if r["type"] == "extra":  # les bonus ne laissent ni reprise ni historique

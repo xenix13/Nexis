@@ -1,4 +1,4 @@
-// Thin wrapper around fetch for the Séance API.
+// Thin wrapper around fetch for the Nexis API.
 export class ApiError extends Error {
   constructor(status, message, data) {
     super(message);

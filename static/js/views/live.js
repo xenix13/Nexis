@@ -218,7 +218,7 @@ export async function renderLivePlayer(root, cid, ctx) {
       [info, session] = await Promise.all([get(`/api/live/${cid}`), post(`/api/live/${cid}/play`)]);
     } catch (e) { if (!destroyed) showError(e.message); return; }
     if (destroyed) { post(`/api/live/s/${session.session}/stop`).catch(() => {}); return; }
-    document.title = `${info.name} · TV en direct · Séance`;
+    document.title = `${info.name} · TV en direct · Nexis`;
     paintInfo();
     if (window.Hls && window.Hls.isSupported()) {
       hls = new window.Hls({

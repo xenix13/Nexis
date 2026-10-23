@@ -265,7 +265,7 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(plan(hevc, caps=caps)["mode"], "transcode")
         caps["video"].add("hevc10")
         r = plan(hevc, caps=caps, algo="dave750", boost=1.5)
-        self.assertEqual((r["mode"], r["acopy"]), ("copy", False))  # 5.1 : mixé en stéréo par Séance
+        self.assertEqual((r["mode"], r["acopy"]), ("copy", False))  # 5.1 : mixé en stéréo par Nexis
         self.assertTrue(r["audio_filter"].startswith("pan=stereo|c0=0.5*c2+0.707*c0"), r["audio_filter"])
         self.assertIn("volume=1.5", r["audio_filter"])
         self.assertIn("hvc1", build_command("/x.mkv", r, 0, "/tmp/out"))
@@ -797,7 +797,7 @@ class SeanceTest(unittest.TestCase):
         self.assertIsNotNone(self.ctx.watcher.force_at)
         self.assertIsNone(self.ctx.watcher.force_scope)  # dossier inconnu : scan complet
         self.ctx.watcher.force_at = None
-        # Sonarr cite ses propres chemins (/tv/…) : Séance retrouve le dossier local et ne revoit que lui
+        # Sonarr cite ses propres chemins (/tv/…) : Nexis retrouve le dossier local et ne revoit que lui
         st, r = c.call("POST", path, {"eventType": "Download", "series": {"title": "Les Veilleurs", "path": "/tv/Les Veilleurs"},
                                       "episodeFile": {"path": "/tv/Les Veilleurs/Season 01/Les.Veilleurs.S01E01.mkv"}},
                        csrf=False)

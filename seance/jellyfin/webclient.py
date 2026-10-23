@@ -1,7 +1,7 @@
 """Client web officiel de Jellyfin (jellyfin-web), servi sous /web/.
 
 Jellyfin Media Player (Windows, macOS, Linux) et l'application Android pour téléphone affichent l'interface
-web fournie par le serveur : sans elle, ils ne peuvent pas se connecter. Séance ne l'embarque pas dans son
+web fournie par le serveur : sans elle, ils ne peuvent pas se connecter. Nexis ne l'embarque pas dans son
 dépôt ; deploy/install.sh la récupère depuis le dépôt APT signé de Jellyfin.
 """
 import mimetypes

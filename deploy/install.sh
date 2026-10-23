@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installe ou met à jour Séance sur Ubuntu / Debian (conteneur LXC ou VM).
+# Installe ou met à jour Nexis sur Ubuntu / Debian (conteneur LXC ou VM).
 #
 # En une commande (installation ET mise à jour), en root :
 #   curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh | bash
@@ -119,10 +119,10 @@ chmod 700 "$DATA_DIR"
 
 if [ ! -f "$CONF_DIR/seance.env" ]; then
   cat > "$CONF_DIR/seance.env" <<'ENVFILE'
-# Port d'écoute de Séance
+# Port d'écoute de Nexis
 SEANCE_PORT=8420
 SEANCE_HOST=0.0.0.0
-# Passe à 1 si Séance est derrière un reverse proxy HTTPS (Caddy, nginx, NPM…)
+# Passe à 1 si Nexis est derrière un reverse proxy HTTPS (Caddy, nginx, NPM…)
 SEANCE_COOKIE_SECURE=0
 # Passe à 1 pour lire l'IP réelle dans X-Forwarded-For (uniquement derrière TON proxy)
 SEANCE_TRUST_PROXY=0
@@ -185,7 +185,7 @@ if [ -r /proc/self/uid_map ] && [ "$(awk 'NR==1{print $2}' /proc/self/uid_map)" 
   echo "Solutions : conteneur privilégié avec « features: mount=cifs », ou montage depuis l'hôte (README)."
 fi
 echo
-echo "Séance tourne sur http://${IP:-<ip>}:${PORT:-8420}"
+echo "Nexis tourne sur http://${IP:-<ip>}:${PORT:-8420}"
 for d in /mnt/*/ /mnt/seance/*/; do
   [ -d "$d" ] || continue
   if ! runuser -u seance -- ls "$d" >/dev/null 2>&1; then

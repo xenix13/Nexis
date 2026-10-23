@@ -1,15 +1,34 @@
 import { post } from '../api.js';
 import { clear, field, h, toast } from '../ui.js';
 
-function brand() {
-  return h('div.auth-brand', h('span.logo-mark.big'), h('h1', 'Séance'));
+// Décor de la page de connexion : un mur d'affiches stylisées (sans contenu de la médiathèque, la page est publique)
+const WALL = ['#3a2618', '#18293a', '#2b2b36', '#3a1e1e', '#1e3328', '#36301c', '#241c36', '#14303a', '#3a2a12', '#202a3a'];
+
+function stage(title, text) {
+  const tiles = [];
+  for (let i = 0; i < 36; i++) tiles.push(h('span', { style: { '--c': WALL[(i * 7) % WALL.length] } }));
+  return h('section.auth-stage', { 'aria-hidden': 'false' },
+    h('div.auth-wall', { 'aria-hidden': 'true' }, tiles),
+    h('div.auth-stage-body',
+      h('div.logo', h('span.logo-mark', { role: 'img', 'aria-label': 'Logo Nexis' }), 'Nexis'),
+      h('div.auth-pitch', h('h2', title), h('p', text))));
+}
+
+function layout(root, card, pitch = ['Ce soir, c’est séance à la maison.',
+  'Films, séries et animes de ton serveur, sur le navigateur, la TV ou le téléphone.']) {
+  clear(root, h('div.auth-page', stage(...pitch), h('section.auth-side', card)));
+}
+
+function brand(title, lead) {
+  return [h('div.auth-brand', h('span.logo-mark.big', { role: 'img', 'aria-label': 'Logo Nexis' }), h('h1', title)),
+    h('p.auth-lead', lead)];
 }
 
 export function renderLogin(root, onDone) {
   const user = h('input', { name: 'username', autocomplete: 'username', required: true, autofocus: true });
   const pass = h('input', { name: 'password', type: 'password', autocomplete: 'current-password', required: true });
   const err = h('p.form-error', { role: 'alert' });
-  const btn = h('button.btn.primary.block', { type: 'submit' }, 'Se connecter');
+  const btn = h('button.btn.primary.block', { type: 'submit' }, 'Entrer dans la salle');
   const form = h('form.auth-card', {
     onsubmit: async (e) => {
       e.preventDefault();
@@ -23,9 +42,10 @@ export function renderLogin(root, onDone) {
         pass.select();
       } finally { btn.disabled = false; }
     },
-  }, brand(), h('p.muted.center', 'Connecte-toi pour retrouver ton espace.'),
-  field('Identifiant', user), field('Mot de passe', pass), err, btn);
-  clear(root, h('div.auth-page', form));
+  }, brand('Bon retour', 'Connecte-toi avec ton compte Nexis.'),
+  field('Identifiant', user), field('Mot de passe', pass), err, btn,
+  h('p.auth-foot', 'Mot de passe oublié ? Demande à l’administrateur du serveur.'));
+  layout(root, form);
 }
 
 export function renderSetup(root, onDone) {
@@ -37,7 +57,7 @@ export function renderSetup(root, onDone) {
   const err = h('p.form-error', { role: 'alert' });
   const btn = h('button.btn.primary.block', { type: 'submit' }, 'Terminer l’installation');
 
-  const form = h('form.auth-card', {
+  const form = h('form.auth-card.wide', {
     onsubmit: async (e) => {
       e.preventDefault();
       err.textContent = '';
@@ -50,13 +70,12 @@ export function renderSetup(root, onDone) {
         onDone();
       } catch (ex) { err.textContent = ex.message; } finally { btn.disabled = false; }
     },
-  }, brand(),
-  h('p.muted.center', 'Première installation : crée le compte administrateur. Tu ajouteras ensuite tes dossiers de films et de séries.'),
+  }, brand('Bienvenue', 'Première installation : crée le compte administrateur. Tu ajouteras ensuite tes dossiers de films et de séries.'),
   h('h3.step', h('span', '1'), 'Code d’installation'),
   field('Code affiché au démarrage', code, 'Visible avec : journalctl -u seance | grep code — ou dans /var/lib/seance/setup-code.txt'),
   h('h3.step', h('span', '2'), 'Compte administrateur'),
   h('div.grid2', field('Identifiant', username), field('Nom affiché', display)),
   h('div.grid2', field('Mot de passe (8 caractères min.)', pass), field('Confirmation', pass2)),
   err, btn);
-  clear(root, h('div.auth-page', form));
+  layout(root, form, ['Installons ta salle de cinéma.', 'Quelques secondes pour créer le compte administrateur, puis Nexis range tes films et tes séries.']);
 }

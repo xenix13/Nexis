@@ -1,10 +1,10 @@
-# Audit de sécurité de Séance — version 3.1.0
+# Audit de sécurité de Nexis — version 3.1.0
 
 *23 octobre 2026. Revue complète du code (serveur Python, interface web, service de montage, scripts de déploiement), à la lecture et par des essais sur un serveur de test. Chaque correctif est couvert par un test de non-régression dans `tests/test_security.py`.*
 
 ## Périmètre et menace considérée
 
-Séance est fait pour un **réseau domestique**, éventuellement ouvert sur Internet derrière un reverse proxy HTTPS. Les menaces étudiées :
+Nexis est fait pour un **réseau domestique**, éventuellement ouvert sur Internet derrière un reverse proxy HTTPS. Les menaces étudiées :
 
 - un **visiteur non connecté** (Internet ou réseau local) ;
 - un **membre du foyer** qui veut sortir de ses droits (profil enfant, bibliothèques non autorisées) ;
@@ -30,7 +30,7 @@ L'administrateur est considéré comme de confiance : il peut, par conception, p
 | 10 | Faible | Installation | hls.js téléchargé depuis un CDN sans vérification, avec repli sur « la dernière 1.x » | Corrigé |
 | 11 | Faible | Installation | Code d'installation sans limite d'essais | Corrigé |
 | 12 | Faible | Contrôle parental | Images d'une collection visibles par un profil pour qui elle est entièrement masquée | Corrigé |
-| 13 | Faible | Images TMDB | Logos SVG servis par Séance sans bac à sable | Corrigé |
+| 13 | Faible | Images TMDB | Logos SVG servis par Nexis sans bac à sable | Corrigé |
 | 14 | Faible | Partages SMB | Partages montés sans `nosuid,nodev,noexec` | Corrigé (partages existants mis à jour) |
 | 15 | Info | Durcissement | En-têtes HTTP et bac à sable systemd complétables | Corrigé |
 
@@ -39,7 +39,7 @@ Aucune faille critique (exécution de code à distance, contournement de l'authe
 ## Détail des problèmes et correctifs
 
 ### 1. Liste IPTV : lecture de fichiers du serveur
-**Constat.** Le contenu d'une liste M3U vient du fournisseur. Une ligne `/etc/passwd`, `concat:…`, `subfile:…` ou `file://…` était transmise telle quelle à ffmpeg. Le flux produit, lisible par tout le foyer, pouvait contenir un fichier du serveur, la base de Séance par exemple. De même, un logo ou un guide (`url-tvg`) indiqué comme chemin local était lu sur le disque.
+**Constat.** Le contenu d'une liste M3U vient du fournisseur. Une ligne `/etc/passwd`, `concat:…`, `subfile:…` ou `file://…` était transmise telle quelle à ffmpeg. Le flux produit, lisible par tout le foyer, pouvait contenir un fichier du serveur, la base de Nexis par exemple. De même, un logo ou un guide (`url-tvg`) indiqué comme chemin local était lu sur le disque.
 **Correctif** (`livetv.py`).
 - Seules les adresses `http(s)`, `rtsp(s)`, `rtmp(s)`, `rtp` et `udp` sont gardées. Un chemin local n'est accepté que si la liste elle-même est un fichier du serveur, choisi par l'administrateur.
 - ffmpeg et ffprobe reçoivent `-protocol_whitelist` limité aux protocoles de l'adresse.
@@ -101,10 +101,10 @@ Le lecteur hls.js 1.5.15 est désormais **fourni dans le dépôt** (`static/vend
 
 ## Risques acceptés et recommandations
 
-- **Exposition sur Internet :** passer impérativement par un reverse proxy HTTPS avec `SEANCE_COOKIE_SECURE=1` et `SEANCE_TRUST_PROXY=1` (voir le README). Ne pas activer `SEANCE_TRUST_PROXY` si Séance est joignable directement : l'en-tête serait alors inventable.
+- **Exposition sur Internet :** passer impérativement par un reverse proxy HTTPS avec `SEANCE_COOKIE_SECURE=1` et `SEANCE_TRUST_PROXY=1` (voir le README). Ne pas activer `SEANCE_TRUST_PROXY` si Nexis est joignable directement : l'en-tête serait alors inventable.
 - **Blocage après échecs :** quelqu'un peut bloquer pendant 10 minutes la connexion d'un identifiant connu. C'est le compromis habituel face aux essais de mots de passe.
 - **IPTV et réseau local :** une liste en http(s) peut désigner une adresse du réseau local. C'est voulu (box opérateur, tuner TNT réseau). N'ajoute que des listes de fournisseurs de confiance.
-- **`seance-mountd` tourne en root**, sans bac à sable : monter un partage l'exige, et un bac à sable rendrait les montages invisibles à Séance. Sa surface est réduite au strict nécessaire.
+- **`seance-mountd` tourne en root**, sans bac à sable : monter un partage l'exige, et un bac à sable rendrait les montages invisibles à Nexis. Sa surface est réduite au strict nécessaire.
 - **Liens symboliques** dans les bibliothèques : suivis par le scanner. Un lien vers un dossier système rendrait ses vidéos visibles, si l'utilisateur `seance` peut les lire.
 - **Clés TMDB et Seerr** stockées en clair dans la base (dossier lisible par `seance` seulement), puisqu'il faut les renvoyer aux services.
 - **Messages d'erreur de ffmpeg :** montrés lors d'un échec de lecture, ils peuvent révéler un chemin de fichier à un membre du foyer.
@@ -112,11 +112,11 @@ Le lecteur hls.js 1.5.15 est désormais **fourni dans le dépôt** (`static/vend
 
 ## Ajout de la version 3.2.0 : applications Jellyfin
 
-*24 octobre 2026.* Séance peut se présenter comme un serveur Jellyfin (`seance/jellyfin/`). Cette nouvelle surface a été revue avec les mêmes menaces que ci-dessus ; les protections sont couvertes par `tests/test_jellyfin.py`.
+*24 octobre 2026.* Nexis peut se présenter comme un serveur Jellyfin (`seance/jellyfin/`). Cette nouvelle surface a été revue avec les mêmes menaces que ci-dessus ; les protections sont couvertes par `tests/test_jellyfin.py`.
 
-- **Désactivée par défaut.** Tant que l'administrateur ne l'active pas, aucun chemin Jellyfin n'existe : la découverte UDP ne répond pas, et les adresses tombent sur l'interface de Séance.
+- **Désactivée par défaut.** Tant que l'administrateur ne l'active pas, aucun chemin Jellyfin n'existe : la découverte UDP ne répond pas, et les adresses tombent sur l'interface de Nexis.
 - **Jetons des applications :** 128 bits aléatoires, stockés **hachés** (SHA-256). Un appareil = une session (une nouvelle connexion du même appareil remplace l'ancienne). Supprimés quand le mot de passe ou le code PIN change, quand le compte est désactivé, à la déconnexion, ou depuis *Administration → Applications Jellyfin*. Oubliés après 6 mois sans usage.
-- **Connexion :** même blocage après échecs que Séance (adresse et identifiant). Un profil géré se connecte avec son **code PIN**, mais **depuis le réseau local seulement** et avec 5 essais par heure : un code de 4 chiffres n'est jamais exposé à Internet. Aucune liste de comptes n'est publiée (`/Users/Public` est vide). Quick Connect n'existe pas.
+- **Connexion :** même blocage après échecs que Nexis (adresse et identifiant). Un profil géré se connecte avec son **code PIN**, mais **depuis le réseau local seulement** et avec 5 essais par heure : un code de 4 chiffres n'est jamais exposé à Internet. Aucune liste de comptes n'est publiée (`/Users/Public` est vide). Quick Connect n'existe pas.
 - **Jamais administrateur :** côté Jellyfin, aucun compte n'a de droits d'administration ; les routes d'administration de Jellyfin n'existent pas (403 / 404).
 - **Cloisonnement :** chaque élément, liste, recherche, filtre, image, flux, sous-titre, chapitre, aperçu et segment vérifie la bibliothèque et la restriction d'âge du compte du jeton. Un client ne peut agir que pour son propre compte (identifiant d'utilisateur de l'adresse comparé au jeton).
 - **Adresses sans jeton** (le lecteur d'Android TV et les balises `<img>` de Jellyfin Web n'en ajoutent pas) :
@@ -125,11 +125,11 @@ Le lecteur hls.js 1.5.15 est désormais **fourni dans le dépôt** (`static/vend
   - HLS : l'identifiant de session de lecture (128 bits aléatoires) fait partie du chemin, et la session expire quand la lecture s'arrête.
   Les sous-titres reçoivent une adresse signée plutôt que le jeton lui-même (que Jellyfin met d'ordinaire dans l'adresse).
 - **Injections :** filtres, tris et paramètres de Jellyfin sont traduits en SQL paramétré ; les colonnes de tri viennent d'une liste fixe ; les GUID sont validés avant d'être décodés.
-- **Ressources :** préférences d'affichage limitées en taille et en nombre ; test de débit réservé aux comptes connectés et plafonné à 10 Mo ; mêmes limites de lectures et de transcodages que Séance (ffmpeg ne démarre qu'à la première demande du lecteur, puis s'arrête à l'inactivité).
+- **Ressources :** préférences d'affichage limitées en taille et en nombre ; test de débit réservé aux comptes connectés et plafonné à 10 Mo ; mêmes limites de lectures et de transcodages que Nexis (ffmpeg ne démarre qu'à la première demande du lecteur, puis s'arrête à l'inactivité).
 - **Découverte (UDP 7359) :** réponse uniquement aux adresses du réseau local, au plus une par seconde et par adresse (pas d'amplification depuis Internet). Désactivable (`SEANCE_JELLYFIN_DISCOVERY=0`).
 - **Interface web de Jellyfin :** téléchargée par `install.sh` depuis le dépôt APT officiel ; l'empreinte de la clé de signature (`4918 AABC 486C A052 358D 778D 4902 3CD0 1DE2 1A7B`) est vérifiée, apt contrôle la signature du dépôt et la somme du paquet, et rien n'est ajouté aux sources APT du système. Fichiers servis depuis leur dossier uniquement (chemin résolu).
 
 **Risques acceptés**
-- L'interface web de Jellyfin est servie **sur la même origine** que celle de Séance, avec une politique de sécurité du contenu plus souple (elle en a besoin : styles en ligne, WebAssembly). Une faille XSS dans jellyfin-web permettrait d'agir dans Séance avec la session du navigateur. jellyfin-web vient d'un paquet signé et nettoie les métadonnées qu'il affiche ; pour l'isoler complètement, servir les applications Jellyfin sur un autre nom d'hôte (reverse proxy) ou ne pas installer l'interface web (`SEANCE_JELLYFIN_WEB=0` : Android TV fonctionne sans).
+- L'interface web de Jellyfin est servie **sur la même origine** que celle de Nexis, avec une politique de sécurité du contenu plus souple (elle en a besoin : styles en ligne, WebAssembly). Une faille XSS dans jellyfin-web permettrait d'agir dans Nexis avec la session du navigateur. jellyfin-web vient d'un paquet signé et nettoie les métadonnées qu'il affiche ; pour l'isoler complètement, servir les applications Jellyfin sur un autre nom d'hôte (reverse proxy) ou ne pas installer l'interface web (`SEANCE_JELLYFIN_WEB=0` : Android TV fonctionne sans).
 - Les applications Jellyfin mettent leur jeton dans certaines adresses (`api_key`) ; avec `SEANCE_DEBUG=1`, les journaux contiennent les adresses complètes.
 - Les étiquettes d'images restent valables tant que l'image ne change pas : une adresse d'image copiée reste utilisable même si le compte perd l'accès à l'élément (même compromis que Jellyfin, où les images sont publiques).

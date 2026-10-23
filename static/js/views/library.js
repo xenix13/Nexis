@@ -7,7 +7,7 @@ const PAGE = 60;
 export async function renderLibrary(main, sid, ctx) {
   const lib = state.me.libraries.find((l) => l.id === sid);
   if (!lib) { clear(main, h('div.empty', 'Bibliothèque introuvable.')); return; }
-  document.title = `${lib.title} · Séance`;
+  document.title = `${lib.title} · Nexis`;
   const sort = ctx.query.get('sort') || 'title';
   const genre = ctx.query.get('genre') || '';
   const view = ctx.query.get('view') || '';

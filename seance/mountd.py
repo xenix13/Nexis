@@ -1,6 +1,6 @@
-"""seance-mountd : petit service root qui monte les partages SMB demandés par Séance.
+"""seance-mountd : petit service root qui monte les partages SMB demandés par Nexis.
 
-Séance tourne sans privilèges ; ce service ne sait faire qu'une chose : monter des partages
+Nexis tourne sans privilèges ; ce service ne sait faire qu'une chose : monter des partages
 SMB/CIFS en lecture seule sous /mnt/seance/<nom>. Il écoute sur un socket Unix accessible
 uniquement à l'utilisateur « seance » (vérifié par SO_PEERCRED) et revalide chaque demande.
 
@@ -124,7 +124,7 @@ def write_fstab(lines):
 
 
 def entries():
-    """Partages gérés par Séance (paires « # seance-smb:nom » + ligne fstab)."""
+    """Partages gérés par Nexis (paires « # seance-smb:nom » + ligne fstab)."""
     lines = read_fstab()
     out = []
     for i, line in enumerate(lines):
@@ -588,7 +588,7 @@ def main():
         stop.set()
 
 
-# ------------------------------------------------------------------ client (côté Séance)
+# ------------------------------------------------------------------ client (côté Nexis)
 def call(cmd, args=None, timeout=90, sock_path=None):
     path = sock_path or SOCK
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

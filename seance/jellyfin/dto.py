@@ -1,4 +1,4 @@
-"""Objets « BaseItemDto » de Jellyfin construits depuis le catalogue de Séance."""
+"""Objets « BaseItemDto » de Jellyfin construits depuis le catalogue de Nexis."""
 import json
 import os
 

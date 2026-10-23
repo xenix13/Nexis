@@ -68,7 +68,7 @@ function shell(active) {
   const userBtn = h('button.user-btn', { 'aria-label': 'Menu utilisateur', 'aria-haspopup': 'true',
     onclick: (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; } }, avatar(me.user, 34));
   const header = h('header.topbar',
-    h('a.logo', { href: '#/' }, h('span.logo-mark'), 'Séance'),
+    h('a.logo', { href: '#/', 'aria-label': 'Nexis — accueil' }, h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis'),
     h('nav.nav', navLink('#/', 'Accueil', active === 'home'), navLink('#/watchlist', 'À regarder', active === 'watchlist'),
       me.features && me.features.discover ? navLink('#/discover', 'Découvrir', active === 'discover') : null,
       me.libraries.map((l) => navLink(`#/library/${l.id}`, l.title, active === `lib:${l.id}`)),
@@ -85,6 +85,12 @@ function shell(active) {
   const main = h('main.content');
   const banner = me.plex_error ? h('div.banner-error', me.plex_error) : null;
   clear(root, header, banner, main);
+  // barre transparente au-dessus de l'image d'accueil, opaque dès qu'on fait défiler
+  const onScroll = () => header.classList.toggle('scrolled', window.scrollY > 24);
+  onScroll();
+  window.removeEventListener('scroll', window.__nexisScroll || (() => {}));
+  window.__nexisScroll = onScroll;
+  window.addEventListener('scroll', onScroll, { passive: true });
   return main;
 }
 
@@ -108,15 +114,15 @@ async function route() {
     }
   }
   if (state.status.setup) {
-    document.title = 'Installation · Séance';
+    document.title = 'Installation · Nexis';
     return renderSetup(root, () => { state.status = null; state.me = null; location.hash = '#/admin/libraries'; route(); });
   }
   if (page === 'login') {
-    document.title = 'Connexion · Séance';
+    document.title = 'Connexion · Nexis';
     return renderLogin(root, async () => { await refreshMe(); location.hash = '#/profiles'; });
   }
   if (page === 'profiles') {
-    document.title = 'Qui regarde ? · Séance';
+    document.title = 'Qui regarde ? · Nexis';
     if (!state.me) {
       try { await refreshMe(); } catch { location.hash = '#/login'; return; }
     }
@@ -145,7 +151,7 @@ async function route() {
   const main = shell(active);
   main.append(spinner());
   const titles = { '': 'Accueil', live: 'TV en direct', together: 'Regarder ensemble', watchlist: 'À regarder', discover: 'Découvrir', playlists: 'Mes playlists', search: 'Recherche', history: 'Historique', settings: 'Réglages', admin: 'Administration' };
-  document.title = `${titles[page] || 'Séance'} · Séance`;
+  document.title = `${titles[page] || 'Nexis'} · Nexis`;
   try {
     switch (page) {
       case '': await renderHome(main, ctx); break;

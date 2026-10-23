@@ -3,7 +3,7 @@
 - Un administrateur ajoute une ou plusieurs sources : une liste M3U (adresse http(s) ou fichier sur le
   serveur) et, si besoin, un guide XMLTV (souvent indiqué dans l'en-tête de la liste, « url-tvg »).
 - Toutes les personnes du foyer voient les chaînes (sauf les groupes masqués par l'administrateur).
-- Le navigateur ne sait pas lire un flux MPEG-TS : Séance le reçoit avec ffmpeg et le redécoupe en HLS
+- Le navigateur ne sait pas lire un flux MPEG-TS : Nexis le reçoit avec ffmpeg et le redécoupe en HLS
   (vidéo recopiée si elle est en H.264, son converti en AAC stéréo). Une chaîne regardée par plusieurs
   personnes n'est reçue qu'une fois, et ffmpeg s'arrête quand plus personne ne la regarde.
 """

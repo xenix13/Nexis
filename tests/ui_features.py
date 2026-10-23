@@ -116,7 +116,7 @@ with sync_playwright() as pw:
     # --- Seerr : plus que la connexion à Seerr
     page.goto(base + "/#/admin/requests")
     page.wait_for_selector("text=Clé d’API de Seerr")
-    check(page.locator("text=Relier Seerr").count() == 0, "section « Relier Seerr à Séance » retirée")
+    check(page.locator("text=Relier Seerr").count() == 0, "section « Relier Seerr à Nexis » retirée")
     page.screenshot(path=f"{out}/01-admin-seerr.png", full_page=True)
 
     # --- chapitres : fiche et lecteur

@@ -1,9 +1,9 @@
 """Profil d'appareil des clients Jellyfin : que peut lire l'appareil tel quel, que faut-il convertir ?
 
-Reprend la logique du StreamBuilder de Jellyfin, réduite à ce que Séance sait produire :
+Reprend la logique du StreamBuilder de Jellyfin, réduite à ce que Nexis sait produire :
 - lecture directe : le fichier est envoyé tel quel (conteneur, codecs et conditions du profil respectés) ;
 - remux (« direct stream ») : la vidéo est recopiée dans un flux HLS fMP4, l'audio recopié ou converti ;
-- transcodage : la vidéo est réencodée en H.264 (seul codec que Séance produit).
+- transcodage : la vidéo est réencodée en H.264 (seul codec que Nexis produit).
 """
 
 # noms des codecs côté Jellyfin (ffprobe -> Jellyfin)
@@ -110,7 +110,7 @@ def condition_ok(cond, values):
     kind = str(cond.get("Condition") or "")
     expected = cond.get("Value")
     if prop not in values:
-        return True  # propriété inconnue de Séance : on ne bloque pas
+        return True  # propriété inconnue de Nexis : on ne bloque pas
     actual = values[prop]
     if actual is None or actual == "":
         return not cond.get("IsRequired")
@@ -207,7 +207,7 @@ def transcoding_profile(profile):
 
 
 def stream_caps(profile, probe, audio, max_channels=None, allow_video_copy=True, allow_audio_copy=True):
-    """Capacités au format du planificateur de Séance (transcoder.plan) pour un flux HLS."""
+    """Capacités au format du planificateur de Nexis (transcoder.plan) pour un flux HLS."""
     tp = transcoding_profile(profile)
     v = probe.get("video") or {}
     caps = {"video": set(), "audio": set(), "containers": set(), "max_channels": 2}
@@ -237,7 +237,7 @@ def stream_caps(profile, probe, audio, max_channels=None, allow_video_copy=True,
 
 
 def quality_for(max_bitrate, probe, qualities):
-    """Qualité Séance la plus haute qui tient dans le débit maximal demandé par l'appareil."""
+    """Qualité Nexis la plus haute qui tient dans le débit maximal demandé par l'appareil."""
     bitrate = probe.get("bitrate") or 0
     if not max_bitrate or not bitrate or bitrate <= max_bitrate:
         return "original"
@@ -266,7 +266,7 @@ def subtitle_method(profile, fmt, playing="direct", container=""):
     if find("External", {fmt}):
         return "External", fmt
     if fmt in TEXT_FORMATS:
-        # Séance convertit tout sous-titre texte en WebVTT / SRT
+        # Nexis convertit tout sous-titre texte en WebVTT / SRT
         for target in ("vtt", "srt", "ass", "ssa"):
             if find("External", {target}):
                 return "External", target

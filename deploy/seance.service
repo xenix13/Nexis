@@ -1,5 +1,5 @@
 [Unit]
-Description=Séance - serveur multimédia auto-hébergé
+Description=Nexis - serveur multimédia auto-hébergé
 After=network-online.target seance-mountd.service
 Wants=network-online.target
 

@@ -1,7 +1,7 @@
 """Découverte automatique sur le réseau local (port UDP 7359), comme un serveur Jellyfin.
 
 Les applications Jellyfin (Android TV notamment) envoient « who is JellyfinServer? » en diffusion ; le serveur
-répond avec son adresse. Séance ne répond qu'aux adresses du réseau local, et pas plus d'une fois par
+répond avec son adresse. Nexis ne répond qu'aux adresses du réseau local, et pas plus d'une fois par
 seconde à une même adresse (pas d'amplification possible depuis Internet).
 """
 import ipaddress

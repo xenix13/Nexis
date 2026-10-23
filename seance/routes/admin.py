@@ -247,7 +247,7 @@ def register(app, ctx, x):
         return out[:50]
 
     def local_dirs(remote):
-        """Retrouve le dossier local correspondant (chemins différents entre Radarr et Séance) en comparant
+        """Retrouve le dossier local correspondant (chemins différents entre Radarr et Nexis) en comparant
         la fin du chemin : /movies/Inception (2010) -> /mnt/films/Inception (2010)."""
         # « .. » refusé : le webhook ne doit pas pouvoir désigner un dossier hors des bibliothèques
         parts = [p for p in remote.replace("\\", "/").split("/") if p and p not in (".", "..")]
@@ -291,7 +291,7 @@ def register(app, ctx, x):
         payload = payload if isinstance(payload, dict) else {}
         event = payload.get("eventType", "")
         if event == "Test":
-            return {"ok": True, "message": "Séance a bien reçu le test"}
+            return {"ok": True, "message": "Nexis a bien reçu le test"}
         scope = webhook_scope(payload)
         ctx.watcher.request_scan(f"webhook {event}".strip(), scope=scope or None)
         return {"ok": True, "partial": bool(scope)}

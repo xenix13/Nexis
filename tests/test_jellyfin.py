@@ -122,7 +122,7 @@ class JellyfinTest(unittest.TestCase):
     def test_disabled_by_default_and_toggle(self):
         self.enable(False)
         st, body, _ = self.jf("GET", "/System/Info/Public", raw=True)
-        self.assertFalse(body.startswith(b"{"), body[:80])  # page de Séance, pas un serveur Jellyfin
+        self.assertFalse(body.startswith(b"{"), body[:80])  # page de Nexis, pas un serveur Jellyfin
         self.assertEqual(self.jf("POST", "/Users/AuthenticateByName", {"Username": "colas", "Pw": "motdepasse1"})[0], 405)
         self.enable(True)
         st, pub = self.jf("GET", "/System/Info/Public")
@@ -134,7 +134,7 @@ class JellyfinTest(unittest.TestCase):
         self.assertEqual(self.jf("POST", "/Users/AuthenticateByName", {"Username": "colas", "Pw": "faux"})[0], 401)
         r = self.login()
         assert_model(self, r, "AuthenticationResult")
-        self.assertFalse(r["User"]["Policy"]["IsAdministrator"])  # l'administration reste dans Séance
+        self.assertFalse(r["User"]["Policy"]["IsAdministrator"])  # l'administration reste dans Nexis
         tok = r["AccessToken"]
         st, info = self.jf("GET", "/System/Info", token=tok)
         assert_model(self, info, "SystemInfo")
@@ -383,7 +383,7 @@ class JellyfinTest(unittest.TestCase):
         assert_model(self, resume, "BaseItemDtoQueryResult")
         item = next(i for i in resume["Items"] if i["Id"] == gv["Id"])
         self.assertAlmostEqual(item["UserData"]["PlaybackPositionTicks"], dur // 2, delta=10_000_000)
-        # la position est la même dans Séance
+        # la position est la même dans Nexis
         st, d = self.admin.call("GET", f"/api/items/{int(gv['Id'][8:], 16)}")
         self.assertAlmostEqual(d["position"], dur // 2 // 10_000, delta=1000)
         # fin de lecture -> vu
@@ -469,7 +469,7 @@ class JellyfinTest(unittest.TestCase):
         tag = e1["Chapters"][1]["ImageTag"]
         st, img, _ = self.jf("GET", f"/Items/{e1['Id']}/Images/Chapter/1?tag={tag}&maxWidth=400", raw=True)
         self.assertEqual((st, img[:2]), (200, b"\xff\xd8"))
-        # favoris = « Ma liste » de Séance
+        # favoris = « Ma liste » de Nexis
         st, ud = self.jf("POST", f"/UserFavoriteItems/{show['Id']}", token=tok)
         self.assertTrue(ud["IsFavorite"])
         st, wl = self.admin.call("GET", "/api/watchlist")
@@ -513,7 +513,7 @@ class JellyfinTest(unittest.TestCase):
         assert_model(self, ses[0], "SessionInfoDto")
         self.assertEqual(self.jf("POST", "/Sessions/Capabilities/Full", {"PlayableMediaTypes": ["Video"]},
                                  token=tok)[0], 204)
-        # l'interface de Séance reste servie à la racine
+        # l'interface de Nexis reste servie à la racine
         st, page, _ = self.jf("GET", "/", raw=True)
         self.assertIn(b"<html", page.lower()[:500])
 
@@ -558,7 +558,7 @@ class JellyfinUnitTests(unittest.TestCase):
                 return "a" * 32
 
             def server_name(self):
-                return "Séance"
+                return "Nexis"
         d = Discovery(FakeJF(), 8420)
         reply = d.handle(b"who is JellyfinServer?", ("127.0.0.1", 5000))
         self.assertEqual(json.loads(reply)["Address"], "http://127.0.0.1:8420")

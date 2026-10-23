@@ -1,1 +1,1 @@
-"""Routes HTTP de Séance, regroupées par thème."""
+"""Routes HTTP de Nexis, regroupées par thème."""

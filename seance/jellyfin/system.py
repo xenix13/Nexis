@@ -268,7 +268,7 @@ def register(app, ctx, x, jf):
         except HTTPError as e:
             raise HTTPError(400, e.message)
         db.run("UPDATE users SET password_hash=? WHERE id=?", (hash_password(new), user["id"]))
-        # comme dans Séance : les autres sessions (navigateurs, autres appareils) sont fermées
+        # comme dans Nexis : les autres sessions (navigateurs, autres appareils) sont fermées
         db.run("DELETE FROM sessions WHERE user_id=?", (user["id"],))
         db.run("DELETE FROM jf_tokens WHERE user_id=? AND token_hash<>?", (user["id"], user["t_hash"]))
         return no_content()
@@ -349,7 +349,7 @@ def register(app, ctx, x, jf):
                "DO UPDATE SET data=excluded.data", (uid, client, pid, data))
         return no_content()
 
-    # ------------------------------------------------------------ fonctions absentes de Séance (réponses vides)
+    # ------------------------------------------------------------ fonctions absentes de Nexis (réponses vides)
     def empty_list(req):
         jf.token_user(req)
         return []

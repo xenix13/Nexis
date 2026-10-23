@@ -17,7 +17,7 @@ def env_bool(name, default=False):
 
 def main(argv=None):
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ap = argparse.ArgumentParser(prog="seance", description="Séance — serveur multimédia auto-hébergé")
+    ap = argparse.ArgumentParser(prog="seance", description="Nexis — serveur multimédia auto-hébergé")
     ap.add_argument("--host", default=os.environ.get("SEANCE_HOST", "0.0.0.0"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("SEANCE_PORT", "8420")))
     ap.add_argument("--data", default=os.environ.get("SEANCE_DATA", os.path.join(here, "data")))
@@ -66,7 +66,7 @@ def main(argv=None):
             threading.Thread(target=s.shutdown, daemon=True).start()
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
-    logging.getLogger("seance").info("Séance écoute sur http://%s:%d", args.host, args.port)
+    logging.getLogger("seance").info("Nexis écoute sur http://%s:%d", args.host, args.port)
     server.serve_forever()
     server.server_close()
     return 0

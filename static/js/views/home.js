@@ -21,10 +21,11 @@ export async function renderHome(main, ctx) {
         h('h1.hero-title', hero.type === 'episode' ? hero.show : hero.title),
         hero.type === 'episode'
           ? h('p.hero-sub', `Saison ${hero.season} · Épisode ${hero.episode} — ${hero.title}`)
-          : (hero.year ? h('p.hero-sub', String(hero.year)) : null),
+          : (hero.year ? h('p.hero-sub', [hero.year, hero.content_rating].filter(Boolean).join(' · ')) : null),
+        hero.summary ? h('p.hero-summary', hero.summary) : null,
         h('div.hero-actions',
-          hero.type === 'show' ? null : h('a.btn.primary', { href: playHref }, icon('play'), resume && hero.position ? 'Reprendre' : 'Lecture'),
-          h('a.btn.ghost', { href: infoHref }, 'Plus d’infos')))));
+          hero.type === 'show' ? null : h('a.btn.light.lg', { href: playHref }, icon('play'), resume && hero.position ? 'Reprendre' : 'Lecture'),
+          h('a.btn.ghost.lg', { href: infoHref }, 'Plus d’infos')))));
   }
   if (joinable.length) {
     parts.push(h('section.row', h('div.row-head', h('a.row-title', { href: '#/together' }, 'Regarder ensemble')),

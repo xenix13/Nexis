@@ -3,7 +3,7 @@
 python3 tests/ui_smoke.py <dossier_captures> [video_test.webm]
 
 Le Chromium de Playwright ne décode pas le H.264 et hls.js n'est pas embarqué dans le dépôt :
-un faux « Hls » lit une vidéo WebM locale après avoir vérifié que la playlist HLS de Séance répond.
+un faux « Hls » lit une vidéo WebM locale après avoir vérifié que la playlist HLS de Nexis répond.
 """
 import os
 import shutil

@@ -1,5 +1,5 @@
 [Unit]
-Description=Séance - montage des partages réseau (SMB/CIFS)
+Description=Nexis - montage des partages réseau (SMB/CIFS)
 After=network-online.target
 Wants=network-online.target
 Before=seance.service
@@ -7,7 +7,7 @@ Before=seance.service
 [Service]
 Type=simple
 # Doit tourner en root, SANS isolation de montage (PrivateTmp, ProtectSystem…) :
-# sinon les partages seraient montés dans un espace de noms invisible pour Séance.
+# sinon les partages seraient montés dans un espace de noms invisible pour Nexis.
 ExecStart=/usr/bin/python3 -m seance.mountd
 WorkingDirectory=/opt/seance
 Environment=PYTHONUNBUFFERED=1
