@@ -142,6 +142,32 @@ def entries():
     return out
 
 
+HARDENING = ("nosuid", "nodev", "noexec")
+
+
+def harden_fstab():
+    """Ajoute nosuid,nodev,noexec aux partages créés par une version précédente (pris en compte au prochain
+    montage). Renvoie le nombre de lignes modifiées."""
+    lines = read_fstab()
+    changed = 0
+    for i, line in enumerate(lines):
+        if not (line.startswith(MARK) and i + 1 < len(lines)):
+            continue
+        fields = lines[i + 1].split()
+        if len(fields) < 4 or fields[2] != "cifs":
+            continue
+        opts = fields[3].split(",")
+        missing = [o for o in HARDENING if o not in opts]
+        if missing:
+            fields[3] = ",".join(opts[:1] + missing + opts[1:]) if opts and opts[0].startswith("credentials=") \
+                else ",".join(missing + opts)
+            lines[i + 1] = " ".join(fields)
+            changed += 1
+    if changed:
+        write_fstab(lines)
+    return changed
+
+
 def cred_path(name):
     return os.path.join(CRED_DIR, f"{name}.cred")
 
@@ -367,7 +393,9 @@ class Mounts:
             attempts = [VERSIONS[v["version"]]] if VERSIONS[v["version"]] else [None, "3.0", "2.1", "2.0"]
             failures = []
             for vers in attempts:
-                opts = [f"credentials={cred}", "ro", f"uid={uid}", f"gid={gid}", "file_mode=0444", "dir_mode=0555",
+                # nosuid/nodev/noexec : rien de ce qui vient du NAS ne peut être exécuté sur le serveur
+                opts = [f"credentials={cred}", "ro", "nosuid", "nodev", "noexec", f"uid={uid}", f"gid={gid}",
+                        "file_mode=0444", "dir_mode=0555",
                         "iocharset=utf8", "_netdev", "nofail", "x-systemd.mount-timeout=30"]
                 if vers:
                     opts.append(f"vers={vers}")
@@ -536,6 +564,11 @@ def main():
         log.warning("seance-mountd devrait tourner en root pour pouvoir monter des partages")
     mounts = Mounts()
     log.info("Environnement : %s", mounts.env)
+    try:
+        if harden_fstab():
+            log.info("Options nosuid,nodev,noexec ajoutées aux partages existants")
+    except OSError as e:
+        log.warning("Mise à jour de fstab impossible : %s", e)
     server = make_server(mounts)
     stop = threading.Event()
 

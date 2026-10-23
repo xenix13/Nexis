@@ -496,7 +496,7 @@ class SubtitleCache:
         if fonts and tracks and self._want_fonts(item):
             for a in self._attachments(item)[:200]:
                 cmd += [f"-dump_attachment:{int(a['index'])}", os.path.join(tmp, f"font_{int(a['index'])}{a['ext']}")]
-        cmd += ["-analyzeduration", "200M", "-probesize", "1G", "-i", item["key"]]
+        cmd += [*media.LOCAL_ONLY, "-analyzeduration", "200M", "-probesize", "1G", "-i", item["key"]]
         probe = _probe(item)
         if not trick and tracks:
             # horloge : une piste audio recopiée vers nulle part (sans décodage) indique précisément

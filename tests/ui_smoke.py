@@ -21,7 +21,6 @@ os.environ["SEANCE_TMDB_API"] = TMDB.url
 os.environ["SEANCE_TMDB_IMG"] = TMDB.url + "/img"
 
 # faux outils SMB + service de montage (voir tests/test_mounts.py)
-import stat  # noqa: E402
 from tests.test_mounts import FAKE_MOUNT, FAKE_SMBCLIENT, FAKE_UMOUNT  # noqa: E402
 SMB = tempfile.mkdtemp()
 os.makedirs(os.path.join(SMB, "bin"))
@@ -258,12 +257,13 @@ with sync_playwright() as pw:
     page.wait_for_selector(".detail-actions .btn.primary")
     page.click(".detail-actions .btn.primary")
     page.wait_for_function("document.querySelector('video') && document.querySelector('video').currentTime > 1.5", timeout=30000)
-    check(page.evaluate("window.__hls.length > 0 && window.__hls.every(Boolean)"), "repli HLS après refus de la lecture directe")
+    direct_ok = page.evaluate("!window.__hls.length")  # Chromium récent : il décode le H.264, la lecture directe passe
+    check(direct_ok or page.evaluate("window.__hls.every(Boolean)"), "repli HLS après refus de la lecture directe")
     page.mouse.move(700, 400)
     page.click("button[aria-label='Qualité']")
     page.wait_for_selector(".menu-info")
     info = page.inner_text(".menu-info")
-    check("Remux" in info, f"mode affiché dans le menu ({info})")
+    check(("Lecture directe" if direct_ok else "Remux") in info, f"mode affiché dans le menu ({info})")
     page.screenshot(path=f"{out}/11-lecteur-mode.png")
     page.keyboard.press("Escape")
 

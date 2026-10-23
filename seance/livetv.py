@@ -46,10 +46,51 @@ class LiveGone(LiveError):
     """La session a été arrêtée (plus personne ne regarde) pendant qu'on l'attendait."""
 
 
-# ------------------------------------------------------------------ lecture des sources
-def _open(url, ua=None, limit=MAX_M3U, timeout=60):
-    """Contenu d'une adresse http(s) ou d'un fichier du serveur (décompressé si .gz)."""
+# ------------------------------------------------------------------ adresses autorisées
+# Le contenu d'une liste M3U vient du fournisseur IPTV : ses adresses ne doivent pas permettre de faire lire au
+# serveur ses propres fichiers ni d'utiliser les protocoles « internes » de ffmpeg (concat:, subfile:, data:…).
+STREAM_SCHEMES = {"http", "https", "rtsp", "rtsps", "rtmp", "rtmps", "rtp", "udp"}
+PROTOCOLS = {  # protocoles ffmpeg nécessaires pour chaque type d'adresse (-protocol_whitelist)
+    "http": "http,https,tcp,tls,crypto", "https": "http,https,tcp,tls,crypto",
+    "rtsp": "rtsp,rtsps,rtp,srtp,udp,tcp,tls", "rtsps": "rtsp,rtsps,rtp,srtp,udp,tcp,tls",
+    "rtmp": "rtmp,rtmps,rtmpt,rtmpts,tcp,tls", "rtmps": "rtmp,rtmps,rtmpt,rtmpts,tcp,tls",
+    "rtp": "rtp,udp", "udp": "udp", "file": "file",
+}
+
+
+def scheme_of(url):
     if url.startswith("/"):
+        return "file"
+    m = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*)://", url)
+    return m.group(1).lower() if m else None
+
+
+def stream_url_ok(url, allow_local=False):
+    """Adresse de chaîne acceptable : flux réseau, ou fichier local si la liste elle-même est un fichier
+    du serveur (choisi par l'administrateur)."""
+    sc = scheme_of(url or "")
+    if sc == "file":
+        return allow_local and ".." not in url.split("/")
+    return sc in STREAM_SCHEMES and not re.search(r"[\s\x00-\x1f]", url)
+
+
+def _gunzip(data, limit):
+    """Décompression bornée (une archive minuscule peut se décompresser en plusieurs Go)."""
+    try:
+        out = gzip.GzipFile(fileobj=io.BytesIO(data)).read(limit + 1)
+    except (OSError, EOFError) as e:
+        raise LiveError(f"Archive illisible : {e}")
+    if len(out) > limit:
+        raise LiveError("Fichier trop volumineux une fois décompressé")
+    return out
+
+
+# ------------------------------------------------------------------ lecture des sources
+def _open(url, ua=None, limit=MAX_M3U, timeout=60, allow_local=True):
+    """Contenu d'une adresse http(s) ou (si permis) d'un fichier du serveur, décompressé si .gz."""
+    if url.startswith("/"):
+        if not allow_local:
+            raise LiveError("Adresse refusée : seules les adresses http(s) sont acceptées ici")
         if not os.path.isfile(url):
             raise LiveError(f"Fichier introuvable sur le serveur : {url}")
         with open(url, "rb") as f:
@@ -60,7 +101,7 @@ def _open(url, ua=None, limit=MAX_M3U, timeout=60):
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 data = r.read(limit + 1)
                 if r.headers.get("Content-Encoding") == "gzip":
-                    data = gzip.decompress(data)
+                    data = _gunzip(data, limit)
         except urllib.error.HTTPError as e:
             raise LiveError(f"{url} : erreur HTTP {e.code}")
         except (urllib.error.URLError, OSError, ValueError) as e:
@@ -70,10 +111,7 @@ def _open(url, ua=None, limit=MAX_M3U, timeout=60):
     if len(data) > limit:
         raise LiveError("Fichier trop volumineux")
     if data[:2] == b"\x1f\x8b":
-        try:
-            data = gzip.GzipFile(fileobj=io.BytesIO(data)).read(limit * 4)
-        except OSError as e:
-            raise LiveError(f"Archive illisible : {e}")
+        data = _gunzip(data, limit * 4)
     return data
 
 
@@ -229,8 +267,10 @@ class LiveTV:
         try:
             raw = _open(src["m3u_url"], src["user_agent"])
             header, channels = parse_m3u(raw.decode("utf-8", "replace"))
+            local_list = src["m3u_url"].startswith("/")
+            channels = [c for c in channels if stream_url_ok(c["url"], local_list)]
             if not channels:
-                raise LiveError("Aucune chaîne dans la liste")
+                raise LiveError("Aucune chaîne utilisable dans la liste")
             now = int(time.time())
             seen = {}
             with db.tx():
@@ -258,22 +298,23 @@ class LiveTV:
                     chunk = gone[i:i + 500]
                     db.run(f"DELETE FROM live_channels WHERE id IN ({','.join('?' * len(chunk))})", chunk)
                 db.run("UPDATE live_sources SET refreshed_at=?, error=NULL WHERE id=?", (now, src["id"]))
-            epg_url = src["epg_url"] or header.get("url-tvg") or header.get("x-tvg-url") or ""
-            epg_url = epg_url.split(",")[0].strip()
+            # guide choisi par l'administrateur, sinon celui qu'indique la liste (http(s) seulement, sauf si
+            # la liste est elle-même un fichier du serveur)
+            epg_url = src["epg_url"] or (header.get("url-tvg") or header.get("x-tvg-url") or "").split(",")[0].strip()
             n_prog = None
             if epg_url:
                 if progress:
                     progress(f"{src['name']} : guide des programmes")
-                n_prog = self.refresh_epg(src, epg_url)
+                n_prog = self.refresh_epg(src, epg_url, allow_local=bool(src["epg_url"]) or local_list)
             return len(channels), n_prog
         except LiveError as e:
             db.run("UPDATE live_sources SET error=?, refreshed_at=? WHERE id=?", (str(e)[:300], int(time.time()), src["id"]))
             raise
 
-    def refresh_epg(self, src, url):
+    def refresh_epg(self, src, url, allow_local=True):
         db = self.ctx.db
         try:
-            data = _open(url, src["user_agent"], MAX_EPG, timeout=180)
+            data = _open(url, src["user_agent"], MAX_EPG, timeout=180, allow_local=allow_local)
         except LiveError as e:
             db.run("UPDATE live_sources SET error=? WHERE id=?", (f"Guide : {e}"[:300], src["id"]))
             return None
@@ -329,7 +370,7 @@ class LiveTV:
         if os.path.isfile(path):
             with open(path, "rb") as f:
                 return f.read()
-        data = _open(url, limit=MAX_LOGO, timeout=15)
+        data = _open(url, limit=MAX_LOGO, timeout=15, allow_local=False)  # adresse venue de la liste M3U
         if not image_type(data):
             raise LiveError("logo dans un format non pris en charge")
         with open(path + ".tmp", "wb") as f:
@@ -339,7 +380,7 @@ class LiveTV:
 
     # ------------------------------------------------------------ lecture
     def _probe(self, ch):
-        cmd = [media.FFPROBE, "-v", "error"] + self._http_opts(ch) + [
+        cmd = [media.FFPROBE, "-v", "error"] + self._input_opts(ch) + [
             "-analyzeduration", "4000000", "-probesize", "4000000", "-show_streams", "-of", "json", ch["url"]]
         try:
             p = subprocess.run(cmd, capture_output=True, timeout=15)
@@ -350,10 +391,12 @@ class LiveTV:
             return None
 
     @staticmethod
-    def _http_opts(ch):
+    def _input_opts(ch):
+        """Options d'entrée de ffmpeg : protocoles strictement limités à ceux de l'adresse, en-têtes HTTP."""
+        opts = ["-protocol_whitelist", PROTOCOLS.get(scheme_of(ch["url"]), "file")]
         if not re.match(r"^https?://", ch["url"], re.I):
-            return []
-        opts = ["-user_agent", ch["user_agent"] or DEFAULT_UA]
+            return opts
+        opts += ["-user_agent", ch["user_agent"] or DEFAULT_UA]
         if ch["referrer"]:
             opts += ["-headers", f"Referer: {ch['referrer']}\r\n"]
         return opts
@@ -364,7 +407,7 @@ class LiveTV:
         vcodec = (video or {}).get("codec_name")
         interlaced = (video or {}).get("field_order") not in (None, "progressive", "unknown")
         transcode = cfg["video"] == "transcode" or (cfg["video"] == "auto" and video is not None and vcodec != "h264")
-        cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error"] + self._http_opts(ch)
+        cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error"] + self._input_opts(ch)
         if not re.match(r"^https?://", ch["url"], re.I):
             cmd += ["-re"]  # fichier ou périphérique local : lu au rythme du direct
         if re.match(r"^https?://", ch["url"], re.I) and not ch["url"].split("?")[0].lower().endswith(".m3u8"):
@@ -386,6 +429,9 @@ class LiveTV:
 
     def start(self, ch, user):
         """Session de lecture de la chaîne (partagée si quelqu'un la regarde déjà)."""
+        src = self.ctx.db.one("SELECT m3u_url FROM live_sources WHERE id=?", (ch["source_id"],)) or {}
+        if not stream_url_ok(ch["url"], (src.get("m3u_url") or "").startswith("/")):
+            raise LiveError("Adresse de chaîne refusée")
         with self.lock:
             sid = self.by_channel.get(ch["id"])
             s = self.sessions.get(sid) if sid else None

@@ -44,6 +44,15 @@ export function clear(el, ...children) {
   return el;
 }
 
+// Préférences locales du navigateur (volume, filtre…) : sans effet si le stockage est indisponible.
+export function store(key, value) {
+  try {
+    if (value === undefined) return localStorage.getItem(key);
+    localStorage.setItem(key, value);
+  } catch { /* stockage indisponible (navigation privée…) */ }
+  return null;
+}
+
 export function img(path, w, h) {
   if (!path) return '';
   const dpr = Math.min(2, window.devicePixelRatio || 1);

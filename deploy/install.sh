@@ -9,7 +9,6 @@ set -euo pipefail
 
 REPO_URL="${SEANCE_REPO:-https://github.com/xenix13/Nexis.git}"
 BRANCH="${SEANCE_BRANCH:-main}"
-HLS_VERSION="${HLS_VERSION:-1.5.15}"
 APP_DIR=/opt/seance
 DATA_DIR=/var/lib/seance
 CONF_DIR=/etc/seance
@@ -58,24 +57,12 @@ mkdir -p "$APP_DIR" "$DATA_DIR" "$CONF_DIR" /mnt/seance
 rm -rf "$APP_DIR/seance" "$APP_DIR/static.new"
 cp -r "$SRC_DIR/seance" "$APP_DIR/seance"
 cp -r "$SRC_DIR/static" "$APP_DIR/static.new"
-# garde hls.js déjà téléchargé si présent
-if [ -f "$APP_DIR/static/vendor/hls.min.js" ] && [ ! -f "$APP_DIR/static.new/vendor/hls.min.js" ]; then
-  mkdir -p "$APP_DIR/static.new/vendor"
-  cp "$APP_DIR/static/vendor/hls.min.js" "$APP_DIR/static.new/vendor/"
-fi
 rm -rf "$APP_DIR/static"
 mv "$APP_DIR/static.new" "$APP_DIR/static"
 find "$APP_DIR" -name __pycache__ -type d -prune -exec rm -rf {} +
 
-echo "==> Lecteur vidéo (hls.js $HLS_VERSION)"
-mkdir -p "$APP_DIR/static/vendor"
-if [ ! -s "$APP_DIR/static/vendor/hls.min.js" ] || [ "${FORCE_HLS:-0}" = "1" ]; then
-  if ! curl -fsSL "https://cdn.jsdelivr.net/npm/hls.js@${HLS_VERSION}/dist/hls.min.js" -o "$APP_DIR/static/vendor/hls.min.js"; then
-    echo "   version $HLS_VERSION introuvable, essai avec la dernière 1.x"
-    curl -fsSL "https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js" -o "$APP_DIR/static/vendor/hls.min.js"
-  fi
-fi
-grep -q "Hls" "$APP_DIR/static/vendor/hls.min.js" || { echo "Téléchargement de hls.js invalide." >&2; exit 1; }
+echo "==> Vérification du lecteur vidéo (hls.js fourni dans le dépôt)"
+( cd "$APP_DIR/static/vendor" && sha256sum -c --quiet hls.min.js.sha256 ) || { echo "hls.js altéré : installation arrêtée." >&2; exit 1; }
 
 chown -R root:root "$APP_DIR"
 chmod -R a+rX "$APP_DIR"
@@ -119,6 +106,10 @@ ProtectHome=false
 ProtectKernelTunables=false
 ProtectKernelModules=false
 ProtectControlGroups=false
+ProtectHostname=false
+ProtectClock=false
+ProtectKernelLogs=false
+RestrictNamespaces=false
 ReadWritePaths=
 DROPIN
   systemctl daemon-reload

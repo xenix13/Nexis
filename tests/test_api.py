@@ -517,7 +517,7 @@ class SeanceTest(unittest.TestCase):
 
     def test_progressive_subtitles(self):
         """Gros fichier : la lecture démarre dès que les premières minutes sont prêtes, la suite arrive en route."""
-        import seance.api as api_mod
+        import seance.routes.media as api_mod  # lecture : fenêtre de préparation des sous-titres
         from seance import subcache
         m = self.movie("Nuit polaire")
         row = self.ctx.db.one("SELECT * FROM items WHERE id=?", (int(m["id"]),))

@@ -221,7 +221,8 @@ class Scanner:
                 continue
             reachable.append(root)
             if scope is not None:
-                mine = [d for d in scope if d == root or d.startswith(os.path.join(root, ""))]
+                # chemins normalisés : « /mnt/series/../../etc » ne passe pas pour un dossier de la bibliothèque
+                mine = [d for d in map(os.path.normpath, scope) if d == root or d.startswith(os.path.join(root, ""))]
                 v, d = list_dirs(mine)
             else:
                 v, d = walk_videos(root)

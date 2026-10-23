@@ -1,5 +1,6 @@
 """SQLite storage: one connection per request thread, schema migrations."""
 import contextlib
+import queue
 import sqlite3
 import threading
 
@@ -303,30 +304,56 @@ MIGRATIONS = [
         PRIMARY KEY(user_id, channel_id)
     );
     """,
+    # 8 : index pour le guide TV (programmes d'une période) et l'historique « vu » des séries
+    """
+    CREATE INDEX live_programmes_time ON live_programmes(stop, start);
+    CREATE INDEX progress_watched ON progress(user_id, watched, last_watched_at);
+    """,
 ]
 
 
 class DB:
+    """Une connexion par fil d'exécution, rendue à une réserve à la fin de chaque requête.
+
+    Le serveur crée un fil par requête : sans réserve, chaque requête ouvrirait (et configurerait) une
+    nouvelle connexion SQLite. Une connexion n'est remise en réserve que hors transaction."""
+    POOL_SIZE = 16
+
     def __init__(self, path):
         self.path = path
         self._local = threading.local()
+        self._pool = queue.LifoQueue(self.POOL_SIZE)
         self._migrate()
+
+    def _connect(self):
+        c = sqlite3.connect(self.path, timeout=10, isolation_level=None, check_same_thread=False)
+        c.row_factory = sqlite3.Row
+        c.execute("PRAGMA foreign_keys=ON")
+        c.execute("PRAGMA busy_timeout=5000")
+        c.execute("PRAGMA synchronous=NORMAL")  # sûr en mode WAL, beaucoup moins d'écritures disque
+        return c
 
     def conn(self):
         c = getattr(self._local, "c", None)
         if c is None:
-            c = sqlite3.connect(self.path, timeout=10, isolation_level=None, check_same_thread=False)
-            c.row_factory = sqlite3.Row
-            c.execute("PRAGMA foreign_keys=ON")
-            c.execute("PRAGMA busy_timeout=5000")
+            try:
+                c = self._pool.get_nowait()
+            except queue.Empty:
+                c = self._connect()
             self._local.c = c
         return c
 
     def release(self):
         c = getattr(self._local, "c", None)
-        if c is not None:
+        if c is None:
+            return
+        self._local.c = None
+        if c.in_transaction:
+            c.rollback()
+        try:
+            self._pool.put_nowait(c)
+        except queue.Full:
             c.close()
-            self._local.c = None
 
     def _migrate(self):
         c = self.conn()

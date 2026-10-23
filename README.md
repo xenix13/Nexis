@@ -2,7 +2,7 @@
 
 Un serveur multimédia **100 % auto-hébergé** pour tes films, séries et animes : il scanne tes dossiers, récupère affiches et résumés, et diffuse dans le navigateur avec une interface multi-utilisateurs. Aucun compte externe, aucun abonnement, pas besoin de Plex ni de Jellyfin.
 
-- **Zéro dépendance Python** : Python 3 (bibliothèque standard) + **ffmpeg**. Le lecteur [hls.js](https://github.com/video-dev/hls.js) est téléchargé à l'installation.
+- **Zéro dépendance Python** : Python 3 (bibliothèque standard) + **ffmpeg**. Le lecteur [hls.js](https://github.com/video-dev/hls.js) (1.5.15) est fourni dans le dépôt, avec son empreinte SHA-256 vérifiée à l'installation.
 - Pensé pour un **conteneur LXC** ou une VM Ubuntu/Debian, **sans GPU** : Séance évite le transcodage dès qu'il peut.
 
 ## Fonctionnalités
@@ -288,6 +288,10 @@ Sur la fiche d'un film, d'un épisode ou d'une série, deux listes permettent de
 
 Les pistes 5.1 / 7.1 (AC3, E-AC3, DTS, TrueHD, AAC 5.1…) sont réduites en stéréo par Séance avec les mixages de Jellyfin (*Administration → Métadonnées et lecture → Son multicanal*) : ffmpeg par défaut, Dave750, Dialogues (nuit), RFC 7845 ou AC-4, suivis d'un gain réglable. Séance ajoute un limiteur après le gain : le son ne peut pas saturer, quel que soit le réglage.
 
+## Sécurité
+
+Le rapport d'audit, les correctifs et les risques acceptés sont décrits dans [docs/AUDIT-SECURITE.md](docs/AUDIT-SECURITE.md). En bref : expose Séance sur Internet uniquement derrière un reverse proxy HTTPS (`SEANCE_COOKIE_SECURE=1`, `SEANCE_TRUST_PROXY=1`), et n'ajoute que des listes IPTV de fournisseurs de confiance.
+
 ## Dépannage
 
 **Son haché ou saturé, sous-titres absents** : *Administration → Lectures en cours* affiche pour chaque lecture le mode (direct, remux, transcodage), la raison, la **vitesse de conversion** (en dessous de ×1, le processeur ne suit pas : baisse la qualité dans le menu ⚙ du lecteur) et les derniers messages de ffmpeg. *Informations sur le fichier* (menu ⋯ d'un film ou d'un épisode) liste les pistes audio et sous-titres du fichier.
@@ -334,7 +338,8 @@ Arborescence de `seance/` :
 - `watcher.py` : détection des nouveautés ; `subcache.py` : préparation des sous-titres
 - `tasks.py` : tâches planifiées ; `chapters.py` : images de chapitres ; `introdetect.py` : intros par empreinte audio
 - `livetv.py` : TV en direct (M3U, XMLTV, flux HLS) ; `syncplay.py` : « Regarder ensemble »
-- `api.py` : routes HTTP
+- `api.py` : assemblage du serveur (contexte partagé, contrôles d'accès communs)
+- `catalog.py` : outils partagés par les routes (droits, cartes, état de lecture) ; `routes/` : routes HTTP par thème (`account`, `library`, `media`, `admin`)
 - `auth.py`, `db.py`, `web.py` : socle
 
 L'interface (`static/`) est en JavaScript sans étape de compilation.

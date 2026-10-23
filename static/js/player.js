@@ -4,7 +4,7 @@ import { get, post, put } from './api.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from './tracks.js';
 import { state } from './app.js';
 import { chapterStrip, chapterTitle } from './chapters.js';
-import { avatar, clear, episodeCode, errorBox, fmtTime, h, icon, img, spinner, toast } from './ui.js';
+import { avatar, clear, episodeCode, errorBox, fmtTime, h, icon, img, spinner, store, toast } from './ui.js';
 
 const REPORT_EVERY = 10000;
 const HIDE_AFTER = 3000;
@@ -15,13 +15,6 @@ const PREROLL_SEEK = { direct: 3, copy: 6, transcode: 10 }; // après un saut : 
 const REBUFFER = { direct: 6, copy: 15, transcode: 25 };
 const PREPARE_MAX = 10 * 60 * 1000;
 
-function store(key, value) {
-  try {
-    if (value === undefined) return localStorage.getItem(key);
-    localStorage.setItem(key, value);
-  } catch { /* storage unavailable */ }
-  return null;
-}
 
 export async function renderPlayer(root, rk, ctx) {
   const prefs = state.me.prefs;

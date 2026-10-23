@@ -423,8 +423,12 @@ def register(app, ctx, x):
             os.replace(tmp, dest)
             trim_images()
         ctype = {".png": "image/png", ".svg": "image/svg+xml"}.get(os.path.splitext(p)[1], "image/jpeg")
+        headers = {"Cache-Control": "private, max-age=2592000, immutable"}
+        if ctype == "image/svg+xml":
+            # un SVG ouvert directement ne doit pouvoir exécuter aucun script (logos des plateformes)
+            headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
         with open(dest, "rb") as f:
-            return Response(f.read(), 200, ctype, {"Cache-Control": "private, max-age=2592000, immutable"})
+            return Response(f.read(), 200, ctype, headers)
 
     trim_lock = threading.Lock()
 

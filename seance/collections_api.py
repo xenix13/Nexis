@@ -1,5 +1,4 @@
 """Collections, playlists et liste « À regarder »."""
-import json
 import re
 import time
 
@@ -75,6 +74,8 @@ def register(app, ctx, x):
 
     def collection_image(req, m):
         c = require_collection(req.user, m.group(1))
+        if not coll_items(req.user, c["id"]):  # collection entièrement masquée pour ce profil (âge)
+            raise HTTPError(404, "Collection introuvable")
         w = max(40, min(1920, round(req.int_arg("w", 300) / 20) * 20))
         h = max(40, min(1920, round(req.int_arg("h", 450) / 20) * 20))
         path = ctx.images.get_collection(c, m.group(2), w, h)

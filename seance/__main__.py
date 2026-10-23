@@ -32,7 +32,7 @@ def main(argv=None):
               cookie_secure=env_bool("SEANCE_COOKIE_SECURE"),
               trust_proxy=env_bool("SEANCE_TRUST_PROXY"))
     app = build_app(ctx)
-    server = Server((args.host, args.port), make_handler(app, ctx.trust_proxy))
+    server = Server((args.host, args.port), make_handler(app, ctx.trust_proxy, hsts=ctx.cookie_secure))
     stop = threading.Event()
     threading.Thread(target=janitor, args=(ctx, stop), daemon=True).start()
     ctx.watcher.start()

@@ -199,7 +199,7 @@ def build_command(path, p, start, out_dir, start_number=0):
         # (Jellyfin ajoute 0,5 s pour la même raison) : on vise juste après l'image clé voulue.
         ss = start + COPY_SEEK_PAD if p["mode"] == "copy" else start
         cmd += ["-ss", f"{ss:.3f}"]
-    cmd += ["-i", path, "-map_metadata", "-1", "-map_chapters", "-1", "-threads", "0"]
+    cmd += [*media.LOCAL_ONLY, "-i", path, "-map_metadata", "-1", "-map_chapters", "-1", "-threads", "0"]
     vi = p["video_index"]
     seglen = p.get("seglen") or SEGMENT
     if p["mode"] == "copy":

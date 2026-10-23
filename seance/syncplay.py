@@ -23,6 +23,7 @@ log = logging.getLogger("seance.sync")
 WAIT_TIMEOUT = 12        # s : on repart sans le membre trop lent
 GONE_AFTER = 40          # s sans connexion : le membre a quitté
 EMPTY_AFTER = 120        # s : groupe vide supprimé
+MAX_STREAMS_PER_USER = 6  # connexions d'événements ouvertes en même temps par une personne (onglets, appareils)
 
 
 def now_ms():
@@ -264,9 +265,18 @@ class Groups:
 
     # ------------------------------------------------------------ événements
     def subscribe(self, g, user):
+        """Ouvre un flux d'événements pour un MEMBRE du groupe (rejoindre passe par POST …/join :
+        une simple requête GET, qu'un autre site peut provoquer, ne fait entrer personne dans un groupe)."""
         q = queue.Queue(maxsize=200)
         with self.lock:
-            m = self._join(g, user)
+            m = g.members.get(user["id"])
+            if not m:
+                raise PermissionError("Rejoins d'abord le groupe")
+            opened = sum(mm.connections for gg in self.groups.values() for uid, mm in gg.members.items()
+                         if uid == user["id"])
+            if opened >= MAX_STREAMS_PER_USER:
+                raise OverflowError("Trop de connexions ouvertes : ferme d'autres onglets du lecteur")
+            m.seen = time.time()
             m.connections += 1
             g.subscribers.append(q)
             first = m.connections == 1
@@ -418,7 +428,12 @@ def register(app, ctx, x):
     def together_events(req):
         g = group_or_404(req.params["gid"])
         user = dict(req.user)
-        q = groups.subscribe(g, user)
+        try:
+            q = groups.subscribe(g, user)
+        except PermissionError as e:
+            raise HTTPError(403, str(e))
+        except OverflowError as e:
+            raise HTTPError(429, str(e))
         db.release()
         closed = threading.Event()
 

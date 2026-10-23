@@ -13,6 +13,10 @@ FFPROBE = shutil.which("ffprobe") or "ffprobe"
 TEXT_SUB_CODECS = {"subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text"}
 IMAGE_SUB_CODECS = {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub", "pgssub"}
 _image_slots = threading.BoundedSemaphore(3)  # limite les ffmpeg d'images simultanés
+# Fichiers des bibliothèques : ffmpeg ne doit lire que des fichiers locaux. Un fichier piégé (une playlist HLS ou
+# une liste « concat » déguisée en .mkv) pourrait sinon lui faire ouvrir des adresses réseau ou d'autres fichiers.
+LOCAL_ONLY = ["-protocol_whitelist", "file,pipe"]
+REFUSED_FORMATS = {"hls", "applehttp", "concat", "ffconcat", "tee"}
 
 
 class MediaError(Exception):
@@ -82,16 +86,18 @@ def attachment_info(s, tags=None):
 
 
 def attachments(path):
-    out = run([FFPROBE, "-v", "error", "-print_format", "json", "-show_streams", "-select_streams", "t", path],
+    out = run([FFPROBE, "-v", "error", *LOCAL_ONLY, "-print_format", "json", "-show_streams", "-select_streams", "t", path],
               timeout=60)
     return [a for a in (attachment_info(s) for s in json.loads(out or b"{}").get("streams", [])) if a]
 
 
 def probe(path):
-    out = run([FFPROBE, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", "-show_chapters",
-               path], timeout=90)
+    out = run([FFPROBE, "-v", "error", *LOCAL_ONLY, "-print_format", "json", "-show_format", "-show_streams",
+               "-show_chapters", path], timeout=90)
     data = json.loads(out or b"{}")
     fmt = data.get("format", {})
+    if set((fmt.get("format_name") or "").split(",")) & REFUSED_FORMATS:
+        raise MediaError("liste de lecture déguisée en vidéo : fichier ignoré")
     info = {
         "container": fmt.get("format_name", ""),
         "duration": float(fmt.get("duration") or 0),
@@ -143,7 +149,7 @@ def keyframe_before(path, seconds, video_index=0):
         return 0.0
     start = max(0.0, seconds - 30)
     try:
-        out = run([FFPROBE, "-v", "error", "-select_streams", f"v:{video_index}", "-skip_frame", "nokey",
+        out = run([FFPROBE, "-v", "error", *LOCAL_ONLY, "-select_streams", f"v:{video_index}", "-skip_frame", "nokey",
                    "-show_entries", "frame=pts_time,best_effort_timestamp_time", "-of", "csv=p=0",
                    "-read_intervals", f"{start:.3f}%{seconds + 0.5:.3f}", path], timeout=30)
     except MediaError:
@@ -175,14 +181,14 @@ def grab_frame(video, dest, at_seconds, w, h):
     tmp = f"{dest}.{threading.get_ident()}.tmp.jpg"
     vf = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}"
     with _image_slots:
-        run([FFMPEG, "-y", "-v", "error", "-ss", f"{at_seconds:.2f}", "-i", video, "-vf", vf,
+        run([FFMPEG, "-y", "-v", "error", *LOCAL_ONLY, "-ss", f"{at_seconds:.2f}", "-i", video, "-vf", vf,
              "-frames:v", "1", "-q:v", "4", tmp], timeout=90)
     os.replace(tmp, dest)
 
 
 def extract_subtitle(source, stream_index=None):
     """Convertit une piste (interne) ou un fichier (externe) de sous-titres texte en SRT."""
-    cmd = [FFMPEG, "-v", "error", "-i", source]
+    cmd = [FFMPEG, "-v", "error", *LOCAL_ONLY, "-i", source]
     if stream_index is not None:
         cmd += ["-map", f"0:{stream_index}"]
     cmd += ["-c:s", "srt", "-f", "srt", "-"]

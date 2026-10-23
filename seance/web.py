@@ -6,12 +6,14 @@ import mimetypes
 import os
 import re
 import socketserver
+import threading
 import traceback
 import urllib.parse
 
 log = logging.getLogger("seance.web")
 
 MAX_BODY = 1024 * 1024
+IDLE_TIMEOUT = 120   # s sans rien recevoir ni pouvoir envoyer : connexion fermée (clients lents, « slowloris »)
 
 
 class HTTPError(Exception):
@@ -58,6 +60,8 @@ class Request:
                 length = int(self.headers.get("Content-Length") or 0)
             except ValueError:
                 raise HTTPError(400, "Content-Length invalide")
+            if length < 0:
+                raise HTTPError(400, "Content-Length invalide")
             if length > MAX_BODY:
                 raise HTTPError(413, "Requête trop volumineuse")
             self._body = self.handler.rfile.read(length) if length else b""
@@ -68,7 +72,7 @@ class Request:
             return {}
         try:
             data = json.loads(self.body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
             raise HTTPError(400, "JSON invalide")
         if not isinstance(data, dict):
             raise HTTPError(400, "Objet JSON attendu")
@@ -171,11 +175,13 @@ SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
     "X-Frame-Options": "DENY",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
     "Content-Security-Policy": (
         "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
         "script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; "
         "worker-src 'self' blob:; frame-src https://www.youtube-nocookie.com; frame-ancestors 'none'; "
-        "base-uri 'none'; form-action 'self'"
+        "base-uri 'none'; form-action 'self'; object-src 'none'"
     ),
 }
 
@@ -186,11 +192,12 @@ mimetypes.add_type("application/wasm", ".wasm")
 mimetypes.add_type("font/woff2", ".woff2")
 
 
-def make_handler(app, trust_proxy=False):
+def make_handler(app, trust_proxy=False, hsts=False):
     class Handler(http.server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
         server_version = "Seance"
         sys_version = ""
+        timeout = IDLE_TIMEOUT
 
         def log_message(self, fmt, *args):
             log.debug("%s - %s", self.address_string(), fmt % args)
@@ -198,9 +205,11 @@ def make_handler(app, trust_proxy=False):
         def _client_ip(self):
             ip = self.client_address[0]
             if trust_proxy:
+                # la DERNIÈRE adresse est celle ajoutée par notre reverse proxy ; les précédentes viennent du
+                # client et peuvent être inventées (contournement du blocage après mots de passe erronés)
                 fwd = self.headers.get("X-Forwarded-For")
                 if fwd:
-                    ip = fwd.split(",")[0].strip()
+                    ip = fwd.split(",")[-1].strip() or ip
             return ip
 
         def _handle(self, method):
@@ -248,6 +257,8 @@ def make_handler(app, trust_proxy=False):
             for k, v in SECURITY_HEADERS.items():
                 if k not in resp.headers:
                     self.send_header(k, v)
+            if hsts:  # derrière un reverse proxy HTTPS (SEANCE_COOKIE_SECURE=1)
+                self.send_header("Strict-Transport-Security", "max-age=31536000")
             for k, v in resp.headers.items():
                 self.send_header(k, v)
             for c in req.set_cookies:
@@ -296,6 +307,27 @@ class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
     request_queue_size = 64
+    max_connections = 256   # au-delà, les nouvelles connexions sont refusées au lieu d'épuiser la mémoire
+
+    def __init__(self, *args, **kwargs):
+        self._slots = threading.BoundedSemaphore(self.max_connections)
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address):
+        if not self._slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
 
     def handle_error(self, request, client_address):
         import sys

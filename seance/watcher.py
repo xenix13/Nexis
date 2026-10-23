@@ -6,7 +6,6 @@ modification des DOSSIERS (ajout, suppression ou renommage d'un fichier les chan
 très léger, même sur des milliers de dossiers. Après un changement, on attend que les dossiers
 soient stables (copie terminée) puis on rescanne uniquement la bibliothèque concernée.
 """
-import hashlib
 import json
 import logging
 import os
@@ -70,14 +69,6 @@ def vanished_dirs(db, lib):
             out.add(top)
             out |= dirs
     return out
-
-
-def fingerprint(paths):
-    """Empreinte globale (compatibilité)."""
-    h = hashlib.sha1()
-    for d, m in sorted(snapshot(paths).items()):
-        h.update(f"{d}\0{m}\n".encode())
-    return h.hexdigest()
 
 
 class Watcher:

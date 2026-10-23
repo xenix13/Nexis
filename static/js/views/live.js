@@ -1,18 +1,11 @@
 // TV en direct : grille des chaînes (programme en cours / à suivre), guide des programmes et lecteur.
 import { get, post } from '../api.js';
-import { clear, errorBox, h, icon, modal, spinner, toast } from '../ui.js';
+import { clear, errorBox, h, icon, modal, spinner, store, toast } from '../ui.js';
 
 const PX_PER_HOUR = 320;
 const hhmm = (t) => new Date(t * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 const dayLabel = (t) => new Date(t * 1000).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 
-function store(key, value) {
-  try {
-    if (value === undefined) return localStorage.getItem(key);
-    localStorage.setItem(key, value);
-  } catch { /* stockage indisponible */ }
-  return null;
-}
 
 function logo(c, size = 'm') {
   const initials = c.name.replace(/[^\p{L}\p{N} ]/gu, '').split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase();

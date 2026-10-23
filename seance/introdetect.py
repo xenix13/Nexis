@@ -47,7 +47,8 @@ def supported():
 def fingerprint(path, start, length):
     """Empreinte du passage [start, start+length] (secondes) de la première piste audio."""
     cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-v", "error", "-ss", f"{max(0.0, start):.2f}", "-t", f"{length:.2f}",
-           "-i", path, "-map", "0:a:0", "-vn", "-sn", "-ac", "1", "-f", "chromaprint", "-fp_format", "raw", "-"]
+           *media.LOCAL_ONLY, "-i", path, "-map", "0:a:0", "-vn", "-sn", "-ac", "1", "-f", "chromaprint",
+           "-fp_format", "raw", "-"]
     try:
         p = subprocess.run(cmd, capture_output=True, timeout=max(120, int(length)), stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
