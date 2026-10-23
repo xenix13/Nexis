@@ -235,11 +235,13 @@ class Scanner:
             "AND type IN ('movie','episode','extra')",
             (lib["id"],))}
         if scope is not None:
-            # seuls les fichiers des dossiers revus (ou d'un dossier disparu) peuvent avoir changé
+            # seuls les fichiers DIRECTEMENT dans les dossiers revus, ou sous un dossier disparu, peuvent avoir
+            # changé. Surtout pas « tout ce qui est sous un dossier revu » : le dossier racine fait partie des
+            # dossiers modifiés dès qu'une série y arrive, et tout le reste de la bibliothèque serait supprimé.
             scoped = set(scope)
-            prefixes = tuple(os.path.join(d, "") for d in scope)
+            vanished = tuple(os.path.join(d, "") for d in scope if not os.path.isdir(d))
             existing = {k: r for k, r in existing.items()
-                        if os.path.dirname(k) in scoped or k.startswith(prefixes)}
+                        if os.path.dirname(k) in scoped or (vanished and k.startswith(vanished))}
         seen = set()
         deferred = 0
         deferred_dirs = set()

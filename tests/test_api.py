@@ -680,6 +680,7 @@ class SeanceTest(unittest.TestCase):
         w = self.ctx.watcher
         self.ctx.db.set_setting("watch_interval", 1)
         old_recent = scanner.RECENT_SECONDS
+        w.prints.clear(); w.last_check.clear(); w.pending.clear()
         try:
             t = time.time()
             w.tick(t)                       # référence
@@ -708,6 +709,79 @@ class SeanceTest(unittest.TestCase):
             os.remove(new)
             self.admin.call("POST", "/api/admin/scan", {"library": lib})
             wait_scan(self.admin)
+
+    def test_watcher_show_moved_between_libraries(self):
+        """Une série déplacée de « Séries » vers « Animes » : scan partiel des deux côtés, sans toucher au reste."""
+        src = os.path.join(self.media, "series", "Les Veilleurs")
+        dst = os.path.join(self.media, "animes", "Les Veilleurs")
+        w = self.ctx.watcher
+        self.ctx.db.set_setting("watch_interval", 1)
+
+        def counts():
+            st, r = self.admin.call("GET", "/api/admin/libraries")
+            return {l["name"]: l["counts"] for l in r["libraries"]}
+
+        w.prints.clear(); w.last_check.clear(); w.pending.clear()
+        try:
+            t = time.time()
+            w.tick(t)                       # référence
+            shutil.move(src, dst)
+            w.tick(t + 2)                   # changement détecté dans les deux bibliothèques
+            self.assertIn(int(self.libs["Séries"]), w.pending)
+            self.assertIn(int(self.libs["Animes"]), w.pending)
+            w.tick(t + 4)                   # stable : scan partiel
+            st, sc = self.admin.call("GET", "/api/admin/scan")
+            self.assertTrue(sc.get("partial"), sc)
+            wait_scan(self.admin)
+            for k in range(3):              # au cas où une bibliothèque attendait la fin du scan précédent
+                w.tick(t + 6 + 2 * k)
+                wait_scan(self.admin)
+            c = counts()
+            self.assertEqual(c["Animes"].get("show"), 2, c)       # Kaze no Michi toujours là + Les Veilleurs
+            self.assertEqual(c["Animes"].get("episode"), 6, c)
+            self.assertEqual(c["Séries"].get("episode", 0), 0, c)  # plus rien côté Séries
+            self.assertEqual(c["Séries"].get("show", 0), 0, c)
+        finally:
+            self.ctx.db.set_setting("watch_interval", 0)
+            if os.path.isdir(dst):
+                shutil.move(dst, src)
+            for name in ("Séries", "Animes"):
+                self.admin.call("POST", "/api/admin/scan", {"library": self.libs[name]})
+                wait_scan(self.admin)
+
+    def test_watcher_cleans_origin_library_even_if_it_saw_nothing(self):
+        """Origine du déplacement « muette » (cache SMB…) : l'arrivée dans Animes fait vérifier Séries."""
+        from seance import watcher as wmod
+        src = os.path.join(self.media, "series", "Les Veilleurs")
+        dst = os.path.join(self.media, "animes", "Les Veilleurs")
+        w = self.ctx.watcher
+        self.ctx.db.set_setting("watch_interval", 1)
+        series, animes = int(self.libs["Séries"]), int(self.libs["Animes"])
+        w.prints.clear(); w.last_check.clear(); w.pending.clear()
+        try:
+            t = time.time()
+            w.tick(t)
+            shutil.move(src, dst)
+            w.prints[series] = wmod.snapshot([os.path.join(self.media, "series")])  # Séries ne « voit » rien
+            w.last_check[series] = t + 2
+            w.tick(t + 2)
+            self.assertIn(animes, w.pending)
+            self.assertIn(series, w.pending)            # dossier indexé disparu repéré
+            self.assertIn(src, w.pending[series]["dirs"])
+            for k in range(4):
+                w.tick(t + 4 + 2 * k)
+                wait_scan(self.admin)
+            st, r = self.admin.call("GET", "/api/admin/libraries")
+            c = {l["name"]: l["counts"] for l in r["libraries"]}
+            self.assertEqual(c["Séries"].get("episode", 0), 0, c)
+            self.assertEqual(c["Animes"].get("show"), 2, c)
+        finally:
+            self.ctx.db.set_setting("watch_interval", 0)
+            if os.path.isdir(dst):
+                shutil.move(dst, src)
+            for name in ("Séries", "Animes"):
+                self.admin.call("POST", "/api/admin/scan", {"library": self.libs[name]})
+                wait_scan(self.admin)
 
     def test_webhook(self):
         c = Client(self.base)

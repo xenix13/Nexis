@@ -47,6 +47,31 @@ def snapshot(paths):
     return snap
 
 
+def vanished_dirs(db, lib):
+    """Dossiers indexés de cette bibliothèque qui n'existent plus (série ou film déplacé ailleurs).
+
+    Filet de sécurité quand la bibliothèque d'ORIGINE d'un déplacement n'a pas vu de changement (cache
+    SMB, déplacement fait pendant une coupure…) : on ne teste que les dossiers de premier niveau (un par
+    série / film), donc quelques centaines d'appels au plus, et seulement après une détection ailleurs."""
+    roots = [r for r in json.loads(lib["paths"]) if r and os.path.isdir(r)]  # partage non monté : on ne touche à rien
+    if not roots:
+        return set()
+    by_top = {}
+    for r in db.all("SELECT key FROM items WHERE library_id=? AND type IN ('movie','episode','extra')", (lib["id"],)):
+        d = os.path.dirname(r["key"])
+        for root in roots:
+            if d.startswith(os.path.join(root, "")):
+                top = os.path.join(root, os.path.relpath(d, root).split(os.sep)[0])
+                by_top.setdefault(top, set()).add(d)
+                break
+    out = set()
+    for top, dirs in by_top.items():
+        if not os.path.isdir(top):
+            out.add(top)
+            out |= dirs
+    return out
+
+
 def fingerprint(paths):
     """Empreinte globale (compatibilité)."""
     h = hashlib.sha1()
@@ -126,13 +151,22 @@ class Watcher:
         now = now or time.time()
         scanner = self.ctx.scanner
         if self.force_at and now >= self.force_at:
-            scope = self.force_scope
-            ok = scanner.start(list(scope), scope=scope) if scope else scanner.start()
+            with self.lock:
+                ids, scope = None, None
+                if self.force_scope:
+                    # on y ajoute ce que la surveillance avait déjà relevé pour ces bibliothèques
+                    ids, scope = list(self.force_scope), {}
+                    for lib, dirs in self.force_scope.items():
+                        p = self.pending.get(lib)
+                        if p and p["dirs"] is None:
+                            continue  # absente de scope = scan complet de cette bibliothèque seulement
+                        scope[lib] = set(dirs) | (p["dirs"] if p else set())
+            ok = scanner.start(ids, scope=scope or None)
             if ok:
                 with self.lock:
                     self.force_at = None
                     self.force_scope = None
-                    for lib in (scope or self.pending).copy():
+                    for lib in (ids or list(self.pending)):
                         self.pending.pop(lib, None)
             return
         interval = self.interval()
@@ -145,6 +179,7 @@ class Watcher:
                 self.prints.pop(k, None)
                 self.pending.pop(k, None)
         due = []
+        detected = set()
         for lib in libs:
             if now - self.last_check.get(lib["id"], 0) < interval:
                 continue
@@ -159,9 +194,20 @@ class Watcher:
                 with self.lock:
                     self._add_pending(lib["id"], changed)
                 log.info("Changement détecté dans « %s » (%d dossier(s))", lib["name"], len(changed))
+                detected.add(lib["id"])
                 continue  # on attend un passage stable (copie en cours ?)
             if lib["id"] in self.pending:
                 due.append(lib)
+        if detected:
+            # un dossier arrivé ici a peut-être été déplacé depuis une autre bibliothèque
+            for lib in libs:
+                if lib["id"] in detected:
+                    continue
+                gone = vanished_dirs(self.ctx.db, lib)
+                if gone:
+                    log.info("« %s » : %d dossier(s) indexé(s) disparu(s)", lib["name"], len(gone))
+                    with self.lock:
+                        self._add_pending(lib["id"], gone)
         if due and not scanner.status()["running"]:
             ids = [l["id"] for l in due]
             with self.lock:
