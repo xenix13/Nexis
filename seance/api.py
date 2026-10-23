@@ -11,11 +11,13 @@ import time
 
 import types
 
-from . import collections_api, discover, jellyfin, media, mountd
+from . import collections_api, discover, livetv, media, mountd, syncplay, tasks
+from .chapters import ChapterImages
 from .auth import (Throttle, check_credentials, clear_session, create_session, hash_password,
                    load_user, validate_password, verify_password)
 from .db import DB
 from .images import Images
+from .introdetect import FingerprintCache
 from .keyframes import mkv_keyframes
 from .markers import from_chapters as chapter_markers
 from .metadata import Metadata, MetaError
@@ -30,7 +32,7 @@ from .web import App, HTTPError, Response
 
 log = logging.getLogger("seance")
 
-VERSION = "2.9.2"
+VERSION = "3.0.0"
 RK = r"(?P<rk>\d{1,12})"
 SID = r"(?P<sid>[A-Za-z0-9_-]{8,40})"
 SORTS = {"title": "i.sort_title COLLATE NOCASE", "added": "i.added_at DESC", "year": "i.year DESC, i.sort_title",
@@ -170,7 +172,12 @@ class Ctx:
         self.scanner = Scanner(self)
         self.transcoder = Transcoder(os.path.join(data_dir, "transcodes"), self.limits)
         self.subtitles = SubtitleCache(self)
+        self.chapter_images = ChapterImages(self)
+        self.fingerprints = FingerprintCache(os.path.join(data_dir, "cache", "fingerprints"))
         self.watcher = Watcher(self)
+        self.tasks = tasks.TaskManager(self)
+        self.live = livetv.LiveTV(self)
+        self.together = syncplay.Groups(self)
         for r in self.db.all("SELECT id, content_rating FROM items WHERE content_rating IS NOT NULL AND age IS NULL"):
             age = age_of(r["content_rating"])
             if age is not None:
@@ -201,7 +208,10 @@ class Ctx:
                 self.setting_int("max_transcodes", 1 if cpus <= 2 else 2))
 
     def on_library_changed(self):
-        pass
+        try:
+            self.tasks.after_scan(self.scanner.status().get("added", 0))
+        except Exception:
+            log.exception("Tâches après le scan")
 
     def prefetch_missing_subtitles(self):
         """Au démarrage : met en file les fichiers dont les sous-titres internes ne sont pas encore prêts."""
@@ -419,11 +429,14 @@ def build_app(ctx):
                    (now, uid, c["id"]))
 
     def markers_for(row):
-        """Marqueurs posés à la main (prioritaires), sinon déduits des chapitres."""
+        """Repères d'intro / de générique : posés à la main, sinon chapitres nommés, sinon empreinte audio,
+        sinon chapitres de la durée d'une chanson (estimation)."""
         probe = json.loads(row["probe"] or "{}")
         out = chapter_markers(probe.get("chapters") or [], probe.get("duration") or (row["duration_ms"] or 0) / 1000)
         for r in db.all("SELECT kind,start_ms,end_ms,source FROM markers WHERE rating_key=?", (str(row["id"]),)):
-            out[r["kind"]] = {"start": r["start_ms"], "end": r["end_ms"], "source": r["source"]}
+            cur = out.get(r["kind"])
+            if r["source"] == "manual" or not cur or cur["source"] == "chapters-guess":
+                out[r["kind"]] = {"start": r["start_ms"], "end": r["end_ms"], "source": r["source"]}
         return out
 
     def track_scope(row):
@@ -438,8 +451,10 @@ def build_app(ctx):
 
     def chapters_for(row):
         probe = json.loads(row["probe"] or "{}")
-        return [{"start": int(c["start"] * 1000), "end": int(c["end"] * 1000), "title": c.get("title") or ""}
-                for c in probe.get("chapters") or []]
+        chapters = [c for c in probe.get("chapters") or [] if (c.get("end") or 0) > (c.get("start") or 0)]
+        return [{"start": int(c["start"] * 1000), "end": int(c["end"] * 1000), "title": c.get("title") or "",
+                 "image": f"/api/items/{row['id']}/chapters/{n}.jpg" if len(chapters) >= 2 else None}
+                for n, c in enumerate(chapters)]
 
     # ---------------------------------------------------------- public / auth
     @app.route("GET", "/api/status", auth=None)
@@ -505,7 +520,8 @@ def build_app(ctx):
         return {"user": user_view(req.user), "prefs": get_prefs(req.user["id"]),
                 "libraries": [l for l in libraries_all() if l["id"] in allowed], "plex_error": warning,
                 "features": {"discover": bool(db.setting("tmdb_key")),
-                             "requests": bool(db.setting("seerr_url") and db.setting("seerr_key"))}}
+                             "requests": bool(db.setting("seerr_url") and db.setting("seerr_key")),
+                             "live": x.live_available(req.user)}}
 
     @app.route("PUT", "/api/me/prefs")
     def me_prefs(req):
@@ -1029,6 +1045,16 @@ def build_app(ctx):
         except OSError:
             raise HTTPError(404, "Aperçu indisponible")
 
+    @app.route("GET", f"/api/items/{RK}/chapters/(?P<n>\\d{{1,4}})\\.jpg")
+    def item_chapter_image(req):
+        r = require_item(req.user, req.params["rk"])
+        db.release()  # la fabrication de l'image peut prendre un moment (partage réseau)
+        path = ctx.chapter_images.get(r, int(req.params["n"]))
+        if not path:
+            raise HTTPError(404, "Image indisponible")
+        with open(path, "rb") as f:
+            return Response(f.read(), 200, "image/jpeg", {"Cache-Control": "private, max-age=604800"})
+
     # ------------------------------------------------------------- images
     @app.route("GET", "/api/img")
     def image(req):
@@ -1525,7 +1551,6 @@ def build_app(ctx):
         db.release()
         if not ctx.scanner.start(ids, refresh_metadata=bool(b.get("refresh_metadata"))):
             raise HTTPError(409, "Un scan est déjà en cours")
-        db.set_setting("last_scan", int(time.time()))
         return ctx.scanner.status()
 
     @app.route("GET", "/api/admin/scan", auth="admin")
@@ -1628,7 +1653,7 @@ def build_app(ctx):
                 "subs_queue": len(ctx.subtitles.urgent) + len(ctx.subtitles.idle),
                 "webhook_path": f"/api/hooks/scan?token={db.setting('webhook_token')}",
                 "watch_events": ctx.watcher.events[:8],"tmdb_set": bool(db.setting("tmdb_key")), "language": db.setting("meta_language", "fr-FR"),
-                "scan_interval": ctx.setting_int("scan_interval", 24), "max_streams": max_streams,
+                "max_streams": max_streams,
                 "max_transcodes": max_transcodes, "cpus": os.cpu_count(), "ffmpeg": media.available(),
                 "version": VERSION}
 
@@ -1674,7 +1699,7 @@ def build_app(ctx):
                                 "ORDER BY added_at DESC"):
                     if ctx.subtitles.has_work(r):
                         ctx.subtitles.enqueue(r["id"])
-        for k, lo, hi in (("scan_interval", 0, 168), ("max_streams", 1, 50), ("max_transcodes", 0, 16),
+        for k, lo, hi in (("max_streams", 1, 50), ("max_transcodes", 0, 16),
                           ("watch_interval", 0, 3600)):
             if k in b:
                 try:
@@ -1831,14 +1856,15 @@ def build_app(ctx):
                       visible=visible, age_filter=age_filter, allowed_set=allowed_set, require_section=require_section,
                       leaves=leaves, libraries_all=libraries_all, ITEM_SQL=ITEM_SQL, EPISODE_ORDER=EPISODE_ORDER)
     collections_api.register(app, ctx, x)
-    jellyfin.register(app, ctx, x)
     discover.register(app, ctx, x)
+    tasks.register(app, ctx, x)
+    livetv.register(app, ctx, x)
+    syncplay.register(app, ctx, x)
     return app
 
 
 def janitor(ctx, stop_event):
-    """Arrête les lectures abandonnées, purge sessions et cache, lance les scans planifiés."""
-    last_cache = 0
+    """Arrête les lectures abandonnées et purge les sessions (le reste est dans les tâches planifiées)."""
     while not stop_event.wait(30):
         db = ctx.db
         try:
@@ -1847,23 +1873,8 @@ def janitor(ctx, stop_event):
                 ctx.transcoder.stop(sid)
             db.run("DELETE FROM streams WHERE last_seen < ?", (now - 600,))
             db.run("DELETE FROM sessions WHERE expires_at < ?", (now,))
-            interval = ctx.setting_int("scan_interval", 24)
-            if interval and db.scalar("SELECT COUNT(*) FROM libraries"):
-                last = ctx.setting_int("last_scan", 0)
-                if now - last > interval * 3600:
-                    db.set_setting("last_scan", now)
-                    ctx.scanner.start()
-            if now - last_cache > 86400:
-                last_cache = now
-                for sub in ("img",):
-                    d = os.path.join(ctx.data_dir, "cache", sub)
-                    for name in os.listdir(d):
-                        p = os.path.join(d, name)
-                        try:
-                            if now - os.path.getatime(p) > 60 * 86400:
-                                os.remove(p)
-                        except OSError:
-                            pass
+            ctx.live.reap()
+            ctx.together.reap()
         except Exception:
             log.exception("Erreur du nettoyage périodique")
         finally:

@@ -12,6 +12,8 @@ import { renderHistory } from './views/history.js';
 import { renderSettings } from './views/settings.js';
 import { renderAdmin } from './views/admin.js';
 import { renderPlayer } from './player.js';
+import { renderTogether } from './views/together.js';
+import { renderLive, renderLivePlayer } from './views/live.js';
 
 export const state = { me: null, status: null };
 const root = document.getElementById('app');
@@ -58,6 +60,7 @@ function shell(active) {
       h('div.muted', `@${me.user.username}`))),
     me.user.home ? h('a', { href: '#/profiles' }, 'Changer de profil') : null,
     h('a', { href: '#/playlists' }, 'Mes playlists'),
+    h('a', { href: '#/together' }, 'Regarder ensemble'),
     h('a', { href: '#/history' }, 'Historique'),
     h('a', { href: '#/settings' }, 'Réglages'),
     me.user.is_admin ? h('a', { href: '#/admin' }, 'Administration') : null,
@@ -68,8 +71,17 @@ function shell(active) {
     h('a.logo', { href: '#/' }, h('span.logo-mark'), 'Séance'),
     h('nav.nav', navLink('#/', 'Accueil', active === 'home'), navLink('#/watchlist', 'À regarder', active === 'watchlist'),
       me.features && me.features.discover ? navLink('#/discover', 'Découvrir', active === 'discover') : null,
-      me.libraries.map((l) => navLink(`#/library/${l.id}`, l.title, active === `lib:${l.id}`))),
-    h('div.topbar-right', h('label.search', icon('search'), search), h('div.user-wrap', userBtn, menu)));
+      me.libraries.map((l) => navLink(`#/library/${l.id}`, l.title, active === `lib:${l.id}`)),
+      me.features && me.features.live ? navLink('#/live', 'TV en direct', active === 'live') : null),
+    h('div.topbar-right', h('span.together-slot'), h('label.search', icon('search'), search), h('div.user-wrap', userBtn, menu)));
+  // groupes « Regarder ensemble » en cours : un raccourci discret pour les rejoindre
+  get('/api/together').then((groups) => {
+    const slot = header.querySelector('.together-slot');
+    if (slot && groups.length && active !== 'together') {
+      slot.replaceWith(h('a.group-pill', { href: '#/together', title: 'Regarder ensemble' }, icon('group'),
+        groups.length === 1 ? `${groups[0].owner} regarde` : `${groups.length} groupes`));
+    }
+  }).catch(() => {});
   const main = h('main.content');
   const banner = me.plex_error ? h('div.banner-error', me.plex_error) : null;
   clear(root, header, banner, main);
@@ -121,9 +133,9 @@ async function route() {
   if (token !== renderToken) return;
 
   const ctx = { query, parts, isCurrent: () => token === renderToken, setCleanup: (fn) => { cleanup = fn; } };
-  if (page === 'play') {
+  if (page === 'play' || page === 'tv') {
     document.body.classList.add('playing');
-    const stopPlayer = await renderPlayer(root, parts[1], ctx);
+    const stopPlayer = page === 'tv' ? await renderLivePlayer(root, parts[1], ctx) : await renderPlayer(root, parts[1], ctx);
     if (token === renderToken) cleanup = stopPlayer;
     else stopPlayer();
     return;
@@ -132,7 +144,7 @@ async function route() {
   const active = page === '' ? 'home' : page === 'library' ? `lib:${parts[1]}` : page;
   const main = shell(active);
   main.append(spinner());
-  const titles = { '': 'Accueil', watchlist: 'À regarder', discover: 'Découvrir', playlists: 'Mes playlists', search: 'Recherche', history: 'Historique', settings: 'Réglages', admin: 'Administration' };
+  const titles = { '': 'Accueil', live: 'TV en direct', together: 'Regarder ensemble', watchlist: 'À regarder', discover: 'Découvrir', playlists: 'Mes playlists', search: 'Recherche', history: 'Historique', settings: 'Réglages', admin: 'Administration' };
   document.title = `${titles[page] || 'Séance'} · Séance`;
   try {
     switch (page) {
@@ -143,6 +155,8 @@ async function route() {
       case 'collection': await renderCollection(main, parts[1], ctx); break;
       case 'watchlist': await renderWatchlist(main, ctx); break;
       case 'discover': await renderDiscover(main, ctx); break;
+      case 'live': await renderLive(main, ctx); break;
+      case 'together': await renderTogether(main, parts[1], ctx); break;
       case 'playlists': await renderPlaylists(main, ctx); break;
       case 'playlist': await renderPlaylist(main, parts[1], ctx); break;
       case 'history': await renderHistory(main, ctx); break;

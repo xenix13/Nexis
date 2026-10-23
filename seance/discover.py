@@ -3,8 +3,8 @@
 - Les catalogues (Netflix, Prime Video, Disney+, Canal+…) viennent de TMDB : ce qui est proposé en
   abonnement dans le pays choisi. Chaque titre indique s'il est déjà dans Séance ou déjà demandé.
 - « Demander » transmet la demande à Seerr (ex-Overseerr / Jellyseerr) au nom de l'utilisateur, qui
-  la fait télécharger par Radarr / Sonarr. Séance retrouve le compte Seerr de chacun grâce à l'API
-  compatible Jellyfin (et l'importe dans Seerr au besoin).
+  la fait télécharger par Radarr / Sonarr. Séance retrouve le compte Seerr de chacun par son nom ;
+  sans correspondance, la demande part au nom du propriétaire de la clé d'API.
 - « À regarder » accepte aussi les titres absents de la bibliothèque : ils sont demandés
   automatiquement (si activé) et rejoignent la liste habituelle dès leur arrivée.
 """
@@ -306,26 +306,25 @@ def register(app, ctx, x):
 
     # ------------------------------------------------------------ demandes
     def seerr_user(user):
-        """Compte Seerr de cet utilisateur (identifiant Jellyfin = GUID Séance), importé au besoin."""
+        """Compte Seerr de cet utilisateur, retrouvé par son identifiant ou son nom (comptes locaux, Plex,
+        Jellyfin…). Sans correspondance, la demande est faite au nom du propriétaire de la clé d'API."""
         s = seerr()
-        want = x.jf_guid(1, user["id"])
         users = users_cache.get("users")
         if users is None:
             r = s.call("GET", "/user?take=1000&skip=0")
-            users = {str(u.get("jellyfinUserId") or "").replace("-", "").lower(): u.get("id")
-                     for u in r.get("results", []) if u.get("jellyfinUserId")}
+            users = {}
+            for u in r.get("results", []):
+                for k in ("username", "displayName", "plexUsername", "jellyfinUsername", "email"):
+                    v = str(u.get(k) or "").strip().lower()
+                    if k == "email":
+                        v = v.split("@")[0]
+                    if v and v not in users:
+                        users[v] = u.get("id")
             users_cache.put("users", users)
-        if want in users:
-            return users[want]
-        try:
-            created = s.call("POST", "/user/import-from-jellyfin", {"jellyfinUserIds": [want]})
-        except SeerrError as e:
-            log.info("Import du compte %s dans Seerr impossible : %s", user["username"], e)
-            return None
-        users_cache.clear()
-        for u in created if isinstance(created, list) else []:
-            if str(u.get("jellyfinUserId") or "").replace("-", "").lower() == want:
-                return u.get("id")
+        for name in (user["username"], user.get("display_name") or ""):
+            uid = users.get(name.strip().lower())
+            if uid:
+                return uid
         return None
 
     def send_request(user, kind, tid, seasons=None):
@@ -449,8 +448,7 @@ def register(app, ctx, x):
     def admin_view():
         s = seerr()
         return {"seerr_url": db.setting("seerr_url") or "", "seerr_key_set": bool(db.setting("seerr_key")),
-                "auto_request": db.setting("seerr_auto_request", "1") == "1", "region": region(),
-                "jellyfin_api": db.setting("jellyfin_api", "0") == "1", "enabled": s.enabled}
+                "auto_request": db.setting("seerr_auto_request", "1") == "1", "region": region(), "enabled": s.enabled}
 
     @app.route("GET", "/api/admin/requests", auth="admin")
     def admin_requests(req):

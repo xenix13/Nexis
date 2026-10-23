@@ -3,7 +3,8 @@
 import { get, post, put } from './api.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from './tracks.js';
 import { state } from './app.js';
-import { clear, episodeCode, errorBox, fmtTime, h, icon, img, spinner, toast } from './ui.js';
+import { chapterStrip, chapterTitle } from './chapters.js';
+import { avatar, clear, episodeCode, errorBox, fmtTime, h, icon, img, spinner, toast } from './ui.js';
 
 const REPORT_EVERY = 10000;
 const HIDE_AFTER = 3000;
@@ -48,10 +49,14 @@ export async function renderPlayer(root, rk, ctx) {
   const volume = h('input.volume', { type: 'range', min: 0, max: 1, step: 0.05, 'aria-label': 'Volume' });
   const nextBtn = h('button.ctl', { 'aria-label': 'Épisode suivant', hidden: true }, icon('next'));
   const subsBtn = h('button.ctl', { 'aria-label': 'Audio et sous-titres' }, icon('subs'));
-  const chaptersBtn = h('button.ctl', { 'aria-label': 'Chapitres', hidden: true }, icon('chapters'));
+  const chaptersBtn = h('button.ctl', { 'aria-label': 'Chapitres', title: 'Chapitres (C)', hidden: true }, icon('chapters'));
+  const groupCount = h('span.ctl-badge', { hidden: true });
+  const groupBtn = h('button.ctl', { 'aria-label': 'Regarder ensemble', title: 'Regarder ensemble' }, icon('group'), groupCount);
   const cogBtn = h('button.ctl', { 'aria-label': 'Qualité' }, icon('cog'));
   const fullBtn = h('button.ctl', { 'aria-label': 'Plein écran' }, icon('full'));
   const menu = h('div.player-menu', { hidden: true });
+  const chapterPanel = h('div.chapter-panel', { hidden: true });
+  const groupBanner = h('div.group-banner', { hidden: true });
   const skipBtn = h('button.skip-btn', { hidden: true }, icon('skip'), 'Passer l’intro');
   const nextCard = h('div.next-card', { hidden: true });
   const backBtn = h('button.ctl.back', { 'aria-label': 'Retour' }, icon('back'));
@@ -62,9 +67,10 @@ export async function renderPlayer(root, rk, ctx) {
       playBtn,
       h('button.ctl', { 'aria-label': 'Reculer de 10 secondes', onclick: () => seekBy(-10000) }, icon('rewind')),
       h('button.ctl', { 'aria-label': 'Avancer de 30 secondes', onclick: () => seekBy(30000) }, icon('forward')),
-      h('div.vol', muteBtn, volume), timeEl, h('div.grow'), nextBtn, chaptersBtn, subsBtn, cogBtn, fullBtn));
+      h('div.vol', muteBtn, volume), timeEl, h('div.grow'), nextBtn, groupBtn, chaptersBtn, subsBtn, cogBtn, fullBtn));
   const top = h('div.player-top', backBtn, titleEl);
-  const player = h('div.player', video, subLayer, subTop, subsPending, loader, errorLayer, top, skipBtn, nextCard, menu, controls);
+  const player = h('div.player', video, subLayer, subTop, subsPending, loader, errorLayer, top, groupBanner, skipBtn, nextCard,
+    menu, chapterPanel, controls);
   clear(root, player);
 
   // ------------------------------------------------------------ state
@@ -78,6 +84,10 @@ export async function renderPlayer(root, rk, ctx) {
   let idleTimer = null, scrubbing = false, startedAt = 0;
   let switching = true, finished = false; // no progress reports while a stream is (re)starting or after the end
   let rebuffering = false, stalls = [], lowerHinted = false, everPlayed = false;
+
+  // « Regarder ensemble » : position partagée par le groupe (voir seance/syncplay.py)
+  const groupId = ctx.query.get('group');
+  let group = null;
 
   const duration = () => (session && session.duration) || (item && item.duration) || 0;
   const pos = () => base + Math.round((video.currentTime || 0) * 1000);
@@ -125,6 +135,21 @@ export async function renderPlayer(root, rk, ctx) {
   let startAt = 0;
   if (ctx.query.get('t')) startAt = Number(ctx.query.get('t')) || 0;
   else if (ctx.query.get('resume') && item.position && !item.watched) startAt = item.position;
+  if (groupId) {
+    try {
+      const g = await post(`/api/together/${groupId}/join`);
+      group = { id: groupId, name: g.name, state: g, members: g.members, hostOnly: g.host_only, isHost: g.is_host, offset: 0, es: null };
+      await syncClock();
+      if (destroyed || !ctx.isCurrent()) return () => {};
+      if (g.item_id && g.item_id !== String(item.id)) { location.replace(`#/play/${g.item_id}?group=${groupId}`); return () => {}; }
+      if (g.item_id) startAt = groupTarget(g);
+      openGroupEvents();
+    } catch (e) {
+      toast(e.message, 'bad');
+      group = null;
+    }
+  }
+  paintGroup();
 
   const savedVol = Number(store('seance.volume'));
   video.volume = Number.isFinite(savedVol) && store('seance.volume') !== null ? savedVol : 1;
@@ -185,6 +210,14 @@ export async function renderPlayer(root, rk, ctx) {
       // on laisse le tampon se remplir avant de démarrer : pas de coupure dans les premières secondes
       await waitBuffer((everPlayed ? PREROLL_SEEK : PREROLL)[session.mode] ?? 12, 90000, seq);
       if (seq !== startSeq || destroyed) return;
+      if (group) {
+        // en groupe : on signale qu'on est prêt, la lecture part quand tout le monde l'est
+        loader.hidden = true;
+        switching = false;
+        gsend('ready');
+        applyGroup(group.state);
+        return;
+      }
       video.play().catch(() => { loader.hidden = true; paintPlay(); });
     };
     if (session.mode === 'direct') {
@@ -288,8 +321,23 @@ export async function renderPlayer(root, rk, ctx) {
 
   // Coupure en cours de lecture : on met en pause le temps de refaire une vraie réserve,
   // plutôt que de repartir dès la première seconde reçue et de recouper aussitôt.
+  let groupQuietUntil = 0;   // juste après un ordre du groupe (lecture, saut) : un court chargement est normal
+  let stallTimer = null;
   function onStall() {
     if (switching || video.seeking || rebuffering || finished || destroyed || !session || video.paused) return;
+    if (group) {
+      // en groupe, une coupure met tout le monde en attente : on ne la signale que si elle dure
+      if (Date.now() < groupQuietUntil || stallTimer) return;
+      stallTimer = setTimeout(() => {
+        stallTimer = null;
+        if (!group || video.paused || video.readyState >= 3 || destroyed) return;
+        rebufferNow();
+      }, 2000);
+      return;
+    }
+    rebufferNow();
+  }
+  function rebufferNow() {
     rebuffering = true;
     const seq = startSeq;
     const now = Date.now();
@@ -297,10 +345,13 @@ export async function renderPlayer(root, rk, ctx) {
     stalls.push(now);
     video.pause();
     paintPlay();
+    if (group) gsend('buffering');
     waitBuffer(REBUFFER[session.mode] ?? 15, 45000, seq).then(() => {
       if (!rebuffering) return; // l'utilisateur a repris la main entre-temps
       rebuffering = false;
-      if (seq === startSeq && !destroyed) video.play().catch(() => paintPlay());
+      if (seq !== startSeq || destroyed) return;
+      if (group) { paintPlay(); gsend('ready'); return; } // le groupe repart quand tout le monde est prêt
+      video.play().catch(() => paintPlay());
     });
     if (stalls.length >= 2 && ['original', '1080p'].includes(quality) && !lowerHinted) {
       lowerHinted = true;
@@ -518,9 +569,10 @@ export async function renderPlayer(root, rk, ctx) {
         h('button.btn', { onclick: goBack }, 'Retour'))));
   }
 
-  function seekTo(ms) {
+  function seekTo(ms, remote = false) {
     const d = duration();
     ms = Math.max(0, d ? Math.min(ms, d - 3000) : ms);
+    if (group && !remote) gsend('seek', { position: Math.round(ms) });
     // la playlist couvre toute la vidéo : le lecteur va chercher les bons segments, le serveur relance
     // ffmpeg au bon endroit si besoin (comme Jellyfin) — plus besoin de recréer le flux
     video.currentTime = ms / 1000;
@@ -639,6 +691,11 @@ export async function renderPlayer(root, rk, ctx) {
     clearInterval(nextTimer);
     report('stopped', true, { ended: true });
     finished = true;
+    if (group) {
+      gsend('item', { item_id: session.next.id, position: 0 });
+      location.replace(`#/play/${session.next.id}?group=${group.id}`);
+      return;
+    }
     location.replace(`#/play/${session.next.id}${ctx.query.get('playlist') ? `?playlist=${ctx.query.get('playlist')}` : ''}`);
   }
 
@@ -655,10 +712,9 @@ export async function renderPlayer(root, rk, ctx) {
       onclick: () => { menu.hidden = true; onPick(); } }, h('span', label), hint ? h('span.muted.small', hint) : null,
     active ? icon('check') : null);
     const restart = () => start(pos());
-    if (kind === 'chapters') {
-      const p = pos();
-      clear(menu, h('div.menu-col.chapters-col', h('h4', 'Chapitres'), chapters.map((c, n) => opt(c.title || `Chapitre ${n + 1}`,
-        p >= c.start && p < c.end, () => seekTo(c.start + 1), fmtTime(c.start)))));
+    chapterPanel.hidden = true;
+    if (kind === 'group') {
+      clear(menu, groupMenu(opt));
     } else if (kind === 'tracks') {
       const audio = session ? session.audio : item.audio;
       const subs = session ? session.subtitles : item.subtitles;
@@ -705,6 +761,183 @@ export async function renderPlayer(root, rk, ctx) {
     menu.hidden = false;
   }
 
+  // ------------------------------------------------------------ chapitres
+  function openChapters() {
+    if (!chapterPanel.hidden) { chapterPanel.hidden = true; return; }
+    menu.hidden = true;
+    const p = pos();
+    const cur = chapters.findIndex((c) => p >= c.start && p < c.end);
+    const strip = chapterStrip(chapters, { current: cur, onPick: (c) => { chapterPanel.hidden = true; seekTo(c.start + 1); } });
+    clear(chapterPanel,
+      h('div.chapter-panel-head', h('h3', 'Sélection du chapitre'),
+        cur >= 0 ? h('span.muted.small', `En cours : ${chapterTitle(chapters[cur], cur)}`) : null,
+        h('div.grow'),
+        h('button.icon-btn', { 'aria-label': 'Fermer', onclick: () => { chapterPanel.hidden = true; } }, icon('close'))),
+      strip);
+    chapterPanel.hidden = false;
+    const on = strip.querySelector('.chapter-card.on') || strip.firstElementChild;
+    if (on) requestAnimationFrame(() => { on.scrollIntoView({ block: 'nearest', inline: 'center' }); on.focus({ preventScroll: true }); });
+  }
+
+  // ------------------------------------------------------------ regarder ensemble
+  async function syncClock() {
+    // décalage entre l'horloge du serveur et la nôtre : on garde la mesure au plus court aller-retour
+    let best = null;
+    for (let i = 0; i < 3; i++) {
+      const t0 = Date.now();
+      try {
+        const r = await get('/api/together/time');
+        const t1 = Date.now();
+        if (!best || t1 - t0 < best.rtt) best = { rtt: t1 - t0, offset: r.now - (t0 + t1) / 2 };
+      } catch { break; }
+    }
+    if (best && group) group.offset = best.offset;
+  }
+  function serverNow() { return Date.now() + (group ? group.offset : 0); }
+  function groupTarget(st) {
+    return st.position + (st.playing && !st.waiting ? Math.max(0, serverNow() - st.ref) : 0);
+  }
+  function gsend(action, extra = {}) {
+    if (!group) return Promise.resolve();
+    return post(`/api/together/${group.id}/cmd`, { action, ...extra }).catch((e) => {
+      if (e.status === 403 && ['play', 'pause', 'seek'].includes(action)) {
+        toast(e.message, 'bad');
+        applyGroup(group.state); // on revient à la position du groupe
+      } else if (e.status === 404) leaveGroupMode('Le groupe est terminé');
+    });
+  }
+  function openGroupEvents() {
+    const es = new EventSource(`/api/together/${group.id}/events`);
+    group.es = es;
+    es.onmessage = (ev) => {
+      let m;
+      try { m = JSON.parse(ev.data); } catch { return; }
+      if (!group) return;
+      if (m.type === 'state') {
+        if (group.state && m.seq && group.state.seq && m.seq < group.state.seq) return;
+        const prev = group.state;
+        group.state = m;
+        remoteNotice(m, prev);
+        applyGroup(m);
+      } else if (m.type === 'members') {
+        group.members = m.members;
+        group.hostOnly = m.host_only;
+        group.name = m.name;
+        group.isHost = m.members.some((x) => x.host && x.id === state.me.user.id);
+        paintGroup();
+        if (!menu.hidden && menu.dataset.kind === 'group') { menu.hidden = true; openMenu('group'); }
+      } else if (m.type === 'notice') {
+        toast(m.text);
+      } else if (m.type === 'closed') {
+        leaveGroupMode('Le groupe est terminé');
+      }
+    };
+    es.onerror = () => { if (es.readyState === EventSource.CLOSED && group) leaveGroupMode('Connexion au groupe perdue'); };
+  }
+  function leaveGroupMode(msg) {
+    if (!group) return;
+    if (group.es) group.es.close();
+    group = null;
+    video.playbackRate = 1;
+    groupBanner.hidden = true;
+    paintGroup();
+    if (msg) toast(msg);
+  }
+  function remoteNotice(m, prev) {
+    if (!m.by || m.by === state.me.user.display_name) return;
+    if (m.action === 'pause') toast(`${m.by} a mis en pause`);
+    else if (m.action === 'play') toast(`${m.by} a repris la lecture`);
+    else if (m.action === 'seek') toast(`${m.by} a ${prev && m.position < groupTarget(prev) ? 'reculé' : 'avancé'} jusqu’à ${fmtTime(m.position)}`);
+    else if (m.action === 'item' && prev && prev.item_id !== m.item_id) toast(`${m.by} lance une autre vidéo`);
+    if (m.notice) toast(m.notice);
+  }
+  let groupReadyPending = false;
+  function applyGroup(st) {
+    if (!group || !st || !session) return;
+    if (st.item_id && st.item_id !== String(item.id)) {
+      finished = true;
+      report('stopped', true);
+      location.replace(`#/play/${st.item_id}?group=${group.id}`);
+      return;
+    }
+    if (switching) return; // la vidéo se charge encore : on appliquera l'état une fois prête
+    const target = groupTarget(st);
+    const meWaited = st.waiting && (st.waiting_ids || []).includes(state.me.user.id);
+    groupBanner.hidden = !st.waiting;
+    if (st.waiting) groupBanner.textContent = st.waiting_for.length ? `En attente de ${st.waiting_for.join(', ')}…` : 'Synchronisation…';
+    if (!st.playing || st.waiting) {
+      if (!video.paused) video.pause();
+      video.playbackRate = 1;
+      groupQuietUntil = Date.now() + 4000;
+      if (Math.abs(pos() - target) > 400) seekTo(target, true);
+      if (meWaited && !groupReadyPending) {
+        // on recharge à la nouvelle position, puis on prévient le groupe
+        groupReadyPending = true;
+        const seq = startSeq;
+        waitBuffer(PREROLL_SEEK[session.mode] ?? 6, 30000, seq).then(() => {
+          groupReadyPending = false;
+          if (group && seq === startSeq) gsend('ready');
+        });
+      }
+    } else {
+      groupQuietUntil = Date.now() + 4000;
+      if (Math.abs(pos() - target) > 1500) seekTo(target, true);
+      if (video.paused) video.play().catch(() => { paintPlay(); });
+    }
+    paintPlay();
+  }
+  let lastDrift = 0;
+  function driftCorrect(p) {
+    const st = group.state;
+    if (!st || !st.playing || st.waiting || video.paused || video.seeking || switching) return;
+    const now = Date.now();
+    if (now - lastDrift < 1000) return;
+    lastDrift = now;
+    const diff = p - groupTarget(st);
+    if (Math.abs(diff) > 2500) { video.playbackRate = 1; seekTo(groupTarget(st), true); return; }
+    // petit écart : on accélère ou ralentit à peine, sans saut visible
+    video.playbackRate = Math.abs(diff) < 200 ? 1 : Math.min(1.05, Math.max(0.95, 1 - diff / 5000));
+  }
+  function paintGroup() {
+    groupBtn.classList.toggle('on', !!group);
+    groupCount.hidden = !group;
+    if (group) groupCount.textContent = String((group.members || []).filter((m) => m.online !== false).length || 1);
+  }
+  function groupMenu(opt) {
+    if (!group) {
+      return h('div.menu-col.group-col', h('h4', 'Regarder ensemble'),
+        h('p.menu-info', 'Crée un groupe : chacun suit la même lecture depuis son écran, les pauses et les sauts sont partagés.'),
+        opt('Créer un groupe avec cette vidéo', false, async () => {
+          try {
+            const g = await post('/api/together', { item_id: item.id, position: pos() });
+            finished = true;
+            report('stopped', true);
+            location.replace(`#/play/${item.id}?group=${g.id}`);
+          } catch (e) { toast(e.message, 'bad'); }
+        }),
+        opt('Voir les groupes en cours', false, () => { location.hash = '#/together'; }));
+    }
+    const status = (m) => (m.online === false ? 'hors ligne' : (m.ready ? 'prêt' : 'chargement…'));
+    return h('div.menu-col.group-col', h('h4', group.name),
+      h('div.group-members', (group.members || []).map((m) => h('div.group-member', avatar({ display_name: m.name, avatar_color: m.color }, 26),
+        h('span.grow', m.name, m.host ? h('span.tag.accent', 'Hôte') : null), h('span.muted.small', status(m))))),
+      group.hostOnly ? h('p.menu-info', 'Seul l’hôte contrôle la lecture.') : null,
+      opt('Copier le lien d’invitation', false, async () => {
+        const link = `${location.origin}/#/together/${group.id}`;
+        try { await navigator.clipboard.writeText(link); toast('Lien copié : envoie-le aux autres membres du foyer', 'ok'); }
+        catch { toast(link); }
+      }),
+      group.isHost ? opt(group.hostOnly ? 'Tout le monde peut contrôler' : 'Seul l’hôte contrôle la lecture', false, async () => {
+        try { await put(`/api/together/${group.id}`, { host_only: !group.hostOnly }); } catch (e) { toast(e.message, 'bad'); }
+      }) : null,
+      opt('Quitter le groupe', false, async () => {
+        const id = group.id;
+        leaveGroupMode();
+        await post(`/api/together/${id}/leave`).catch(() => {});
+        history.replaceState(null, '', `#/play/${item.id}`);
+      }));
+  }
+
   function setupMediaSession() {
     if (!('mediaSession' in navigator) || !window.MediaMetadata) return;
     const art = item.type === 'episode' ? (item.show_thumb || item.thumb) : item.thumb;
@@ -720,6 +953,12 @@ export async function renderPlayer(root, rk, ctx) {
 
   // ------------------------------------------------------------ events
   const togglePlay = () => {
+    if (group) {
+      if (group.state && group.state.waiting && group.state.playing) { gsend('pause', { position: pos() }); return; }
+      if (video.paused) { gsend('play', { position: pos() }); rebuffering = false; video.play().catch(() => {}); }
+      else { gsend('pause', { position: pos() }); video.pause(); }
+      return;
+    }
     if (rebuffering) { rebuffering = false; paintPlay(); return; } // reste en pause : la reprise auto est annulée
     if (video.paused) video.play().catch(() => {}); else video.pause();
   };
@@ -730,7 +969,7 @@ export async function renderPlayer(root, rk, ctx) {
   const wake = () => {
     player.classList.remove('idle');
     clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => { if (!video.paused && menu.hidden) player.classList.add('idle'); }, HIDE_AFTER);
+    idleTimer = setTimeout(() => { if (!video.paused && menu.hidden && chapterPanel.hidden) player.classList.add('idle'); }, HIDE_AFTER);
   };
 
   playBtn.addEventListener('click', togglePlay);
@@ -738,7 +977,8 @@ export async function renderPlayer(root, rk, ctx) {
   backBtn.addEventListener('click', goBack);
   nextBtn.addEventListener('click', playNext);
   subsBtn.addEventListener('click', (e) => { e.stopPropagation(); openMenu('tracks'); });
-  chaptersBtn.addEventListener('click', (e) => { e.stopPropagation(); openMenu('chapters'); });
+  chaptersBtn.addEventListener('click', (e) => { e.stopPropagation(); openChapters(); });
+  groupBtn.addEventListener('click', (e) => { e.stopPropagation(); openMenu('group'); });
   cogBtn.addEventListener('click', (e) => { e.stopPropagation(); openMenu('settings'); });
   skipBtn.addEventListener('click', () => { const i = session.markers.intro; introSkipped = true; skipBtn.hidden = true; seekTo(i.end); });
   muteBtn.addEventListener('click', () => { video.muted = !video.muted; });
@@ -749,7 +989,10 @@ export async function renderPlayer(root, rk, ctx) {
     store('seance.volume', String(video.volume));
     store('seance.muted', video.muted ? '1' : '0');
   });
-  video.addEventListener('click', () => { if (!menu.hidden) { menu.hidden = true; return; } togglePlay(); });
+  video.addEventListener('click', () => {
+    if (!menu.hidden || !chapterPanel.hidden) { menu.hidden = true; chapterPanel.hidden = true; return; }
+    togglePlay();
+  });
   video.addEventListener('dblclick', toggleFull);
   video.addEventListener('play', () => { paintPlay(); wake(); });
   video.addEventListener('pause', () => { paintPlay(); wake(); if (!rebuffering) report('paused', true); });
@@ -758,6 +1001,7 @@ export async function renderPlayer(root, rk, ctx) {
   video.addEventListener('canplay', () => { if (!rebuffering && !switching) loader.hidden = true; });
   video.addEventListener('timeupdate', () => {
     const p = pos();
+    if (group) driftCorrect(p);
     paintTime();
     paintSubtitles(p);
     paintMarkers(p);
@@ -830,6 +1074,18 @@ export async function renderPlayer(root, rk, ctx) {
   const onKey = (e) => {
     if (e.target.closest && e.target.closest('input, select, textarea')) return;
     wake();
+    if (!chapterPanel.hidden && ['ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(e.key)) {
+      // dans la sélection de chapitre, les flèches passent d'une vignette à l'autre
+      const cards = [...chapterPanel.querySelectorAll('.chapter-card')];
+      let i = cards.indexOf(document.activeElement);
+      if (e.key === 'Enter' || e.key === ' ') { if (i >= 0) { e.preventDefault(); cards[i].click(); } return; }
+      e.preventDefault();
+      if (i < 0) i = Math.max(0, cards.findIndex((c) => c.classList.contains('on')));
+      else i = Math.min(cards.length - 1, Math.max(0, i + (e.key === 'ArrowRight' ? 1 : -1)));
+      cards[i].focus();
+      cards[i].scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+      return;
+    }
     switch (e.key) {
       case ' ': case 'k': e.preventDefault(); togglePlay(); break;
       case 'ArrowLeft': e.preventDefault(); seekBy(-10000); break;
@@ -840,7 +1096,12 @@ export async function renderPlayer(root, rk, ctx) {
       case 'm': video.muted = !video.muted; break;
       case 's': if (!skipBtn.hidden) skipBtn.click(); break;
       case 'n': if (session && session.next) playNext(); break;
-      case 'Escape': if (!menu.hidden) menu.hidden = true; else if (!document.fullscreenElement) goBack(); break;
+      case 'c': if (chapters.length > 1) openChapters(); break;
+      case 'Escape':
+        if (!chapterPanel.hidden) chapterPanel.hidden = true;
+        else if (!menu.hidden) menu.hidden = true;
+        else if (!document.fullscreenElement) goBack();
+        break;
       default:
     }
   };
@@ -859,6 +1120,11 @@ export async function renderPlayer(root, rk, ctx) {
     if (Date.now() - startedAt > 3000 && !switching) report('stopped', true);
     if (session) post('/api/stop', { stream: session.stream }, { keepalive: true }).catch(() => {});
     destroyed = true;
+    if (group) {
+      if (group.es) group.es.close();
+      // on reste dans le groupe si on enchaîne sur un autre épisode du groupe
+      if (!location.hash.includes(`group=${group.id}`)) post(`/api/together/${group.id}/leave`, {}, { keepalive: true }).catch(() => {});
+    }
     clearInterval(nextTimer);
     clearTimeout(idleTimer);
     document.removeEventListener('keydown', onKey);

@@ -1,11 +1,13 @@
 import { get } from '../api.js';
 import { state } from '../app.js';
 import { clear, h, icon, img, posterCard, row, wideCard } from '../ui.js';
+import { groupCard } from './together.js';
 
 export async function renderHome(main, ctx) {
-  const data = await get('/api/home');
+  const [data, groups] = await Promise.all([get('/api/home'), get('/api/together').catch(() => [])]);
   if (!ctx.isCurrent()) return;
   const parts = [];
+  const joinable = groups.filter((g) => g.item && !g.item.hidden);
   const hero = data.continue[0] || data.hero;
   if (hero) {
     const art = hero.type === 'episode' ? (hero.show_art || hero.art) : hero.art;
@@ -23,6 +25,10 @@ export async function renderHome(main, ctx) {
         h('div.hero-actions',
           hero.type === 'show' ? null : h('a.btn.primary', { href: playHref }, icon('play'), resume && hero.position ? 'Reprendre' : 'Lecture'),
           h('a.btn.ghost', { href: infoHref }, 'Plus d’infos')))));
+  }
+  if (joinable.length) {
+    parts.push(h('section.row', h('div.row-head', h('a.row-title', { href: '#/together' }, 'Regarder ensemble')),
+      h('div.group-list', joinable.map(groupCard))));
   }
   parts.push(row('Reprendre et à suivre', data.continue, (c) => wideCard(c), { wide: true }));
   parts.push(row('À regarder', data.watchlist, (c) => posterCard(c), { href: '#/watchlist' }));

@@ -110,15 +110,6 @@ class App:
         self.before = []  # callables(req, route_opts)
         self.static_dir = None
         self.teardown = []
-        self.compat = []  # API tierces (compatibilité Jellyfin) : hors /api/, sans les contrôles de Séance
-
-    def compat_route(self, method, pattern):
-        regex = re.compile("^" + pattern + "$", re.I)
-
-        def deco(fn):
-            self.compat.append((method, regex, fn))
-            return fn
-        return deco
 
     def route(self, method, pattern, **opts):
         regex = re.compile("^" + pattern + "$")
@@ -148,22 +139,6 @@ class App:
             if allowed:
                 raise HTTPError(405, "Méthode non autorisée")
             raise HTTPError(404, "Introuvable")
-        if self.compat:
-            allowed = False
-            for method, regex, fn in self.compat:
-                m = regex.match(req.path)
-                if not m:
-                    continue
-                allowed = True
-                if method != req.method:
-                    continue
-                req.params = m.groupdict()
-                result = fn(req)
-                if isinstance(result, Response):
-                    return result
-                return json_response(result)
-            if allowed:
-                raise HTTPError(405, "Méthode non autorisée")
         if req.method not in ("GET", "HEAD"):
             raise HTTPError(405, "Méthode non autorisée")
         return self.serve_static(req.path)

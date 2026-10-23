@@ -270,14 +270,12 @@ class FakeTMDB:
 
 # ------------------------------------------------------------------ faux Seerr
 class FakeSeerr:
-    """Imite l'API de Seerr (Overseerr / Jellyseerr) ; l'import d'utilisateurs interroge vraiment
-    l'API compatible Jellyfin de Séance, comme le ferait Seerr."""
+    """Imite l'API de Seerr (Overseerr / Jellyseerr)."""
 
     def __init__(self, key="cle-seerr-0123456789"):
         self.key = key
-        self.jf_url = None
-        self.jf_key = None
-        self.users = [{"id": 1, "displayName": "colas", "jellyfinUserId": None}]
+        self.users = [{"id": 1, "displayName": "colas", "email": "colas@example.org"},
+                      {"id": 2, "displayName": "Léa M.", "username": "lea", "email": "lea@example.org"}]
         self.media = {("movie", 5003): 5}   # disponible côté Seerr (déjà téléchargé)
         self.requests = []
         server = self
@@ -306,12 +304,6 @@ class FakeSeerr:
         h.end_headers()
         h.wfile.write(data)
 
-    def jf(self, path):
-        req = urllib.request.Request(self.jf_url + path, headers={
-            "Authorization": f'MediaBrowser Client="Seerr", Device="Seerr", DeviceId="x", Version="1", Token="{self.jf_key}"'})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read())
-
     def handle(self, h, method):
         u = urllib.parse.urlsplit(h.path)
         q = {k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()}
@@ -330,15 +322,6 @@ class FakeSeerr:
             return self.send(h, 200, {"pageInfo": {"pages": 1, "results": len(res)}, "results": res})
         if path == "/api/v1/user" and method == "GET":
             return self.send(h, 200, {"pageInfo": {"pages": 1}, "results": self.users})
-        if path == "/api/v1/user/import-from-jellyfin" and method == "POST":
-            jf_users = {x["Id"]: x for x in self.jf("/Users")}
-            created = []
-            for jid in body["jellyfinUserIds"]:
-                if jid in jf_users and not any(x["jellyfinUserId"] == jid for x in self.users):
-                    new = {"id": len(self.users) + 1, "displayName": jf_users[jid]["Name"], "jellyfinUserId": jid}
-                    self.users.append(new)
-                    created.append(new)
-            return self.send(h, 201, created)
         if path == "/api/v1/request" and method == "POST":
             key = (body["mediaType"], body["mediaId"])
             if self.media.get(key) in (2, 3, 5):

@@ -1,7 +1,8 @@
 import { del, get, post, put } from '../api.js';
 import { state } from '../app.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from '../tracks.js';
-import { clear, episodeCode, field, fmtDuration, fmtTime, h, icon, img, modal, moreMenu, posterCard, progressBar, select, spinner, toast } from '../ui.js';
+import { chapterStrip } from '../chapters.js';
+import { clear, episodeCode, field, fmtDuration, fmtTime, h, icon, img, modal, moreMenu, posterCard, progressBar, select, spinner, toast, toggle } from '../ui.js';
 
 async function identify(d, onDone) {
   const q = h('input', { value: d.type === 'episode' ? d.show : d.title });
@@ -36,7 +37,7 @@ async function identify(d, onDone) {
 function fileInfo(d) {
   const m = d.media || {};
   const mk = d.markers || {};
-  const src = { manual: 'posé à la main', chapters: 'chapitres', 'chapters-guess': 'chapitres (estimé)' };
+  const src = { manual: 'posé à la main', chapters: 'chapitres', 'chapters-guess': 'chapitres (estimé)', audio: 'empreinte audio' };
   const row = (k, v) => (v ? [h('dt', k), h('dd', v)] : null);
   modal('Informations sur le fichier', h('dl.facts.file-facts',
     row('Fichier', d.path ? h('code', d.path) : null),
@@ -186,6 +187,32 @@ function trackChooser(d, target, onChange) {
     target ? h('span.muted.small', `pour ${episodeCode(target)}, retenu pour toute la série`) : null);
 }
 
+// « Regarder ensemble » : crée un groupe sur ce film / cet épisode puis ouvre le lecteur
+async function watchTogether(target) {
+  const name = h('input', { placeholder: `Chez ${state.me.user.display_name}`, maxlength: 60 });
+  const hostOnly = toggle('Seul moi peux mettre en pause, avancer ou changer d’épisode', false);
+  const err = h('p.form-error');
+  const g = await modal('Regarder ensemble', h('div.form',
+    h('p.muted.small', 'Chaque membre regarde depuis son écran (ou un autre appareil) : lecture, pauses, sauts et épisode suivant sont partagés. Ceux qui rejoignent arrivent au même endroit. Partage le lien d’invitation depuis le lecteur, ou ils trouveront le groupe sur l’accueil.'),
+    h('p.small', h('strong', target.type === 'episode' ? `${target.show} · ${episodeCode(target)} — ${target.title}` : target.title)),
+    field('Nom du groupe', name), hostOnly, err), [
+    { label: 'Annuler', value: null },
+    { label: 'Créer et lancer', primary: true, handler: async () => {
+      try {
+        return await post('/api/together', { item_id: target.id, position: target.position && !target.watched ? target.position : 0,
+          name: name.value.trim() || undefined, host_only: hostOnly.querySelector('input').checked });
+      } catch (e) { err.textContent = e.message; return false; }
+    } },
+  ]);
+  if (g) location.hash = `#/play/${target.id}?group=${g.id}`;
+}
+
+function togetherButton(target) {
+  if (!target) return null;
+  return h('button.btn.ghost.icon-only', { title: 'Regarder ensemble', 'aria-label': 'Regarder ensemble',
+    onclick: () => watchTogether(target) }, icon('group'));
+}
+
 function playButtons(c) {
   const out = [];
   if (c.position > 0 && !c.watched) {
@@ -260,7 +287,9 @@ export async function renderItem(main, rk, ctx) {
       actions.append(link);
     }
   }
-  actions.append(...[watchlistButton(d), trailerButton(d)].filter(Boolean), itemMenu(d, rerender));
+  const together = d.type === 'show' ? togetherButton(d.play_target ? { ...d.play_target, show: d.title } : null)
+    : (['movie', 'episode'].includes(d.type) ? togetherButton(d) : null);
+  actions.append(...[watchlistButton(d), together, trailerButton(d)].filter(Boolean), itemMenu(d, rerender));
   const chooser = trackChooser(d, d.type === 'show' ? d.play_target : null, (au, su) => {
     for (const l of playLinks) l.setAttribute('href', withTracks(l.dataset.base, au, su));
   });
@@ -286,6 +315,12 @@ export async function renderItem(main, rk, ctx) {
         h('div.detail-poster', poster ? h('img', { src: img(poster, 300, 450), alt: '' }) : h('div.noimg', d.title)),
         info)),
   ];
+
+  const chapters = (d.chapters || []).filter((c) => c.end > c.start);
+  if (['movie', 'episode'].includes(d.type) && chapters.length >= 2) {
+    parts.push(h('section.block', h('h2', 'Chapitres'),
+      chapterStrip(chapters, { href: (c) => `#/play/${d.id}?t=${c.start + 1}` })));
+  }
 
   if (d.extras && d.extras.length) {
     parts.push(h('section.block', h('h2', 'Bonus'), h('div.grid.wide', d.extras.map((e) => h('a.card.wide', { href: `#/play/${e.id}` },

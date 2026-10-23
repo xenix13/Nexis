@@ -14,6 +14,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tests.fixtures import FakeSeerr, FakeTMDB  # noqa: E402
+from tests.ui_smoke_stub import serve_webm  # noqa: E402
 
 TMDB = FakeTMDB()
 os.environ["SEANCE_TMDB_API"] = TMDB.url
@@ -83,7 +84,7 @@ with sync_playwright() as pw:
     browser = pw.chromium.launch()
     bctx = browser.new_context(viewport={"width": 1440, "height": 900}, bypass_csp=True)
     bctx.route("**/vendor/hls.min.js", lambda r: r.fulfill(status=200, content_type="text/javascript", body=STUB))
-    bctx.route("**/__test.webm", lambda r: r.fulfill(status=200, content_type="video/webm", path=webm))
+    bctx.route("**/__test.webm", serve_webm(webm))
     page = bctx.new_page()
     page.on("pageerror", lambda e: errors.append(f"[pageerror] {e}"))
     page.on("console", lambda m: errors.append(f"[{m.type}] {m.text}") if m.type == "error" and "404" not in m.text and "400" not in m.text else None)
@@ -213,12 +214,9 @@ with sync_playwright() as pw:
     page.screenshot(path=f"{out}/18d-playlist.png")
 
     # --- Découvrir : catalogues des plateformes et demandes via Seerr
-    from seance.jellyfin import guid
     seerr = FakeSeerr()
-    seerr.users[0]["jellyfinUserId"] = guid(1, 1)
-    admin.call("PUT", "/api/admin/jellyfin", {"enabled": True})
     page.goto(base + "/#/admin/requests")
-    page.wait_for_selector("text=Relier Seerr à Séance")
+    page.wait_for_selector("text=Clé d’API de Seerr")
     page.fill("input[placeholder='http://192.168.1.20:5055']", seerr.url)
     page.fill("input[type=password]", seerr.key)
     page.click("button:has-text('Enregistrer et tester')")
@@ -321,9 +319,16 @@ with sync_playwright() as pw:
     page.screenshot(path=f"{out}/12b-apercu-chapitre.png")
     page.mouse.move(700, 420)
     page.click("button[aria-label='Chapitres']")
-    page.wait_for_selector(".chapters-col")
+    page.wait_for_selector(".chapter-panel .chapter-card.on")
+    check(page.locator(".chapter-panel .chapter-card").count() == 5, "5 vignettes de chapitres")
+    check(page.inner_text(".chapter-card.on .chapter-name") == "Prologue", "chapitre en cours en surbrillance")
+    page.wait_for_function("[...document.querySelectorAll('.chapter-card img')].every((i) => i.complete && i.naturalWidth)", timeout=30000)
     page.screenshot(path=f"{out}/12c-chapitres.png")
-    page.keyboard.press("Escape")
+    page.keyboard.press("ArrowRight")
+    page.keyboard.press("Enter")
+    page.wait_for_function("document.querySelector('.chapter-panel').hidden")
+    page.wait_for_timeout(400)
+    check(page.evaluate("document.querySelector('video').currentTime") >= 9.9, "saut au chapitre suivant (Opening)")
     page.mouse.move(700, 420)
     page.screenshot(path=f"{out}/12-lecteur-sous-titres.png")
     page.goto(base + "/#/")

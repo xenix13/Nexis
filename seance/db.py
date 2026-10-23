@@ -239,6 +239,70 @@ MIGRATIONS = [
         PRIMARY KEY(user_id, media_type, tmdb_id)
     );
     """,
+    # 7 : tâches planifiées (analyses des fichiers), TV en direct (IPTV)
+    """
+    CREATE TABLE media_analysis(
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,              -- chapters (images) | intro | credits (empreinte audio)
+        file_mtime INTEGER,
+        done_at INTEGER NOT NULL,
+        result TEXT,
+        PRIMARY KEY(item_id, kind)
+    );
+    CREATE TABLE live_sources(
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        m3u_url TEXT NOT NULL,
+        epg_url TEXT,
+        user_agent TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        position INTEGER NOT NULL DEFAULT 0,
+        refreshed_at INTEGER,
+        epg_at INTEGER,
+        error TEXT,
+        created_at INTEGER NOT NULL
+    );
+    CREATE TABLE live_channels(
+        id INTEGER PRIMARY KEY,
+        source_id INTEGER NOT NULL REFERENCES live_sources(id) ON DELETE CASCADE,
+        uid TEXT NOT NULL,
+        name TEXT NOT NULL,
+        number INTEGER,
+        grp TEXT NOT NULL DEFAULT '',
+        logo TEXT,
+        tvg_id TEXT,
+        epg_key TEXT NOT NULL DEFAULT '',
+        url TEXT NOT NULL,
+        user_agent TEXT,
+        referrer TEXT,
+        position INTEGER NOT NULL DEFAULT 0,
+        search TEXT NOT NULL DEFAULT '',
+        UNIQUE(source_id, uid)
+    );
+    CREATE INDEX live_channels_pos ON live_channels(source_id, position);
+    CREATE TABLE live_hidden_groups(
+        source_id INTEGER NOT NULL REFERENCES live_sources(id) ON DELETE CASCADE,
+        grp TEXT NOT NULL,
+        PRIMARY KEY(source_id, grp)
+    );
+    CREATE TABLE live_programmes(
+        source_id INTEGER NOT NULL REFERENCES live_sources(id) ON DELETE CASCADE,
+        epg_key TEXT NOT NULL,
+        start INTEGER NOT NULL,
+        stop INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        subtitle TEXT,
+        descr TEXT,
+        category TEXT,
+        PRIMARY KEY(source_id, epg_key, start)
+    );
+    CREATE INDEX live_programmes_stop ON live_programmes(source_id, epg_key, stop);
+    CREATE TABLE live_favorites(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        channel_id INTEGER NOT NULL REFERENCES live_channels(id) ON DELETE CASCADE,
+        PRIMARY KEY(user_id, channel_id)
+    );
+    """,
 ]
 
 

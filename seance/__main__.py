@@ -36,13 +36,16 @@ def main(argv=None):
     stop = threading.Event()
     threading.Thread(target=janitor, args=(ctx, stop), daemon=True).start()
     ctx.watcher.start()
+    ctx.tasks.start()
     threading.Timer(60, ctx.prefetch_missing_subtitles).start()
 
     def shutdown(*_):
         stop.set()
         ctx.watcher.stop()
+        ctx.tasks.stop()
         ctx.subtitles.stop()
         ctx.transcoder.stop_all()
+        ctx.live.stop_all()
         threading.Thread(target=server.shutdown, daemon=True).start()
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)

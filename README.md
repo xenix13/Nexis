@@ -16,8 +16,11 @@ Un serveur multimédia **100 % auto-hébergé** pour tes films, séries et anime
 | **Espace personnel** | Reprise de lecture, « Reprendre et à suivre », historique, épisodes vus/non vus, langues audio/sous-titres préférées, thème, couleur, taille des affiches |
 | **Collections et listes** | Sagas créées automatiquement depuis TMDB (*Harry Potter*, *Le Seigneur des anneaux*…), collections manuelles, liste « À regarder » par utilisateur, playlists personnelles lues à la suite |
 | **Bonus** | Bandes-annonces (YouTube via TMDB ou fichiers locaux), coulisses, scènes coupées, interviews… rangés sous le film ou la série |
-| **Découvrir et demandes** | Catalogues Netflix, Prime Video, Disney+, Canal+… (via TMDB) avec ce qui est déjà sur le serveur, bouton « Demander » relié à Seerr / Overseerr / Jellyseerr, API compatible Jellyfin pour Seerr |
-| **Lecteur** | Choix audio, sous-titres et qualité en cours de lecture, raccourcis clavier, bandeau « Passer l'intro », épisode suivant avec compte à rebours |
+| **Découvrir et demandes** | Catalogues Netflix, Prime Video, Disney+, Canal+… (via TMDB) avec ce qui est déjà sur le serveur, bouton « Demander » relié à Seerr / Overseerr / Jellyseerr |
+| **Lecteur** | Choix audio, sous-titres et qualité en cours de lecture, raccourcis clavier, sélection de chapitre en vignettes, bandeau « Passer l'intro », épisode suivant avec compte à rebours |
+| **Regarder ensemble** | Lecture synchronisée à plusieurs, chacun sur son écran (comme SyncPlay de Jellyfin) : pauses, sauts et épisode suivant partagés, attente automatique de celui dont la connexion décroche |
+| **TV en direct** | Listes de chaînes M3U (IPTV, box opérateur…) et guide des programmes XMLTV, configurées par l'administrateur et proposées à tous : grille des chaînes avec le programme en cours, guide, favoris, zapping |
+| **Tâches planifiées** | Scan, actualisation des métadonnées, images de chapitres, détection des intros et génériques par empreinte audio, sous-titres, guide TV, nettoyage : chacune avec sa planification et ses options |
 | **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou fichiers à côté de la vidéo, `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. Les ASS des animes sont rendus fidèlement par libass (panneaux positionnés, karaoké, polices jointes au MKV). Les PGS des Blu-ray sont dessinés par le navigateur (libpgs), sans transcodage. VobSub incrustés |
 | **Administration** | Partages réseau SMB (montage depuis l'interface), bibliothèques (avec explorateur de dossiers), utilisateurs, clé TMDB, limites de lectures/transcodages, lectures en cours avec la raison d'un éventuel transcodage |
 
@@ -145,7 +148,7 @@ Sur un partage SMB, Linux n'est pas prévenu des fichiers ajoutés depuis une au
 
 **Ajout instantané depuis Radarr / Sonarr** : copie l'adresse du webhook affichée dans ce même écran, puis dans Radarr et Sonarr va dans *Paramètres → Connect → + → Webhook*. Colle l'adresse dans « URL », choisis la méthode POST et coche *On Import*, *On Upgrade*, *On Rename* et *On Delete*. Le bouton *Test* de Radarr doit répondre « Séance a bien reçu le test ». Radarr et Sonarr indiquent le dossier du film ou de la série : Séance retrouve le dossier correspondant chez lui (même si les chemins diffèrent, par exemple `/movies/…` chez Radarr et `/mnt/films/…` chez Séance) et ne scanne que celui-là.
 
-Un scan complet de sécurité passe une fois par jour (réglable) ; il ne fait que vérifier les dates des fichiers.
+Un scan complet de sécurité passe une fois par jour (réglable dans *Administration → Tâches planifiées*) ; il ne fait que vérifier les dates des fichiers.
 
 ## Sous-titres prêts dès la première seconde
 
@@ -189,10 +192,46 @@ Pour nginx, ajoute `proxy_read_timeout 120s;` et `proxy_buffering off;`.
 ## Chapitres, aperçus, intro et générique
 
 - **Aperçus au survol** : en survolant ou en faisant glisser la barre de lecture, une vignette de la scène s'affiche, avec le nom du chapitre. Les vignettes sont fabriquées à partir des images clés seulement, donc avec peu de calcul, et pendant la même lecture du fichier que la préparation des sous-titres.
-- **Chapitres** : repères sur la barre et menu « Chapitres » dans le lecteur.
+- **Chapitres** : repères sur la barre, et **sélection de chapitre en vignettes** dans le lecteur (bouton Chapitres ou touche `C`, flèches puis Entrée) et sur la fiche du film ou de l'épisode. Une image par chapitre, prise un peu après son début (et plus loin si l'image est noire), fabriquée à la demande puis par la tâche « Extraire les images des chapitres ».
 - **Passer l'intro / épisode suivant** : l'opening et le générique de fin sont repérés grâce aux chapitres du fichier. Les chapitres nommés (`Opening`, `OP`, `Intro`, `Générique`, `Ending`, `ED`, `Credits`…) sont reconnus. Dans les animes, « Intro » ou « Prologue » désigne souvent la scène d'avant-générique : un chapitre `OP` / `Opening` a donc toujours la priorité, et un « Intro » trop court pour être une chanson laisse la place au chapitre suivant s'il en a la durée. Pour les chapitres sans nom, typiques des animes, Séance cherche les blocs de 70 à 115 secondes en début et en fin d'épisode. Le bandeau « Passer l'intro » apparaît pendant l'intro ; la carte « Épisode suivant » apparaît au début du générique de fin. Un administrateur peut toujours corriger ces repères à la main pendant la lecture (menu ⚙), et ses repères priment.
 
-Les fichiers sans chapitres n'ont pas encore de détection automatique : la comparaison audio entre les épisodes d'une saison est la prochaine étape.
+**Fichiers sans chapitres : empreinte audio.** La tâche « Détecter les intros et génériques » compare l'empreinte audio (Chromaprint, fournie par ffmpeg) du début et de la fin des épisodes d'une même saison, comme le plugin *Intro Skipper* de Jellyfin : la chanson d'ouverture et le générique sont les passages que les épisodes ont en commun. Elle passe après chaque ajout d'épisodes et chaque nuit ; on règle la zone analysée (10 premières et 6 dernières minutes par défaut) et les durées minimale et maximale. Ordre de priorité des repères : posés à la main, puis chapitres nommés, puis empreinte audio, puis chapitres de la durée d'une chanson.
+
+## Tâches planifiées
+
+*Administration → Tâches planifiées* liste les travaux de fond du serveur, avec leur dernière exécution (durée, résultat) et la prochaine. Chacune se lance à la main, s'arrête, et se règle : **désactivée**, **toutes les N heures**, **chaque jour** ou **chaque semaine** à l'heure choisie, plus ses options propres.
+
+| Tâche | Par défaut | Options |
+|---|---|---|
+| Analyser les bibliothèques | toutes les 24 h | bibliothèques concernées |
+| Actualiser les métadonnées | le dimanche à 4 h | seulement l'incomplet / ce qui n'a pas été actualisé depuis N jours / tout ; bibliothèques |
+| Extraire les images des chapitres | chaque nuit + après chaque ajout | pause pendant les lectures, bibliothèques |
+| Détecter les intros et génériques | chaque nuit + après chaque ajout | minutes analysées au début et à la fin, durées min. et max., générique oui/non, ignorer les épisodes à chapitres nommés |
+| Préparer les sous-titres et les aperçus | chaque nuit | — |
+| Actualiser les chaînes et le guide TV | toutes les 12 h | — |
+| Nettoyer les caches | chaque nuit | ancienneté des images gardées |
+
+Une seule tâche tourne à la fois. Celles qui lisent les fichiers sur le partage réseau se mettent **en pause pendant qu'on regarde quelque chose**.
+
+## TV en direct (IPTV)
+
+*Administration → TV en direct* : ajoute une ou plusieurs **sources**, chacune avec une liste de chaînes **M3U / M3U8** (l'adresse donnée par ton fournisseur IPTV ou ta box, ou le chemin d'un fichier `.m3u` sur le serveur) et, si besoin, un **guide XMLTV** (`.xml` ou `.xml.gz` ; inutile si la liste l'indique déjà dans son en-tête `url-tvg`). Les attributs habituels sont lus : `tvg-id`, `tvg-name`, `tvg-logo`, `tvg-chno`, `group-title`, `#EXTVLCOPT:http-user-agent`…
+
+- Les chaînes sont proposées **à tous les utilisateurs** dans l'onglet **TV en direct** : grille avec le programme en cours (barre de progression) et le suivant, **guide des programmes** sur plusieurs heures, recherche, groupes, **favoris** par personne. Dans le lecteur : ↑ / ↓ pour zapper, `L` pour la liste des chaînes.
+- *Groupes…* masque des groupes entiers pour tout le monde (pratique pour une liste de milliers de chaînes). Une option masque la TV pour les profils avec restriction d'âge.
+- Le navigateur ne lit pas un flux MPEG-TS : Séance le reçoit avec ffmpeg et le redécoupe en HLS. La vidéo **H.264 est recopiée** telle quelle (presque aucun calcul), le son est converti en AAC stéréo ; une vidéo MPEG-2 ou HEVC est convertie en H.264 (réglable : jamais / automatique / toujours). Une chaîne regardée par plusieurs personnes **n'est reçue qu'une fois**, et ffmpeg s'arrête 45 s après le départ du dernier spectateur.
+- **Chaînes simultanées (max.)** : beaucoup de fournisseurs limitent le nombre de connexions ; au-delà, Séance l'explique au lieu d'échouer.
+- Les chaînes et le guide sont rechargés toutes les 12 h (tâche planifiée), ou à la demande (*Actualiser*).
+
+## Regarder ensemble
+
+Comme **SyncPlay** dans Jellyfin : plusieurs personnes regardent la même vidéo en même temps, chacune depuis son écran (ou à distance, derrière le reverse proxy).
+
+- Sur la fiche d'un film ou d'un épisode, le bouton **Regarder ensemble** crée un groupe (avec un nom, et l'option « seul l'hôte contrôle la lecture »). Dans le lecteur, le même bouton montre les membres, leur état (prêt, chargement) et copie le **lien d'invitation**. Les groupes en cours apparaissent aussi sur l'accueil et dans la barre du haut.
+- Lecture, pause, sauts, choix d'un chapitre, « Passer l'intro » et **épisode suivant** sont partagés. Ceux qui rejoignent arrivent au même endroit.
+- Chacun a son propre flux (sa qualité, sa langue, ses sous-titres). Un petit décalage est rattrapé en accélérant ou ralentissant à peine la lecture (± 5 %), un grand par un saut. Si la connexion de quelqu'un décroche, tout le groupe attend qu'il ait rechargé (12 s au plus), puis repart ensemble.
+- Chaque membre garde sa propre reprise de lecture et son historique. Il faut avoir accès au contenu (bibliothèques, restriction d'âge) pour le regarder dans un groupe.
+- Les événements passent par une connexion HTTP ouverte (*Server-Sent Events*). Derrière nginx, désactive le tampon pour `/api/together/` (`proxy_buffering off;`, déjà conseillé plus haut).
 
 ## Profils, code PIN et contrôle parental
 
@@ -233,16 +272,13 @@ L'onglet **Découvrir** montre ce qui est proposé sur les plateformes de stream
 
 Le bouton **Demander** passe par [Seerr](https://docs.seerr.dev) (le successeur d'Overseerr et de Jellyseerr), qui envoie la demande à Radarr / Sonarr. Pour une série, on choisit les saisons. Le bouton signet ajoute aussi à **À regarder** un titre absent : il est alors demandé automatiquement (désactivable) et rejoint la liste habituelle dès son arrivée sur le serveur.
 
-### Installer et relier Seerr
+### Relier Seerr
 
-Seerr a besoin d'un serveur multimédia pour savoir ce que tu possèdes déjà. **Séance se présente à lui comme un serveur Jellyfin** (lecture seule : comptes, bibliothèques, identifiants TMDB/IMDb/TVDB, saisons, épisodes, résolution).
+1. Installe Seerr, de préférence dans un conteneur LXC à part, en suivant [sa documentation](https://docs.seerr.dev), et branche-le sur Radarr et Sonarr (*Paramètres → Services*).
+2. Dans Seerr, *Paramètres → Général*, copie la **clé d'API**.
+3. Dans Séance, *Administration → Demandes*, colle l'adresse de Seerr (ex. `http://192.168.1.20:5055`) et la clé, puis *Enregistrer et tester*.
 
-1. Dans Séance : *Administration → Demandes* → active **l'API compatible Jellyfin**.
-2. Installe Seerr, de préférence dans un conteneur LXC à part, en suivant [sa documentation](https://docs.seerr.dev). À l'assistant, choisis **Jellyfin** et indique l'adresse IP du conteneur Séance, son port (8420 par défaut, celui de l'interface web), sans SSL et sans base d'URL, puis ton identifiant et mot de passe **administrateur Séance**.
-3. Dans Seerr, active les bibliothèques et lance une synchronisation, puis branche Radarr et Sonarr (*Paramètres → Services*).
-4. Dans Seerr, *Paramètres → Général*, copie la **clé d'API**. Dans Séance, *Administration → Demandes*, colle l'adresse de Seerr (ex. `http://192.168.1.20:5055`) et la clé, puis *Enregistrer et tester*.
-
-Chacun peut ensuite se connecter à Seerr avec son compte Séance. Quand on demande depuis Séance, la demande est faite **au nom de la personne** (son compte est importé dans Seerr au besoin), donc les règles de Seerr s'appliquent : validation automatique ou par l'administrateur, quotas… Les applications connectées à l'API Jellyfin sont listées dans *Administration → Demandes* et peuvent être révoquées.
+Quand un compte Seerr porte le même nom qu'un compte Séance (identifiant, nom affiché ou début de l'adresse e-mail), la demande est faite **à son nom**, donc les règles de Seerr s'appliquent (validation, quotas…). Sinon, elle part au nom du propriétaire de la clé d'API.
 
 ## Langue audio et sous-titres
 
@@ -285,6 +321,7 @@ db.run('DELETE FROM sessions')"
 python3 -m seance --data ./data --port 8420        # serveur local
 python3 -m unittest discover -s tests -t .          # tests : vrais fichiers générés par ffmpeg + faux TMDB
 python3 tests/ui_smoke.py ./captures video.webm     # parcours navigateur (Playwright) + captures
+python3 tests/ui_features.py ./captures video.webm  # chapitres, tâches, TV en direct, regarder ensemble
 python3 tests/hls_real.py chemin/vers/hls.min.js     # lecture réelle hls.js (VP9/Opus) : reprise, sauts, PGS
 ```
 
@@ -295,6 +332,8 @@ Arborescence de `seance/` :
 - `transcoder.py` : décision de lecture, ffmpeg et HLS
 - `mountd.py` : service root de montage des partages SMB
 - `watcher.py` : détection des nouveautés ; `subcache.py` : préparation des sous-titres
+- `tasks.py` : tâches planifiées ; `chapters.py` : images de chapitres ; `introdetect.py` : intros par empreinte audio
+- `livetv.py` : TV en direct (M3U, XMLTV, flux HLS) ; `syncplay.py` : « Regarder ensemble »
 - `api.py` : routes HTTP
 - `auth.py`, `db.py`, `web.py` : socle
 
@@ -304,10 +343,11 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 
 1. ~~Interface multi-utilisateurs~~ ✔
 2. ~~Serveur multimédia autonome : scan, TMDB, lecture directe / remux / transcodage~~ ✔
-3. Détection automatique des intros et génériques de fin par empreinte audio (pour les fichiers sans chapitres)
+3. ~~Détection automatique des intros et génériques de fin par empreinte audio (pour les fichiers sans chapitres)~~ ✔
 4. Import de l'historique « vu » depuis Jellyfin, par utilisateur
 5. ~~Profils, PIN, contrôle parental~~ ✔
 6. ~~Collections, « À regarder », playlists, bonus et bandes-annonces~~ ✔
 7. ~~Découvrir les plateformes de streaming et demander via Seerr~~ ✔
+10. ~~Tâches planifiées, TV en direct (IPTV), regarder ensemble~~ ✔
 8. Appli installable sur téléphone (PWA), Chromecast / Google TV, téléchargement pour le hors ligne
 9. Accélération matérielle optionnelle (VAAPI / Quick Sync) pour les serveurs équipés d'un GPU

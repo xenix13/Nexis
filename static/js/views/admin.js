@@ -5,7 +5,7 @@ import { avatar, clear, confirmDialog, field, fmtTime, h, icon, modal, select, t
 function tabs(active) {
   const t = (id, label) => h('a.tab', { href: `#/admin/${id}`, class: id === active ? 'tab active' : 'tab' }, label);
   return h('div.tabs', t('libraries', 'Bibliothèques'), t('shares', 'Partages réseau'), t('users', 'Utilisateurs'), t('settings', 'Métadonnées et lecture'),
-    t('requests', 'Demandes'), t('streams', 'Lectures en cours'));
+    t('tasks', 'Tâches planifiées'), t('live', 'TV en direct'), t('requests', 'Demandes'), t('streams', 'Lectures en cours'));
 }
 
 function since(ts) {
@@ -363,8 +363,6 @@ async function settingsTab(body, ctx) {
     placeholder: s.tmdb_set ? 'Clé enregistrée (laisser vide pour la garder)' : 'Clé API (v3) ou jeton de lecture (v4)' });
   const lang = select([['fr-FR', 'Français (France)'], ['fr-CA', 'Français (Canada)'], ['en-US', 'Anglais'], ['de-DE', 'Allemand'],
     ['es-ES', 'Espagnol'], ['it-IT', 'Italien']], s.language);
-  const interval = select([['0', 'Jamais'], ['1', 'Toutes les heures'], ['6', 'Toutes les 6 heures'], ['12', 'Toutes les 12 heures'],
-    ['24', 'Une fois par jour']], String(s.scan_interval));
   const watch = select([['0', 'Désactivée'], ['30', 'Toutes les 30 secondes'], ['60', 'Toutes les minutes'], ['300', 'Toutes les 5 minutes'],
     ['900', 'Toutes les 15 minutes']], String(s.watch_interval));
   const hookInput = h('input', { readonly: true, value: `${location.origin}${s.webhook_path}`, onfocus: (e) => e.target.select() });
@@ -386,13 +384,13 @@ async function settingsTab(body, ctx) {
         h('button.btn', { onclick: async () => {
           try { await post('/api/admin/scan', { refresh_metadata: true }); toast('Actualisation de toutes les métadonnées lancée', 'ok'); }
           catch (e) { toast(e.message, 'bad'); }
-        } }, 'Tout réactualiser'))),
+        } }, 'Tout réactualiser'),
+        h('a.btn.ghost', { href: '#/admin/tasks' }, 'Planifier l’actualisation…'))),
     h('section.panel', h('h2', 'Détection des nouveautés'),
       h('p.muted.small', 'Sur un partage réseau, le système n’est pas prévenu des fichiers ajoutés depuis une autre machine. Séance surveille donc les dossiers (très léger) et rescanne la bibliothèque concernée dès qu’une copie est terminée. Pour un ajout instantané depuis Radarr / Sonarr, utilise le webhook ci-dessous.'),
       h('div.grid2',
-        field('Surveiller les dossiers', watch),
-        field('Scan complet de sécurité', interval)),
-      h('button.btn.primary', { onclick: () => save({ watch_interval: Number(watch.value), scan_interval: Number(interval.value) }, 'Enregistré') }, 'Enregistrer'),
+        field('Surveiller les dossiers', watch, 'Le scan complet de sécurité se règle dans « Tâches planifiées ».')),
+      h('button.btn.primary', { onclick: () => save({ watch_interval: Number(watch.value) }, 'Enregistré') }, 'Enregistrer'),
       h('h3.sub', 'Webhook Radarr / Sonarr'),
       h('div.copy-row', hookInput,
         h('button.btn.small', { onclick: async () => {
@@ -431,7 +429,7 @@ async function settingsTab(body, ctx) {
 
 // --------------------------------------------------------------- demandes
 async function requestsTab(body, ctx) {
-  const [cfg, jf] = await Promise.all([get('/api/admin/requests'), get('/api/admin/jellyfin')]);
+  const cfg = await get('/api/admin/requests');
   if (!ctx.isCurrent()) return;
   const reload = () => requestsTab(body, ctx);
   const url = h('input', { value: cfg.seerr_url, placeholder: 'http://192.168.1.20:5055', autocomplete: 'off' });
@@ -441,31 +439,11 @@ async function requestsTab(body, ctx) {
   auto.querySelector('input').addEventListener('change', async (e) => {
     try { await put('/api/admin/requests', { auto_request: e.target.checked }); toast('Enregistré', 'ok'); } catch (err) { toast(err.message, 'bad'); }
   });
-  const jfToggle = toggle('Activer l’API compatible Jellyfin', jf.enabled);
-  jfToggle.querySelector('input').addEventListener('change', async (e) => {
-    try { await put('/api/admin/jellyfin', { enabled: e.target.checked }); toast('Enregistré', 'ok'); reload(); } catch (err) { toast(err.message, 'bad'); }
-  });
   const status = h('div.plex-status', { class: cfg.enabled ? 'plex-status ok' : 'plex-status' },
     cfg.enabled ? 'Seerr est configuré : les utilisateurs peuvent demander des films et des séries.' : 'Seerr n’est pas encore configuré.');
-  const host = location.hostname;
-  const port = location.port || (location.protocol === 'https:' ? '443' : '80');
   clear(body,
-    h('section.panel', h('h2', '1. Relier Seerr à Séance'),
-      h('p.muted.small', 'Seerr (le successeur d’Overseerr et de Jellyseerr) gère les demandes et les envoie à Radarr / Sonarr. Il a besoin d’un serveur multimédia pour savoir ce que tu possèdes déjà : Séance se présente à lui comme un serveur Jellyfin.'),
-      jfToggle,
-      jf.enabled ? h('div.steps.small',
-        h('p', 'Dans Seerr, à l’installation (ou Paramètres → Jellyfin) : choisis ', h('strong', 'Jellyfin'), ', puis :'),
-        h('ul',
-          h('li', 'Adresse : ', h('code', host), ' — port : ', h('code', port), location.protocol === 'https:' ? ' — SSL activé' : ' — sans SSL'),
-          h('li', 'Base d’URL : laisser vide'),
-          h('li', 'Identifiant et mot de passe : ton compte administrateur Séance')),
-        h('p', 'Active ensuite les bibliothèques dans Seerr et lance une synchronisation. Chaque membre du foyer se connecte à Seerr avec son compte Séance.')) : null,
-      jf.tokens.length ? h('details', h('summary.small', `Applications connectées (${jf.tokens.length})`),
-        h('div.user-list', jf.tokens.map((t) => h('div.user-row',
-          h('div.grow', h('strong', t.app || 'Application'), h('span.muted.small', ` ${t.kind === 'apikey' ? 'clé d’API' : 'session'} · ${t.user} · utilisée ${since(t.last_used)}`)),
-          h('button.btn.small.danger', { onclick: async () => { await del(`/api/admin/jellyfin/tokens/${t.id}`); reload(); } }, 'Révoquer'))))) : null),
-    h('section.panel', h('h2', '2. Brancher Séance sur Seerr'),
-      h('p.muted.small', 'Pour que le bouton « Demander » de l’onglet Découvrir envoie les demandes à Seerr, au nom de la personne qui demande.'),
+    h('section.panel', h('h2', 'Seerr'),
+      h('p.muted.small', 'Seerr (le successeur d’Overseerr et de Jellyseerr) reçoit les demandes du bouton « Demander » de l’onglet Découvrir et les envoie à Radarr / Sonarr. Si un compte Seerr porte le même nom qu’un compte Séance, la demande est faite à son nom ; sinon, au nom du propriétaire de la clé d’API.'),
       status,
       h('div.grid2', field('Adresse de Seerr', url), field('Clé d’API de Seerr', key)),
       h('div.actions-row',
@@ -487,6 +465,227 @@ async function requestsTab(body, ctx) {
         } }, 'Déconnecter') : null),
       auto,
       h('p.muted.small', `Catalogues affichés pour le pays : ${cfg.region} (celui des métadonnées).`)));
+}
+
+// ---------------------------------------------------------- tâches planifiées
+const WEEKDAYS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+const TASK_ICONS = { scan: 'search', metadata: 'film', chapters: 'chapters', intros: 'skip', subtitles: 'subs', livetv: 'tv', cleanup: 'trash' };
+const CATEGORIES = ['Bibliothèques', 'Lecture', 'TV en direct', 'Maintenance'];
+
+function scheduleText(s) {
+  if (s.mode === 'interval') return s.hours % 24 === 0 && s.hours > 24 ? `Tous les ${s.hours / 24} jours` : (s.hours === 1 ? 'Toutes les heures' : `Toutes les ${s.hours} h`);
+  if (s.mode === 'daily') return `Chaque jour à ${s.time}`;
+  if (s.mode === 'weekly') return `Chaque ${WEEKDAYS[s.weekday ?? 6]} à ${s.time}`;
+  return 'Désactivée';
+}
+
+function when(ts) {
+  const d = new Date(ts * 1000);
+  const today = new Date();
+  const tomorrow = new Date(Date.now() + 86400000);
+  const time = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === today.toDateString()) return `aujourd’hui à ${time}`;
+  if (d.toDateString() === tomorrow.toDateString()) return `demain à ${time}`;
+  return `${d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })} à ${time}`;
+}
+
+const duration = (sec) => (sec < 60 ? `${sec} s` : sec < 3600 ? `${Math.round(sec / 60)} min` : `${Math.floor(sec / 3600)} h ${String(Math.round((sec % 3600) / 60)).padStart(2, '0')}`);
+
+async function taskSettings(task, libraries) {
+  const sc = task.schedule;
+  const mode = select([['off', 'Désactivée (seulement à la main)'], ['interval', 'À intervalle régulier'], ['daily', 'Chaque jour'],
+    ['weekly', 'Chaque semaine']], sc.mode);
+  const hours = select([[1, '1 heure'], [2, '2 heures'], [3, '3 heures'], [6, '6 heures'], [12, '12 heures'], [24, '24 heures'],
+    [48, '2 jours'], [72, '3 jours'], [168, '7 jours']], String(sc.hours || 24));
+  const time = h('input', { type: 'time', value: sc.time || '03:00' });
+  const weekday = select(WEEKDAYS.map((d, i) => [i, d.charAt(0).toUpperCase() + d.slice(1)]), String(sc.weekday ?? 6));
+  const fHours = field('Toutes les', hours);
+  const fDay = field('Jour', weekday);
+  const fTime = field('Heure', time);
+  const sync = () => {
+    fHours.hidden = mode.value !== 'interval';
+    fDay.hidden = mode.value !== 'weekly';
+    fTime.hidden = !['daily', 'weekly'].includes(mode.value);
+  };
+  mode.addEventListener('change', sync);
+  sync();
+  const inputs = {};
+  const optionEls = task.option_defs.map((o) => {
+    const v = task.options[o.key];
+    if (o.type === 'bool') {
+      const t = toggle(o.label, !!v);
+      inputs[o.key] = () => t.querySelector('input').checked;
+      return h('div', t, o.hint ? h('p.field-hint.toggle-hint', o.hint) : null);
+    }
+    if (o.type === 'int') {
+      const i = h('input', { type: 'number', min: o.min, max: o.max, value: v });
+      inputs[o.key] = () => Number(i.value);
+      return field(o.label + (o.unit ? ` (${o.unit})` : ''), i, o.hint);
+    }
+    if (o.type === 'select') {
+      const sel = select(o.choices, v);
+      inputs[o.key] = () => sel.value;
+      return field(o.label, sel, o.hint);
+    }
+    if (o.type === 'libraries') {
+      const libs = libraries.filter((l) => !o.kind || l.kind === o.kind);
+      const checks = libs.map((l) => { const t = toggle(l.name, (v || []).includes(l.id)); t.dataset.id = l.id; return t; });
+      inputs[o.key] = () => checks.filter((t) => t.querySelector('input').checked).map((t) => t.dataset.id);
+      return libs.length ? field(o.label, h('div.checks', checks), o.hint) : null;
+    }
+    return null;
+  });
+  const err = h('p.form-error');
+  return modal(task.name, h('div.form',
+    h('p.muted.small', task.description),
+    h('h4.form-sub', 'Planification'),
+    h('div.sched-row', field('Quand', mode), fHours, fDay, fTime),
+    optionEls.some(Boolean) ? h('h4.form-sub', 'Options') : null,
+    optionEls, err), [
+    { label: 'Annuler', value: null },
+    { label: 'Enregistrer', primary: true, handler: async () => {
+      const schedule = { mode: mode.value };
+      if (mode.value === 'interval') schedule.hours = Number(hours.value);
+      if (['daily', 'weekly'].includes(mode.value)) schedule.time = time.value || '03:00';
+      if (mode.value === 'weekly') schedule.weekday = Number(weekday.value);
+      const options = Object.fromEntries(Object.entries(inputs).map(([k, f]) => [k, f()]));
+      try { await put(`/api/admin/tasks/${task.id}`, { schedule, options }); return true; } catch (e) { err.textContent = e.message; return false; }
+    } },
+  ]);
+}
+
+async function tasksTab(body, ctx) {
+  const data = await get('/api/admin/tasks');
+  if (!ctx.isCurrent()) return;
+  const reload = () => tasksTab(body, ctx);
+  const act = async (path, msg) => { try { await post(path); if (msg) toast(msg, 'ok'); } catch (e) { toast(e.message, 'bad'); } reload(); };
+  const row = (t) => {
+    const last = t.last;
+    const status = last ? { ok: ['ok', 'Terminée'], error: ['bad', 'Échec'], cancelled: ['', 'Arrêtée'] }[last.status] || ['', last.status] : null;
+    return h('div.task-row',
+      h('div.task-icon', icon(TASK_ICONS[t.id] || 'clock')),
+      h('div.grow',
+        h('strong', t.name),
+        h('p.muted.small.task-desc', t.description),
+        h('div.task-meta',
+          h('span', icon('clock'), ' ', scheduleText(t.schedule)),
+          t.next && !t.running ? h('span', `Prochaine : ${when(t.next)}`) : null,
+          last ? h('span', h('span', { class: status[0] }, status[1]), ` ${since(last.start)}`,
+            last.end ? ` · ${duration(Math.max(0, last.end - last.start))}` : '', last.summary ? ` · ${last.summary}` : '') : h('span', 'Jamais lancée'),
+          t.queued ? h('span.tag', 'En file') : null),
+        t.note ? h('p.small', { class: t.available ? 'small muted' : 'small form-error' }, t.note) : null,
+        t.running ? h('div', h('div.bar', h('div.bar-fill', { style: { width: `${Math.round(t.running.progress * 100)}%` } })),
+          h('div.task-running', t.running.paused ? '⏸ ' : '', t.running.message || 'En cours…',
+            h('span.muted', ` · ${Math.round(t.running.progress * 100)} % · ${t.running.reason}`))) : null),
+      h('div.task-actions',
+        t.running || t.queued
+          ? h('button.btn.small', { onclick: () => act(`/api/admin/tasks/${t.id}/cancel`, 'Tâche arrêtée') }, 'Arrêter')
+          : h('button.btn.small.primary', { disabled: !t.available, onclick: () => act(`/api/admin/tasks/${t.id}/run`, 'Tâche lancée') }, icon('play'), 'Lancer'),
+        h('button.btn.small', { onclick: async () => { if (await taskSettings(t, data.libraries)) { toast('Réglages enregistrés', 'ok'); reload(); } } }, 'Réglages')));
+  };
+  clear(body,
+    h('p.muted', 'Les travaux de fond du serveur. Les tâches lourdes (lecture des fichiers sur le partage) se mettent en pause pendant qu’on regarde quelque chose. Une seule tâche tourne à la fois.'),
+    CATEGORIES.map((cat) => {
+      const list = data.tasks.filter((t) => t.category === cat);
+      return list.length ? h('section.task-group', h('h3', cat), list.map(row)) : null;
+    }));
+  const busy = data.tasks.some((t) => t.running || t.queued);
+  const timer = setTimeout(() => { if (ctx.isCurrent()) reload(); }, busy ? 2500 : 15000);
+  ctx.setCleanup(() => clearTimeout(timer));
+}
+
+// ------------------------------------------------------------ TV en direct
+async function liveSourceForm(src) {
+  const isNew = !src;
+  src = src || { name: '', m3u_url: '', epg_url: '', user_agent: '', enabled: true };
+  const name = h('input', { value: src.name, maxlength: 60, placeholder: 'Mon fournisseur IPTV, Freebox TV…' });
+  const m3u = h('input', { value: src.m3u_url, placeholder: 'http://…/playlist.m3u ou /srv/iptv/chaines.m3u' });
+  const epg = h('input', { value: src.epg_url, placeholder: 'facultatif : http://…/guide.xml(.gz)' });
+  const ua = h('input', { value: src.user_agent, placeholder: 'facultatif : VLC/3.0.20 LibVLC/3.0.20…' });
+  const enabled = toggle('Source active', src.enabled);
+  const err = h('p.form-error');
+  return modal(isNew ? 'Ajouter une source de chaînes' : `Modifier « ${src.name} »`, h('div.form',
+    field('Nom', name),
+    field('Liste des chaînes (M3U / M3U8)', m3u, 'Adresse fournie par ton fournisseur IPTV ou ta box, ou chemin d’un fichier .m3u sur le serveur.'),
+    field('Guide des programmes (XMLTV)', epg, 'Laisse vide si la liste indique déjà son guide (« url-tvg » dans l’en-tête). Les fichiers .gz sont acceptés.'),
+    h('details.advanced', h('summary', 'Options avancées'),
+      field('User-Agent', ua, 'Certains fournisseurs n’acceptent qu’un lecteur précis (VLC, Kodi…).')),
+    isNew ? null : enabled, err), [
+    { label: 'Annuler', value: null },
+    { label: isNew ? 'Ajouter et charger' : 'Enregistrer', primary: true, handler: async () => {
+      err.textContent = isNew ? 'Chargement de la liste…' : '';
+      const payload = { name: name.value.trim(), m3u_url: m3u.value.trim(), epg_url: epg.value.trim(), user_agent: ua.value.trim(),
+        enabled: enabled.querySelector('input').checked };
+      try {
+        const r = isNew ? await post('/api/admin/live/sources', payload) : await put(`/api/admin/live/sources/${src.id}`, payload);
+        if (r.warning) toast(r.warning, 'bad');
+        return true;
+      } catch (e) { err.textContent = e.message; return false; }
+    } },
+  ]);
+}
+
+async function liveGroups(src) {
+  const groups = await get(`/api/admin/live/sources/${src.id}/groups`);
+  const checks = groups.map((g) => { const t = toggle(`${g.name || 'Sans groupe'} (${g.count})`, !g.hidden); t.dataset.name = g.name; return t; });
+  const all = (on) => checks.forEach((t) => { t.querySelector('input').checked = on; });
+  return modal(`Groupes de « ${src.name} »`, h('div',
+    h('p.muted.small', 'Les groupes décochés sont masqués pour tout le monde (pratique pour une liste de plusieurs milliers de chaînes).'),
+    h('div.actions-row', h('button.btn.small', { onclick: () => all(true) }, 'Tout cocher'), h('button.btn.small', { onclick: () => all(false) }, 'Tout décocher')),
+    h('div.checks.single.scroll-list', checks)), [
+    { label: 'Annuler', value: null },
+    { label: 'Enregistrer', primary: true, handler: async () => {
+      await put(`/api/admin/live/sources/${src.id}/groups`, { hidden: checks.filter((t) => !t.querySelector('input').checked).map((t) => t.dataset.name) });
+      return true;
+    } },
+  ]);
+}
+
+async function liveTab(body, ctx) {
+  const data = await get('/api/admin/live');
+  if (!ctx.isCurrent()) return;
+  const reload = async () => { await refreshMe().catch(() => {}); liveTab(body, ctx); };
+  const st = data.settings;
+  const maxS = h('input', { type: 'number', min: 1, max: 20, value: st.max_sessions });
+  const vmode = select([['auto', 'Automatique (H.264 recopié, le reste converti)'], ['copy', 'Ne jamais convertir (le moins de processeur)'],
+    ['transcode', 'Toujours convertir en H.264 (le plus compatible)']], st.video);
+  const hide = toggle('Masquer la TV en direct pour les profils avec une restriction d’âge', st.hide_restricted);
+  clear(body,
+    h('section.panel', h('div.toolbar', h('div', h('h2', 'Sources de chaînes'),
+      h('p.muted.small', 'Listes M3U (IPTV, box opérateur, TNT via un tuner réseau…) et leur guide XMLTV. Les chaînes sont proposées à tous les utilisateurs dans l’onglet « TV en direct ». L’actualisation automatique se règle dans « Tâches planifiées ».')),
+    h('button.btn.primary', { onclick: async () => { if (await liveSourceForm(null)) { toast('Source ajoutée', 'ok'); reload(); } } }, '+ Ajouter')),
+    data.sources.length ? h('div.user-list', data.sources.map((s) => h('div.user-row', { class: s.enabled ? 'user-row' : 'user-row off' },
+      h('div.lib-icon', '📡'),
+      h('div.grow', h('strong', s.name),
+        h('div.muted.small', `${s.channels} chaîne(s)`, s.hidden ? ` dont ${s.hidden} masquée(s)` : '', ` · ${s.programmes} programme(s) dans le guide`,
+          ` · actualisée ${since(s.refreshed_at)}`),
+        h('div.small', h('code', s.m3u_url.length > 70 ? `${s.m3u_url.slice(0, 70)}…` : s.m3u_url)),
+        s.error ? h('div.form-error.small', s.error) : null),
+      h('button.btn.small', { onclick: async (e) => {
+        e.currentTarget.disabled = true;
+        try { const r = await post(`/api/admin/live/sources/${s.id}/refresh`); toast(`${r.channels} chaîne(s)${r.programmes != null ? `, ${r.programmes} programme(s)` : ''}`, 'ok'); }
+        catch (ex) { toast(ex.message, 'bad'); }
+        reload();
+      } }, 'Actualiser'),
+      h('button.btn.small', { onclick: async () => { if (await liveGroups(s)) { toast('Groupes enregistrés', 'ok'); reload(); } } }, 'Groupes…'),
+      h('button.btn.small', { onclick: async () => { if (await liveSourceForm(s)) { toast('Source modifiée', 'ok'); reload(); } } }, 'Modifier'),
+      h('button.icon-btn', { title: 'Supprimer', onclick: async () => {
+        if (!await confirmDialog('Supprimer cette source ?', `Les chaînes de « ${s.name} » et les favoris associés disparaîtront.`, 'Supprimer')) return;
+        await del(`/api/admin/live/sources/${s.id}`); reload();
+      } }, icon('trash')))))
+      : h('div.empty', 'Aucune source. Ajoute l’adresse de ta liste M3U.')),
+    h('section.panel', h('h2', 'Lecture'),
+      h('p.muted.small', 'Le navigateur ne lit pas directement les flux TV (MPEG-TS) : Séance les reçoit et les redécoupe pour lui. Une chaîne regardée par plusieurs personnes n’est reçue qu’une fois. Beaucoup de fournisseurs limitent le nombre de connexions simultanées.'),
+      h('div.grid2', field('Chaînes regardées en même temps (max.)', maxS), field('Vidéo', vmode)),
+      hide,
+      h('button.btn.primary', { onclick: async () => {
+        try { await put('/api/admin/live/settings', { max_sessions: Number(maxS.value), video: vmode.value, hide_restricted: hide.querySelector('input').checked }); toast('Enregistré', 'ok'); reload(); }
+        catch (e) { toast(e.message, 'bad'); }
+      } }, 'Enregistrer')),
+    data.sessions.length ? h('section.panel', h('h2', 'Chaînes regardées en ce moment'), h('div.user-list', data.sessions.map((x) => h('div.user-row',
+      h('div.grow', h('strong', x.channel), h('div.muted.small', `${x.viewers.join(', ') || 'personne'} · ${x.mode === 'transcode' ? 'vidéo convertie' : 'vidéo recopiée'}${x.codec ? ` (${x.codec})` : ''} · depuis ${since(x.since)}`),
+        x.error ? h('div.form-error.small', x.error) : null),
+      h('button.btn.small.danger', { onclick: async () => { await del(`/api/admin/live/sessions/${x.sid}`); reload(); } }, 'Arrêter'))))) : null);
 }
 
 // ---------------------------------------------------------------- streams
@@ -517,6 +716,8 @@ export async function renderAdmin(main, tab, ctx) {
   else if (tab === 'settings') await settingsTab(body, ctx);
   else if (tab === 'streams') await streamsTab(body, ctx);
   else if (tab === 'requests') await requestsTab(body, ctx);
+  else if (tab === 'tasks') await tasksTab(body, ctx);
+  else if (tab === 'live') await liveTab(body, ctx);
   else if (tab === 'shares') await sharesTab(body, ctx);
   else await librariesTab(body, ctx);
 }

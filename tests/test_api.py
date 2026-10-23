@@ -881,109 +881,10 @@ class SeanceTest(unittest.TestCase):
         c.call("DELETE", f"/api/playlists/{pid}")
         c.call("POST", f"/api/items/{show['id']}/watchlist", {"on": False})
 
-    # ------------------------------------------------ API compatible Jellyfin (Seerr)
-    def jf(self, method, path, body=None, token=None):
-        auth = 'MediaBrowser Client="Seerr", Device="Seerr", DeviceId="Qk9U", Version="2.7.3"'
-        if token:
-            auth += f', Token="{token}"'
-        h = {"Authorization": auth, "Content-Type": "application/json", "Accept": "application/json"}
-        data = json.dumps(body).encode() if body is not None else None
-        req = urllib.request.Request(self.base + path, data=data, headers=h, method=method)
-        try:
-            with urllib.request.urlopen(req, timeout=30) as r:
-                raw, st = r.read(), r.status
-        except urllib.error.HTTPError as e:
-            raw, st = e.read(), e.code
-        return st, (json.loads(raw) if raw else None)
-
-    def enable_jf(self):
-        st, r = self.admin.call("PUT", "/api/admin/jellyfin", {"enabled": True})
-        self.assertEqual(st, 200, r)
-
-    def test_jellyfin_api_as_seerr_sees_it(self):
-        self.admin.call("PUT", "/api/admin/jellyfin", {"enabled": False})
-        self.assertEqual(self.jf("GET", "/System/Info/Public")[0], 404)  # désactivée par défaut
-        self.enable_jf()
-        st, pub = self.jf("GET", "/System/Info/Public")
-        self.assertEqual((st, pub["ProductName"], len(pub["Id"])), (200, "Jellyfin Server", 32))
-        self.assertEqual(self.jf("GET", "/System/Info")[0], 401)
-        self.assertEqual(self.jf("POST", "/Users/AuthenticateByName", {"Username": "colas", "Pw": "faux"})[0], 401)
-        # 1. connexion du compte administrateur, comme l'assistant de Seerr
-        st, login = self.jf("POST", "/Users/AuthenticateByName", {"Username": "colas", "Pw": "motdepasse1"})
-        self.assertEqual(st, 200, login)
-        self.assertTrue(login["User"]["Policy"]["IsAdministrator"])
-        self.assertEqual(login["User"]["ServerId"], pub["Id"])
-        tok = login["AccessToken"]
-        # 2. création puis relecture de la clé d'API
-        self.assertEqual(self.jf("POST", "/Auth/Keys?App=Seerr", token=tok)[0], 204)
-        st, keys = self.jf("GET", "/Auth/Keys", token=tok)
-        key = [k for k in keys["Items"] if k["AppName"] == "Seerr"][-1]["AccessToken"]
-        st, info = self.jf("GET", "/System/Info", token=key)
-        self.assertEqual((st, info["Id"]), (200, pub["Id"]))
-        # 3. utilisateurs et bibliothèques
-        st, users = self.jf("GET", "/Users", token=key)
-        self.assertEqual({u["Name"] for u in users} >= {"colas", "lea"}, True)
-        lea = next(u for u in users if u["Name"] == "lea")
-        self.assertFalse(lea["Policy"]["IsAdministrator"])
-        self.assertEqual(len(lea["Policy"]["EnabledFolders"]), 2)
-        st, folders = self.jf("GET", "/Library/MediaFolders", token=key)
-        libs = {f["Name"]: f for f in folders["Items"]}
-        self.assertEqual({k: v["CollectionType"] for k, v in libs.items()},
-                         {"Films": "movies", "Séries": "tvshows", "Animes": "tvshows"})
-        # 4. contenu (synchro complète de Seerr)
-        st, films = self.jf("GET", "/Items?SortBy=SortName&SortOrder=Ascending&IncludeItemTypes=Series,Movie,Others"
-                                   f"&Recursive=true&StartIndex=0&ParentId={libs['Films']['Id']}&collapseBoxSetItems=false",
-                            token=key)
-        self.assertEqual(sorted(i["Name"] for i in films["Items"]), ["Brume", "Le Grand Voyage", "Nuit polaire"])
-        gv = next(i for i in films["Items"] if i["Name"] == "Le Grand Voyage")
-        st, data = self.jf("GET", f"/Items?ids={gv['Id']}&fields=ProviderIds,MediaSources,Width,Height,IsHD,DateCreated",
-                           token=key)
-        d = data["Items"][0]
-        self.assertEqual(d["ProviderIds"], {"Tmdb": "5001", "Imdb": "tt0005001"})
-        self.assertEqual(d["MediaSources"][0]["MediaStreams"][0]["Type"], "Video")
-        self.assertTrue(d["DateCreated"].endswith("Z"))
-        st, animes = self.jf("GET", f"/Items?IncludeItemTypes=Series,Movie&Recursive=true&ParentId={libs['Animes']['Id']}",
-                             token=key)
-        kaze = animes["Items"][0]
-        st, kd = self.jf("GET", f"/Items?ids={kaze['Id']}&fields=ProviderIds", token=key)
-        self.assertEqual(kd["Items"][0]["ProviderIds"]["Tvdb"], "77002")
-        st, seasons = self.jf("GET", f"/Shows/{kaze['Id']}/Seasons", token=key)
-        self.assertEqual([x["IndexNumber"] for x in seasons["Items"]], [1])
-        st, eps = self.jf("GET", f"/Shows/{kaze['Id']}/Episodes?seasonId={seasons['Items'][0]['Id']}&fields=MediaSources",
-                          token=key)
-        self.assertEqual([e["IndexNumber"] for e in eps["Items"]], [1, 2])
-        self.assertEqual(eps["Items"][0]["ParentIndexNumber"], 1)
-        self.assertGreater(eps["Items"][0]["MediaSources"][0]["MediaStreams"][0]["Width"], 0)
-        # 5. ajouts récents (synchro rapide)
-        st, latest = self.jf("GET", f"/Items/Latest?Limit=12&ParentId={libs['Animes']['Id']}&userId=Me", token=key)
-        self.assertEqual([x["SeriesId"] for x in latest], [kaze["Id"]])
-        # un utilisateur ordinaire ne voit que ses bibliothèques et pas les autres comptes
-        st, l2 = self.jf("POST", "/Users/AuthenticateByName", {"Username": "lea", "Pw": "motdepasse2"})
-        lt = l2["AccessToken"]
-        self.assertEqual([u["Name"] for u in self.jf("GET", "/Users", token=lt)[1]], ["lea"])
-        self.assertEqual(self.jf("GET", "/Library/MediaFolders", token=lt)[0], 403)
-        st, views = self.jf("GET", "/Users/Me/Views", token=lt)
-        self.assertEqual(sorted(v["Name"] for v in views["Items"]), ["Animes", "Films"])
-        st, ser = self.jf("GET", f"/Items?ParentId={libs['Séries']['Id']}&Recursive=true", token=lt)
-        self.assertEqual(ser["Items"], [])
-        self.assertEqual(self.jf("POST", "/Auth/Keys?App=X", token=lt)[0], 403)
-        # révocation depuis l'administration
-        st, adm = self.admin.call("GET", "/api/admin/jellyfin")
-        self.assertGreaterEqual(len(adm["tokens"]), 3)
-        for t in adm["tokens"]:
-            self.admin.call("DELETE", f"/api/admin/jellyfin/tokens/{t['id']}")
-        self.assertEqual(self.jf("GET", "/System/Info", token=key)[0], 401)
-
+    # ------------------------------------------------ Découvrir et demandes (Seerr)
     def test_discover_and_requests_through_seerr(self):
-        self.enable_jf()
         seerr = FakeSeerr()
         try:
-            # Seerr est configuré sur Séance (comme serveur Jellyfin) avec une clé d'API
-            st, login = self.jf("POST", "/Users/AuthenticateByName", {"Username": "colas", "Pw": "motdepasse1"})
-            self.jf("POST", "/Auth/Keys?App=Seerr", token=login["AccessToken"])
-            seerr.jf_url = self.base
-            seerr.jf_key = self.jf("GET", "/Auth/Keys", token=login["AccessToken"])[1]["Items"][-1]["AccessToken"]
-            seerr.users[0]["jellyfinUserId"] = login["User"]["Id"]
             # sans Seerr : catalogue visible, pas de demande possible
             st, home = self.lea.call("GET", "/api/discover/home")
             self.assertEqual(st, 200, home)
@@ -1007,14 +908,14 @@ class SeanceTest(unittest.TestCase):
             self.assertNotIn("seerr_key", cfg)
             st, t = self.admin.call("POST", "/api/admin/requests/test")
             self.assertEqual((st, t["media_server"]), (200, "Jellyfin"), t)
-            # fiche d'un titre du catalogue, puis demande au nom de Léa (importée dans Seerr)
+            # fiche d'un titre du catalogue, puis demande au nom de Léa (même nom dans Seerr)
             st, title = self.lea.call("GET", "/api/discover/title/tv/9201")
             self.assertEqual([x["number"] for x in title["seasons"]], [1, 2])
             self.assertEqual((title["trailer"], title["streams"][0]["name"], title["can_request"]),
                              ("trailer9999", "Netflix", True))
             st, r = self.lea.call("POST", "/api/discover/request", {"type": "tv", "tmdb_id": 9201, "seasons": [1]})
             self.assertEqual((st, r["status"], r["as_user"]), (200, "pending", True), r)
-            lea_seerr = next(u for u in seerr.users if u["displayName"] == "lea")
+            lea_seerr = next(u for u in seerr.users if u.get("username") == "lea")
             self.assertEqual(seerr.requests[-1], {"user": lea_seerr["id"], "mediaType": "tv", "mediaId": 9201,
                                                   "seasons": [1]})
             st, title = self.lea.call("GET", "/api/discover/title/tv/9201")
