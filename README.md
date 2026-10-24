@@ -14,7 +14,7 @@ Un serveur multimédia **100 % auto-hébergé** pour tes films, séries et anime
 | **Reconnaissance** | `Titre (Année)/…`, noms « scène » (`Inception.2010.1080p.BluRay…`), `S01E02`, `1x02`, `Saison 1/…`, animes `[Groupe] Titre - 12 [1080p]`, numérotation absolue (`Episode 1071`), spéciaux (`Season 00`, `Specials`) |
 | **Métadonnées** | TMDB (affiches, fonds, résumés, genres, distribution, titres et images d'épisodes, classification) en français avec repli anglais. Lit aussi les `.nfo` et `poster.jpg` / `fanart.jpg` déjà présents (ceux de Jellyfin/Kodi, par exemple). Correction manuelle avec « Identifier… » |
 | **Comptes** | Comptes propres à Nexis, administrateurs, accès par bibliothèque, désactivation |
-| **Espace personnel** | Reprise de lecture, « Reprendre et à suivre », historique, épisodes vus/non vus, langues audio/sous-titres préférées, thème, couleur, taille des affiches |
+| **Espace personnel** | Reprise de lecture, « Reprendre et à suivre », suggestions d'après les derniers visionnages, historique, épisodes vus/non vus, langues audio/sous-titres préférées, thème, couleur, taille des affiches |
 | **Collections et listes** | Sagas créées automatiquement depuis TMDB (*Harry Potter*, *Le Seigneur des anneaux*…), collections manuelles, liste « À regarder » par utilisateur, playlists personnelles lues à la suite |
 | **Bonus** | Bandes-annonces (YouTube via TMDB ou fichiers locaux), coulisses, scènes coupées, interviews… rangés sous le film ou la série |
 | **Découvrir et demandes** | Catalogues Netflix, Prime Video, Disney+, Canal+… (via TMDB) avec ce qui est déjà sur le serveur, bouton « Demander » relié à Seerr / Overseerr / Jellyseerr |
@@ -377,7 +377,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 - [x] Lecteur réductible (mini-lecteur dans un coin, comme Plex) : on continue à naviguer sans arrêter la lecture (bouton du lecteur ou touche « i »)
 - [x] « Reprendre et à suivre » : bouton pour marquer comme vu directement sur la vignette (avec « Annuler » pendant quelques secondes)
 - [x] Personnalisation par utilisateur : ordre des rangées de l'accueil et des liens de la barre du haut (Réglages → Accueil / Barre du haut : glisser-déposer ou flèches, interrupteur pour masquer)
-- [ ] Suggestions selon les derniers visionnages
+- [x] Suggestions selon les derniers visionnages (« Suggestions pour toi », « Parce que tu as regardé… », titres similaires sur les fiches)
 - [ ] Animations (transitions de pages, apparition des cartes, survols) pour une interface plus vivante
 
 ### Regarder ensemble

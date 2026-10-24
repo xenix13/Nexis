@@ -22,7 +22,7 @@ EXTERNAL_BASE = 1000  # identifiants des sous-titres externes
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 LANG = re.compile(r"^[a-z]{2,3}$")
 # rangées de l'accueil et liens de la barre du haut : ordre et masquage propres à chaque utilisateur
-LAYOUT_KEY = re.compile(r"^(together|continue|watchlist|home|discover|live|lib:\d{1,9})$")
+LAYOUT_KEY = re.compile(r"^(together|continue|watchlist|suggest|because|home|discover|live|lib:\d{1,9})$")
 IMG_PATH = re.compile(r"^/library/metadata/(\d{1,12})/(thumb|art)/\d{1,14}$")
 LANG_NAMES = {"fra": "Français", "eng": "Anglais", "jpn": "Japonais", "deu": "Allemand", "spa": "Espagnol",
               "ita": "Italien", "por": "Portugais", "kor": "Coréen", "zho": "Chinois", "rus": "Russe",

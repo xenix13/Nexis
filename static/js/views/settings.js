@@ -134,6 +134,8 @@ export async function renderSettings(main) {
     { key: 'together', label: 'Regarder ensemble', hint: 'quand un groupe est ouvert' },
     { key: 'continue', label: 'Reprendre et à suivre' },
     { key: 'watchlist', label: 'À regarder' },
+    { key: 'suggest', label: 'Suggestions pour toi', hint: 'd’après ce que tu as regardé récemment' },
+    { key: 'because', label: 'Parce que tu as regardé…', hint: 'titres proches de tes derniers visionnages' },
     ...me.libraries.map((l) => ({ key: `lib:${l.id}`, label: l.title, hint: l.type === 'show' ? 'nouveaux épisodes' : 'ajoutés récemment' })),
   ];
   const homeById = new Map(homeItems.map((i) => [i.key, i]));

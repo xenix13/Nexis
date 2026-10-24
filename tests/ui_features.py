@@ -218,8 +218,9 @@ with sync_playwright() as pw:
     lpage.goto(base + "/#/settings")
     lpage.wait_for_selector(".layout-list")
     home_list = ".panel:has(h2:text-is('Accueil')) .layout-list"
-    for _ in range(3):
-        lpage.click(f"{home_list} button[aria-label='Monter Films']")
+    up = f"{home_list} button[aria-label='Monter Films']"
+    while lpage.is_enabled(up):  # jusqu'en haut de la liste
+        lpage.click(up)
         lpage.wait_for_timeout(250)
     lpage.click(f"{home_list} .layout-item[data-key='watchlist'] .toggle")
     nav_list = ".panel:has(h2:text-is('Barre du haut')) .layout-list"
@@ -237,6 +238,11 @@ with sync_playwright() as pw:
     rows = lpage.eval_on_selector_all(".content .row-title", "els => els.map((e) => e.textContent)")
     check(rows and rows[0].startswith("Ajoutés récemment · Films") and "À regarder" not in rows, f"accueil réordonné : {rows}")
     lea.call("PUT", "/api/me/prefs", {"home_order": [], "home_hidden": [], "nav_order": [], "nav_hidden": []})
+    # --- fiche : titres similaires (genres, réalisateur, acteurs)
+    lpage.goto(base + f"/#/item/{voyage}")
+    lpage.wait_for_selector("section.block h2:text-is('Films similaires')")
+    check(lpage.locator("section.block:has(h2:text-is('Films similaires')) .card:has-text('Brume')").count() == 1,
+          "Brume dans les films similaires au Grand Voyage")
     lctx.close()
 
     # --- tâches planifiées

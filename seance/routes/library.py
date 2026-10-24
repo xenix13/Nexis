@@ -139,7 +139,9 @@ def register(app, ctx, x):
                 rows.append({"library": lib, "items": items})
         cont = continue_row(user, allowed) if prefs["show_continue"] else []
         hero = rows[0]["items"][0] if rows and rows[0]["items"] else None
-        return {"continue": cont, "rows": rows, "hero": hero, "watchlist": x.watchlist_items(user, 24)}
+        sugg = x.suggestions(user) if not {"suggest", "because"} <= set(prefs["home_hidden"]) else {"suggestions": [], "because": []}
+        return {"continue": cont, "rows": rows, "hero": hero, "watchlist": x.watchlist_items(user, 24),
+                "suggestions": sugg["suggestions"], "because": sugg["because"]}
 
     @app.route("GET", "/api/search")
     def search(req):

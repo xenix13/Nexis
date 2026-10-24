@@ -61,6 +61,11 @@ export async function renderHome(main, ctx) {
   }
   sections.set('continue', current);
   sections.set('watchlist', row('À regarder', data.watchlist, (c) => posterCard(c), { href: '#/watchlist' }));
+  // suggestions calculées à partir de ce qui a été regardé récemment (genres, réalisateurs, acteurs)
+  sections.set('suggest', row('Suggestions pour toi', data.suggestions, (c) => posterCard(c)));
+  const because = (data.because || []).map((b) => row(`Parce que tu as regardé ${b.seed.type === 'show' ? 'la série ' : ''}${b.seed.title}`,
+    b.items, (c) => posterCard(c)));
+  sections.set('because', because.length ? h('div.row-group', because) : null);
   for (const r of data.rows) {
     const title = r.library.type === 'show' ? `Nouveaux épisodes · ${r.library.title}` : `Ajoutés récemment · ${r.library.title}`;
     sections.set(`lib:${r.library.id}`, row(title, r.items, (c) => posterCard(c), { href: `#/library/${r.library.id}` }));

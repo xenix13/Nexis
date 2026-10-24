@@ -334,6 +334,17 @@ export async function renderItem(main, rk, ctx) {
     parts.push(h('section.block', h('div.row-head', h('a.row-title', { href: `#/collection/${c.id}` }, `Collection : ${c.title}`)),
       h('div.grid.small', others.map((x) => posterCard(x)))));
   }
+  // titres proches (genres, réalisateur, acteurs), chargés après la fiche
+  if (['movie', 'show', 'episode'].includes(d.type)) {
+    const similar = h('section.block', { hidden: true });
+    parts.push(similar);
+    get(`/api/items/${d.id}/similar`).then((r) => {
+      if (!r.items.length || !similar.isConnected) return;
+      similar.append(h('h2', d.type === 'movie' ? 'Films similaires' : 'Titres similaires'),
+        h('div.grid.small', r.items.slice(0, 12).map((x) => posterCard(x))));
+      similar.hidden = false;
+    }).catch(() => {});
+  }
   if (d.cast && d.cast.length) {
     parts.push(h('section.block', h('h2', 'Distribution'),
       h('div.cast', d.cast.map((p) => h('div.person', h('span.person-init', p.name.charAt(0)),

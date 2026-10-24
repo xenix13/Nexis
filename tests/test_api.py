@@ -487,6 +487,35 @@ class SeanceTest(unittest.TestCase):
         self.assertNotIn(eps[0]["id"], [i["id"] for i in h["items"]])
         c.call("POST", f"/api/items/{show['id']}/watched", {"watched": False})
 
+    def test_suggestions_from_recent_viewing(self):
+        from seance import suggest
+        self.admin.call("POST", "/api/admin/users", {"username": "sugg", "password": "motdepasse9", "display_name": "Sugg"})
+        c = Client(self.base)
+        c.call("POST", "/api/login", {"username": "sugg", "password": "motdepasse9"})
+        st, home = c.call("GET", "/api/home")
+        self.assertEqual((home["suggestions"], home["because"]), ([], []))  # rien regardé : rien à suggérer
+        show, d, eps = self.episodes("Les Veilleurs", "Séries")  # série « Thriller »
+        c.call("POST", f"/api/items/{eps[0]['id']}/watched", {"watched": True})
+        old = suggest.MIN_ROW
+        suggest.MIN_ROW = 1  # bibliothèque de test minuscule
+        try:
+            st, home = c.call("GET", "/api/home")
+        finally:
+            suggest.MIN_ROW = old
+        titles = [i["title"] for i in home["suggestions"]]
+        self.assertEqual(titles[0], "Nuit polaire", titles)  # même genre
+        self.assertNotIn("Les Veilleurs", titles)  # déjà commencée : pas suggérée
+        self.assertEqual(home["because"][0]["seed"]["title"], "Les Veilleurs")
+        # fiche : titres similaires, sans historique
+        voyage = self.movie("Le Grand Voyage")
+        st, r = c.call("GET", f"/api/items/{voyage['id']}/similar")
+        self.assertEqual([i["title"] for i in r["items"]][:1], ["Brume"])
+        self.assertNotIn("Le Grand Voyage", [i["title"] for i in r["items"]])
+        # rangées masquées dans les réglages : pas de calcul
+        c.call("PUT", "/api/me/prefs", {"home_hidden": ["suggest", "because"]})
+        st, home = c.call("GET", "/api/home")
+        self.assertEqual(home["suggestions"], [])
+
     def test_identify(self):
         m = self.movie("Brume")
         st, r = self.admin.call("GET", f"/api/admin/identify/{m['id']}?q=voyage")
