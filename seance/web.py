@@ -36,21 +36,11 @@ class Request:
         self.session_hash = None
         self.params = {}
         self._body = None
-        self._lq = None
         self.set_cookies = []
 
     def arg(self, name, default=None):
         v = self.query.get(name)
         return v[0] if v else default
-
-    @property
-    def lq(self):
-        """Paramètres de l'adresse, noms en minuscules (l'API Jellyfin ignore la casse)."""
-        if self._lq is None:
-            self._lq = {}
-            for k, v in self.query.items():
-                self._lq.setdefault(k.lower(), []).extend(v)
-        return self._lq
 
     def int_arg(self, name, default=0, lo=None, hi=None):
         try:
@@ -124,9 +114,6 @@ class App:
         self.before = []  # callables(req, route_opts)
         self.static_dir = None
         self.teardown = []
-        self.compat = []            # API compatible Jellyfin (hors /api/), insensible à la casse
-        self.compat_enabled = lambda: False
-        self.compat_static = None   # (préfixe, callable(req) -> Response) : client web Jellyfin
 
     def route(self, method, pattern, **opts):
         regex = re.compile("^" + pattern + "$")
@@ -136,39 +123,7 @@ class App:
             return fn
         return deco
 
-    def compat_route(self, method, pattern):
-        regex = re.compile("^" + pattern + "$", re.I)
-
-        def deco(fn):
-            self.compat.append((method, regex, fn))
-            return fn
-        return deco
-
-    def dispatch_compat(self, req):
-        allowed = False
-        for method, regex, fn in self.compat:
-            m = regex.match(req.path)
-            if not m:
-                continue
-            allowed = True
-            if method != req.method:
-                continue
-            req.params = m.groupdict()
-            result = fn(req)
-            if isinstance(result, Response):
-                return result
-            return json_response(result)
-        if allowed:
-            raise HTTPError(405, "Method not allowed")
-        return None
-
     def dispatch(self, req):
-        if not req.path.startswith("/api/") and self.compat and self.compat_enabled():
-            resp = self.dispatch_compat(req)
-            if resp is not None:
-                return resp
-            if self.compat_static and req.path.lower().startswith(self.compat_static[0]):
-                return self.compat_static[1](req)
         if req.path.startswith("/api/"):
             allowed = False
             for method, regex, fn, opts in self.routes:
@@ -306,8 +261,7 @@ def make_handler(app, trust_proxy=False, hsts=False):
             if hsts:  # derrière un reverse proxy HTTPS (SEANCE_COOKIE_SECURE=1)
                 self.send_header("Strict-Transport-Security", "max-age=31536000")
             for k, v in resp.headers.items():
-                if v is not None:  # None : en-tête de sécurité par défaut retiré pour cette réponse
-                    self.send_header(k, v)
+                self.send_header(k, v)
             for c in req.set_cookies:
                 self.send_header("Set-Cookie", c)
             if resp.stream is None:

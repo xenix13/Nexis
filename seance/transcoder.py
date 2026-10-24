@@ -143,8 +143,7 @@ def plan(probe, audio_index=None, burn_index=None, quality="original", caps=None
     over_rate = bool(target and rate_kbps and rate_kbps > target[1] * 1.3)
     vcopy = video_ok(v, caps) and burn_index is None and not need_scale and not over_rate
     # multicanal : on fait nous-mêmes la réduction en stéréo (le mixage par défaut du navigateur sature)
-    # (un appareil Jellyfin peut déclarer lire le multicanal : max_channels)
-    acopy = bool(a and a["codec"] in caps["audio"] and (a.get("channels") or 2) <= caps.get("max_channels", 2))
+    acopy = bool(a and a["codec"] in caps["audio"] and (a.get("channels") or 2) <= 2)
     container = (probe.get("container") or "").split(",")
     # MKV : jamais en direct (les navigateurs ne le lisent pas), c'est le remux qui s'en charge
     direct_container = bool(set(container) & set(caps.get("containers") or ()) & {"mp4", "mov"})
@@ -286,11 +285,8 @@ class Transcoder:
             live = [s for s in self.sessions.values() if s.proc]
             return len(live), sum(1 for s in live if s.plan["mode"] == "transcode")
 
-    def start(self, sid, path, p, offset_ms, duration_ms=0, keyframes=None, lazy=False):
-        """Prépare un flux et lance ffmpeg au segment de `offset_ms`. -> position de départ (ms).
-
-        lazy : ffmpeg ne démarre qu'à la première demande du lecteur (clients Jellyfin, qui peuvent préparer
-        l'élément suivant d'une file d'attente sans le lire tout de suite)."""
+    def start(self, sid, path, p, offset_ms, duration_ms=0, keyframes=None):
+        """Prépare un flux et lance ffmpeg au segment de `offset_ms`. -> position de départ (ms)."""
         if p["mode"] == "direct":
             return offset_ms
         max_streams, max_transcodes = self.limits()
@@ -312,9 +308,8 @@ class Transcoder:
             self.sessions[sid] = s
         first = self.index_at(s, offset_ms / 1000)
         s.start_index = first
-        if not lazy:
-            with s.lock:
-                self._spawn(s, first)
+        with s.lock:
+            self._spawn(s, first)
         return offset_ms
 
     @staticmethod

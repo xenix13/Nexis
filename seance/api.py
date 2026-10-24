@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from . import catalog, collections_api, discover, jellyfin, livetv, media, syncplay, tasks
+from . import catalog, collections_api, discover, livetv, media, syncplay, tasks
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
@@ -145,8 +145,7 @@ def build_app(ctx):
     app.before.append(before)
 
     catalog.install(ctx, x)
-    for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay,
-                   jellyfin):
+    for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay):
         module.register(app, ctx, x)
     return app
 
@@ -163,8 +162,6 @@ def janitor(ctx, stop_event):
             db.run("DELETE FROM sessions WHERE expires_at < ?", (now,))
             ctx.live.reap()
             ctx.together.reap()
-            if now % 3600 < 30:
-                db.run("DELETE FROM jf_tokens WHERE kind='session' AND last_used < ?", (now - 180 * 86400,))
         except Exception:
             log.exception("Erreur du nettoyage périodique")
         finally:

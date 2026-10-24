@@ -34,20 +34,6 @@ def main(argv=None):
     app = build_app(ctx)
     handler = make_handler(app, ctx.trust_proxy, hsts=ctx.cookie_secure)
     server = Server((args.host, args.port), handler)
-    extra = []
-    # port supplémentaire pour les applications Jellyfin (8096 : celui qu'elles essaient par défaut)
-    jf_port = int(os.environ.get("SEANCE_JELLYFIN_PORT") or 0)
-    if jf_port and jf_port != args.port:
-        try:
-            extra.append(Server((args.host, jf_port), handler))
-            threading.Thread(target=extra[-1].serve_forever, daemon=True).start()
-        except OSError as e:
-            logging.getLogger("seance").warning("Port Jellyfin %d indisponible : %s", jf_port, e)
-    if env_bool("SEANCE_JELLYFIN_DISCOVERY", True):
-        from .jellyfin.discovery import Discovery
-        disco = Discovery(ctx.jf, args.port)
-        if disco.start():
-            ctx.jf_discovery = disco
     stop = threading.Event()
     threading.Thread(target=janitor, args=(ctx, stop), daemon=True).start()
     ctx.watcher.start()
@@ -62,8 +48,6 @@ def main(argv=None):
         ctx.transcoder.stop_all()
         ctx.live.stop_all()
         threading.Thread(target=server.shutdown, daemon=True).start()
-        for s in extra:
-            threading.Thread(target=s.shutdown, daemon=True).start()
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
     logging.getLogger("seance").info("Nexis écoute sur http://%s:%d", args.host, args.port)

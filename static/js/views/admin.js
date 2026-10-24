@@ -5,7 +5,7 @@ import { avatar, clear, confirmDialog, field, fmtTime, h, icon, modal, select, t
 function tabs(active) {
   const t = (id, label) => h('a.tab', { href: `#/admin/${id}`, class: id === active ? 'tab active' : 'tab' }, label);
   return h('div.tabs', t('libraries', 'Bibliothèques'), t('shares', 'Partages réseau'), t('users', 'Utilisateurs'), t('settings', 'Métadonnées et lecture'),
-    t('tasks', 'Tâches planifiées'), t('live', 'TV en direct'), t('jellyfin', 'Applications Jellyfin'), t('requests', 'Demandes'),
+    t('tasks', 'Tâches planifiées'), t('live', 'TV en direct'), t('requests', 'Demandes'),
     t('streams', 'Lectures en cours'));
 }
 
@@ -689,43 +689,6 @@ async function liveTab(body, ctx) {
       h('button.btn.small.danger', { onclick: async () => { await del(`/api/admin/live/sessions/${x.sid}`); reload(); } }, 'Arrêter'))))) : null);
 }
 
-// ------------------------------------------------------ applications Jellyfin
-async function jellyfinTab(body, ctx) {
-  const cfg = await get('/api/admin/jellyfin');
-  if (!ctx.isCurrent()) return;
-  const reload = () => jellyfinTab(body, ctx);
-  const address = `${location.protocol}//${location.host}`;
-  const sw = toggle('Autoriser les applications Jellyfin à se connecter à Nexis', cfg.enabled);
-  sw.querySelector('input').addEventListener('change', async (e) => {
-    try { await put('/api/admin/jellyfin', { enabled: e.target.checked }); toast('Enregistré', 'ok'); reload(); }
-    catch (err) { toast(err.message, 'bad'); reload(); }
-  });
-  const web = cfg.web_client.installed
-    ? h('div.plex-status.ok', `Interface web Jellyfin installée${cfg.web_client.version ? ` (version ${cfg.web_client.version})` : ''} : Jellyfin Media Player et l’application pour téléphone peuvent s’y connecter.`)
-    : h('div.plex-status', 'Interface web Jellyfin absente : Jellyfin Media Player (Windows) et l’application pour téléphone en ont besoin. Relance deploy/install.sh pour l’installer ; Android TV fonctionne sans.');
-  const apps = [
-    ['Windows, macOS, Linux', 'Jellyfin Media Player'],
-    ['Android TV, Google TV, Fire TV', 'Jellyfin pour Android TV (découverte automatique sur le réseau local)'],
-    ['Téléphones et tablettes', 'Jellyfin pour Android ou iOS'],
-  ];
-  clear(body,
-    h('section.panel', h('h2', 'Applications Jellyfin'),
-      h('p.muted.small', 'Nexis se présente comme un serveur Jellyfin : les applications officielles s’y connectent avec un compte Nexis (un profil géré se connecte avec son code PIN, depuis le réseau local). Bibliothèques, droits d’accès et contrôle parental, reprise de lecture, « vu », « Ma liste » (favoris), sous-titres et saut d’intro sont partagés avec Nexis. L’administration reste ici.'),
-      sw,
-      cfg.enabled ? h('div', h('p', 'Adresse du serveur à saisir dans l’application : ', h('code', address)),
-        h('ul.small', apps.map(([where, what]) => h('li', h('strong', where), ' : ', what)))) : null,
-      web),
-    cfg.enabled ? h('section.panel', h('h2', 'Appareils connectés'),
-      cfg.devices.length ? h('div.user-list', cfg.devices.map((d) => h('div.user-row',
-        h('div.grow', h('strong', `${d.app}${d.version ? ` ${d.version}` : ''}${d.device ? ` · ${d.device}` : ''}`),
-          h('div.muted.small', `${d.user} · ${d.ip || '?'} · utilisé ${since(d.last_used)}`)),
-        h('button.btn.small.danger', { onclick: async () => {
-          if (!await confirmDialog('Déconnecter cet appareil ?', 'L’application devra se reconnecter avec le mot de passe du compte.', 'Déconnecter')) return;
-          await del(`/api/admin/jellyfin/devices/${d.id}`); reload();
-        } }, 'Déconnecter'))))
-        : h('div.empty', 'Aucune application connectée pour l’instant.')) : null);
-}
-
 // ---------------------------------------------------------------- streams
 const MODES = { direct: 'Lecture directe', copy: 'Remux (vidéo copiée)', transcode: 'Transcodage' };
 
@@ -757,7 +720,6 @@ export async function renderAdmin(main, tab, ctx) {
   else if (tab === 'tasks') await tasksTab(body, ctx);
   else if (tab === 'live') await liveTab(body, ctx);
   else if (tab === 'shares') await sharesTab(body, ctx);
-  else if (tab === 'jellyfin') await jellyfinTab(body, ctx);
   else await librariesTab(body, ctx);
 }
 

@@ -110,7 +110,9 @@ Le lecteur hls.js 1.5.15 est désormais **fourni dans le dépôt** (`static/vend
 - **Messages d'erreur de ffmpeg :** montrés lors d'un échec de lecture, ils peuvent révéler un chemin de fichier à un membre du foyer.
 - **Groupes « Regarder ensemble » :** visibles par tout le foyer. Le titre d'un contenu non autorisé n'est jamais montré.
 
-## Ajout de la version 3.2.0 : applications Jellyfin
+## Ajout de la version 3.2.0 : applications Jellyfin (retiré en 3.4.0)
+
+*La compatibilité avec les applications Jellyfin a été retirée en version 3.4.0 (code, jetons et réglages supprimés de la base) : cette surface n'existe plus. La section reste pour l'historique.*
 
 *24 octobre 2026.* Nexis peut se présenter comme un serveur Jellyfin (`seance/jellyfin/`). Cette nouvelle surface a été revue avec les mêmes menaces que ci-dessus ; les protections sont couvertes par `tests/test_jellyfin.py`.
 

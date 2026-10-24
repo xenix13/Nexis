@@ -323,6 +323,12 @@ MIGRATIONS = [
         PRIMARY KEY(user_id, client, pref_id)
     );
     """,
+    # 10 : compatibilité Jellyfin retirée (remplacée par les applications Nexis)
+    """
+    DROP TABLE IF EXISTS jf_prefs;
+    DROP TABLE IF EXISTS jf_tokens;
+    DELETE FROM settings WHERE key IN ('jellyfin_api', 'jf_server_id', 'jf_secret');
+    """,
 ]
 
 
