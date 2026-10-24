@@ -213,6 +213,32 @@ with sync_playwright() as pw:
     check(not d["watched"] and d["position"] == 600000, f"« Annuler » remet la reprise ({d['watched']}, {d['position']})")
     lctx.close()
 
+    # --- ordre de l'accueil et de la barre du haut (Réglages → Accueil / Barre du haut)
+    lctx, lpage = browser_ctx(browser, lea)
+    lpage.goto(base + "/#/settings")
+    lpage.wait_for_selector(".layout-list")
+    home_list = ".panel:has(h2:text-is('Accueil')) .layout-list"
+    for _ in range(3):
+        lpage.click(f"{home_list} button[aria-label='Monter Films']")
+        lpage.wait_for_timeout(250)
+    lpage.click(f"{home_list} .layout-item[data-key='watchlist'] .toggle")
+    nav_list = ".panel:has(h2:text-is('Barre du haut')) .layout-list"
+    lpage.click(f"{nav_list} .layout-item[data-key='watchlist'] .toggle")
+    lpage.wait_for_timeout(400)
+    lpage.click(f"{nav_list} button[aria-label='Monter TV en direct']")
+    lpage.wait_for_timeout(400)
+    links = lpage.eval_on_selector_all("header .nav .nav-link", "els => els.map((e) => e.textContent)")
+    check("À regarder" not in links and links.index("TV en direct") < links.index("Animes"),
+          f"barre du haut réordonnée sans recharger : {links}")
+    lpage.locator(".panel:has(h2:text-is('Accueil'))").scroll_into_view_if_needed()
+    lpage.screenshot(path=f"{out}/03e-reglages-ordre.png")
+    lpage.goto(base + "/#/")
+    lpage.wait_for_selector(".row-title")
+    rows = lpage.eval_on_selector_all(".content .row-title", "els => els.map((e) => e.textContent)")
+    check(rows and rows[0].startswith("Ajoutés récemment · Films") and "À regarder" not in rows, f"accueil réordonné : {rows}")
+    lea.call("PUT", "/api/me/prefs", {"home_order": [], "home_hidden": [], "nav_order": [], "nav_hidden": []})
+    lctx.close()
+
     # --- tâches planifiées
     page.goto(base + "/#/admin/tasks")
     page.wait_for_selector(".task-row")

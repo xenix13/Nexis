@@ -21,6 +21,8 @@ PREPARE_WINDOW_MS = 4 * 60 * 1000  # au départ : sous-titres prêts sur les 4 m
 EXTERNAL_BASE = 1000  # identifiants des sous-titres externes
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 LANG = re.compile(r"^[a-z]{2,3}$")
+# rangées de l'accueil et liens de la barre du haut : ordre et masquage propres à chaque utilisateur
+LAYOUT_KEY = re.compile(r"^(together|continue|watchlist|home|discover|live|lib:\d{1,9})$")
 IMG_PATH = re.compile(r"^/library/metadata/(\d{1,12})/(thumb|art)/\d{1,14}$")
 LANG_NAMES = {"fra": "Français", "eng": "Anglais", "jpn": "Japonais", "deu": "Allemand", "spa": "Espagnol",
               "ita": "Italien", "por": "Portugais", "kor": "Coréen", "zho": "Chinois", "rus": "Russe",
@@ -45,6 +47,10 @@ DEFAULT_PREFS = {
     "poster_size": "m",
     "hidden_libraries": [],
     "show_continue": True,
+    "home_order": [],
+    "home_hidden": [],
+    "nav_order": [],
+    "nav_hidden": [],
 }
 
 
@@ -74,6 +80,9 @@ def validate_prefs(data):
             ok = v in ("s", "m", "l")
         elif k == "hidden_libraries":
             ok = isinstance(v, list) and len(v) <= 100 and all(isinstance(x, str) and x.isdigit() for x in v)
+        elif k in ("home_order", "home_hidden", "nav_order", "nav_hidden"):
+            ok = (isinstance(v, list) and len(v) <= 120 and len(set(v)) == len(v)
+                  and all(isinstance(x, str) and LAYOUT_KEY.match(x) for x in v))
         if not ok:
             raise HTTPError(400, f"Préférence invalide : {k}")
         out[k] = v

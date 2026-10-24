@@ -1070,6 +1070,14 @@ class SeanceTest(unittest.TestCase):
         st, p = self.lea.call("PUT", "/api/me/prefs", {"accent": "#ff0055"})
         self.assertEqual(p["accent"], "#ff0055")
         self.assertEqual(self.lea.call("PUT", "/api/me/prefs", {"accent": "red;}"})[0], 400)
+        # ordre de l'accueil et de la barre du haut
+        st, p = self.lea.call("PUT", "/api/me/prefs", {"home_order": ["lib:3", "continue", "together"],
+                                                        "nav_order": ["live", "home"], "nav_hidden": ["watchlist"]})
+        self.assertEqual((st, p["home_order"], p["nav_hidden"]), (200, ["lib:3", "continue", "together"], ["watchlist"]))
+        for bad in ({"home_order": ["<script>"]}, {"nav_order": ["home", "home"]}, {"nav_hidden": "live"},
+                    {"home_hidden": [3]}):
+            self.assertEqual(self.lea.call("PUT", "/api/me/prefs", bad)[0], 400, bad)
+        self.lea.call("PUT", "/api/me/prefs", {"home_order": [], "nav_order": [], "nav_hidden": []})
         self.assertEqual(self.lea.call("GET", "/api/admin/users")[0], 403)
         st, users = self.admin.call("GET", "/api/admin/users")
         me = [u for u in users if u["username"] == "colas"][0]

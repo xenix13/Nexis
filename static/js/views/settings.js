@@ -1,10 +1,59 @@
 import { put } from '../api.js';
-import { applyPrefs, refreshMe, state } from '../app.js';
-import { avatar, clear, field, h, select, toast, toggle } from '../ui.js';
+import { applyPrefs, navItems, refreshMe, repaintNav, state } from '../app.js';
+import { arrange, avatar, clear, field, h, icon, select, toast, toggle } from '../ui.js';
 
 const LANGS = [['fra', 'Français'], ['eng', 'Anglais'], ['jpn', 'Japonais'], ['spa', 'Espagnol'], ['deu', 'Allemand'],
   ['ita', 'Italien'], ['por', 'Portugais'], ['kor', 'Coréen'], ['zho', 'Chinois'], ['', 'Pas de préférence']];
 const ACCENTS = ['#ffa43a', '#e0a84f', '#e5484d', '#3dd68c', '#4c9aff', '#a78bfa', '#f472b6', '#2dd4bf', '#f97316'];
+
+// Liste à réordonner (flèches ou glisser-déposer) avec un interrupteur par ligne.
+// items : [{ key, label, hint?, fixed? }] ; onOrder(keys) ; onShow(key, visible)
+function layoutList(items, isOn, onOrder, onShow) {
+  const byKey = new Map(items.map((i) => [i.key, i]));
+  let keys = items.map((i) => i.key);
+  const list = h('ol.layout-list');
+  let dragged = null;
+  const move = (k, delta) => {
+    const i = keys.indexOf(k);
+    const j = i + delta;
+    if (j < 0 || j >= keys.length) return;
+    keys.splice(i, 1);
+    keys.splice(j, 0, k);
+    paint(k);
+    onOrder([...keys]);
+  };
+  function paint(focusKey) {
+    list.replaceChildren(...keys.map((k, i) => {
+      const it = byKey.get(k);
+      const sw = it.fixed ? h('span.muted.small', 'toujours affiché') : toggle('', isOn(k), { 'aria-label': `Afficher ${it.label}` });
+      if (!it.fixed) sw.querySelector('input').addEventListener('change', (e) => { li.classList.toggle('off', !e.target.checked); onShow(k, e.target.checked); });
+      const li = h('li.layout-item', { draggable: 'true', dataset: { key: k }, class: !it.fixed && !isOn(k) ? 'layout-item off' : 'layout-item' },
+        h('span.layout-grip', { 'aria-hidden': 'true' }, '⋮⋮'),
+        h('div.layout-label', it.label, it.hint ? h('span.muted.small', it.hint) : null),
+        h('button.icon-btn', { type: 'button', 'aria-label': `Monter ${it.label}`, disabled: i === 0, onclick: () => move(k, -1) }, icon('up')),
+        h('button.icon-btn', { type: 'button', 'aria-label': `Descendre ${it.label}`, disabled: i === keys.length - 1, onclick: () => move(k, 1) }, icon('down')),
+        sw);
+      li.addEventListener('dragstart', (e) => { dragged = k; li.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+      li.addEventListener('dragend', () => { dragged = null; li.classList.remove('dragging'); });
+      li.addEventListener('dragover', (e) => { if (dragged && dragged !== k) e.preventDefault(); });
+      li.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (!dragged || dragged === k) return;
+        keys.splice(keys.indexOf(dragged), 1);
+        keys.splice(keys.indexOf(k) + (e.offsetY > li.offsetHeight / 2 ? 1 : 0), 0, dragged);
+        paint();
+        onOrder([...keys]);
+      });
+      return li;
+    }));
+    if (focusKey) {
+      const btn = list.querySelector(`[data-key="${CSS.escape(focusKey)}"] .icon-btn:not([disabled])`);
+      if (btn) btn.focus();
+    }
+  }
+  paint();
+  return list;
+}
 
 export async function renderSettings(main) {
   const me = state.me;
@@ -77,15 +126,42 @@ export async function renderSettings(main) {
     h('div.grid2',
       field('Thème', bindSelect('theme', [['dark', 'Sombre'], ['oled', 'Noir profond (OLED)'], ['light', 'Clair']])),
       field('Taille des affiches', bindSelect('poster_size', [['s', 'Petites'], ['m', 'Moyennes'], ['l', 'Grandes']]))),
-    bindToggle('show_continue', 'Afficher « Reprendre et à suivre » sur l’accueil'),
-    me.libraries.length ? field('Bibliothèques affichées sur l’accueil', h('div.checks', me.libraries.map((l) => {
-      const t = toggle(l.title, !hidden.has(l.id));
-      t.querySelector('input').addEventListener('change', (e) => {
-        if (e.target.checked) hidden.delete(l.id); else hidden.add(l.id);
-        save({ hidden_libraries: [...hidden] });
-      });
-      return t;
-    }))) : null);
+  );
+
+  // --- accueil et barre du haut : ordre et rangées affichées
+  const homeHidden = new Set(p.home_hidden);
+  const homeItems = [
+    { key: 'together', label: 'Regarder ensemble', hint: 'quand un groupe est ouvert' },
+    { key: 'continue', label: 'Reprendre et à suivre' },
+    { key: 'watchlist', label: 'À regarder' },
+    ...me.libraries.map((l) => ({ key: `lib:${l.id}`, label: l.title, hint: l.type === 'show' ? 'nouveaux épisodes' : 'ajoutés récemment' })),
+  ];
+  const homeById = new Map(homeItems.map((i) => [i.key, i]));
+  const homeOn = (k) => (k === 'continue' ? p.show_continue : k.startsWith('lib:') ? !hidden.has(k.slice(4)) : !homeHidden.has(k));
+  const homeShow = (k, on) => {
+    if (k === 'continue') { p.show_continue = on; save({ show_continue: on }); return; }
+    if (k.startsWith('lib:')) {
+      if (on) hidden.delete(k.slice(4)); else hidden.add(k.slice(4));
+      save({ hidden_libraries: [...hidden] });
+      return;
+    }
+    if (on) homeHidden.delete(k); else homeHidden.add(k);
+    save({ home_hidden: [...homeHidden] });
+  };
+  const navHidden = new Set(p.nav_hidden);
+  const layoutPanel = (title, lead, list, resetPatch) => h('section.panel', h('h2', title), h('p.muted.small', lead), list(),
+    h('button.btn.ghost', { type: 'button', onclick: async () => { await save(resetPatch, 'Ordre par défaut rétabli'); Object.assign(p, me.prefs); renderSettings(main); } },
+      'Rétablir l’ordre par défaut'));
+  const homePanel = layoutPanel('Accueil', 'Glisse les rangées ou utilise les flèches pour choisir leur ordre ; l’interrupteur les affiche ou les masque.',
+    () => layoutList(arrange(homeItems.map((i) => i.key), p.home_order).map((k) => homeById.get(k)), homeOn,
+      (keys) => save({ home_order: keys }, 'Ordre de l’accueil enregistré'), homeShow),
+    { home_order: [] });
+  const navPanel = layoutPanel('Barre du haut', 'Ordre des liens en haut de l’écran. Les liens masqués restent accessibles depuis l’accueil.',
+    () => layoutList(navItems(me), (k) => !navHidden.has(k),
+      async (keys) => { await save({ nav_order: keys }, 'Barre du haut enregistrée'); refreshShell(); },
+      async (k, on) => { if (on) navHidden.delete(k); else navHidden.add(k); await save({ nav_hidden: [...navHidden] }, 'Barre du haut enregistrée'); refreshShell(); }),
+    { nav_order: [] });
+  const refreshShell = repaintNav; // la barre du haut reflète tout de suite le nouvel ordre
 
   // --- password
   const cur = h('input', { type: 'password', autocomplete: 'current-password' });
@@ -119,5 +195,5 @@ export async function renderSettings(main) {
         catch (e) { toast(e.message, 'bad'); }
       } }, 'Retirer le code') : null)) : null;
 
-  clear(main, h('div.page-head', h('h1', 'Réglages')), h('div.panels', profile, playback, display, pinPanel, me.user.managed ? null : security));
+  clear(main, h('div.page-head', h('h1', 'Réglages')), h('div.panels', profile, playback, display, homePanel, navPanel, pinPanel, me.user.managed ? null : security));
 }

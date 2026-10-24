@@ -137,6 +137,7 @@ export function toast(message, kind = 'info', action = null) {
     box = h('div#toasts', { role: 'status', 'aria-live': 'polite' });
     document.body.append(box);
   }
+  for (const old of [...box.children]) if (old.firstChild && old.firstChild.textContent === message) old.remove(); // pas de pile de messages identiques
   const t = h(`div.toast.${kind}`, message, action ? h('button.toast-action', {
     onclick: () => { t.remove(); action.onClick(); } }, action.label) : null);
   box.append(t);
@@ -187,6 +188,13 @@ export function field(label, input, hint) {
 
 export function select(options, value, attrs = {}) {
   return h('select', attrs, options.map(([v, l]) => h('option', { value: v, selected: String(v) === String(value) }, l)));
+}
+
+// Ordre choisi par l'utilisateur : les clés connues dans son ordre, puis les nouvelles à leur place par défaut.
+export function arrange(keys, order = []) {
+  const known = order.filter((k) => keys.includes(k));
+  const rest = keys.filter((k) => !known.includes(k));
+  return [...known, ...rest];
 }
 
 export function toggle(label, checked, attrs = {}) {

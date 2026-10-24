@@ -785,3 +785,15 @@ textarea { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px soli
 .card-watch:hover { background: var(--accent); color: var(--ink-on-accent); }
 @media (hover: none) { .card-watch { opacity: 0.9; } }
 .toast-action { pointer-events: auto; margin-left: 14px; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }
+
+/* ---------- Réglages : ordre de l'accueil et de la barre du haut ---------- */
+.layout-list { list-style: none; margin: 4px 0 14px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.layout-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px 8px 6px; border-radius: 10px;
+  background: var(--surface-2); transition: opacity 0.2s, background 0.2s; }
+.layout-item.off .layout-label { opacity: 0.45; }
+.layout-item.dragging { opacity: 0.4; }
+.layout-item .toggle { margin: 0; }
+.layout-grip { cursor: grab; color: var(--muted); letter-spacing: -3px; padding: 0 6px; user-select: none; }
+.layout-label { flex: 1; min-width: 0; display: flex; flex-direction: column; font-weight: 600; }
+.layout-label .muted { font-weight: 400; }
+.layout-item .icon-btn[disabled] { opacity: 0.25; cursor: default; }

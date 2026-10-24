@@ -1,5 +1,5 @@
 import { get, post, setUnauthorizedHandler } from './api.js';
-import { avatar, clear, errorBox, h, icon, spinner, toast } from './ui.js';
+import { arrange, avatar, clear, errorBox, h, icon, spinner, toast } from './ui.js';
 import { renderLogin, renderSetup } from './views/auth.js';
 import { renderProfiles } from './views/profiles.js';
 import { renderCollection, renderPlaylist, renderPlaylists, renderWatchlist } from './views/lists.js';
@@ -65,6 +65,27 @@ function navLink(href, label, active) {
   return h('a.nav-link', { href, class: active ? 'nav-link active' : 'nav-link' }, label);
 }
 
+// Liens de la barre du haut, dans l'ordre choisi par l'utilisateur (Réglages → Affichage)
+export function navItems(me) {
+  const items = [{ key: 'home', href: '#/', label: 'Accueil', fixed: true }, { key: 'watchlist', href: '#/watchlist', label: 'À regarder' }];
+  if (me.features && me.features.discover) items.push({ key: 'discover', href: '#/discover', label: 'Découvrir' });
+  for (const l of me.libraries) items.push({ key: `lib:${l.id}`, href: `#/library/${l.id}`, label: l.title });
+  if (me.features && me.features.live) items.push({ key: 'live', href: '#/live', label: 'TV en direct' });
+  const byKey = new Map(items.map((i) => [i.key, i]));
+  return arrange(items.map((i) => i.key), me.prefs.nav_order).map((k) => byKey.get(k));
+}
+
+function navLinks(me, active) {
+  return navItems(me).filter((i) => i.fixed || !me.prefs.nav_hidden.includes(i.key))
+    .map((i) => navLink(i.href, i.label, active === i.key));
+}
+
+// après un changement dans Réglages : on redessine les liens sans recharger la page
+export function repaintNav() {
+  const nav = document.querySelector('header.topbar .nav');
+  if (nav && state.me) nav.replaceChildren(...navLinks(state.me, null));
+}
+
 function shell(active) {
   const me = state.me;
   const search = h('input.search-input', { type: 'search', placeholder: 'Rechercher…', 'aria-label': 'Rechercher',
@@ -91,10 +112,7 @@ function shell(active) {
     onclick: (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; } }, avatar(me.user, 34));
   const header = h('header.topbar',
     h('a.logo', { href: '#/', 'aria-label': 'Nexis — accueil' }, h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis'),
-    h('nav.nav', navLink('#/', 'Accueil', active === 'home'), navLink('#/watchlist', 'À regarder', active === 'watchlist'),
-      me.features && me.features.discover ? navLink('#/discover', 'Découvrir', active === 'discover') : null,
-      me.libraries.map((l) => navLink(`#/library/${l.id}`, l.title, active === `lib:${l.id}`)),
-      me.features && me.features.live ? navLink('#/live', 'TV en direct', active === 'live') : null),
+    h('nav.nav', navLinks(me, active)),
     h('div.topbar-right', h('span.together-slot'), h('label.search', icon('search'), search), h('div.user-wrap', userBtn, menu)));
   // groupes « Regarder ensemble » en cours : un raccourci discret pour les rejoindre
   get('/api/together').then((groups) => {

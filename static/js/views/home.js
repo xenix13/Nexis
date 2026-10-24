@@ -1,12 +1,13 @@
 import { get, post } from '../api.js';
 import { state } from '../app.js';
-import { clear, h, icon, img, posterCard, row, toast, wideCard } from '../ui.js';
+import { arrange, clear, h, icon, img, posterCard, row, toast, wideCard } from '../ui.js';
 import { groupCard } from './together.js';
 
 export async function renderHome(main, ctx) {
   const [data, groups] = await Promise.all([get('/api/home'), get('/api/together').catch(() => [])]);
   if (!ctx.isCurrent()) return;
   const parts = [];
+  const sections = new Map(); // clé -> rangée ; affichées dans l'ordre choisi (Réglages → Affichage)
   const joinable = groups.filter((g) => g.item && !g.item.hidden);
   const hero = data.continue[0] || data.hero;
   if (hero) {
@@ -28,7 +29,7 @@ export async function renderHome(main, ctx) {
           h('a.btn.ghost.lg', { href: infoHref }, 'Plus d’infos')))));
   }
   if (joinable.length) {
-    parts.push(h('section.row', h('div.row-head', h('a.row-title', { href: '#/together' }, 'Regarder ensemble')),
+    sections.set('together', h('section.row', h('div.row-head', h('a.row-title', { href: '#/together' }, 'Regarder ensemble')),
       h('div.group-list', joinable.map(groupCard))));
   }
   const continueRow = (items) => row('Reprendre et à suivre', items, (c) => wideCard(c, { onWatched }), { wide: true });
@@ -58,11 +59,15 @@ export async function renderHome(main, ctx) {
       toast(x.message, 'bad');
     }
   }
-  parts.push(current);
-  parts.push(row('À regarder', data.watchlist, (c) => posterCard(c), { href: '#/watchlist' }));
+  sections.set('continue', current);
+  sections.set('watchlist', row('À regarder', data.watchlist, (c) => posterCard(c), { href: '#/watchlist' }));
   for (const r of data.rows) {
     const title = r.library.type === 'show' ? `Nouveaux épisodes · ${r.library.title}` : `Ajoutés récemment · ${r.library.title}`;
-    parts.push(row(title, r.items, (c) => posterCard(c), { href: `#/library/${r.library.id}` }));
+    sections.set(`lib:${r.library.id}`, row(title, r.items, (c) => posterCard(c), { href: `#/library/${r.library.id}` }));
+  }
+  const { home_order: order = [], home_hidden: hiddenKeys = [] } = state.me.prefs;
+  for (const k of arrange([...sections.keys()], order)) {
+    if (!hiddenKeys.includes(k)) parts.push(sections.get(k));
   }
   if (!data.rows.length && !data.continue.length && !(data.watchlist || []).length) {
     parts.push(state.me.user.is_admin
