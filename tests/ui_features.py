@@ -164,6 +164,33 @@ with sync_playwright() as pw:
     page.wait_for_function(f"location.hash !== {ep1!r}", timeout=9000)
     check("/play/" in page.evaluate("location.hash"), "épisode suivant lancé à la fin du compte à rebours")
 
+    # --- lecteur réduit : la lecture continue pendant la navigation
+    ep2 = page.evaluate("location.hash")
+    page.wait_for_function("document.querySelector('video') && document.querySelector('video').currentTime > 1", timeout=60000)
+    page.mouse.move(700, 420)
+    page.click("button[aria-label='Réduire le lecteur']")
+    page.wait_for_selector("#mini-dock .player.mini")
+    page.goto(base + "/#/search")
+    page.wait_for_timeout(300)
+    t1 = page.evaluate("document.querySelector('#mini-dock video').currentTime")
+    page.wait_for_timeout(2000)
+    t2 = page.evaluate("document.querySelector('#mini-dock video').currentTime")
+    check(t2 > t1 and page.locator("#app .player").count() == 0, f"lecture continue en réduit ({t1:.1f} -> {t2:.1f})")
+    page.screenshot(path=f"{out}/03c-lecteur-reduit.png")
+    page.hover("#mini-dock .player")
+    page.click("button[aria-label='Agrandir le lecteur']")
+    page.wait_for_selector("#app .player:not(.mini)")
+    t3 = page.evaluate("document.querySelector('video').currentTime")
+    check(page.evaluate("location.hash") == ep2 and t3 >= t2 and page.locator("video").count() == 1,
+          f"agrandi sans recharger ({t3:.1f})")
+    page.mouse.move(700, 420)
+    page.click("button[aria-label='Réduire le lecteur']")
+    page.wait_for_selector("#mini-dock .player.mini")
+    page.hover("#mini-dock .player")
+    page.click("button[aria-label='Fermer le lecteur']")
+    page.wait_for_function("!document.querySelector('#mini-dock .player')")
+    check(True, "fermeture du lecteur réduit")
+
     # --- tâches planifiées
     page.goto(base + "/#/admin/tasks")
     page.wait_for_selector(".task-row")

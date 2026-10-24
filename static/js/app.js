@@ -19,6 +19,28 @@ export const state = { me: null, status: null };
 const root = document.getElementById('app');
 let cleanup = null;
 let renderToken = 0;
+// lecteur réduit : il continue pendant la navigation, dans un coin de l'écran (en dehors de #app)
+let mini = null;
+
+function closeMini() {
+  if (!mini) return;
+  const m = mini;
+  mini = null;
+  m.stop();
+  m.el.remove();
+}
+
+function minimize(m) {
+  let dock = document.getElementById('mini-dock');
+  if (!dock) {
+    dock = h('div', { id: 'mini-dock' });
+    document.body.append(dock);
+  }
+  closeMini();
+  mini = m;
+  cleanup = null; // la page suivante ne doit pas arrêter la lecture
+  dock.append(m.el);
+}
 
 export function applyPrefs(prefs) {
   const r = document.documentElement;
@@ -95,6 +117,7 @@ function shell(active) {
 }
 
 async function logout() {
+  closeMini();
   try { await post('/api/logout'); } catch { /* ignore */ }
   state.me = null;
   location.hash = '#/login';
@@ -138,8 +161,19 @@ async function route() {
   }
   if (token !== renderToken) return;
 
-  const ctx = { query, parts, isCurrent: () => token === renderToken, setCleanup: (fn) => { cleanup = fn; } };
+  const ctx = { query, parts, isCurrent: () => token === renderToken, setCleanup: (fn) => { cleanup = fn; },
+    minimize, closeMini };
+  if (page === 'play' && mini && mini.itemId === parts[1]) {
+    // on agrandit le lecteur réduit : la lecture continue sans recharger
+    document.body.classList.add('playing');
+    const m = mini;
+    mini = null;
+    m.restore(root);
+    cleanup = m.stop;
+    return;
+  }
   if (page === 'play' || page === 'tv') {
+    closeMini(); // une autre vidéo remplace celle du lecteur réduit
     document.body.classList.add('playing');
     const stopPlayer = page === 'tv' ? await renderLivePlayer(root, parts[1], ctx) : await renderPlayer(root, parts[1], ctx);
     if (token === renderToken) cleanup = stopPlayer;

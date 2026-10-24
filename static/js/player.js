@@ -53,6 +53,12 @@ export async function renderPlayer(root, rk, ctx) {
   const skipBtn = h('button.skip-btn', { hidden: true }, icon('skip'), 'Passer l’intro');
   const nextCard = h('div.next-card', { hidden: true });
   const backBtn = h('button.ctl.back', { 'aria-label': 'Retour' }, icon('back'));
+  const miniBtn = h('button.ctl', { 'aria-label': 'Réduire le lecteur', title: 'Réduire (i) : continuer à naviguer' }, icon('pip'));
+  // commandes du lecteur réduit (coin de l'écran)
+  const miniPlay = h('button.ctl', { 'aria-label': 'Lecture/Pause' }, icon('pause'));
+  const miniBar = h('div.mini-bar',
+    h('button.ctl', { 'aria-label': 'Agrandir le lecteur', title: 'Agrandir' }, icon('full')), miniPlay,
+    h('button.ctl', { 'aria-label': 'Fermer le lecteur', title: 'Arrêter la lecture' }, icon('close')));
 
   const controls = h('div.controls',
     timeline,
@@ -61,9 +67,9 @@ export async function renderPlayer(root, rk, ctx) {
       h('button.ctl', { 'aria-label': 'Reculer de 10 secondes', onclick: () => seekBy(-10000) }, icon('rewind')),
       h('button.ctl', { 'aria-label': 'Avancer de 30 secondes', onclick: () => seekBy(30000) }, icon('forward')),
       h('div.vol', muteBtn, volume), timeEl, h('div.grow'), nextBtn, groupBtn, chaptersBtn, subsBtn, cogBtn, fullBtn));
-  const top = h('div.player-top', backBtn, titleEl);
+  const top = h('div.player-top', backBtn, titleEl, h('div.grow'), miniBtn);
   const player = h('div.player', video, subLayer, subTop, subsPending, loader, errorLayer, top, groupBanner, skipBtn, nextCard,
-    menu, chapterPanel, controls);
+    menu, chapterPanel, controls, miniBar);
   clear(root, player);
 
   // ------------------------------------------------------------ state
@@ -82,6 +88,9 @@ export async function renderPlayer(root, rk, ctx) {
   const groupId = ctx.query.get('group');
   let group = null;
 
+  // lecteur réduit : il survit à la navigation, il ne dépend donc plus de la page qui l'a ouvert
+  let mini = false, detached = false;
+  const current = () => !destroyed && (detached || ctx.isCurrent());
   const duration = () => (session && session.duration) || (item && item.duration) || 0;
   const pos = () => base + Math.round((video.currentTime || 0) * 1000);
 
@@ -92,7 +101,7 @@ export async function renderPlayer(root, rk, ctx) {
     clear(root, h('div.center-page', errorBox(e, () => history.back())));
     return () => {};
   }
-  if (destroyed || !ctx.isCurrent()) return () => {};
+  if (destroyed || !current()) return () => {};
   if (!['movie', 'episode', 'extra'].includes(item.type)) { location.replace(`#/item/${rk}`); return () => {}; }
   document.title = `${item.type === 'episode' ? `${item.show} ${episodeCode(item)}` : item.title} · Nexis`;
   titleEl.append(h('strong', item.type === 'episode' ? item.show : item.title),
@@ -133,7 +142,7 @@ export async function renderPlayer(root, rk, ctx) {
       const g = await post(`/api/together/${groupId}/join`);
       group = { id: groupId, name: g.name, state: g, members: g.members, hostOnly: g.host_only, isHost: g.is_host, offset: 0, es: null };
       await syncClock();
-      if (destroyed || !ctx.isCurrent()) return () => {};
+      if (destroyed || !current()) return () => {};
       if (g.item_id && g.item_id !== String(item.id)) { location.replace(`#/play/${g.item_id}?group=${groupId}`); return () => {}; }
       if (g.item_id) startAt = groupTarget(g);
       openGroupEvents();
@@ -369,7 +378,7 @@ export async function renderPlayer(root, rk, ctx) {
   async function prepare(at = 0) {
     const t0 = Date.now();
     let hint = null;
-    while (!destroyed && ctx.isCurrent()) {
+    while (!destroyed && current()) {
       let r;
       // prêt dès que les sous-titres couvrent les premières minutes à regarder : la suite arrive pendant la lecture
       try { r = await get(`/api/items/${item.id}/prepare?wait=10&at=${Math.round(at)}`); } catch (e) {
@@ -589,6 +598,7 @@ export async function renderPlayer(root, rk, ctx) {
   // ------------------------------------------------------------ UI updates
   function paintPlay() {
     playBtn.replaceChildren(icon(video.paused && !rebuffering ? 'play' : 'pause'));
+    miniPlay.replaceChildren(icon(video.paused && !rebuffering ? 'play' : 'pause'));
     player.classList.toggle('paused', video.paused && !rebuffering);
     if (rebuffering) loader.hidden = false;
   }
@@ -700,6 +710,32 @@ export async function renderPlayer(root, rk, ctx) {
     }
     location.replace(`#/play/${session.next.id}${ctx.query.get('playlist') ? `?playlist=${ctx.query.get('playlist')}` : ''}`);
   }
+
+  // ------------------------------------------------------------ lecteur réduit
+  function minimize() {
+    if (mini || destroyed || !ctx.minimize) return;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    mini = true;
+    detached = true;
+    menu.hidden = true;
+    chapterPanel.hidden = true;
+    player.classList.add('mini');
+    player.classList.remove('idle');
+    ctx.minimize({ itemId: String(item.id), el: player, stop: stopAll, restore });
+    goBack();
+  }
+  function restore(target) {
+    mini = false;
+    player.classList.remove('mini');
+    clear(target, player);
+    wake();
+  }
+  const expand = () => { location.hash = `#/play/${item.id}${group ? `?group=${group.id}` : ''}`; };
+  miniBtn.addEventListener('click', minimize);
+  miniBar.children[0].addEventListener('click', (e) => { e.stopPropagation(); expand(); });
+  miniPlay.addEventListener('click', (e) => { e.stopPropagation(); togglePlay(); });
+  miniBar.children[2].addEventListener('click', (e) => { e.stopPropagation(); if (ctx.closeMini) ctx.closeMini(); });
+  miniBar.addEventListener('click', () => { if (mini) expand(); });
 
   function goBack() {
     if (history.length > 1) history.back();
@@ -1041,7 +1077,7 @@ export async function renderPlayer(root, rk, ctx) {
     player.classList.remove('idle');
     if (session.next) {
       nextAtEnd = true;
-      showNextCard(session.next, prefs.autoplay_next);
+      showNextCard(session.next, prefs.autoplay_next && !mini); // réduit : on propose sans interrompre la navigation
     }
   });
   document.addEventListener('fullscreenchange', onFullscreen);
@@ -1099,7 +1135,7 @@ export async function renderPlayer(root, rk, ctx) {
   player.addEventListener('pointermove', wake);
   player.addEventListener('click', (e) => { if (!menu.contains(e.target) && e.target !== video) wake(); });
   const onKey = (e) => {
-    if (e.target.closest && e.target.closest('input, select, textarea')) return;
+    if (mini || (e.target.closest && e.target.closest('input, select, textarea'))) return;
     wake();
     if (!chapterPanel.hidden && ['ArrowLeft', 'ArrowRight', 'Enter', ' '].includes(e.key)) {
       // dans la sélection de chapitre, les flèches passent d'une vignette à l'autre
@@ -1124,6 +1160,7 @@ export async function renderPlayer(root, rk, ctx) {
       case 's': if (!skipBtn.hidden) skipBtn.click(); break;
       case 'n': if (session && session.next) playNext(); break;
       case 'c': if (chapters.length > 1) openChapters(); break;
+      case 'i': minimize(); break;
       case 'Escape':
         if (!chapterPanel.hidden) chapterPanel.hidden = true;
         else if (!menu.hidden) menu.hidden = true;
@@ -1139,11 +1176,12 @@ export async function renderPlayer(root, rk, ctx) {
   window.addEventListener('pagehide', onUnload);
 
   await prepare(startAt);
-  if (destroyed || !ctx.isCurrent()) return () => {};
+  if (destroyed || !current()) return () => {};
   await start(startAt);
   wake();
 
-  return () => {
+  function stopAll() {
+    if (destroyed) return;
     if (Date.now() - startedAt > 3000 && !switching) report('stopped', true);
     if (session) post('/api/stop', { stream: session.stream }, { keepalive: true }).catch(() => {});
     destroyed = true;
@@ -1165,5 +1203,6 @@ export async function renderPlayer(root, rk, ctx) {
     video.removeAttribute('src');
     video.load();
     if (document.fullscreenElement && !location.hash.startsWith('#/play/')) document.exitFullscreen().catch(() => {});
-  };
+  }
+  return stopAll;
 }

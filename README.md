@@ -194,6 +194,7 @@ Pour nginx, ajoute `proxy_read_timeout 120s;` et `proxy_buffering off;`.
 
 - **Aperçus au survol** : en survolant ou en faisant glisser la barre de lecture, une vignette de la scène s'affiche, avec le nom du chapitre. Les vignettes sont fabriquées à partir des images clés seulement, donc avec peu de calcul, et pendant la même lecture du fichier que la préparation des sous-titres.
 - **Chapitres** : repères sur la barre, et **sélection de chapitre en vignettes** dans le lecteur (bouton Chapitres ou touche `C`, flèches puis Entrée) et sur la fiche du film ou de l'épisode. Une image par chapitre, prise un peu après son début (et plus loin si l'image est noire), fabriquée à la demande puis par la tâche « Extraire les images des chapitres ».
+- **Lecteur réduit** : le bouton en haut à droite du lecteur (ou la touche `I`) le réduit dans un coin de l'écran ; la lecture continue pendant qu'on navigue. Survoler la vignette pour mettre en pause, agrandir ou arrêter.
 - **Passer l'intro / épisode suivant** : l'opening et le générique de fin sont repérés grâce aux chapitres du fichier. Les chapitres nommés (`Opening`, `OP`, `Intro`, `Générique`, `Ending`, `ED`, `Credits`…) sont reconnus. Dans les animes, « Intro » ou « Prologue » désigne souvent la scène d'avant-générique : un chapitre `OP` / `Opening` a donc toujours la priorité, et un « Intro » trop court pour être une chanson laisse la place au chapitre suivant s'il en a la durée. Pour les chapitres sans nom, typiques des animes, Nexis cherche les blocs de 70 à 115 secondes en début et en fin d'épisode. Le bandeau « Passer l'intro » apparaît pendant l'intro ; la carte « Épisode suivant » apparaît au début du générique de fin. Un administrateur peut toujours corriger ces repères à la main pendant la lecture (menu ⚙), et ses repères priment.
 
 **Fichiers sans chapitres : empreinte audio.** La tâche « Détecter les intros et génériques » compare l'empreinte audio (Chromaprint, fournie par ffmpeg) du début et de la fin des épisodes d'une même saison, comme le plugin *Intro Skipper* de Jellyfin : la chanson d'ouverture et le générique sont les passages que les épisodes ont en commun. Elle passe après chaque ajout d'épisodes et chaque nuit ; on règle la zone analysée (10 premières et 6 dernières minutes par défaut) et les durées minimale et maximale. Ordre de priorité des repères : posés à la main, puis chapitres nommés, puis empreinte audio, puis chapitres de la durée d'une chanson.
@@ -373,7 +374,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 - [x] Retrait de la compatibilité avec les applications Jellyfin (trop limitée, remplacée par les applications Nexis)
 
 ### Lecteur et interface
-- [ ] Lecteur réductible (mini-lecteur dans un coin, comme Plex) : on continue à naviguer sans arrêter la lecture
+- [x] Lecteur réductible (mini-lecteur dans un coin, comme Plex) : on continue à naviguer sans arrêter la lecture (bouton du lecteur ou touche « i »)
 - [ ] « Reprendre et à suivre » : bouton pour marquer comme vu directement sur la vignette
 - [ ] Personnalisation par utilisateur : ordre des rangées de l'accueil et des liens de la barre du haut
 - [ ] Suggestions selon les derniers visionnages
