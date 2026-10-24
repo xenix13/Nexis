@@ -464,6 +464,29 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(d2["play_target"]["season"], 2)
         self.admin.call("POST", f"/api/items/{show['id']}/watched", {"watched": False})
 
+    def test_mark_watched_from_continue_and_undo(self):
+        show, d, eps = self.episodes("Les Veilleurs", "Séries")
+        c = self.admin
+        st, p = c.call("POST", "/api/play", {"id": eps[0]["id"]})
+        st, r = c.call("POST", "/api/progress", {"id": eps[0]["id"], "position": 40000, "duration": 90000,
+                                                 "stream": p["stream"], "state": "playing"})
+        c.call("POST", "/api/stop", {"stream": p["stream"]})
+        st, home = c.call("GET", "/api/home")
+        self.assertEqual(home["continue"][0]["id"], eps[0]["id"])
+        c.call("POST", f"/api/items/{eps[0]['id']}/watched", {"watched": True})
+        st, home = c.call("GET", "/api/home")
+        self.assertEqual(home["continue"][0]["id"], eps[1]["id"])  # l'épisode suivant prend la place
+        self.assertTrue(home["continue"][0]["next_up"])
+        st, h = c.call("GET", "/api/history")
+        self.assertEqual(h["items"][0]["id"], eps[0]["id"])
+        # « Annuler » : reprise remise à 40 s, vue retirée de l'historique
+        c.call("POST", f"/api/items/{eps[0]['id']}/watched", {"watched": False, "undo": True, "position": 40000})
+        row = self.ctx.db.one("SELECT watched, position_ms FROM progress WHERE rating_key=?", (str(eps[0]["id"]),))
+        self.assertEqual((row["watched"], row["position_ms"]), (0, 40000))  # (fichiers de test de 12 s : pas sur l'accueil)
+        st, h = c.call("GET", "/api/history")
+        self.assertNotIn(eps[0]["id"], [i["id"] for i in h["items"]])
+        c.call("POST", f"/api/items/{show['id']}/watched", {"watched": False})
+
     def test_identify(self):
         m = self.movie("Brume")
         st, r = self.admin.call("GET", f"/api/admin/identify/{m['id']}?q=voyage")

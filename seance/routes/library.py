@@ -14,7 +14,7 @@ def register(app, ctx, x):
     age_filter, allowed_set, attach_state, card = x.age_filter, x.allowed_set, x.attach_state, x.card
     chapters_for, get_prefs, leaves, libraries_all = x.chapters_for, x.get_prefs, x.leaves, x.libraries_all
     markers_for, next_episode, require_item, require_section = x.markers_for, x.next_episode, x.require_item, x.require_section
-    set_watched, track_prefs, track_scope, visible = x.set_watched, x.track_prefs, x.track_scope, x.visible
+    set_watched, undo_watched, track_prefs, track_scope, visible = x.set_watched, x.undo_watched, x.track_prefs, x.track_scope, x.visible
 
     # -------------------------------------------------------------- library
     @app.route("GET", "/api/libraries")
@@ -256,7 +256,12 @@ def register(app, ctx, x):
     @app.route("POST", f"/api/items/{RK}/watched")
     def item_watched(req):
         r = require_item(req.user, req.params["rk"])
-        watched = bool(req.json().get("watched"))
+        body = req.json()
+        watched = bool(body.get("watched"))
+        if body.get("undo") and not watched and r["type"] in ("movie", "episode"):
+            # « Annuler » juste après « marquer comme vu » : on remet la reprise et on efface la vue ajoutée
+            undo_watched(req.user["id"], card(r), body.get("position"))
+            return {"ok": True}
         if r["type"] == "show":
             targets = leaves(r["id"])
         elif r["type"] == "season":

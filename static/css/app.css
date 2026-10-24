@@ -772,3 +772,16 @@ textarea { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px soli
   .player.mini .mini-bar { opacity: 1; background: none; align-items: flex-end; padding-bottom: 6px; }
 }
 @media (max-width: 760px) { .player.mini { inset: auto 12px 12px auto; width: min(300px, calc(100vw - 24px)); } }
+
+/* ---------- « marquer comme vu » sur les cartes de Reprendre et à suivre ---------- */
+.card-slot { position: relative; min-width: 0; scroll-snap-align: start; transition: opacity 0.25s, transform 0.25s; }
+.card-slot.leaving { opacity: 0.25; transform: scale(0.96); pointer-events: none; }
+.card-watch { position: absolute; top: 8px; right: 8px; z-index: 2; width: 34px; height: 34px; display: grid; place-items: center;
+  border: 0; border-radius: 50%; background: rgba(0, 0, 0, 0.6); color: #fff; cursor: pointer; opacity: 0;
+  backdrop-filter: blur(6px); transition: opacity 0.2s, background 0.2s, transform 0.2s; }
+.card-watch .icon { width: 18px; height: 18px; fill: currentColor; }
+.card-slot:hover .card-watch, .card-watch:focus-visible { opacity: 1; }
+.card-slot:hover .card-watch { transform: translateY(-4px); }
+.card-watch:hover { background: var(--accent); color: var(--ink-on-accent); }
+@media (hover: none) { .card-watch { opacity: 0.9; } }
+.toast-action { pointer-events: auto; margin-left: 14px; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: pointer; }

@@ -1,6 +1,6 @@
-import { get } from '../api.js';
+import { get, post } from '../api.js';
 import { state } from '../app.js';
-import { clear, h, icon, img, posterCard, row, wideCard } from '../ui.js';
+import { clear, h, icon, img, posterCard, row, toast, wideCard } from '../ui.js';
 import { groupCard } from './together.js';
 
 export async function renderHome(main, ctx) {
@@ -31,7 +31,34 @@ export async function renderHome(main, ctx) {
     parts.push(h('section.row', h('div.row-head', h('a.row-title', { href: '#/together' }, 'Regarder ensemble')),
       h('div.group-list', joinable.map(groupCard))));
   }
-  parts.push(row('Reprendre et à suivre', data.continue, (c) => wideCard(c), { wide: true }));
+  const continueRow = (items) => row('Reprendre et à suivre', items, (c) => wideCard(c, { onWatched }), { wide: true });
+  let current = continueRow(data.continue);
+  // « marquer comme vu » : la carte s'efface, l'épisode suivant prend sa place ; annulable
+  async function refreshRow(c) {
+    if (hero && String(hero.id) === String(c.id)) { await renderHome(main, ctx); return; } // la grande affiche change aussi
+    const fresh = await get('/api/home');
+    if (!ctx.isCurrent()) return;
+    const next = continueRow(fresh.continue) || h('div', { hidden: true });
+    if (current && current.isConnected) current.replaceWith(next);
+    current = next;
+  }
+  async function setWatched(c, watched) {
+    await post(`/api/items/${c.id}/watched`, watched ? { watched } : { watched, undo: true, position: c.position || 0 });
+    await refreshRow(c);
+  }
+  async function onWatched(c, slot) {
+    slot.classList.add('leaving');
+    try {
+      await setWatched(c, true);
+      toast(c.type === 'episode' ? `${c.show} · ${c.title} : marqué comme vu` : `${c.title} : marqué comme vu`, 'ok',
+        { label: 'Annuler', onClick: () => setWatched(c, false).catch((x) => toast(x.message, 'bad')) });
+    } catch (x) {
+      slot.classList.remove('leaving');
+      slot.querySelector('.card-watch').disabled = false;
+      toast(x.message, 'bad');
+    }
+  }
+  parts.push(current);
   parts.push(row('À regarder', data.watchlist, (c) => posterCard(c), { href: '#/watchlist' }));
   for (const r of data.rows) {
     const title = r.library.type === 'show' ? `Nouveaux épisodes · ${r.library.title}` : `Ajoutés récemment · ${r.library.title}`;

@@ -310,6 +310,17 @@ def install(ctx, x):
             db.run("UPDATE progress SET watched=0, position_ms=0, updated_at=? WHERE user_id=? AND rating_key=?",
                    (now, uid, c["id"]))
 
+    def undo_watched(uid, c, position_ms=None):
+        now = int(time.time())
+        try:
+            pos = max(0, int(position_ms or 0))  # la reprise d'avant, renvoyée par la page
+        except (TypeError, ValueError):
+            pos = 0
+        with db.tx():
+            db.run("UPDATE progress SET watched=0, position_ms=?, view_count=MAX(view_count-1,0), updated_at=? "
+                   "WHERE user_id=? AND rating_key=? AND watched=1", (pos, now, uid, c["id"]))
+            db.run("DELETE FROM history WHERE user_id=? AND rating_key=? AND watched_at>?", (uid, c["id"], now - 600))
+
     def markers_for(row):
         """Repères d'intro / de générique : posés à la main, sinon chapitres nommés, sinon empreinte audio,
         sinon chapitres de la durée d'une chanson (estimation)."""
@@ -341,7 +352,7 @@ def install(ctx, x):
     for name in (
         "age_filter", "allowed_ids", "allowed_set", "attach_state", "card", "chapters_for", "get_prefs",
         "item_row", "leaves", "libraries_all", "markers_for", "next_episode", "require_item",
-        "require_section", "set_watched", "show_of", "track_prefs", "track_scope", "upsert_meta", "visible",
+        "require_section", "set_watched", "undo_watched", "show_of", "track_prefs", "track_scope", "upsert_meta", "visible",
     ):
         setattr(x, name, locals()[name])
     x.ITEM_SQL, x.CARD_SQL, x.EPISODE_ORDER = ITEM_SQL, CARD_SQL, EPISODE_ORDER

@@ -131,16 +131,18 @@ export function icon(name) {
   return svg;
 }
 
-export function toast(message, kind = 'info') {
+export function toast(message, kind = 'info', action = null) {
   let box = document.getElementById('toasts');
   if (!box) {
     box = h('div#toasts', { role: 'status', 'aria-live': 'polite' });
     document.body.append(box);
   }
-  const t = h(`div.toast.${kind}`, message);
+  const t = h(`div.toast.${kind}`, message, action ? h('button.toast-action', {
+    onclick: () => { t.remove(); action.onClick(); } }, action.label) : null);
   box.append(t);
-  setTimeout(() => t.classList.add('out'), 3600);
-  setTimeout(() => t.remove(), 4000);
+  const wait = action ? 6000 : 3600;
+  setTimeout(() => t.classList.add('out'), wait);
+  setTimeout(() => t.remove(), wait + 400);
 }
 
 export function modal(title, body, actions = []) {
@@ -236,18 +238,25 @@ export function posterCard(c, { href } = {}) {
     h('div.card-sub', String(sub)));
 }
 
-export function wideCard(c, { onPlay } = {}) {
+export function wideCard(c, { onPlay, onWatched } = {}) {
   const thumb = c.type === 'episode' ? (c.thumb || c.show_art) : (c.art || c.thumb);
   const title = c.type === 'episode' ? c.show : c.title;
   let sub = c.type === 'episode' ? `${episodeCode(c)} · ${c.title}` : (c.year || '');
   if (c.next_up) sub = `À suivre · ${sub}`;
   const left = c.duration && c.position ? `${fmtDuration(c.duration - c.position)} restantes` : '';
-  return h('a.card.wide', { href: `#/play/${c.id}${c.position ? '?resume=1' : ''}`, title,
+  const card = h('a.card.wide', { href: `#/play/${c.id}${c.position ? '?resume=1' : ''}`, title,
     onclick: onPlay ? (e) => { e.preventDefault(); onPlay(c); } : null },
     h('div.card-img', thumb ? h('img', { src: img(thumb, 400, 225), alt: '', loading: 'lazy' }) : h('div.noimg', title),
       h('span.play-hover', icon('play')), progressBar(c.position, c.duration)),
     h('div.card-title', title),
     h('div.card-sub', String(sub), left ? h('span.muted', ` — ${left}`) : null));
+  if (!onWatched) return card;
+  // bouton à côté du lien (pas dedans) : « marquer comme vu » sans lancer la lecture
+  const label = c.type === 'episode' ? `Marquer « ${episodeCode(c)} » comme vu` : 'Marquer comme vu';
+  return h('div.card-slot', card,
+    h('button.card-watch', { type: 'button', title: label, 'aria-label': `${label} : ${title}`,
+      onclick: (e) => { e.currentTarget.disabled = true; onWatched(c, slot()); } }, icon('check')));
+  function slot() { return card.parentElement; }
 }
 
 export function row(title, items, render, opts = {}) {

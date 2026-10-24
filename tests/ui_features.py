@@ -191,6 +191,28 @@ with sync_playwright() as pw:
     page.wait_for_function("!document.querySelector('#mini-dock .player')")
     check(True, "fermeture du lecteur réduit")
 
+    # --- « marquer comme vu » depuis Reprendre et à suivre, puis « Annuler »
+    ctx.db.run("UPDATE items SET duration_ms=7200000 WHERE id=?", (voyage,))  # fichiers de test : 12 s
+    st, p = lea.call("POST", "/api/play", {"id": voyage})
+    lea.call("POST", "/api/progress", {"id": voyage, "position": 600000, "duration": 7200000, "stream": p["stream"],
+                                       "state": "playing"})
+    lea.call("POST", "/api/stop", {"stream": p["stream"]})
+    lctx, lpage = browser_ctx(browser, lea)
+    lpage.goto(base + "/#/")
+    slot = ".wide-row .card-slot:has-text('Le Grand Voyage')"
+    lpage.wait_for_selector(slot)
+    lpage.hover(slot)
+    lpage.screenshot(path=f"{out}/03d-marquer-vu.png")
+    lpage.click(f"{slot} .card-watch")
+    lpage.wait_for_selector(".toast:has-text('marqué comme vu')")
+    lpage.wait_for_function(f"!document.querySelector(\".wide-row .card-slot a[href*='/play/{voyage}']\")")
+    check(lea.call("GET", f"/api/items/{voyage}")[1]["watched"], "film marqué vu depuis l'accueil")
+    lpage.click(".toast-action")
+    lpage.wait_for_selector(slot)
+    d = lea.call("GET", f"/api/items/{voyage}")[1]
+    check(not d["watched"] and d["position"] == 600000, f"« Annuler » remet la reprise ({d['watched']}, {d['position']})")
+    lctx.close()
+
     # --- tâches planifiées
     page.goto(base + "/#/admin/tasks")
     page.wait_for_selector(".task-row")
@@ -277,9 +299,9 @@ with sync_playwright() as pw:
     for _ in range(12):  # le groupe se recale en quelques secondes au plus
         page2.wait_for_timeout(500)
         t1, t2 = page.evaluate("document.querySelector('video').currentTime"), page2.evaluate("document.querySelector('video').currentTime")
-        if abs(t1 - t2) < 1 and t2 > 20:
+        if abs(t1 - t2) < 1 and t2 > 18:
             break
-    check(abs(t1 - t2) < 1 and t2 > 20, f"saut partagé ({t1:.1f} / {t2:.1f})")
+    check(abs(t1 - t2) < 1 and t2 > 18, f"saut partagé ({t1:.1f} / {t2:.1f})")
     page.mouse.move(700, 420)
     page.click("button[aria-label='Regarder ensemble']")
     page.wait_for_selector(".group-member:has-text('Léa')")

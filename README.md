@@ -375,7 +375,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 
 ### Lecteur et interface
 - [x] Lecteur réductible (mini-lecteur dans un coin, comme Plex) : on continue à naviguer sans arrêter la lecture (bouton du lecteur ou touche « i »)
-- [ ] « Reprendre et à suivre » : bouton pour marquer comme vu directement sur la vignette
+- [x] « Reprendre et à suivre » : bouton pour marquer comme vu directement sur la vignette (avec « Annuler » pendant quelques secondes)
 - [ ] Personnalisation par utilisateur : ordre des rangées de l'accueil et des liens de la barre du haut
 - [ ] Suggestions selon les derniers visionnages
 - [ ] Animations (transitions de pages, apparition des cartes, survols) pour une interface plus vivante
