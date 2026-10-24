@@ -243,6 +243,34 @@ def build_command(path, p, start, out_dir, start_number=0):
     return cmd
 
 
+def rss_mb(proc):
+    """Mémoire réellement occupée par un ffmpeg (Linux), en Mo."""
+    if not proc or proc.poll() is not None:
+        return None
+    try:
+        with open(f"/proc/{proc.pid}/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) // 1024
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def system_memory():
+    """Mémoire et swap de la machine (Linux), en Mo."""
+    info = {}
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                k, v = line.split(":", 1)
+                info[k] = int(v.split()[0]) // 1024
+    except (OSError, ValueError):
+        return {}
+    return {"mem_total": info.get("MemTotal"), "mem_available": info.get("MemAvailable"),
+            "swap_total": info.get("SwapTotal"), "swap_used": (info.get("SwapTotal") or 0) - (info.get("SwapFree") or 0)}
+
+
 class Session:
     def __init__(self, sid, path, p, segments, out_dir):
         self.sid = sid
@@ -483,7 +511,13 @@ class Transcoder:
                 warnings = f.read().decode("utf-8", "replace").strip().splitlines()[-4:]
         except OSError:
             warnings = []
-        return {"speed": s.speed, "paused": s.paused, "warnings": warnings}
+        return {"speed": s.speed, "paused": s.paused, "warnings": warnings, "rss_mb": rss_mb(s.proc)}
+
+    def processes(self):
+        """ffmpeg en cours : nombre et mémoire totale (Mo)."""
+        with self.lock:
+            procs = [s.proc for s in self.sessions.values() if s.proc and s.proc.poll() is None]
+        return {"ffmpeg": len(procs), "ffmpeg_mb": sum(rss_mb(p) or 0 for p in procs)}
 
     def idle(self, max_idle):
         now = time.time()

@@ -12,7 +12,7 @@ from ..auth import USERNAME, USERNAME_RULE, find_user, hash_password, normalize_
 from ..catalog import HEX, RK, SID
 from ..metadata import MetaError
 from ..scanner import like_prefix
-from ..transcoder import DOWNMIX_ALGOS
+from ..transcoder import DOWNMIX_ALGOS, system_memory
 from ..web import HTTPError, Response
 
 
@@ -384,7 +384,15 @@ def register(app, ctx, x):
             r["mode"] = p.get("mode")
             r["reasons"] = p.get("reasons", [])
             r.update(ctx.transcoder.stats(r["id"]))
+            if p.get("video_codec"):
+                r["source"] = f"{str(p['video_codec']).upper()} {p.get('src_height') or '?'}p"
         return rows
+
+    @app.route("GET", "/api/admin/system", auth="admin")
+    def admin_system(req):
+        """Charge du serveur, pour comprendre une lecture qui saccade (mémoire, swap, ffmpeg en cours)."""
+        load = os.getloadavg() if hasattr(os, "getloadavg") else (0, 0, 0)
+        return {**system_memory(), **ctx.transcoder.processes(), "cpus": os.cpu_count(), "load": round(load[0], 2)}
 
     @app.route("DELETE", f"/api/admin/streams/{SID}", auth="admin")
     def admin_stop_stream(req):

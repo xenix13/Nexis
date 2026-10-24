@@ -168,6 +168,14 @@ class SeanceTest(unittest.TestCase):
             out += eps
         return show, d, out
 
+    def test_admin_system_load(self):
+        st, r = self.admin.call("GET", "/api/admin/system")
+        self.assertEqual(st, 200, r)
+        self.assertGreater(r["mem_total"], 0)
+        self.assertIn("swap_used", r)
+        self.assertGreaterEqual(r["ffmpeg"], 0)
+        self.assertEqual(self.lea.call("GET", "/api/admin/system")[0], 403)
+
     def test_accented_usernames(self):
         import unicodedata
         st, u = self.admin.call("POST", "/api/admin/users", {"username": "Héloïse", "password": "M0t$de@passe!?%"})

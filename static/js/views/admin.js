@@ -694,11 +694,18 @@ const MODES = { direct: 'Lecture directe', copy: 'Remux (vidéo copiée)', trans
 
 async function streamsTab(body, ctx) {
   const load = async () => {
-    const list = await get('/api/admin/streams');
+    const [list, sys] = await Promise.all([get('/api/admin/streams'), get('/api/admin/system').catch(() => null)]);
     if (!ctx.isCurrent()) return;
-    clear(body, list.length ? h('div.user-list', list.map((s) => h('div.user-row',
+    const gb = (mb) => `${(mb / 1024).toFixed(1).replace('.', ',')} Go`;
+    const swapHigh = sys && sys.swap_total && sys.swap_used > sys.swap_total * 0.25;
+    const server = sys && sys.mem_total ? h('div.panel.scan', h('strong', 'Serveur'), h('div.muted.small',
+      `Mémoire libre ${gb(sys.mem_available)} sur ${gb(sys.mem_total)} · swap utilisé ${gb(sys.swap_used)} sur ${gb(sys.swap_total || 0)} · `,
+      `${sys.ffmpeg} ffmpeg (${gb(sys.ffmpeg_mb)}) · charge ${String(sys.load).replace('.', ',')} pour ${sys.cpus} cœur(s)`),
+      swapHigh ? h('div.form-error.small', 'Le serveur utilise beaucoup de swap : les lectures peuvent saccader. Réduis le nombre de transcodages simultanés ou ajoute de la mémoire.') : null) : null;
+    clear(body, server, list.length ? h('div.user-list', list.map((s) => h('div.user-row',
       h('div.grow', h('strong', s.title), h('div.muted.small',
         `${s.user} · ${s.state === 'paused' ? 'en pause' : 'en lecture'} à ${fmtTime(s.position_ms)} · ${MODES[s.mode] || s.mode}`,
+        s.source ? ` · source ${s.source}` : '', s.rss_mb ? ` · ffmpeg ${s.rss_mb} Mo` : '',
         s.reasons && s.reasons.length ? ` (${s.reasons.join(', ')})` : '',
         s.speed ? h('span', { class: s.speed < 1.05 && s.mode === 'transcode' ? 'tag bad' : 'tag ok' }, `vitesse ×${s.speed}`) : null),
         s.warnings && s.warnings.length ? h('details.small', h('summary', 'Messages de ffmpeg'), h('pre.log', s.warnings.join('\n'))) : null),
