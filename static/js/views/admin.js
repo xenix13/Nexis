@@ -658,7 +658,7 @@ async function liveTab(body, ctx) {
     data.sources.length ? h('div.user-list', data.sources.map((s) => h('div.user-row', { class: s.enabled ? 'user-row' : 'user-row off' },
       h('div.lib-icon', '📡'),
       h('div.grow', h('strong', s.name),
-        h('div.muted.small', `${s.channels} chaîne(s)`, s.hidden ? ` dont ${s.hidden} masquée(s)` : '', ` · ${s.programmes} programme(s) dans le guide`,
+        h('div.muted.small', `${s.channels} chaîne(s)`, s.hidden ? ` dont ${s.hidden} masquée(s)` : '', s.dead ? ` · ${s.dead} hors service (masquée(s) automatiquement)` : '', ` · ${s.programmes} programme(s) dans le guide`,
           ` · actualisée ${since(s.refreshed_at)}`),
         h('div.small', h('code', s.m3u_url.length > 70 ? `${s.m3u_url.slice(0, 70)}…` : s.m3u_url)),
         s.error ? h('div.form-error.small', s.error) : null),

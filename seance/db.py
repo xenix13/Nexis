@@ -329,6 +329,12 @@ MIGRATIONS = [
     DROP TABLE IF EXISTS jf_tokens;
     DELETE FROM settings WHERE key IN ('jellyfin_api', 'jf_server_id', 'jf_secret');
     """,
+    # 11 : TV en direct, chaînes vérifiées (ok : NULL = pas encore vérifiée, 0 = hors service, 1 = répond)
+    """
+    ALTER TABLE live_channels ADD COLUMN ok INTEGER;
+    ALTER TABLE live_channels ADD COLUMN fails INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE live_channels ADD COLUMN checked_at INTEGER;
+    """,
 ]
 
 

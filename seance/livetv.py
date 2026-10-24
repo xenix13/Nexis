@@ -35,6 +35,9 @@ MAX_LOGO = 2 * 1024 * 1024
 EPG_PAST = 3 * 3600        # programmes déjà terminés gardés (pour l'affichage du guide)
 EPG_AHEAD = 4 * 86400
 IDLE_STOP = 45             # s sans requête d'un spectateur : la chaîne est coupée
+CHECK_TIMEOUT = 8          # s pour qu'une chaîne réponde lors de la vérification
+CHECK_GAP = 0.2            # s entre deux vérifications : pas de rafale chez le fournisseur
+DEAD_AFTER = 2             # vérifications ratées d'affilée avant de masquer une chaîne
 ATTR = re.compile(r'([A-Za-z0-9_-]+)="([^"]*)"')
 
 
@@ -113,6 +116,23 @@ def _open(url, ua=None, limit=MAX_M3U, timeout=60, allow_local=True):
     if data[:2] == b"\x1f\x8b":
         data = _gunzip(data, limit * 4)
     return data
+
+
+def check_stream(ch, timeout=CHECK_TIMEOUT):
+    """La chaîne répond-elle ? True / False, ou None quand on ne sait pas vérifier (rtsp, udp…).
+
+    On lit seulement le début de la réponse (une playlist HLS, ou quelques Ko d'un flux MPEG-TS)."""
+    url = ch["url"]
+    if not re.match(r"^https?://", url or "", re.I) or not stream_url_ok(url):
+        return None
+    headers = {"User-Agent": ch["user_agent"] or DEFAULT_UA}
+    if ch["referrer"]:
+        headers["Referer"] = ch["referrer"]
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=timeout) as r:
+            return 200 <= r.status < 300 and len(r.read(4096)) > 0
+    except (urllib.error.URLError, OSError, ValueError):
+        return False
 
 
 def parse_m3u(text):
@@ -363,6 +383,48 @@ class LiveTV:
         finally:
             self.refreshing.release()
 
+    # ------------------------------------------------------------ vérification des chaînes
+    def record_check(self, cid, ok):
+        """Résultat d'une vérification : une chaîne est masquée après DEAD_AFTER échecs d'affilée."""
+        if ok is None:
+            return
+        db = self.ctx.db
+        now = int(time.time())
+        if ok:
+            db.run("UPDATE live_channels SET ok=1, fails=0, checked_at=? WHERE id=?", (now, cid))
+        else:
+            db.run("UPDATE live_channels SET fails=fails+1, checked_at=?, "
+                   "ok=CASE WHEN fails+1 >= ? THEN 0 ELSE ok END WHERE id=?", (now, DEAD_AFTER, cid))
+
+    def check_channels(self, source_id=None, progress=None, cancelled=None):
+        """Vérifie une à une les chaînes des sources actives (groupes masqués exclus). -> résumé."""
+        db = self.ctx.db
+        where, args = "", []
+        if source_id is not None:
+            where, args = " AND c.source_id=?", [source_id]
+        chans = db.all("SELECT c.id, c.url, c.user_agent, c.referrer FROM live_channels c JOIN live_sources s "
+                       "ON s.id=c.source_id WHERE s.enabled=1 AND NOT EXISTS (SELECT 1 FROM live_hidden_groups g "
+                       "WHERE g.source_id=c.source_id AND g.grp=c.grp)" + where +
+                       " ORDER BY c.checked_at IS NOT NULL, c.checked_at, c.id", args)
+        db.release()
+        dead = 0
+        for n, ch in enumerate(chans):
+            if cancelled and cancelled():
+                break
+            if progress:
+                progress(n, len(chans))
+            with self.lock:
+                playing = ch["id"] in self.by_channel  # en cours de lecture : elle répond, et on ne la dérange pas
+            ok = True if playing else check_stream(ch)
+            self.record_check(ch["id"], ok)
+            dead += ok is False
+            db.release()
+            if not playing:
+                time.sleep(CHECK_GAP)
+        hidden = db.scalar("SELECT COUNT(*) FROM live_channels WHERE ok=0" +
+                           (" AND source_id=?" if source_id is not None else ""), args)
+        return f"{len(chans)} chaîne(s) vérifiée(s), {hidden} hors service masquée(s)"
+
     # ------------------------------------------------------------ logos
     def logo(self, url):
         name = hashlib.sha1(url.encode()).hexdigest()
@@ -572,6 +634,7 @@ def register(app, ctx, x):
     def visible_channels(where="", args=()):
         return db.all("SELECT c.* FROM live_channels c JOIN live_sources s ON s.id=c.source_id WHERE s.enabled=1 "
                       "AND NOT EXISTS (SELECT 1 FROM live_hidden_groups g WHERE g.source_id=c.source_id AND g.grp=c.grp)"
+                      " AND c.ok IS NOT 0"  # chaînes hors service (vérification) : masquées
                       f"{where} ORDER BY s.position, s.id, COALESCE(c.number, 100000), c.position", args)
 
     def channel_or_404(user, cid):
@@ -709,6 +772,7 @@ def register(app, ctx, x):
         except LiveGone as e:
             raise HTTPError(404, str(e))
         except LiveError as e:
+            live.record_check(s.channel["id"], False)  # la chaîne ne répond pas : comptée comme une vérification ratée
             raise HTTPError(502, str(e))
         return Response(data, 200, "application/vnd.apple.mpegurl", {"Cache-Control": "no-store"})
 
@@ -734,9 +798,11 @@ def register(app, ctx, x):
         hidden = db.scalar("SELECT COUNT(*) FROM live_channels c WHERE source_id=? AND EXISTS (SELECT 1 FROM "
                            "live_hidden_groups g WHERE g.source_id=c.source_id AND g.grp=c.grp)", (s["id"],))
         progs = db.scalar("SELECT COUNT(*) FROM live_programmes WHERE source_id=?", (s["id"],))
+        dead = db.scalar("SELECT COUNT(*) FROM live_channels WHERE source_id=? AND ok=0", (s["id"],))
         return {"id": str(s["id"]), "name": s["name"], "m3u_url": s["m3u_url"], "epg_url": s["epg_url"] or "",
                 "user_agent": s["user_agent"] or "", "enabled": bool(s["enabled"]), "refreshed_at": s["refreshed_at"],
-                "epg_at": s["epg_at"], "error": s["error"], "channels": n, "hidden": hidden, "programmes": progs}
+                "epg_at": s["epg_at"], "error": s["error"], "channels": n, "hidden": hidden, "programmes": progs,
+                "dead": dead}
 
     def validate_source(b):
         name = str(b.get("name") or "").strip()
@@ -763,12 +829,25 @@ def register(app, ctx, x):
         return {"sources": [source_view(s) for s in db.all("SELECT * FROM live_sources ORDER BY position, id")],
                 "settings": live.settings(), "sessions": live.overview()}
 
+    def check_async(sid):
+        """Vérifie en fond les chaînes d'une source (après ajout ou actualisation par l'administrateur)."""
+        def job():
+            try:
+                live.check_channels(sid)
+            except Exception:
+                log.exception("Vérification des chaînes de la source %s", sid)
+            finally:
+                db.release()
+        threading.Thread(target=job, daemon=True).start()
+
     def refresh_async(sid):
         def job():
             try:
                 src = db.one("SELECT * FROM live_sources WHERE id=?", (sid,))
                 if src:
                     live.refresh_source(src)
+                    db.release()
+                    live.check_channels(sid)
             except LiveError as e:
                 log.info("Source TV %s : %s", sid, e)
             except Exception:
@@ -794,6 +873,7 @@ def register(app, ctx, x):
             live.refresh_source(src)
         except LiveError as e:
             return {"ok": True, "warning": str(e), **admin_overview()}
+        check_async(sid)
         return {"ok": True, **admin_overview()}
 
     @app.route("PUT", r"/api/admin/live/sources/(?P<id>\d{1,6})", auth="admin")
@@ -822,6 +902,7 @@ def register(app, ctx, x):
             ch, prog = live.refresh_source(src)
         except LiveError as e:
             raise HTTPError(502, str(e))
+        check_async(src["id"])
         return {"channels": ch, "programmes": prog, **admin_overview()}
 
     @app.route("GET", r"/api/admin/live/sources/(?P<id>\d{1,6})/groups", auth="admin")

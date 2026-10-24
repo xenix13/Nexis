@@ -327,6 +327,9 @@ class LiveTask(Task):
     description = "Recharge les listes de chaînes (M3U) et les programmes (XMLTV) des sources de TV en direct."
     category = "TV en direct"
     default = {"mode": "interval", "hours": 12}
+    options = [opt_bool("check", "Vérifier que chaque chaîne répond", True,
+                        "Une chaîne qui ne répond pas deux fois de suite est masquée, et réapparaît dès qu'elle "
+                        "remarche. Les chaînes sont testées une par une, sans surcharger le fournisseur.")]
 
     def available(self, ctx):
         if not ctx.db.scalar("SELECT COUNT(*) FROM live_sources WHERE enabled=1"):
@@ -338,7 +341,13 @@ class LiveTask(Task):
             job.check()
             job.progress = done / max(1, total)
             job.message = label
-        return ctx.live.refresh_all(progress)
+        summary = ctx.live.refresh_all(lambda d, t, label: progress(d, t * 2 if opts.get("check", True) else t, label))
+        if not opts.get("check", True):
+            return summary
+        checked = ctx.live.check_channels(
+            progress=lambda d, t: progress(t + d, t * 2, "Vérification des chaînes"), cancelled=job.cancel.is_set)
+        job.check()
+        return f"{summary} — {checked}"
 
 
 class CleanupTask(Task):

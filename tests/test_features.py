@@ -182,6 +182,51 @@ class FeaturesTest(unittest.TestCase):
             self.admin.call("DELETE", f"/api/admin/libraries/{lib['id']}")
 
     # ------------------------------------------------------------ TV en direct
+    def test_live_dead_channels_hidden(self):
+        import http.server
+        import socketserver
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path == "/ok.m3u8":
+                    body = b"#EXTM3U\n#EXT-X-TARGETDURATION:4\n"
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                else:
+                    self.send_error(404)
+
+            def log_message(self, *a):
+                pass
+        srv = socketserver.TCPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        port = srv.server_address[1]
+        m3u = os.path.join(self.work, "verif.m3u")
+        with open(m3u, "w", encoding="utf-8") as f:
+            f.write(f"#EXTM3U\n#EXTINF:-1,Bonne\nhttp://127.0.0.1:{port}/ok.m3u8\n"
+                    f"#EXTINF:-1,Morte\nhttp://127.0.0.1:{port}/absente.m3u8\n"
+                    f"#EXTINF:-1,Fermee\nhttp://127.0.0.1:1/x.m3u8\n")
+        st, r = self.admin.call("POST", "/api/admin/live/sources", {"name": "Vérif", "m3u_url": m3u})
+        self.assertEqual(st, 200, r)
+        sid = next(x["id"] for x in r["sources"] if x["name"] == "Vérif")
+        try:
+            def names():
+                st, live = self.lea.call("GET", "/api/live")
+                return sorted(c["name"] for c in live["channels"] if c["name"] in ("Bonne", "Morte", "Fermee"))
+            time.sleep(1.5)  # première vérification lancée en fond après l'ajout
+            self.ctx.live.check_channels(int(sid))  # deux échecs d'affilée : masquées
+            self.assertEqual(names(), ["Bonne"])
+            st, r = self.admin.call("GET", "/api/admin/live")
+            self.assertEqual(next(x for x in r["sources"] if x["id"] == sid)["dead"], 2)
+            # une chaîne qui remarche réapparaît
+            self.ctx.db.run("UPDATE live_channels SET url=? WHERE name='Morte'", (f"http://127.0.0.1:{port}/ok.m3u8",))
+            self.ctx.live.check_channels(int(sid))
+            self.assertEqual(names(), ["Bonne", "Morte"])
+        finally:
+            self.admin.call("DELETE", f"/api/admin/live/sources/{sid}")
+            srv.shutdown()
+
     def test_live_tv(self):
         films = os.path.join(self.media, "films")
         mp4 = os.path.join(films, "Le Grand Voyage (2019)", "Le Grand Voyage (2019).mp4")
