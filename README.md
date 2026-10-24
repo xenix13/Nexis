@@ -375,14 +375,49 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 
 ## Feuille de route
 
-1. ~~Interface multi-utilisateurs~~ ✔
-2. ~~Serveur multimédia autonome : scan, TMDB, lecture directe / remux / transcodage~~ ✔
-3. ~~Détection automatique des intros et génériques de fin par empreinte audio (pour les fichiers sans chapitres)~~ ✔
-4. Import de l'historique « vu » depuis Jellyfin, par utilisateur
-5. ~~Profils, PIN, contrôle parental~~ ✔
-6. ~~Collections, « À regarder », playlists, bonus et bandes-annonces~~ ✔
-7. ~~Découvrir les plateformes de streaming et demander via Seerr~~ ✔
-10. ~~Tâches planifiées, TV en direct (IPTV), regarder ensemble~~ ✔
-11. ~~Applications Jellyfin (Windows, Android TV, téléphones)~~ ✔
-8. Appli installable sur téléphone (PWA), Chromecast, téléchargement pour le hors ligne
-9. Accélération matérielle optionnelle (VAAPI / Quick Sync) pour les serveurs équipés d'un GPU
+### Fait
+- [x] Interface multi-utilisateurs, profils, code PIN, contrôle parental
+- [x] Serveur multimédia autonome : scan, TMDB, lecture directe / remux / transcodage
+- [x] Détection des intros et génériques par empreinte audio (fichiers sans chapitres)
+- [x] Collections, « À regarder », playlists, bonus et bandes-annonces
+- [x] Découvrir les plateformes de streaming et demander via Seerr
+- [x] Tâches planifiées, TV en direct (IPTV), regarder ensemble
+- [x] Compatibilité avec les applications Jellyfin (Windows, Android TV, téléphones)
+- [x] Nouveau nom, logo et interface « Grand écran »
+
+### Corrections (retours des premiers utilisateurs)
+- [ ] Lecture : sur certains films et séries, la mémoire d'échange (swap) du serveur se remplit et des lignes vertes apparaissent dans la vidéo
+- [ ] Sous-titres parfois décalés par rapport à l'audio
+- [ ] Générique de fin : ne plus passer automatiquement à l'épisode suivant ; l'utilisateur choisit (clic sur le bandeau « Épisode suivant » ou lecture jusqu'à la fin)
+- [ ] TV en direct : ne pas intégrer les chaînes qui ne répondent pas
+
+### Lecteur et interface
+- [ ] Lecteur réductible (mini-lecteur dans un coin, comme Plex) : on continue à naviguer sans arrêter la lecture
+- [ ] « Reprendre et à suivre » : bouton pour marquer comme vu directement sur la vignette
+- [ ] Personnalisation par utilisateur : ordre des rangées de l'accueil et des liens de la barre du haut
+- [ ] Suggestions selon les derniers visionnages
+- [ ] Animations (transitions de pages, apparition des cartes, survols) pour une interface plus vivante
+
+### Regarder ensemble
+- [ ] Quand un membre change de langue ou de sous-titres, mettre le groupe en pause pendant son chargement (plus de décalage)
+- [ ] Liste des groupes mise à jour en temps réel, sans recharger la page
+- [ ] Bouton dans la barre du haut pour créer un groupe à l'avance et inviter
+- [ ] Optimisation générale (resynchronisation plus rapide, moins de requêtes)
+
+### Médiathèque
+- [ ] Fichiers `.strm` : lecture du flux distant qu'ils désignent, avec affiche et métadonnées comme un fichier local
+- [ ] Import de l'historique « vu » depuis Jellyfin, par utilisateur
+
+### Performances
+- [ ] Optimiser le serveur et l'interface (requêtes, cache, poids des pages, mémoire)
+- [ ] Transcodage matériel optionnel (VAAPI / Quick Sync, NVENC) pour les serveurs équipés d'un GPU
+
+### Installation et mises à jour
+- [ ] Paquet `.deb` pour machine virtuelle et conteneur LXC, et image Docker
+- [ ] Mise à jour du serveur et des applications depuis l'interface (administrateur)
+
+### Applications Nexis (en dernier)
+- [ ] Application Windows
+- [ ] Application Android TV
+- [ ] Application installable sur téléphone (PWA)
+- [ ] Ensuite seulement : retirer la compatibilité avec les applications Jellyfin, remplacée par les applications Nexis
