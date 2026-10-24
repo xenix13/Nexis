@@ -73,7 +73,7 @@ export async function renderPlayer(root, rk, ctx) {
   let subsUntil = null, subsRefresh = null;
   const SUBS_REFRESH = 20000;
   let audioSel = null, subSel = null, quality = prefs.quality;
-  let lastReport = 0, introSkipped = false, nextTimer = null, nextDismissed = false, destroyed = false;
+  let lastReport = 0, introSkipped = false, nextTimer = null, nextDismissed = false, nextAtEnd = false, destroyed = false;
   let idleTimer = null, scrubbing = false, startedAt = 0;
   let switching = true, finished = false; // no progress reports while a stream is (re)starting or after the end
   let rebuffering = false, stalls = [], lowerHinted = false, everPlayed = false;
@@ -652,34 +652,41 @@ export async function renderPlayer(root, rk, ctx) {
     const d = duration();
     if (!next || nextDismissed || !d) return;
     const creditsAt = m.credits ? m.credits.start : d - 25000;
-    if (p >= creditsAt && nextCard.hidden && !video.paused) showNextCard(next);
-    if (p < creditsAt - 2000 && !nextCard.hidden) hideNextCard();
+    // pendant le générique : une proposition, sans compte à rebours (on peut regarder le générique)
+    if (p >= creditsAt && nextCard.hidden && !video.paused && !nextAtEnd) showNextCard(next, false);
+    if (p < creditsAt - 2000 && !nextCard.hidden && !nextAtEnd) hideNextCard();
   }
 
-  function showNextCard(next) {
-    let left = prefs.autoplay_next ? 10 : null;
+  // countdown : à la fin de la vidéo, le suivant démarre après le délai choisi (Réglages), sauf si on annule
+  function showNextCard(next, countdown) {
+    let left = countdown ? Math.max(0, Number(prefs.next_delay ?? 5)) : null;
     const counter = h('span.next-count');
     const paint = () => { counter.textContent = left === null ? '' : `dans ${left} s`; };
     paint();
+    const cancel = h('button.btn.ghost.small', { onclick: () => {
+      if (left !== null) { left = null; clearInterval(nextTimer); paint(); cancel.textContent = 'Fermer'; return; }
+      nextDismissed = !nextAtEnd;
+      hideNextCard();
+    } }, countdown ? 'Annuler' : 'Masquer');
     clear(nextCard,
       next.thumb ? h('img', { src: img(next.type === 'episode' ? next.thumb : next.art, 320, 180), alt: '' }) : null,
       h('div.next-body', h('div.muted.small', next.type === 'episode' ? 'Épisode suivant ' : 'À suivre ', counter),
         h('strong', next.type === 'episode' ? `${episodeCode(next)} · ${next.title}` : next.title),
         h('div.actions-row',
-          h('button.btn.primary.small', { onclick: playNext }, icon('play'), 'Lire maintenant'),
-          h('button.btn.ghost.small', { onclick: () => { nextDismissed = true; hideNextCard(); } }, 'Masquer'))));
+          h('button.btn.primary.small', { onclick: playNext }, icon('play'), 'Lire maintenant'), cancel)));
+    nextCard.classList.toggle('end', !!countdown);
     nextCard.hidden = false;
     clearInterval(nextTimer);
+    if (left === 0) { playNext(); return; }
     if (left !== null) {
       nextTimer = setInterval(() => {
-        if (video.paused) return;
         left -= 1;
         paint();
-        if (left <= 0) playNext();
+        if (left <= 0) { clearInterval(nextTimer); playNext(); }
       }, 1000);
     }
   }
-  function hideNextCard() { nextCard.hidden = true; clearInterval(nextTimer); }
+  function hideNextCard() { nextCard.hidden = true; nextCard.classList.remove('end'); clearInterval(nextTimer); }
 
   function playNext() {
     if (!session || !session.next) return;
@@ -1030,8 +1037,12 @@ export async function renderPlayer(root, rk, ctx) {
     // the transcoded stream can be a little shorter than the file: treat as finished
     report('stopped', true, { ended: true });
     finished = true;
-    if (session.next && prefs.autoplay_next && !nextDismissed) playNext();
-    else { paintPlay(); player.classList.remove('idle'); }
+    paintPlay();
+    player.classList.remove('idle');
+    if (session.next) {
+      nextAtEnd = true;
+      showNextCard(session.next, prefs.autoplay_next);
+    }
   });
   document.addEventListener('fullscreenchange', onFullscreen);
   function onFullscreen() { fullBtn.replaceChildren(icon(document.fullscreenElement ? 'exitfull' : 'full')); }

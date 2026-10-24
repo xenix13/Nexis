@@ -399,6 +399,10 @@ body.playing { overflow: hidden; background: #000; }
 .next-card img { width: 150px; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; flex: none; }
 .next-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: #fff; }
 .next-count { color: var(--accent); font-weight: 700; }
+.next-card.end { left: 50%; right: auto; bottom: 50%; transform: translate(-50%, 50%); width: min(560px, calc(100% - 32px));
+  padding: 16px; animation: none; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); }
+.next-card.end img { width: 200px; }
+.next-card.end .next-count { font-size: 15px; }
 .player-menu { position: absolute; right: clamp(16px, 3vw, 36px); bottom: 96px; z-index: 9; display: flex; gap: 6px;
   background: rgba(18, 18, 22, 0.96); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 12px; padding: 10px;
   max-height: 60vh; overflow: auto; color: #fff; }

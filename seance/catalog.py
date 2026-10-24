@@ -39,6 +39,7 @@ DEFAULT_PREFS = {
     "sub_size": 100,
     "autoplay_next": True,
     "auto_skip_intro": False,
+    "next_delay": 5,
     "accent": "#ffa43a",
     "theme": "dark",
     "poster_size": "m",
@@ -61,6 +62,8 @@ def validate_prefs(data):
             ok = v in ("never", "always", "foreign")
         elif k == "sub_size":
             ok = isinstance(v, int) and 60 <= v <= 200
+        elif k == "next_delay":
+            ok = v in (0, 3, 5, 10, 15, 20, 30)
         elif k in ("autoplay_next", "auto_skip_intro", "show_continue"):
             ok = isinstance(v, bool)
         elif k == "accent":

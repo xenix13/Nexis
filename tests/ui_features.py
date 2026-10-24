@@ -148,6 +148,22 @@ with sync_playwright() as pw:
     tnow = page.evaluate("document.querySelector('video').currentTime")
     check(40 <= tnow < 50, f"saut au chapitre choisi au clavier (Partie A) : {tnow}")
 
+    # --- fin d'épisode : compte à rebours réglable (5 s par défaut), annulable
+    ep1 = page.evaluate("location.hash")
+    page.evaluate("document.querySelector('video').dispatchEvent(new Event('ended'))")
+    page.wait_for_selector(".next-card.end:not([hidden])")
+    check("dans 5 s" in page.inner_text(".next-card.end") or "dans 4 s" in page.inner_text(".next-card.end"),
+          "compte à rebours de 5 s à la fin de l'épisode")
+    page.screenshot(path=f"{out}/03b-fin-episode.png")
+    page.click(".next-card.end >> text=Annuler")
+    page.wait_for_timeout(6500)
+    check(page.evaluate("location.hash") == ep1 and "dans" not in page.inner_text(".next-card"),
+          "« Annuler » arrête le compte à rebours")
+    page.click(".next-card >> text=Fermer")
+    page.evaluate("document.querySelector('video').dispatchEvent(new Event('ended'))")
+    page.wait_for_function(f"location.hash !== {ep1!r}", timeout=9000)
+    check("/play/" in page.evaluate("location.hash"), "épisode suivant lancé à la fin du compte à rebours")
+
     # --- tâches planifiées
     page.goto(base + "/#/admin/tasks")
     page.wait_for_selector(".task-row")

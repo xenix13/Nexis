@@ -368,7 +368,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 ### Corrections (retours des premiers utilisateurs)
 - [ ] « Regarder ensemble » à deux (vu sur *Django*) : la mémoire d'échange (swap) du serveur se remplit et des lignes vertes apparaissent dans la vidéo
 - [ ] « Regarder ensemble » : sous-titres décalés par rapport à l'audio (pas de souci en lecture seule)
-- [ ] Générique de fin : ne plus passer automatiquement à l'épisode suivant ; l'utilisateur choisit (clic sur le bandeau « Épisode suivant » ou lecture jusqu'à la fin)
+- [x] Générique de fin : l'épisode suivant est seulement proposé pendant le générique ; à la fin, compte à rebours réglable (5 s par défaut, *Réglages → Lecture*) avec « Lire maintenant » et « Annuler », comme Plex
 - [ ] TV en direct : ne pas intégrer les chaînes qui ne répondent pas
 - [x] Retrait de la compatibilité avec les applications Jellyfin (trop limitée, remplacée par les applications Nexis)
 

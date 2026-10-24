@@ -66,6 +66,8 @@ export async function renderSettings(main) {
       field('Langue des sous-titres', bindSelect('sub_lang', LANGS)),
       field('Taille des sous-titres', h('div.inline', subSize, subSizeLabel))),
     bindToggle('autoplay_next', 'Enchaîner automatiquement l’épisode suivant'),
+    field('Délai avant l’épisode suivant', bindSelect('next_delay', [0, 3, 5, 10, 15, 20, 30].map((n) => [String(n), n ? `${n} secondes` : 'Immédiatement']), Number),
+      'À la fin de l’épisode, un compte à rebours laisse le choix : lire tout de suite ou annuler. Pendant le générique, l’épisode suivant est seulement proposé.'),
     bindToggle('auto_skip_intro', 'Passer les génériques d’ouverture automatiquement'));
 
   // --- display
