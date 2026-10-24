@@ -378,7 +378,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 - [x] « Reprendre et à suivre » : bouton pour marquer comme vu directement sur la vignette (avec « Annuler » pendant quelques secondes)
 - [x] Personnalisation par utilisateur : ordre des rangées de l'accueil et des liens de la barre du haut (Réglages → Accueil / Barre du haut : glisser-déposer ou flèches, interrupteur pour masquer)
 - [x] Suggestions selon les derniers visionnages (« Suggestions pour toi », « Parce que tu as regardé… », titres similaires sur les fiches)
-- [ ] Animations (transitions de pages, apparition des cartes, survols) pour une interface plus vivante
+- [x] Animations (transitions de pages, apparition des cartes en cascade, fondu des images, menus et fenêtres, soulignement de la barre du haut) ; coupées si le système demande « moins de mouvement »
 
 ### Regarder ensemble
 - [x] Quand un membre change de langue, de qualité ou de sous-titres incrustés, le groupe se met en pause pendant son chargement ; les sous-titres affichés par le navigateur changent sans recharger la vidéo

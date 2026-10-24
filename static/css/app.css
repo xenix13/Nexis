@@ -797,3 +797,64 @@ textarea { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px soli
 .layout-label { flex: 1; min-width: 0; display: flex; flex-direction: column; font-weight: 600; }
 .layout-label .muted { font-weight: 400; }
 .layout-item .icon-btn[disabled] { opacity: 0.25; cursor: default; }
+
+/* ---------- animations (désactivées si le système demande moins de mouvement) ---------- */
+:root { --ease-out: cubic-bezier(.2, .8, .2, 1); }
+@keyframes fade-up { from { opacity: 0; transform: translateY(14px); } }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(-6px) scale(0.97); } }
+@keyframes modal-in { from { opacity: 0; transform: translateY(18px) scale(0.97); } }
+@keyframes hero-zoom { from { transform: scale(1.06); } }
+
+/* changement de page : le contenu monte doucement */
+.content > :not(.hero):not(.detail) { animation: fade-up 0.45s var(--ease-out) backwards; }
+.content > :nth-child(2) { animation-delay: 0.04s; }
+.content > :nth-child(3) { animation-delay: 0.08s; }
+.content > :nth-child(4) { animation-delay: 0.12s; }
+.content > :nth-child(n+5) { animation-delay: 0.16s; }
+
+/* grande affiche de l'accueil et fiche : fond qui se pose, texte en cascade */
+.hero { animation: fade-in 0.6s ease-out backwards; }
+.hero-body > * { animation: fade-up 0.6s var(--ease-out) backwards; }
+.hero-body > :nth-child(2) { animation-delay: 0.06s; }
+.hero-body > :nth-child(3) { animation-delay: 0.12s; }
+.hero-body > :nth-child(4) { animation-delay: 0.18s; }
+.hero-body > :nth-child(n+5) { animation-delay: 0.24s; }
+.detail-backdrop { animation: fade-in 0.7s ease-out backwards; }
+.detail-poster { animation: fade-up 0.5s var(--ease-out) backwards; }
+.detail-inner > :not(.detail-poster) { animation: fade-up 0.5s var(--ease-out) 0.08s backwards; }
+
+/* cartes : arrivée en cascade dans les rangées et les grilles */
+.row-track > *, .grid > * { animation: fade-up 0.4s var(--ease-out) backwards; }
+.row-track > :nth-child(2), .grid > :nth-child(2) { animation-delay: 0.03s; }
+.row-track > :nth-child(3), .grid > :nth-child(3) { animation-delay: 0.06s; }
+.row-track > :nth-child(4), .grid > :nth-child(4) { animation-delay: 0.09s; }
+.row-track > :nth-child(5), .grid > :nth-child(5) { animation-delay: 0.12s; }
+.row-track > :nth-child(6), .grid > :nth-child(6) { animation-delay: 0.15s; }
+.row-track > :nth-child(7), .grid > :nth-child(7) { animation-delay: 0.18s; }
+.row-track > :nth-child(n+8), .grid > :nth-child(n+8) { animation-delay: 0.21s; }
+
+/* images : fondu à l'arrivée plutôt qu'un affichage brutal ligne par ligne */
+img.fade { opacity: 0; transition: opacity 0.4s ease-out; }
+img.fade.in { opacity: 1; }
+
+/* menus, fenêtres */
+.user-menu:not([hidden]), .more-list:not([hidden]) { animation: pop-in 0.16s var(--ease-out); transform-origin: top right; }
+.modal-overlay { animation: fade-in 0.18s ease-out; }
+.modal { animation: modal-in 0.26s var(--ease-out); }
+.player-menu:not([hidden]) { animation: pop-in 0.16s var(--ease-out); }
+
+/* barre du haut : soulignement du lien actif qui se déploie */
+.nav-link::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: 2px; height: 2px; border-radius: 2px;
+  background: var(--accent); transform: scaleX(0); transition: transform 0.25s var(--ease-out); }
+.nav-link:hover::after { transform: scaleX(0.4); opacity: 0.6; }
+.nav-link.active::after { transform: scaleX(1); opacity: 1; animation: grow-x 0.35s var(--ease-out); }
+@keyframes grow-x { from { transform: scaleX(0); } }
+
+/* boutons : léger enfoncement au clic */
+.btn, .ctl, .icon-btn { transition: transform 0.12s ease-out, background 0.15s, color 0.15s, border-color 0.15s, filter 0.15s; }
+.btn:active, .ctl:active, .icon-btn:active { transform: scale(0.96); }
+
+@media (prefers-reduced-motion: reduce) {
+  img.fade { opacity: 1; transition: none; }
+}

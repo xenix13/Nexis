@@ -81,7 +81,7 @@ def check(cond, msg):
 
 with sync_playwright() as pw:
     browser = pw.chromium.launch()
-    bctx = browser.new_context(viewport={"width": 1440, "height": 900}, bypass_csp=True)
+    bctx = browser.new_context(viewport={"width": 1440, "height": 900}, bypass_csp=True, reduced_motion="reduce")  # captures stables (sans animations)
     bctx.route("**/vendor/hls.min.js", lambda r: r.fulfill(status=200, content_type="text/javascript", body=STUB))
     bctx.route("**/__test.webm", serve_webm(webm))
     page = bctx.new_page()
@@ -387,7 +387,7 @@ with sync_playwright() as pw:
     page.screenshot(path=f"{out}/15-partages.png")
 
     # --- mobile
-    mctx = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2)
+    mctx = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2, reduced_motion="reduce")
     mp = mctx.new_page()
     mp.goto(base + "/#/login")
     mp.fill("input[name=username]", "colas")

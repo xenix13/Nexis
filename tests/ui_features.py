@@ -236,6 +236,11 @@ with sync_playwright() as pw:
     lpage.goto(base + "/#/")
     lpage.wait_for_selector(".row-title")
     rows = lpage.eval_on_selector_all(".content .row-title", "els => els.map((e) => e.textContent)")
+    # animations : une fois jouées, tout est visible (pas de rangée ni d'image restée transparente)
+    lpage.wait_for_timeout(1500)
+    stuck = lpage.evaluate("""[...document.querySelectorAll('.content .row, .content .card, .content img')]
+      .filter((e) => e.getBoundingClientRect().top < innerHeight && getComputedStyle(e).opacity !== '1').length""")
+    check(stuck == 0, f"animations terminées : {stuck} éléments encore transparents")
     check(rows and rows[0].startswith("Ajoutés récemment · Films") and "À regarder" not in rows, f"accueil réordonné : {rows}")
     lea.call("PUT", "/api/me/prefs", {"home_order": [], "home_hidden": [], "nav_order": [], "nav_hidden": []})
     # --- fiche : titres similaires (genres, réalisateur, acteurs)

@@ -243,5 +243,24 @@ document.addEventListener('error', (e) => {
 document.addEventListener('click', () => {
   document.querySelectorAll('.user-menu').forEach((m) => { m.hidden = true; });
 });
+// Images des pages : fondu quand elles sont chargées (celles déjà en cache s'affichent tout de suite).
+function fadeImage(im) {
+  if (im.complete || im.classList.contains('fade') || im.closest('.player')) return;
+  im.classList.add('fade');
+  const done = () => im.classList.add('in');
+  im.addEventListener('load', done, { once: true });
+  im.addEventListener('error', done, { once: true });
+  setTimeout(done, 8000); // filet de sécurité : jamais d'image restée invisible
+}
+new MutationObserver((records) => {
+  for (const r of records) {
+    for (const n of r.addedNodes) {
+      if (n.nodeType !== 1) continue;
+      if (n.tagName === 'IMG') fadeImage(n);
+      else n.querySelectorAll('img').forEach(fadeImage);
+    }
+  }
+}).observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
+
 window.addEventListener('hashchange', route);
 route();
