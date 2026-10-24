@@ -308,6 +308,7 @@ Le rapport d'audit, les correctifs et les risques acceptés sont décrits dans [
 | Épisodes « non reconnus » | Ajouter `S01E02` ou ` - 02` dans le nom |
 | « Trop de transcodages simultanés » | Le processeur est déjà pris : augmente la limite si ton CPU le permet, ou choisis une source H.264 |
 | Lecture qui ne démarre pas | `journalctl -u seance -f` pendant l'essai ; `SEANCE_DEBUG=1` dans `/etc/seance/seance.env` affiche les commandes ffmpeg |
+| Saccades, swap plein (LXC) | *Lectures en cours* montre la mémoire, le swap et chaque ffmpeg. Un transcodage 4K prend 0,5 à 0,7 Go : compte au moins 2 Go de mémoire par transcodage simultané, et 1 à 2 Go de swap |
 | Code d'installation perdu | `cat /var/lib/seance/setup-code.txt` (tant qu'aucun compte n'existe) |
 
 Réinitialiser un mot de passe en ligne de commande :
@@ -379,7 +380,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 - [ ] Animations (transitions de pages, apparition des cartes, survols) pour une interface plus vivante
 
 ### Regarder ensemble
-- [ ] Quand un membre change de langue ou de sous-titres, mettre le groupe en pause pendant son chargement (plus de décalage)
+- [x] Quand un membre change de langue, de qualité ou de sous-titres incrustés, le groupe se met en pause pendant son chargement ; les sous-titres affichés par le navigateur changent sans recharger la vidéo
 - [ ] Liste des groupes mise à jour en temps réel, sans recharger la page
 - [ ] Bouton dans la barre du haut pour créer un groupe à l'avance et inviter
 - [ ] Optimisation générale (resynchronisation plus rapide, moins de requêtes)

@@ -173,6 +173,8 @@ export async function renderPlayer(root, rk, ctx) {
     loader.hidden = false;
     errorLayer.hidden = true;
     const previous = session && session.stream;
+    // en groupe, recharger (langue, sous-titres incrustés, qualité) met les autres en pause jusqu'à ce qu'on soit prêt
+    if (group && previous && !destroyed) gsend('buffering', { position: Math.round(offset), reason: 'reload' });
     if (hls) { hls.destroy(); hls = null; }
     if (video.getAttribute('src')) { video.removeAttribute('src'); video.load(); }
     let s;
@@ -705,6 +707,18 @@ export async function renderPlayer(root, rk, ctx) {
       onclick: () => { menu.hidden = true; onPick(); } }, h('span', label), hint ? h('span.muted.small', hint) : null,
     active ? icon('check') : null);
     const restart = () => start(pos());
+    // sous-titres affichés par le navigateur (texte, ASS, PGS) : on change de piste sans relancer la vidéo
+    const burned = (x) => !!x && !x.overlay && !(x.pgs && browserCaps().pgs);
+    const pickSub = (x) => {
+      const before = subSel;
+      subSel = x;
+      rememberTracks();
+      if (!session || burned(before) || burned(x)) { restart(); return; }
+      const u = x ? `/api/items/${item.id}/subtitles/${x.id}` : null;
+      Object.assign(session, { subtitle_selected: x ? x.id : 0, subtitle_overlay: x && x.overlay ? u : null,
+        subtitle_ass: x && x.ass ? `${u}/ass` : null, subtitle_pgs: x && x.pgs && !x.overlay ? `${u}/sup` : null });
+      loadSubtitles(startSeq);
+    };
     chapterPanel.hidden = true;
     if (kind === 'group') {
       clear(menu, groupMenu(opt));
@@ -715,8 +729,8 @@ export async function renderPlayer(root, rk, ctx) {
         h('div.menu-col', h('h4', 'Audio'), audio.length ? audio.map((a) => opt(a.title, audioSel && a.id === audioSel.id,
           () => { audioSel = a; subSel = fixForced(subSel, a, subs); rememberTracks(); restart(); })) : h('p.muted.small', 'Piste unique')),
         h('div.menu-col', h('h4', 'Sous-titres'),
-          opt('Aucun', !subSel, () => { subSel = null; rememberTracks(); restart(); }),
-          menuSubs(subs, audioSel).map((s) => opt(s.title, subSel && s.id === subSel.id, () => { subSel = s; rememberTracks(); restart(); },
+          opt('Aucun', !subSel, () => pickSub(null)),
+          menuSubs(subs, audioSel).map((s) => opt(s.title, subSel && s.id === subSel.id, () => pickSub(s),
             s.forced ? SIGNS_HINT : (s.overlay || s.pgs ? null : 'incrusté')))));
     } else {
       const q = [['original', 'Originale'], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p']];
@@ -1003,6 +1017,15 @@ export async function renderPlayer(root, rk, ctx) {
     if (!video.paused) report('playing');
   });
   video.addEventListener('progress', paintTime);
+  // sous-titres texte calés sur chaque image affichée (timeupdate n'arrive que toutes les ~250 ms)
+  if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+    const onFrame = (_now, meta) => {
+      if (destroyed) return;
+      paintSubtitles(base + Math.round((meta && meta.mediaTime != null ? meta.mediaTime : video.currentTime) * 1000));
+      video.requestVideoFrameCallback(onFrame);
+    };
+    video.requestVideoFrameCallback(onFrame);
+  }
   video.addEventListener('ended', () => {
     // the transcoded stream can be a little shorter than the file: treat as finished
     report('stopped', true, { ended: true });

@@ -21,6 +21,7 @@ import time
 log = logging.getLogger("seance.sync")
 
 WAIT_TIMEOUT = 12        # s : on repart sans le membre trop lent
+RELOAD_TIMEOUT = 60      # s : un membre qui change de langue ou de qualité (extraction, relance de ffmpeg)
 GONE_AFTER = 40          # s sans connexion : le membre a quitté
 EMPTY_AFTER = 120        # s : groupe vide supprimé
 MAX_STREAMS_PER_USER = 6  # connexions d'événements ouvertes en même temps par une personne (onglets, appareils)
@@ -174,13 +175,13 @@ class Groups:
             return g
 
     # ------------------------------------------------------------ commandes
-    def _wait_for(self, g, uids):
+    def _wait_for(self, g, uids, timeout=WAIT_TIMEOUT):
         g.waiting = set(uids) & set(g.members)
         if g.wait_timer:
             g.wait_timer.cancel()
         if g.waiting:
             seq = g.seq + 1
-            g.wait_timer = threading.Timer(WAIT_TIMEOUT, self._timeout, args=(g.id, seq))
+            g.wait_timer = threading.Timer(timeout, self._timeout, args=(g.id, seq))
             g.wait_timer.daemon = True
             g.wait_timer.start()
 
@@ -202,7 +203,7 @@ class Groups:
             g.ref = now_ms()
             self._broadcast_state(g, "resume")
 
-    def command(self, gid, user, action, position=None, item_id=None):
+    def command(self, gid, user, action, position=None, item_id=None, reason=None):
         with self.lock:
             g = self.groups.get(gid)
             if not g:
@@ -248,7 +249,14 @@ class Groups:
                 if m.ready:
                     m.ready = False
                     self._send(g, g.members_event())
-                if g.playing and not g.waiting:
+                if reason == "reload" and g.playing:
+                    # changement de langue, de sous-titres incrustés ou de qualité : tout le groupe attend
+                    # ce membre, à l'endroit où il en était
+                    g.position = g.position_now() if g.waiting or pos is None else pos
+                    g.ref = now_ms()
+                    self._wait_for(g, set(g.waiting) | {user["id"]}, RELOAD_TIMEOUT)
+                    self._broadcast_state(g, "wait", m.name, f"{m.name} recharge la vidéo : pause le temps qu'il soit prêt")
+                elif g.playing and not g.waiting:
                     g.position = g.position_now()
                     self._wait_for(g, [user["id"]])
                     self._broadcast_state(g, "wait", m.name)
@@ -415,7 +423,8 @@ def register(app, ctx, x):
         if pos is not None and not isinstance(pos, (int, float)):
             raise HTTPError(400, "Position invalide")
         try:
-            g = groups.command(req.params["gid"], req.user, action, pos, item_id)
+            g = groups.command(req.params["gid"], req.user, action, pos, item_id,
+                               "reload" if b.get("reason") == "reload" else None)
         except LookupError as e:
             raise HTTPError(404, str(e))
         except PermissionError as e:

@@ -186,9 +186,14 @@ def plan(probe, audio_index=None, burn_index=None, quality="original", caps=None
             "src_width": (v or {}).get("width") or 0, "fps": fps, "seglen": seglen, "reasons": reasons}
 
 
-def build_command(path, p, start, out_dir, start_number=0):
-    """Commande ffmpeg d'un flux HLS fMP4 démarrant à `start` (secondes) au segment `start_number`."""
+def build_command(path, p, start, out_dir, start_number=0, threads=0):
+    """Commande ffmpeg d'un flux HLS fMP4 démarrant à `start` (secondes) au segment `start_number`.
+
+    threads : fils du décodage et de l'encodage (0 = autant que de cœurs). Plusieurs transcodages en même
+    temps se partagent les cœurs : chacun en prend moins, ce qui réduit aussi beaucoup sa mémoire."""
     cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "warning", "-y", *INPUT_OPTS]
+    if threads and p["mode"] == "transcode":
+        cmd += ["-threads", str(threads)]  # décodage
     if p["mode"] == "copy":
         cmd += ["-fflags", "+genpts"]
     if p["burn_index"] is not None and p.get("src_width") and p.get("src_height"):
@@ -199,7 +204,8 @@ def build_command(path, p, start, out_dir, start_number=0):
         # (Jellyfin ajoute 0,5 s pour la même raison) : on vise juste après l'image clé voulue.
         ss = start + COPY_SEEK_PAD if p["mode"] == "copy" else start
         cmd += ["-ss", f"{ss:.3f}"]
-    cmd += [*media.LOCAL_ONLY, "-i", path, "-map_metadata", "-1", "-map_chapters", "-1", "-threads", "0"]
+    cmd += [*media.LOCAL_ONLY, "-i", path, "-map_metadata", "-1", "-map_chapters", "-1",
+            "-threads", str(threads if p["mode"] == "transcode" else 0)]
     vi = p["video_index"]
     seglen = p.get("seglen") or SEGMENT
     if p["mode"] == "copy":
@@ -308,6 +314,12 @@ class Transcoder:
         self._stop = threading.Event()
         threading.Thread(target=self._throttle_loop, daemon=True).start()
 
+    def threads_per_transcode(self):
+        """Cœurs partagés entre les transcodages autorisés en même temps (au moins 2 chacun)."""
+        cpus = os.cpu_count() or 2
+        _, max_transcodes = self.limits()
+        return max(2, cpus // max(1, max_transcodes)) if max_transcodes > 1 else 0
+
     def counts(self):
         with self.lock:
             live = [s for s in self.sessions.values() if s.proc]
@@ -376,7 +388,7 @@ class Transcoder:
                 except OSError:
                     pass
         start = s.segments[index][0] if s.segments else 0
-        cmd = build_command(s.path, s.plan, start, s.dir, index)
+        cmd = build_command(s.path, s.plan, start, s.dir, index, self.threads_per_transcode())
         log.debug("ffmpeg %s", " ".join(cmd))
         if s.log_file:
             s.log_file.close()

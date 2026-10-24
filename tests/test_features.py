@@ -328,6 +328,14 @@ class FeaturesTest(unittest.TestCase):
             st, s = self.admin.call("POST", f"/api/together/{gid}/cmd", {"action": "buffering"})
             self.assertEqual((s["waiting"], s["waiting_for"]), (True, ["colas"]))
             self.admin.call("POST", f"/api/together/{gid}/cmd", {"action": "ready"})
+            # Léa change de langue : tout le monde attend à sa position, plus longtemps qu'une simple coupure
+            st, s = self.lea.call("POST", f"/api/together/{gid}/cmd",
+                                  {"action": "buffering", "position": 70000, "reason": "reload"})
+            self.assertEqual((s["waiting"], s["waiting_for"], s["position"]), (True, ["Léa"], 70000), s)
+            g = self.ctx.together.get(gid)
+            self.assertEqual(g.wait_timer.interval, 60)
+            st, s = self.lea.call("POST", f"/api/together/{gid}/cmd", {"action": "ready"})
+            self.assertEqual((s["waiting"], s["playing"]), (False, True))
             # changement d'épisode / de film
             other = self.item("Nuit polaire")
             st, s = self.admin.call("POST", f"/api/together/{gid}/cmd", {"action": "item", "item_id": int(other["id"])})
