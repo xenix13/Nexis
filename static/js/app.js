@@ -13,6 +13,7 @@ import { renderSettings } from './views/settings.js';
 import { renderAdmin } from './views/admin.js';
 import { renderPlayer } from './player.js';
 import { renderTogether } from './views/together.js';
+import { createGroupDialog, currentGroups, onGroups, startGroupsFeed, stopGroupsFeed } from './groups.js';
 import { renderLive, renderLivePlayer } from './views/live.js';
 
 export const state = { me: null, status: null };
@@ -113,15 +114,11 @@ function shell(active) {
   const header = h('header.topbar',
     h('a.logo', { href: '#/', 'aria-label': 'Nexis — accueil' }, h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis'),
     h('nav.nav', navLinks(me, active)),
-    h('div.topbar-right', h('span.together-slot'), h('label.search', icon('search'), search), h('div.user-wrap', userBtn, menu)));
-  // groupes « Regarder ensemble » en cours : un raccourci discret pour les rejoindre
-  get('/api/together').then((groups) => {
-    const slot = header.querySelector('.together-slot');
-    if (slot && groups.length && active !== 'together') {
-      slot.replaceWith(h('a.group-pill', { href: '#/together', title: 'Regarder ensemble' }, icon('group'),
-        groups.length === 1 ? `${groups[0].owner} regarde` : `${groups.length} groupes`));
-    }
-  }).catch(() => {});
+    h('div.topbar-right', h('span.together-slot', { dataset: { active } }),
+      h('button.icon-btn.group-new', { type: 'button', title: 'Créer un groupe « Regarder ensemble »', 'aria-label': 'Créer un groupe',
+        onclick: () => createGroupDialog(me) }, icon('group'), h('span.plus', '+')),
+      h('label.search', icon('search'), search), h('div.user-wrap', userBtn, menu)));
+  paintTogetherSlot(header.querySelector('.together-slot'));
   const main = h('main.content');
   const banner = me.plex_error ? h('div.banner-error', me.plex_error) : null;
   clear(root, header, banner, main);
@@ -134,8 +131,37 @@ function shell(active) {
   return main;
 }
 
+// Raccourci « Regarder ensemble » de la barre du haut, tenu à jour par la liste en direct
+function paintTogetherSlot(slot, list = currentGroups()) {
+  if (!slot) return;
+  const mine = list.find((g) => g.member);
+  let pill = null;
+  if (mine) {
+    pill = h('a.group-pill.mine', { href: `#/together/${mine.id}`, title: `Ton groupe : ${mine.name}` }, icon('group'),
+      mine.item ? mine.name : `${mine.name} · salon`, h('span.group-count', String(mine.members.length)));
+  } else if (list.length && slot.dataset.active !== 'together') {
+    pill = h('a.group-pill', { href: '#/together', title: 'Regarder ensemble' }, icon('group'),
+      list.length === 1 ? `${list[0].owner} regarde` : `${list.length} groupes`);
+  }
+  slot.replaceChildren(...(pill ? [pill] : []));
+}
+onGroups((list) => paintTogetherSlot(document.querySelector('.topbar .together-slot'), list));
+// lecture lancée dans un groupe dont on fait partie, pendant qu'on navigue ailleurs : on propose de la rejoindre
+const launched = new Map();
+onGroups((list) => {
+  for (const g of list) {
+    const was = launched.get(g.id);
+    const now = g.member && g.item && !g.item.hidden ? g.item.id : null;
+    launched.set(g.id, now);
+    if (now && was === null && !location.hash.includes(`group=${g.id}`) && !location.hash.startsWith(`#/together/${g.id}`)) {
+      toast(`${g.name} : la lecture commence`, 'ok', { label: 'Rejoindre', onClick: () => { location.hash = `#/play/${now}?group=${g.id}`; } });
+    }
+  }
+});
+
 async function logout() {
   closeMini();
+  stopGroupsFeed();
   try { await post('/api/logout'); } catch { /* ignore */ }
   state.me = null;
   location.hash = '#/login';
@@ -158,6 +184,7 @@ async function route() {
     document.title = 'Installation · Nexis';
     return renderSetup(root, () => { state.status = null; state.me = null; location.hash = '#/admin/libraries'; route(); });
   }
+  if (page === 'login' || page === 'profiles') stopGroupsFeed(); // la liste suit la personne connectée
   if (page === 'login') {
     document.title = 'Connexion · Nexis';
     return renderLogin(root, async () => { await refreshMe(); location.hash = '#/profiles'; });
@@ -178,6 +205,7 @@ async function route() {
     }
   }
   if (token !== renderToken) return;
+  startGroupsFeed();
 
   const ctx = { query, parts, isCurrent: () => token === renderToken, setCleanup: (fn) => { cleanup = fn; },
     minimize, closeMini };
@@ -231,6 +259,7 @@ async function route() {
 
 setUnauthorizedHandler(() => {
   state.me = null;
+  stopGroupsFeed();
   if (!location.hash.startsWith('#/login')) {
     toast('Session expirée, reconnecte-toi');
     location.hash = '#/login';

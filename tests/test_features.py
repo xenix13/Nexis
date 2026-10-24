@@ -320,11 +320,11 @@ class FeaturesTest(unittest.TestCase):
             self.admin.call("DELETE", f"/api/admin/live/sources/{sid}")
 
     # ------------------------------------------------------------ regarder ensemble
-    def events(self, client, gid, n, timeout=10):
+    def events(self, client, gid, n, timeout=10, path=None):
         """Lit n événements SSE du groupe (connexion HTTP brute avec le cookie de session)."""
         cookie = "; ".join(f"{c.name}={c.value}" for c in client.jar)
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
-        conn.request("GET", f"/api/together/{gid}/events", headers={"Cookie": cookie})
+        conn.request("GET", path or f"/api/together/{gid}/events", headers={"Cookie": cookie})
         resp = conn.getresponse()
         self.assertEqual(resp.status, 200)
         self.assertTrue(resp.getheader("Content-Type").startswith("text/event-stream"))
@@ -423,6 +423,54 @@ class FeaturesTest(unittest.TestCase):
         self.assertEqual([s["action"] for s in states], ["sync", "resume", "pause"], got)
         self.assertEqual((states[-1]["by"], states[-1]["position"]), ("colas", 3000))
         self.admin.call("POST", f"/api/together/{gid}/leave")
+        self.lea.call("POST", f"/api/together/{gid}/leave")
+
+    def test_watch_together_live_list_and_lobby(self):
+        """Liste des groupes en direct, groupe créé à l'avance (salon), présence tant que Nexis est ouvert."""
+        from seance import syncplay
+        got = []
+
+        def listen():
+            conn, ev = self.events(self.lea, None, 4, timeout=8, path="/api/together/feed")
+            got.extend(ev)
+            conn.close()
+        t = threading.Thread(target=listen)
+        t.start()
+        time.sleep(0.5)
+        # salon : groupe sans film, créé à l'avance
+        st, g = self.admin.call("POST", "/api/together", {"name": "Vendredi soir"})
+        self.assertEqual((st, g["item"], g["playing"]), (200, None, False))
+        gid = g["id"]
+        time.sleep(0.5)
+        self.lea.call("POST", f"/api/together/{gid}/join")
+        time.sleep(0.5)
+        film = self.item("Le Grand Voyage")
+        st, s = self.admin.call("POST", f"/api/together/{gid}/cmd", {"action": "item", "item_id": int(film["id"])})
+        self.assertEqual((s["item_id"], s["waiting"]), (str(film["id"]), True))
+        t.join(10)
+        lists = [e["groups"] for e in got if e["type"] == "groups"]
+        self.assertEqual(lists[0], [])  # rien au départ
+        self.assertEqual([(x["name"], x["item"], x["member"], x["is_host"]) for x in lists[1]],
+                         [("Vendredi soir", None, False, False)])  # créé : apparaît chez Léa sans recharger
+        self.assertTrue(lists[2][0]["member"])  # Léa a rejoint
+        self.assertEqual(lists[3][0]["item"]["title"], "Le Grand Voyage")  # le film est lancé
+        # présence : membre sans lecteur ouvert, mais Nexis ouvert -> on reste dans le groupe
+        old = syncplay.GONE_AFTER
+        syncplay.GONE_AFTER = 0
+        try:
+            # (Léa a encore sa liste en direct ouverte ; colas aussi, le temps du test)
+            q = self.ctx.together.watch({"id": self.ctx.db.scalar("SELECT id FROM users WHERE username='colas'")})
+            time.sleep(0.05)
+            self.ctx.together.reap()
+            members = {m["name"] for m in self.lea.call("GET", f"/api/together/{gid}")[1]["members"]}
+            self.assertEqual(members, {"colas", "Léa"})
+            self.ctx.together.unwatch(q)  # colas ferme Nexis
+            time.sleep(0.05)
+            self.ctx.together.reap()
+            members = {m["name"] for m in self.lea.call("GET", f"/api/together/{gid}")[1]["members"]}
+            self.assertEqual(members, {"Léa"})
+        finally:
+            syncplay.GONE_AFTER = old
         self.lea.call("POST", f"/api/together/{gid}/leave")
 
 

@@ -230,6 +230,7 @@ Une seule tâche tourne à la fois. Celles qui lisent les fichiers sur le partag
 Comme **SyncPlay** dans Jellyfin : plusieurs personnes regardent la même vidéo en même temps, chacune depuis son écran (ou à distance, derrière le reverse proxy).
 
 - Sur la fiche d'un film ou d'un épisode, le bouton **Regarder ensemble** crée un groupe (avec un nom, et l'option « seul l'hôte contrôle la lecture »). Dans le lecteur, le même bouton montre les membres, leur état (prêt, chargement) et copie le **lien d'invitation**. Les groupes en cours apparaissent aussi sur l'accueil et dans la barre du haut.
+- **Groupe créé à l'avance** : le bouton ＋ de la barre du haut (ou *Créer un groupe* sur la page Regarder ensemble) ouvre un **salon**. On y copie le lien d'invitation et on voit arriver les membres. Pendant ce temps, on cherche quoi regarder : sur la fiche, *Regarder ensemble* propose « Lancer dans « mon groupe » » et la lecture démarre pour tout le salon. On reste membre en naviguant tant que Nexis est ouvert. La liste des groupes se met à jour en direct, sans recharger la page.
 - Lecture, pause, sauts, choix d'un chapitre, « Passer l'intro » et **épisode suivant** sont partagés. Ceux qui rejoignent arrivent au même endroit.
 - Chacun a son propre flux (sa qualité, sa langue, ses sous-titres). Un petit décalage est rattrapé en accélérant ou ralentissant à peine la lecture (± 5 %), un grand par un saut. Si la connexion de quelqu'un décroche, tout le groupe attend qu'il ait rechargé (12 s au plus), puis repart ensemble.
 - Chaque membre garde sa propre reprise de lecture et son historique. Il faut avoir accès au contenu (bibliothèques, restriction d'âge) pour le regarder dans un groupe.
@@ -382,8 +383,8 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 
 ### Regarder ensemble
 - [x] Quand un membre change de langue, de qualité ou de sous-titres incrustés, le groupe se met en pause pendant son chargement ; les sous-titres affichés par le navigateur changent sans recharger la vidéo
-- [ ] Liste des groupes mise à jour en temps réel, sans recharger la page
-- [ ] Bouton dans la barre du haut pour créer un groupe à l'avance et inviter
+- [x] Liste des groupes mise à jour en temps réel, sans recharger la page (accueil, page des groupes, barre du haut)
+- [x] Bouton dans la barre du haut pour créer un groupe à l'avance et inviter (salon d'attente, lancement pour tous depuis une fiche)
 - [ ] Optimisation générale (resynchronisation plus rapide, moins de requêtes)
 
 ### Médiathèque

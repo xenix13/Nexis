@@ -25,6 +25,7 @@ RELOAD_TIMEOUT = 60      # s : un membre qui change de langue ou de qualité (ex
 GONE_AFTER = 40          # s sans connexion : le membre a quitté
 EMPTY_AFTER = 120        # s : groupe vide supprimé
 MAX_STREAMS_PER_USER = 6  # connexions d'événements ouvertes en même temps par une personne (onglets, appareils)
+MAX_FEEDS_PER_USER = 8    # listes de groupes en direct ouvertes en même temps par une personne (onglets, appareils)
 
 
 def now_ms():
@@ -43,7 +44,7 @@ class Member:
 
 
 class Group:
-    def __init__(self, gid, owner, name, host_only):
+    def __init__(self, gid, owner, name, host_only, present=frozenset):
         self.id = gid
         self.owner = owner["id"]
         self.owner_name = owner["display_name"]
@@ -60,6 +61,7 @@ class Group:
         self.subscribers = []
         self.seq = 0
         self.empty_since = None
+        self.present = present  # personnes qui ont Nexis ouvert (liste des groupes en direct)
 
     def position_now(self):
         if self.playing and not self.waiting:
@@ -77,7 +79,7 @@ class Group:
     def members_event(self):
         return {"type": "members", "server_now": now_ms(), "host_only": self.host_only, "name": self.name,
                 "members": [{"id": m.uid, "name": m.name, "color": m.color, "ready": m.ready, "host": m.uid == self.owner,
-                             "online": m.connections > 0} for m in self.members.values()]}
+                             "online": m.connections > 0 or m.uid in self.present()} for m in self.members.values()]}
 
 
 class Groups:
@@ -85,6 +87,36 @@ class Groups:
         self.ctx = ctx
         self.lock = threading.RLock()
         self.groups = {}
+        self.watchers = {}  # file d'attente -> id de la personne (liste des groupes en direct)
+
+    # ------------------------------------------------------------ liste en direct
+    def present(self):
+        return set(self.watchers.values())
+
+    def watch(self, user):
+        q = queue.Queue(maxsize=1)
+        with self.lock:
+            if sum(1 for uid in self.watchers.values() if uid == user["id"]) >= MAX_FEEDS_PER_USER:
+                raise OverflowError("Trop de connexions ouvertes : ferme d'autres onglets de Nexis")
+            self.watchers[q] = user["id"]
+        return q
+
+    def unwatch(self, q):
+        with self.lock:
+            uid = self.watchers.pop(q, None)
+            now = time.time()
+            for g in self.groups.values():  # le délai avant de quitter le groupe part de maintenant
+                m = g.members.get(uid)
+                if m:
+                    m.seen = now
+
+    def _changed(self):
+        """La liste des groupes a changé : on réveille les listes ouvertes (une notification suffit)."""
+        for q in list(self.watchers):
+            try:
+                q.put_nowait(1)
+            except queue.Full:
+                pass
 
     # ------------------------------------------------------------ diffusion
     def _send(self, g, event):
@@ -105,7 +137,7 @@ class Groups:
             if len([g for g in self.groups.values() if g.owner == user["id"]]) >= 3:
                 raise ValueError("Tu animes déjà 3 groupes : quittes-en un d'abord")
             gid = secrets.token_urlsafe(6)
-            g = Group(gid, user, (name or f"Chez {user['display_name']}")[:60], host_only)
+            g = Group(gid, user, (name or f"Chez {user['display_name']}")[:60], host_only, self.present)
             if item_id:
                 g.item_id = int(item_id)
                 g.position = max(0, int(position or 0))
@@ -113,6 +145,7 @@ class Groups:
                 g.waiting = {user["id"]}  # on part dès que l'hôte a chargé la vidéo
             self.groups[gid] = g
             self._join(g, user)
+            self._changed()
             return g
 
     def get(self, gid):
@@ -135,6 +168,7 @@ class Groups:
             new = user["id"] not in g.members
             self._join(g, user)
             if new:
+                self._changed()
                 self._send(g, g.members_event())
                 self._send(g, {"type": "notice", "text": f"{user['display_name']} a rejoint le groupe", "server_now": now_ms()})
             return g
@@ -157,6 +191,7 @@ class Groups:
             text += f" ; {heir.name} devient l'hôte"
         if not g.members:
             g.empty_since = time.time()
+        self._changed()
         self._send(g, g.members_event())
         self._send(g, {"type": "notice", "text": text, "server_now": now_ms()})
 
@@ -171,6 +206,7 @@ class Groups:
                 g.name = name[:60]
             if host_only is not None:
                 g.host_only = bool(host_only)
+            self._changed()
             self._send(g, g.members_event())
             return g
 
@@ -269,6 +305,8 @@ class Groups:
                     self._maybe_resume(g)
             else:
                 raise ValueError("Action inconnue")
+            if action in ("play", "pause", "item"):
+                self._changed()
             return g
 
     # ------------------------------------------------------------ événements
@@ -309,17 +347,20 @@ class Groups:
     def reap(self):
         now = time.time()
         with self.lock:
+            present = self.present()
             for g in list(self.groups.values()):
                 for uid, m in list(g.members.items()):
-                    if not m.connections and now - m.seen > GONE_AFTER:
+                    # on reste membre tant que Nexis est ouvert (on cherche un film pendant que les autres attendent)
+                    if not m.connections and uid not in present and now - m.seen > GONE_AFTER:
                         self._remove(g, uid, f"{m.name} a quitté le groupe")
                 if not g.members and now - (g.empty_since or now) > EMPTY_AFTER:
                     self._send(g, {"type": "closed", "server_now": now_ms()})
                     self.groups.pop(g.id, None)
+                    self._changed()
 
     def listing(self):
         with self.lock:
-            return [{"id": g.id, "name": g.name, "owner": g.owner_name, "item_id": g.item_id, "playing": g.playing,
+            return [{"id": g.id, "name": g.name, "owner": g.owner_name, "owner_id": g.owner, "item_id": g.item_id, "playing": g.playing,
                      "host_only": g.host_only, "members": [m.name for m in g.members.values()],
                      "member_ids": list(g.members)} for g in self.groups.values() if g.members]
 
@@ -352,15 +393,58 @@ def register(app, ctx, x):
             raise HTTPError(404, "Ce groupe n'existe plus")
         return g
 
-    @app.route("GET", "/api/together")
-    def together_list(req):
+    def listing_for(user):
         out = []
         for g in groups.listing():
             g = dict(g)
-            g["item"] = item_card(req.user, g.pop("item_id"))
-            g["member"] = req.user["id"] in g.pop("member_ids")
+            g["item"] = item_card(user, g.pop("item_id"))
+            g["member"] = user["id"] in g.pop("member_ids")
+            g["is_host"] = g.pop("owner_id") == user["id"]
             out.append(g)
         return out
+
+    @app.route("GET", "/api/together")
+    def together_list(req):
+        return listing_for(req.user)
+
+    @app.route("GET", "/api/together/feed")
+    def together_feed(req):
+        """Liste des groupes en direct (Server-Sent Events) : accueil, page des groupes, barre du haut."""
+        user = dict(req.user)
+        try:
+            q = groups.watch(user)
+        except OverflowError as e:
+            raise HTTPError(429, str(e))
+        closed = threading.Event()
+
+        def snapshot():
+            try:
+                return ("data: " + json.dumps({"type": "groups", "groups": listing_for(user)}, ensure_ascii=False,
+                                              separators=(",", ":")) + "\n\n").encode()
+            finally:
+                db.release()  # pas de connexion à la base gardée pendant toute la durée du flux
+
+        def gen():
+            last = snapshot()
+            yield b"retry: 3000\n\n" + last
+            while not closed.is_set():
+                try:
+                    q.get(timeout=20)
+                except queue.Empty:
+                    yield b": ping\n\n"
+                    continue
+                closed.wait(0.25)  # plusieurs changements d'un coup : un seul envoi
+                data = snapshot()
+                if data != last:
+                    last = data
+                    yield data
+
+        def close():
+            closed.set()
+            groups.unwatch(q)
+        db.release()
+        return Response(stream=gen(), content_type="text/event-stream; charset=utf-8",
+                        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"}, on_close=close)
 
     @app.route("GET", "/api/together/time")
     def together_time(req):

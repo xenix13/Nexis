@@ -1,5 +1,6 @@
 import { del, get, post, put } from '../api.js';
 import { state } from '../app.js';
+import { launchableGroups } from '../groups.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from '../tracks.js';
 import { chapterStrip } from '../chapters.js';
 import { clear, episodeCode, field, fmtDuration, fmtTime, h, icon, img, modal, moreMenu, posterCard, progressBar, select, spinner, toast, toggle } from '../ui.js';
@@ -187,8 +188,27 @@ function trackChooser(d, target, onChange) {
     target ? h('span.muted.small', `pour ${episodeCode(target)}, retenu pour toute la série`) : null);
 }
 
-// « Regarder ensemble » : crée un groupe sur ce film / cet épisode puis ouvre le lecteur
+// « Regarder ensemble » : lance ce film / cet épisode dans un groupe dont on fait partie (salon créé à
+// l'avance), ou crée un groupe dessus, puis ouvre le lecteur
 async function watchTogether(target) {
+  const lobbies = launchableGroups();
+  if (lobbies.length) {
+    const what = target.type === 'episode' ? `${target.show} · ${episodeCode(target)} — ${target.title}` : target.title;
+    const pick = await modal('Regarder ensemble', h('div.form', h('p.small', h('strong', what)),
+      h('p.muted.small', 'Tu fais partie d’un groupe : la lecture démarrera en même temps pour tous ses membres.')), [
+      { label: 'Nouveau groupe', value: 'new' },
+      ...lobbies.slice(0, 2).map((g) => ({ label: `Lancer dans « ${g.name} »`, primary: true, value: g.id })),
+    ]);
+    if (!pick) return;
+    if (pick !== 'new') {
+      try {
+        await post(`/api/together/${pick}/cmd`, { action: 'item', item_id: target.id,
+          position: target.position && !target.watched ? target.position : 0 });
+        location.hash = `#/play/${target.id}?group=${pick}`;
+      } catch (e) { toast(e.message, 'bad'); }
+      return;
+    }
+  }
   const name = h('input', { placeholder: `Chez ${state.me.user.display_name}`, maxlength: 60 });
   const hostOnly = toggle('Seul moi peux mettre en pause, avancer ou changer d’épisode', false);
   const err = h('p.form-error');

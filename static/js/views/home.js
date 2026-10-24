@@ -2,13 +2,13 @@ import { get, post } from '../api.js';
 import { state } from '../app.js';
 import { arrange, clear, h, icon, img, posterCard, row, toast, wideCard } from '../ui.js';
 import { groupCard } from './together.js';
+import { onGroups } from '../groups.js';
 
 export async function renderHome(main, ctx) {
-  const [data, groups] = await Promise.all([get('/api/home'), get('/api/together').catch(() => [])]);
+  const data = await get('/api/home');
   if (!ctx.isCurrent()) return;
   const parts = [];
   const sections = new Map(); // clé -> rangée ; affichées dans l'ordre choisi (Réglages → Affichage)
-  const joinable = groups.filter((g) => g.item && !g.item.hidden);
   const hero = data.continue[0] || data.hero;
   if (hero) {
     const art = hero.type === 'episode' ? (hero.show_art || hero.art) : hero.art;
@@ -28,15 +28,20 @@ export async function renderHome(main, ctx) {
           hero.type === 'show' ? null : h('a.btn.light.lg', { href: playHref }, icon('play'), resume && hero.position ? 'Reprendre' : 'Lecture'),
           h('a.btn.ghost.lg', { href: infoHref }, 'Plus d’infos')))));
   }
-  if (joinable.length) {
-    sections.set('together', h('section.row', h('div.row-head', h('a.row-title', { href: '#/together' }, 'Regarder ensemble')),
-      h('div.group-list', joinable.map(groupCard))));
-  }
+  // groupes en cours : rangée tenue à jour en direct (vide et invisible quand il n'y en a pas)
+  const togetherBox = h('div.together-row');
+  sections.set('together', togetherBox);
+  const stopGroups = onGroups((groups) => {
+    const shown = groups.filter((g) => !g.item || !g.item.hidden);
+    togetherBox.replaceChildren(...(shown.length ? [h('section.row', h('div.row-head', h('a.row-title', { href: '#/together' }, 'Regarder ensemble')),
+      h('div.group-list', shown.map(groupCard)))] : []));
+  });
+  ctx.setCleanup(stopGroups);
   const continueRow = (items) => row('Reprendre et à suivre', items, (c) => wideCard(c, { onWatched }), { wide: true });
   let current = continueRow(data.continue);
   // « marquer comme vu » : la carte s'efface, l'épisode suivant prend sa place ; annulable
   async function refreshRow(c) {
-    if (hero && String(hero.id) === String(c.id)) { await renderHome(main, ctx); return; } // la grande affiche change aussi
+    if (hero && String(hero.id) === String(c.id)) { stopGroups(); await renderHome(main, ctx); return; } // la grande affiche change aussi
     const fresh = await get('/api/home');
     if (!ctx.isCurrent()) return;
     const next = continueRow(fresh.continue) || h('div', { hidden: true });

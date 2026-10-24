@@ -346,6 +346,31 @@ with sync_playwright() as pw:
     page.keyboard.press("Escape")
     bctx2.close()
 
+    # --- groupe créé à l'avance depuis la barre du haut : salon, liste en direct, lancement pour tous
+    page.goto(base + "/#/")
+    page.click("button.group-new")
+    page.wait_for_selector(".modal:has-text('Créer un groupe')")
+    page.fill(".modal input", "Vendredi soir")
+    page.click(".modal button:has-text('Créer le groupe')")
+    page.wait_for_selector(".lobby-title:has-text('Vendredi soir')")
+    bctx4, page4 = browser_ctx(browser, lea)
+    page4.goto(base + "/#/together")
+    page4.wait_for_selector(".group-card:has-text('Vendredi soir')")
+    page4.click(".group-card:has-text('Vendredi soir') a:has-text('Rejoindre le salon')")
+    page4.wait_for_selector(".lobby-title:has-text('Vendredi soir')")
+    page.wait_for_selector(".lobby-member:has-text('Léa')", timeout=10000)  # arrivée visible chez Colas sans recharger
+    check(page.locator(".topbar .group-pill.mine").count() == 1, "raccourci « ton groupe » dans la barre du haut")
+    page.screenshot(path=f"{out}/16b-ensemble-salon.png")
+    page.goto(base + f"/#/item/{voyage}")
+    page.click(".detail-actions button[aria-label='Regarder ensemble']")
+    page.click(".modal button:has-text('Lancer dans « Vendredi soir »')")
+    page.wait_for_function("location.hash.includes('group=')")
+    page4.wait_for_function("location.hash.includes('group=')", timeout=10000)  # Léa part du salon toute seule
+    page4.wait_for_function("document.querySelector('video') && document.querySelector('video').currentTime > 1", timeout=60000)
+    check(True, "lecture lancée pour le salon")
+    page.goto(base + "/#/")
+    bctx4.close()
+
     # --- mobile
     bctx3, page3 = browser_ctx(browser, lea, mobile=True)
     page3.goto(base + "/#/live")
