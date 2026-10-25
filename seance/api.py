@@ -108,7 +108,7 @@ class Ctx:
         if self.db.setting("subs_prefetch", "1") != "1" and self.db.setting("trickplay", "1") != "1":
             return
         n = 0
-        for r in self.db.all("SELECT id, probe, file_size, file_mtime, duration_ms FROM items WHERE type IN ('movie','episode') "
+        for r in self.db.all("SELECT id, key, probe, file_size, file_mtime, duration_ms FROM items WHERE type IN ('movie','episode') "
                              "ORDER BY added_at DESC"):
             if self.subtitles.has_work(r):
                 self.subtitles.enqueue(r["id"])

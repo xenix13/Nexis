@@ -366,7 +366,7 @@ def register(app, ctx, x):
         if "subs_prefetch" in b:
             db.set_setting("subs_prefetch", "1" if b["subs_prefetch"] else "0")
             if b["subs_prefetch"]:
-                for r in db.all("SELECT id, probe, file_size, file_mtime, duration_ms FROM items WHERE type IN ('movie','episode') "
+                for r in db.all("SELECT id, key, probe, file_size, file_mtime, duration_ms FROM items WHERE type IN ('movie','episode') "
                                 "ORDER BY added_at DESC"):
                     if ctx.subtitles.has_work(r):
                         ctx.subtitles.enqueue(r["id"])

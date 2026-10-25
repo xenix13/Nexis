@@ -134,6 +134,9 @@ class FeaturesTest(unittest.TestCase):
         self.assertEqual(last["status"], "ok", last)
         last = self.run_task("cleanup")
         self.assertEqual(last["status"], "ok", last)
+        last = self.run_task("subtitles")
+        self.assertEqual(last["status"], "ok", last)
+        self.assertEqual(self.admin.call("PUT", "/api/admin/settings", {"subs_prefetch": True})[0], 200)
 
     # ------------------------------------------------------------ chapitres
     def test_chapter_images(self):
