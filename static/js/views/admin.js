@@ -371,6 +371,26 @@ async function settingsTab(body, ctx) {
   prefetch.querySelector('input').addEventListener('change', (e) => save({ subs_prefetch: e.target.checked }, 'Enregistré'));
   const maxStreams = h('input', { type: 'number', min: 1, max: 50, value: s.max_streams });
   const maxTranscodes = h('input', { type: 'number', min: 0, max: 16, value: s.max_transcodes });
+  // transcodage matériel : moteurs proposés selon ce que le conteneur voit
+  const dev = s.hw_devices || { nvidia: false, dri: [] };
+  const engines = [['none', 'Aucune (processeur)'],
+    ['nvenc', `NVIDIA NVENC${dev.nvidia ? '' : ' — carte non détectée'}`],
+    ['vaapi', `Intel / AMD (VAAPI)${dev.dri.length ? '' : ' — aucun /dev/dri détecté'}`]];
+  const hwEngine = select(engines, s.hw_engine);
+  const devices = [...new Set([...dev.dri, s.hw_device])];
+  const hwDevice = select(devices.map((d) => [d, d]), s.hw_device);
+  const hwDeviceField = field('Périphérique VAAPI', hwDevice);
+  const paintHw = () => { hwDeviceField.hidden = hwEngine.value !== 'vaapi'; };
+  hwEngine.addEventListener('change', paintHw);
+  paintHw();
+  const hwSave = h('button.btn.primary', { onclick: async () => {
+    hwSave.disabled = true;
+    hwSave.textContent = hwEngine.value === 'none' ? 'Enregistrement…' : 'Test de la carte…';
+    await save({ hw_engine: hwEngine.value, hw_device: hwDevice.value },
+      hwEngine.value === 'none' ? 'Transcodage par le processeur' : 'Test réussi : transcodage matériel activé (prochaines lectures)');
+    hwSave.disabled = false;
+    hwSave.textContent = 'Tester et enregistrer';
+  } }, 'Tester et enregistrer');
   const save = async (payload, msg) => {
     try { await put('/api/admin/settings', payload); toast(msg, 'ok'); settingsTab(body, ctx); } catch (e) { toast(e.message, 'bad'); }
   };
@@ -420,11 +440,15 @@ async function settingsTab(body, ctx) {
       h('button.btn.primary', { onclick: () => save({ downmix_algo: document.getElementById('downmix-algo').value,
         downmix_boost: Number(document.getElementById('downmix-boost').value) }, 'Mixage enregistré (prochaines lectures)') }, 'Enregistrer')),
     h('section.panel', h('h2', 'Lecture et processeur'),
-      h('p.muted.small', `Ce serveur a ${s.cpus} cœur(s) et pas d’accélération matérielle. Une lecture directe ou un remux ne coûtent presque rien ; un transcodage (HEVC, 10 bits, sous-titres image, qualité réduite) occupe 1 à 2 cœurs par lecture en 1080p.`),
+      h('p.muted.small', `Ce serveur a ${s.cpus} cœur(s)${s.hw_engine === 'none' ? ' et transcode avec le processeur' : ', le transcodage passe par la carte graphique'}. Une lecture directe ou un remux ne coûtent presque rien ; un transcodage (HEVC, 10 bits, sous-titres image, qualité réduite) occupe 1 à 2 cœurs par lecture en 1080p sans carte graphique.`),
       s.ffmpeg ? null : h('div.plex-status.bad', 'ffmpeg est introuvable : installe-le (apt install ffmpeg).'),
       h('div.grid2', field('Lectures simultanées (max.)', maxStreams), field('Transcodages simultanés (max.)', maxTranscodes,
         '0 = interdire le transcodage (seules les lectures directes et remux passent).')),
-      h('button.btn.primary', { onclick: () => save({ max_streams: Number(maxStreams.value), max_transcodes: Number(maxTranscodes.value) }, 'Enregistré') }, 'Enregistrer')),
+      h('button.btn.primary', { onclick: () => save({ max_streams: Number(maxStreams.value), max_transcodes: Number(maxTranscodes.value) }, 'Enregistré') }, 'Enregistrer'),
+      h('h3.sub', 'Transcodage matériel'),
+      h('p.muted.small', 'Une carte graphique décode et encode la vidéo à la place du processeur : bien plus de transcodages en même temps, presque sans charge. Nexis fait un essai réel avant d’enregistrer, et repasse tout seul sur le processeur si la carte refuse un fichier. Voir le README pour donner la carte au conteneur LXC.'),
+      h('div.grid2', field('Accélération matérielle', hwEngine), hwDeviceField),
+      hwSave),
     h('p.muted.small', `Nexis ${s.version}`));
 }
 
@@ -705,6 +729,7 @@ async function streamsTab(body, ctx) {
     clear(body, server, list.length ? h('div.user-list', list.map((s) => h('div.user-row',
       h('div.grow', h('strong', s.title), h('div.muted.small',
         `${s.user} · ${s.state === 'paused' ? 'en pause' : 'en lecture'} à ${fmtTime(s.position_ms)} · ${MODES[s.mode] || s.mode}`,
+        s.hw ? ` · carte graphique (${s.hw === 'nvenc' ? 'NVIDIA' : 'VAAPI'})` : '',
         s.source ? ` · source ${s.source}` : '', s.rss_mb ? ` · ffmpeg ${s.rss_mb} Mo` : '',
         s.reasons && s.reasons.length ? ` (${s.reasons.join(', ')})` : '',
         s.speed ? h('span', { class: s.speed < 1.05 && s.mode === 'transcode' ? 'tag bad' : 'tag ok' }, `vitesse ×${s.speed}`) : null),

@@ -88,6 +88,20 @@ fi
 echo "==> Service systemd"
 cp "$SRC_DIR/deploy/seance.service" /etc/systemd/system/seance.service
 cp "$SRC_DIR/deploy/seance-mountd.service" /etc/systemd/system/seance-mountd.service
+# Carte graphique (transcodage matériel) : le service doit voir /dev/nvidia* ou /dev/dri, masqués sinon
+if [ -e /dev/nvidia0 ] || ls /dev/dri/renderD* >/dev/null 2>&1; then
+  echo "==> Carte graphique détectée : le service y a accès (transcodage matériel, à activer dans Administration)"
+  GPU_GROUPS=""
+  for g in video render; do getent group "$g" >/dev/null && GPU_GROUPS="$GPU_GROUPS $g"; done
+  mkdir -p /etc/systemd/system/seance.service.d
+  {
+    echo "[Service]"
+    echo "PrivateDevices=false"
+    [ -n "$GPU_GROUPS" ] && echo "SupplementaryGroups=$GPU_GROUPS"
+  } > /etc/systemd/system/seance.service.d/gpu.conf
+else
+  rm -f /etc/systemd/system/seance.service.d/gpu.conf
+fi
 systemctl daemon-reload
 systemctl enable seance-mountd seance >/dev/null 2>&1
 systemctl restart seance-mountd || true

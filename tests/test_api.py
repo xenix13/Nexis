@@ -298,6 +298,49 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(plan(mp4)["mode"], "direct")
         self.assertEqual(plan(mp4, audio_index=2)["mode"], "copy")
 
+    def test_hardware_transcoding(self):
+        """Commandes NVIDIA / VAAPI, refus d'un moteur absent, repli automatique sur le processeur."""
+        from seance.transcoder import build_command, plan
+        p = {"container": "matroska,webm", "bitrate": 3_000_000, "subs": [{"index": 2, "codec": "hdmv_pgs_subtitle"}],
+             "video": {"index": 0, "codec": "hevc", "profile": "Main 10", "pix_fmt": "yuv420p10le", "height": 1080,
+                       "width": 1920}, "audio": [{"index": 1, "codec": "aac", "channels": 2}]}
+        r = plan(p, quality="720p")
+        nv = build_command("/x.mkv", r, 0, "/tmp/out", hw={"engine": "nvenc", "device": ""})
+        self.assertLess(nv.index("-hwaccel"), nv.index("-i"))  # décodage par la carte : option d'entrée
+        self.assertEqual(nv[nv.index("-codec:v:0") + 1], "h264_nvenc")
+        self.assertIn("scale=-2:720:flags=bicubic,format=yuv420p", nv)
+        va = build_command("/x.mkv", plan(p, burn_index=2), 0, "/tmp/out", hw={"engine": "vaapi", "device": "/dev/dri/renderD128"})
+        self.assertIn("vaapi=va:/dev/dri/renderD128", va)
+        self.assertEqual(va[va.index("-codec:v:0") + 1], "h264_vaapi")
+        self.assertTrue(va[va.index("-filter_complex") + 1].endswith("[o]format=nv12,hwupload[v]"))  # incrustation puis envoi à la carte
+        cp = build_command("/x.mkv", plan(dict(p, video=dict(p["video"], codec="h264", profile="High", pix_fmt="yuv420p"))),
+                           0, "/tmp/out", hw={"engine": "nvenc", "device": ""})
+        self.assertNotIn("-hwaccel", cp)  # remux : la carte ne sert à rien
+        # réglage : on n'enregistre qu'un moteur qui passe un vrai essai (pas de carte sur la machine de test)
+        st, r = self.admin.call("PUT", "/api/admin/settings", {"hw_engine": "nvenc"})
+        self.assertEqual(st, 400)
+        self.assertIn("Test du transcodage matériel en échec", r["error"])
+        self.assertEqual(self.admin.call("PUT", "/api/admin/settings", {"hw_engine": "quantum"})[0], 400)
+        self.assertEqual(self.admin.call("PUT", "/api/admin/settings", {"hw_engine": "vaapi", "hw_device": "/etc/passwd"})[0], 400)
+        st, r = self.admin.call("GET", "/api/admin/settings")
+        self.assertEqual(r["hw_engine"], "none")
+        # carte qui refuse en pleine lecture : on repart sur le processeur, la lecture continue
+        self.ctx.db.set_setting("hw_engine", "vaapi")
+        self.ctx.db.set_setting("hw_device", "/dev/dri/renderD199")
+        try:
+            row = self.ctx.db.one("SELECT key, probe, duration_ms FROM items WHERE title='Le Grand Voyage'")
+            tp = dict(plan(json.loads(row["probe"])), mode="transcode")  # fichier de test trop petit pour l'imposer
+            t = self.ctx.transcoder
+            t.start("hwtest", row["key"], tp, 0, row["duration_ms"])
+            self.assertEqual(t.get("hwtest").hw["engine"], "vaapi")
+            seg = t.segment("hwtest", "0.m4s")
+            with open(seg, "rb") as f:
+                self.assertGreater(len(f.read()), 1000)
+            self.assertIsNone(t.stats("hwtest")["hw"])  # repassé sur le processeur
+            t.stop("hwtest")
+        finally:
+            self.ctx.db.set_setting("hw_engine", "none")
+
     def test_direct_play_with_range(self):
         m = self.movie("Le Grand Voyage")
         st, p = self.admin.call("POST", "/api/play", {"id": m["id"], "offset": 30000})

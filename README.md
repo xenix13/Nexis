@@ -41,6 +41,43 @@ La lecture reprend les choix de **Jellyfin** (son serveur et son lecteur web), a
 
 Le menu ⚙ du lecteur indique le mode en cours et pourquoi. ffmpeg est mis en pause quand il a pris 3 minutes d'avance, et tourne avec une priorité réduite. Un nombre maximal de transcodages simultanés protège le serveur (Administration → Métadonnées et lecture).
 
+### Transcodage matériel (carte graphique)
+
+Avec une carte graphique, le décodage et l'encodage passent par elle : beaucoup plus de transcodages en même temps, et le processeur reste libre. Le réglage est dans **Administration → Métadonnées et lecture → Lecture et processeur → Transcodage matériel** :
+
+| Moteur | Cartes | Remarques |
+|---|---|---|
+| **NVIDIA NVENC** | GeForce GTX 10xx et plus récentes | Jusqu'à 8 encodages simultanés sur une carte grand public (limite de NVIDIA). Les GTX 10xx (Pascal) ont besoin du pilote de la **branche 580** : les pilotes 590 et suivants ne les prennent plus en charge. |
+| **Intel / AMD (VAAPI)** | Intel avec carte graphique intégrée ou Arc, AMD Radeon | Périphérique `/dev/dri/renderD128` (au choix si plusieurs). |
+
+**Tester et enregistrer** fait un vrai essai d'encodage. Le moteur n'est enregistré que si l'essai réussit. Pendant une lecture, si la carte refuse un fichier (pilote, codec qu'elle ne décode pas, mémoire pleine), Nexis repasse tout seul sur le processeur et la lecture continue. *Lectures en cours* indique quelles lectures passent par la carte.
+
+Les remux et lectures directes n'utilisent pas la carte : elle ne sert qu'au transcodage. Le redimensionnement et l'incrustation des sous-titres image restent faits par le processeur, ce qui est léger à côté de l'encodage.
+
+**Donner une carte NVIDIA à un conteneur LXC (Proxmox)**
+
+1. Sur l'hôte Proxmox : installe les en-têtes du noyau (`apt install proxmox-default-headers build-essential`), puis le pilote NVIDIA (`NVIDIA-Linux-x86_64-580.xx.run`, branche 580 pour une GTX 10xx). Accepte de désactiver `nouveau`, puis redémarre. `nvidia-smi` doit afficher la carte.
+2. Toujours sur l'hôte, pour que `/dev/nvidia-uvm` existe dès le démarrage :
+   ```bash
+   echo -e "nvidia\nnvidia_uvm" > /etc/modules-load.d/nvidia.conf
+   echo 'KERNEL=="nvidia_uvm", RUN+="/usr/bin/nvidia-modprobe -c0 -u"' > /etc/udev/rules.d/70-nvidia.rules
+   ```
+   Redémarre, puis note les numéros majeurs avec `ls -l /dev/nvidia*` (195 pour `nvidia0`/`nvidiactl`, un autre pour `nvidia-uvm`).
+3. Dans `/etc/pve/lxc/<id>.conf` (conteneur arrêté), remplace `5xx` par le numéro de `nvidia-uvm` :
+   ```
+   lxc.cgroup2.devices.allow: c 195:* rwm
+   lxc.cgroup2.devices.allow: c 5xx:* rwm
+   lxc.mount.entry: /dev/nvidia0 dev/nvidia0 none bind,optional,create=file
+   lxc.mount.entry: /dev/nvidiactl dev/nvidiactl none bind,optional,create=file
+   lxc.mount.entry: /dev/nvidia-uvm dev/nvidia-uvm none bind,optional,create=file
+   lxc.mount.entry: /dev/nvidia-uvm-tools dev/nvidia-uvm-tools none bind,optional,create=file
+   lxc.mount.entry: /dev/nvidia-modeset dev/nvidia-modeset none bind,optional,create=file
+   ```
+4. Dans le conteneur : installe **exactement la même version** du pilote, sans module noyau : `sh NVIDIA-Linux-x86_64-580.xx.run --no-kernel-module`. `nvidia-smi` doit afficher la carte.
+5. Relance la commande d'installation / de mise à jour de Nexis : elle voit la carte et donne au service l'accès aux périphériques (masqués par défaut). Ensuite, dans Administration, choisis **NVIDIA NVENC** puis **Tester et enregistrer**.
+
+Pour Intel ou AMD, le principe est le même avec `/dev/dri` : `lxc.cgroup2.devices.allow: c 226:* rwm` et `lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir`, puis `apt install intel-media-va-driver-non-free` (Intel) ou `mesa-va-drivers` (AMD) dans le conteneur.
+
 ## Installation
 
 Sur un conteneur LXC ou une VM **Ubuntu 22.04/24.04** ou **Debian 12/13**, en root :
@@ -394,7 +431,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 
 ### Performances
 - [ ] Optimiser le serveur et l'interface (requêtes, cache, poids des pages, mémoire)
-- [ ] Transcodage matériel optionnel : l'administrateur choisit le moteur selon sa machine (Intel Quick Sync / VAAPI, AMD VAAPI, NVIDIA NVENC), avec un test de détection
+- [x] Transcodage matériel optionnel : l'administrateur choisit le moteur selon sa machine (NVIDIA NVENC, Intel / AMD VAAPI), avec un essai réel avant d'enregistrer et un repli automatique sur le processeur
 
 ### Installation et mises à jour
 - [ ] Paquet `.deb` pour machine virtuelle et conteneur LXC, et image Docker

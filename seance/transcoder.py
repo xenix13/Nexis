@@ -14,6 +14,7 @@ Sans GPU, tout l'enjeu reste de ne transcoder la vidéo que lorsque c'est indisp
 - copy      : vidéo recopiée (H.264, et HEVC/AV1 si le navigateur sait les lire)     -> très peu de CPU
 - transcode : codec illisible par le navigateur, sous-titres image incrustés, qualité réduite -> libx264
 """
+import glob
 import logging
 import math
 import os
@@ -186,7 +187,58 @@ def plan(probe, audio_index=None, burn_index=None, quality="original", caps=None
             "src_width": (v or {}).get("width") or 0, "fps": fps, "seglen": seglen, "reasons": reasons}
 
 
-def build_command(path, p, start, out_dir, start_number=0, threads=0):
+# Transcodage matériel, choisi par l'administrateur. Décodage par la carte (repli logiciel automatique si
+# elle ne connaît pas le codec), filtres sur le processeur (échelle, sous-titres incrustés), encodage par la
+# carte. shortcut: images ramenées en mémoire entre décodage et encodage ; pipeline 100 % carte graphique
+# (scale_cuda / scale_vaapi) à faire si le processeur reste le goulot.
+HW_ENGINES = ("none", "nvenc", "vaapi")
+
+
+def hw_input(hw):
+    if hw["engine"] == "nvenc":
+        return ["-hwaccel", "cuda"]
+    return ["-init_hw_device", f"vaapi=va:{hw['device']}", "-hwaccel", "vaapi", "-hwaccel_device", "va",
+            "-filter_hw_device", "va"]
+
+
+def video_encoder(hw, k, gop, seglen):
+    keys = ["-force_key_frames:0", f"expr:gte(t,n_forced*{seglen:g})", "-g:v:0", str(gop)]
+    rate = ["-maxrate", f"{k}k", "-bufsize", f"{k * 2}k", "-profile:v", "high", "-level:v", "4.1"]
+    if not hw:
+        return ["-codec:v:0", "libx264", "-preset", "veryfast", "-crf", "23", *rate, *keys,
+                "-sc_threshold:v:0", "0", "-keyint_min:v:0", str(gop)]
+    if hw["engine"] == "nvenc":
+        return ["-codec:v:0", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq", "23", "-b:v", "0", *rate, *keys,
+                "-forced-idr", "1", "-no-scenecut", "1"]
+    return ["-codec:v:0", "h264_vaapi", "-rc_mode", "VBR", "-b:v", f"{k * 3 // 4}k", *rate, *keys]
+
+
+def hw_devices():
+    """Cartes vues par le conteneur : NVIDIA (pilote chargé) et périphériques VAAPI (Intel, AMD)."""
+    return {"nvidia": os.path.exists("/dev/nvidia0") and os.path.exists("/dev/nvidiactl"),
+            "dri": sorted(glob.glob("/dev/dri/renderD*"))}
+
+
+def hw_test(hw, tmp_dir):
+    """Encode 2 s d'image de test avec la carte, comme pour une vraie lecture. Lève MediaError sinon."""
+    out = os.path.join(tmp_dir, f"hwtest-{os.getpid()}.mp4")
+    fmt = "format=nv12,hwupload" if hw["engine"] == "vaapi" else "format=yuv420p"
+    try:
+        media.run([media.FFMPEG, "-hide_banner", "-v", "error", "-y", *hw_input(hw), "-f", "lavfi",
+                   "-i", "testsrc2=size=1280x720:rate=25", "-t", "2", "-vf", fmt,
+                   *video_encoder(hw, 4000, 50, 2), out], timeout=60)
+        if not os.path.getsize(out):
+            raise media.MediaError("aucune image produite")
+    except OSError as e:
+        raise media.MediaError(str(e))
+    finally:
+        try:
+            os.remove(out)
+        except OSError:
+            pass
+
+
+def build_command(path, p, start, out_dir, start_number=0, threads=0, hw=None):
     """Commande ffmpeg d'un flux HLS fMP4 démarrant à `start` (secondes) au segment `start_number`.
 
     threads : fils du décodage et de l'encodage (0 = autant que de cœurs). Plusieurs transcodages en même
@@ -194,6 +246,9 @@ def build_command(path, p, start, out_dir, start_number=0, threads=0):
     cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "warning", "-y", *INPUT_OPTS]
     if threads and p["mode"] == "transcode":
         cmd += ["-threads", str(threads)]  # décodage
+    hw = hw if p["mode"] == "transcode" else None
+    if hw:
+        cmd += hw_input(hw)
     if p["mode"] == "copy":
         cmd += ["-fflags", "+genpts"]
     if p["burn_index"] is not None and p.get("src_width") and p.get("src_height"):
@@ -214,19 +269,16 @@ def build_command(path, p, start, out_dir, start_number=0, threads=0):
             cmd += ["-tag:v:0", "hvc1"]
     else:
         scale = f"scale=-2:{p['height']}:flags=bicubic," if p["src_height"] > p["height"] else ""
+        fmt = "format=nv12,hwupload" if hw and hw["engine"] == "vaapi" else "format=yuv420p"
         if p["burn_index"] is not None:
             cmd += ["-filter_complex",
                     f"[0:{p['burn_index']}]format=yuva420p[s];"
-                    f"[0:{vi}][s]overlay=eof_action=pass:repeatlast=0[o];[o]{scale}format=yuv420p[v]",
+                    f"[0:{vi}][s]overlay=eof_action=pass:repeatlast=0[o];[o]{scale}{fmt}[v]",
                     "-map", "[v]"]
         else:
-            cmd += ["-map", f"0:{vi}", "-vf", f"{scale}format=yuv420p"]
-        k = p["kbps"]
+            cmd += ["-map", f"0:{vi}", "-vf", f"{scale}{fmt}"]
         gop = math.ceil(seglen * (p.get("fps") or 24))
-        cmd += ["-codec:v:0", "libx264", "-preset", "veryfast", "-crf", "23", "-maxrate", f"{k}k",
-                "-bufsize", f"{k * 2}k", "-profile:v", "high", "-level:v", "4.1",
-                "-force_key_frames:0", f"expr:gte(t,n_forced*{seglen:g})", "-sc_threshold:v:0", "0",
-                "-g:v:0", str(gop), "-keyint_min:v:0", str(gop), "-start_at_zero"]
+        cmd += [*video_encoder(hw, p["kbps"], gop, seglen), "-start_at_zero"]
     if p["audio_index"] is not None:
         cmd += ["-map", f"0:{p['audio_index']}"]
         if p["acopy"]:
@@ -278,8 +330,9 @@ def system_memory():
 
 
 class Session:
-    def __init__(self, sid, path, p, segments, out_dir):
+    def __init__(self, sid, path, p, segments, out_dir, hw=None):
         self.sid = sid
+        self.hw = hw                # transcodage matériel ({engine, device}) ou None
         self.path = path
         self.plan = p
         self.segments = segments    # [(début, durée)] en secondes
@@ -304,9 +357,10 @@ class Session:
 
 
 class Transcoder:
-    def __init__(self, work_dir, limits):
+    def __init__(self, work_dir, limits, hw=lambda: None):
         self.work_dir = work_dir
         self.limits = limits  # callable -> (max_streams, max_transcodes)
+        self.hw = hw          # callable -> transcodage matériel choisi ({engine, device}) ou None
         self.sessions = {}
         self.lock = threading.Lock()
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -343,7 +397,7 @@ class Transcoder:
             segments = equal_segments(duration or 3600 * 4, p.get("seglen") or SEGMENT)
         out_dir = os.path.join(self.work_dir, sid)
         os.makedirs(out_dir, exist_ok=True)
-        s = Session(sid, path, p, segments, out_dir)
+        s = Session(sid, path, p, segments, out_dir, self.hw() if p["mode"] == "transcode" else None)
         with self.lock:
             self.sessions[sid] = s
         first = self.index_at(s, offset_ms / 1000)
@@ -388,7 +442,7 @@ class Transcoder:
                 except OSError:
                     pass
         start = s.segments[index][0] if s.segments else 0
-        cmd = build_command(s.path, s.plan, start, s.dir, index, self.threads_per_transcode())
+        cmd = build_command(s.path, s.plan, start, s.dir, index, self.threads_per_transcode(), s.hw)
         log.debug("ffmpeg %s", " ".join(cmd))
         if s.log_file:
             s.log_file.close()
@@ -436,6 +490,15 @@ class Transcoder:
                 time.sleep(0.2)  # dernier renommage du fichier temporaire
                 if os.path.isfile(path):
                     return path
+                if proc is s.proc and s.hw:
+                    # la carte graphique a refusé (pilote, codec, mémoire) : on repart sur le processeur
+                    log.warning("Transcodage matériel (%s) en échec, repli sur le processeur : %s",
+                                s.hw["engine"], self._log_tail(s))
+                    with s.lock:
+                        if proc is s.proc:
+                            s.hw = None
+                            self._spawn(s, s.run_start)
+                    continue
                 if proc is s.proc:
                     raise StreamError("Échec de la conversion : " + self._log_tail(s))
             if s.sid not in self.sessions:
@@ -523,7 +586,8 @@ class Transcoder:
                 warnings = f.read().decode("utf-8", "replace").strip().splitlines()[-4:]
         except OSError:
             warnings = []
-        return {"speed": s.speed, "paused": s.paused, "warnings": warnings, "rss_mb": rss_mb(s.proc)}
+        return {"speed": s.speed, "paused": s.paused, "warnings": warnings, "rss_mb": rss_mb(s.proc),
+                "hw": s.hw["engine"] if s.hw else None}
 
     def processes(self):
         """ffmpeg en cours : nombre et mémoire totale (Mo)."""

@@ -7,7 +7,7 @@ import secrets
 import threading
 import time
 
-from .. import __version__ as VERSION, media, mountd
+from .. import __version__ as VERSION, media, mountd, transcoder
 from ..auth import USERNAME, USERNAME_RULE, find_user, hash_password, normalize_username, validate_password
 from ..catalog import HEX, RK, SID
 from ..metadata import MetaError
@@ -318,7 +318,8 @@ def register(app, ctx, x):
                 "watch_events": ctx.watcher.events[:8],"tmdb_set": bool(db.setting("tmdb_key")), "language": db.setting("meta_language", "fr-FR"),
                 "max_streams": max_streams,
                 "max_transcodes": max_transcodes, "cpus": os.cpu_count(), "ffmpeg": media.available(),
-                "version": VERSION}
+                "hw_engine": db.setting("hw_engine", "none"), "hw_device": db.setting("hw_device", "/dev/dri/renderD128"),
+                "hw_devices": transcoder.hw_devices(), "version": VERSION}
 
     @app.route("PUT", "/api/admin/settings", auth="admin")
     def admin_settings_put(req):
@@ -362,6 +363,19 @@ def register(app, ctx, x):
                                 "ORDER BY added_at DESC"):
                     if ctx.subtitles.has_work(r):
                         ctx.subtitles.enqueue(r["id"])
+        if "hw_engine" in b:
+            engine, device = b["hw_engine"], b.get("hw_device") or db.setting("hw_device", "/dev/dri/renderD128")
+            if engine not in transcoder.HW_ENGINES:
+                raise HTTPError(400, "Moteur de transcodage inconnu")
+            if not re.match(r"^/dev/dri/renderD\d{3}$", str(device)):
+                raise HTTPError(400, "Périphérique invalide (attendu : /dev/dri/renderD128…)")
+            if engine != "none":
+                try:  # on n'enregistre qu'un moteur qui marche vraiment sur cette machine
+                    transcoder.hw_test({"engine": engine, "device": device}, ctx.transcoder.work_dir)
+                except media.MediaError as e:
+                    raise HTTPError(400, f"Test du transcodage matériel en échec : {e}")
+            db.set_setting("hw_engine", engine)
+            db.set_setting("hw_device", device)
         for k, lo, hi in (("max_streams", 1, 50), ("max_transcodes", 0, 16),
                           ("watch_interval", 0, 3600)):
             if k in b:

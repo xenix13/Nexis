@@ -44,7 +44,7 @@ class Ctx:
         self.metadata = Metadata(self)
         self.images = Images(self)
         self.scanner = Scanner(self)
-        self.transcoder = Transcoder(os.path.join(data_dir, "transcodes"), self.limits)
+        self.transcoder = Transcoder(os.path.join(data_dir, "transcodes"), self.limits, self.hw)
         self.subtitles = SubtitleCache(self)
         self.chapter_images = ChapterImages(self)
         self.fingerprints = FingerprintCache(os.path.join(data_dir, "cache", "fingerprints"))
@@ -80,6 +80,13 @@ class Ctx:
         cpus = os.cpu_count() or 2
         return (self.setting_int("max_streams", 6),
                 self.setting_int("max_transcodes", 1 if cpus <= 2 else 2))
+
+    def hw(self):
+        """Transcodage matériel choisi par l'administrateur, ou None (processeur)."""
+        engine = self.db.setting("hw_engine", "none")
+        if engine not in ("nvenc", "vaapi"):
+            return None
+        return {"engine": engine, "device": self.db.setting("hw_device", "/dev/dri/renderD128")}
 
     def on_library_changed(self):
         try:
