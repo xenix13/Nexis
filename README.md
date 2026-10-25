@@ -404,14 +404,14 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 3. Médiathèque
 4. Performances et transcodage matériel
 5. Installation et mises à jour
-6. Applications Nexis natives
+6. Applications : web app installable, puis appli Android TV
 
 ### Corrections (retours des premiers utilisateurs)
 - [ ] « Regarder ensemble » à deux (vu sur *Django*) : la mémoire d'échange (swap) du serveur se remplit et des lignes vertes apparaissent dans la vidéo
 - [ ] « Regarder ensemble » : sous-titres décalés par rapport à l'audio (pas de souci en lecture seule)
 - [x] Générique de fin : l'épisode suivant est seulement proposé pendant le générique ; à la fin, compte à rebours réglable (5 s par défaut, *Réglages → Lecture*) avec « Lire maintenant » et « Annuler », comme Plex
 - [x] TV en direct : les chaînes qui ne répondent pas sont masquées (vérification après chaque actualisation, et réapparition dès qu'elles remarchent)
-- [x] Retrait de la compatibilité avec les applications Jellyfin (trop limitée, remplacée par les applications Nexis)
+- [x] Retrait de la compatibilité avec les applications Jellyfin (trop limitée, remplacée par la web app Nexis et l'appli Android TV)
 
 ### Lecteur et interface
 - [x] Lecteur réductible (mini-lecteur dans un coin, comme Plex) : on continue à naviguer sans arrêter la lecture (bouton du lecteur ou touche « i »)
@@ -437,8 +437,9 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 - [ ] Paquet `.deb` pour machine virtuelle et conteneur LXC, et image Docker
 - [ ] Mise à jour du serveur et des applications depuis l'interface (administrateur)
 
-### Applications Nexis natives (en dernier)
-Comme les applications Jellyfin : au premier lancement, elles demandent l'adresse du serveur, puis on se connecte avec son compte Nexis et on retrouve toutes les fonctions du serveur.
-- [ ] Application Windows
-- [ ] Application Android TV (navigation à la télécommande)
-- [ ] Application installable sur téléphone (PWA)
+### Applications (en dernier)
+Une seule interface à maintenir : celle du serveur. Elle s'installe comme une application (web app) sur Windows, Android, iPhone et iPad, et se met à jour en même temps que le serveur. Seule la TV a besoin d'une vraie application, légère, qui affiche cette même interface.
+- [ ] Web app installable (PWA) : icônes, fenêtre à part, bouton « Installer Nexis » ; demande un accès HTTPS (reverse proxy), comme celui décrit plus haut. Remplace une application Windows séparée
+- [ ] Navigation complète à la télécommande et à la manette (flèches, OK, retour), utile à la TV comme sur PC
+- [ ] Application Android TV légère : adresse du serveur demandée au premier lancement, puis l'interface Nexis en plein écran
+- [ ] Plus tard, si besoin : lecteur natif dans l'application Android TV pour envoyer le son multicanal (DTS, TrueHD, Atmos) tel quel à un ampli, ce qu'aucun navigateur ne sait faire
