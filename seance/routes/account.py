@@ -81,7 +81,8 @@ def register(app, ctx, x):
                 "libraries": [l for l in libraries_all() if l["id"] in allowed], "plex_error": warning,
                 "features": {"discover": bool(db.setting("tmdb_key")),
                              "requests": bool(db.setting("seerr_url") and db.setting("seerr_key")),
-                             "live": x.live_available(req.user)}}
+                             "live": x.live_available(req.user),
+                             "downloads": db.setting("downloads", "1") == "1"}}
 
     @app.route("PUT", "/api/me/prefs")
     def me_prefs(req):

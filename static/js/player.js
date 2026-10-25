@@ -3,6 +3,7 @@
 import { get, post, put } from './api.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from './tracks.js';
 import { state } from './app.js';
+import { nextDownloaded, playable, saveProgress } from './offline.js';
 import { chapterStrip, chapterTitle } from './chapters.js';
 import { avatar, clear, episodeCode, errorBox, fmtTime, h, icon, img, loadHls, spinner, store, toast } from './ui.js';
 
@@ -88,8 +89,11 @@ export async function renderPlayer(root, rk, ctx) {
   let switching = true, finished = false; // no progress reports while a stream is (re)starting or after the end
   let rebuffering = false, stalls = [], lowerHinted = false, everPlayed = false;
 
+  // téléchargement lu hors ligne (#/offline/…) : fichier gardé sur l'appareil, rien ne passe par le serveur
+  const offline = !!ctx.offline;
+  let local = null;
   // « Regarder ensemble » : position partagée par le groupe (voir seance/syncplay.py)
-  const groupId = ctx.query.get('group');
+  const groupId = offline ? null : ctx.query.get('group');
   let group = null;
 
   // lecteur réduit : il survit à la navigation, il ne dépend donc plus de la page qui l'a ouvert
@@ -100,7 +104,13 @@ export async function renderPlayer(root, rk, ctx) {
 
   // ------------------------------------------------------------ boot
   try {
-    item = await get(`/api/items/${rk}`);
+    if (offline) {
+      local = await playable(state.me.user.id, rk);
+      if (!local) throw new Error('Ce téléchargement n’est plus sur cet appareil.');
+      item = local.item;
+    } else {
+      item = await get(`/api/items/${rk}`);
+    }
   } catch (e) {
     clear(root, h('div.center-page', errorBox(e, () => history.back())));
     return () => {};
@@ -111,7 +121,9 @@ export async function renderPlayer(root, rk, ctx) {
   titleEl.append(h('strong', item.type === 'episode' ? item.show : item.title),
     item.type === 'episode' ? h('span', `${episodeCode(item)} · ${item.title}`) : (item.year ? h('span', String(item.year)) : null));
   const poster = item.type === 'episode' ? (item.show_art || item.art) : item.art;
-  if (poster) video.poster = img(poster, 1280, 720);
+  if (offline) video.poster = local.poster || '';
+  else if (poster) video.poster = img(poster, 1280, 720);
+  if (offline) { cogBtn.hidden = true; groupBtn.hidden = true; miniBtn.hidden = true; }
 
   audioSel = pickAudio(item.audio || [], prefs, item.track_prefs);
   subSel = pickSubtitle(item.subtitles || [], audioSel, prefs, item.track_prefs);
@@ -136,8 +148,8 @@ export async function renderPlayer(root, rk, ctx) {
       else if (again && !destroyed) setTimeout(() => loadTrick(false), 60000);
     } catch { /* pas d'aperçu */ }
   };
-  loadTrick(true);
-  const rememberTracks = () => put(`/api/items/${item.id}/tracks`, trackPayload(audioSel, subSel)).catch(() => {});
+  if (!offline) loadTrick(true);
+  const rememberTracks = () => offline ? null : put(`/api/items/${item.id}/tracks`, trackPayload(audioSel, subSel)).catch(() => {});
   let startAt = 0;
   if (ctx.query.get('t')) startAt = Number(ctx.query.get('t')) || 0;
   else if (ctx.query.get('resume') && item.position && !item.watched) startAt = item.position;
@@ -191,7 +203,11 @@ export async function renderPlayer(root, rk, ctx) {
     if (hls) { hls.destroy(); hls = null; }
     if (video.getAttribute('src')) { video.removeAttribute('src'); video.load(); }
     let s;
-    try {
+    if (offline) {
+      s = { mode: 'direct', url: local.url, offset: Math.round(offset), duration: item.duration, stream: null, reasons: [],
+        markers: item.markers || {}, next: await nextDownloaded(state.me.user.id, item), audio: item.audio,
+        subtitles: item.subtitles, subtitle_overlay: subSel ? local.subUrls[subSel.id] || null : null };
+    } else try {
       s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality, no_direct: forceHls || undefined,
         caps: browserCaps(),
         playlist: ctx.query.get('playlist') || undefined,
@@ -382,6 +398,7 @@ export async function renderPlayer(root, rk, ctx) {
   // Avant la toute première lecture : toutes les pistes de sous-titres sont extraites du fichier
   // (une seule lecture, à pleine vitesse, sans flux vidéo en concurrence sur le partage réseau).
   async function prepare(at = 0) {
+    if (offline) return; // téléchargement : sous-titres déjà sur l'appareil
     const t0 = Date.now();
     let hint = null;
     while (!destroyed && current()) {
@@ -597,6 +614,7 @@ export async function renderPlayer(root, rk, ctx) {
     lastReport = now;
     const p = pos();
     if (p < 1000 && st !== 'stopped' && !extra.ended) return;
+    if (offline) { saveProgress(state.me.user.id, item, p, duration(), extra.ended); return; }
     post('/api/progress', { id: item.id, position: p, duration: duration(), stream: session.stream, state: st, ...extra },
       { keepalive: st === 'stopped' }).catch(() => {});
   }
@@ -714,6 +732,7 @@ export async function renderPlayer(root, rk, ctx) {
       location.replace(`#/play/${session.next.id}?group=${group.id}`);
       return;
     }
+    if (offline) { location.replace(`#/offline/${session.next.id}`); return; }
     location.replace(`#/play/${session.next.id}${ctx.query.get('playlist') ? `?playlist=${ctx.query.get('playlist')}` : ''}`);
   }
 
@@ -1197,8 +1216,9 @@ export async function renderPlayer(root, rk, ctx) {
   function stopAll() {
     if (destroyed) return;
     if (Date.now() - startedAt > 3000 && !switching) report('stopped', true);
-    if (session) post('/api/stop', { stream: session.stream }, { keepalive: true }).catch(() => {});
+    if (session && !offline) post('/api/stop', { stream: session.stream }, { keepalive: true }).catch(() => {});
     destroyed = true;
+    if (local) setTimeout(local.release, 0); // libère le fichier gardé en mémoire de travail
     if (group) {
       if (group.es) group.es.close();
       // on reste dans le groupe si on enchaîne sur un autre épisode du groupe

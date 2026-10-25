@@ -368,6 +368,8 @@ async function settingsTab(body, ctx) {
     ['900', 'Toutes les 15 minutes']], String(s.watch_interval));
   const hookInput = h('input', { readonly: true, value: `${location.origin}${s.webhook_path}`, onfocus: (e) => e.target.select() });
   const prefetch = toggle('Préparer les sous-titres des nouveaux fichiers à l’avance', s.subs_prefetch);
+  const downloadsToggle = toggle('Autoriser les téléchargements pour regarder hors ligne', s.downloads);
+  downloadsToggle.querySelector('input').addEventListener('change', (e) => save({ downloads: e.target.checked }, 'Enregistré'));
   prefetch.querySelector('input').addEventListener('change', (e) => save({ subs_prefetch: e.target.checked }, 'Enregistré'));
   const maxStreams = h('input', { type: 'number', min: 1, max: 50, value: s.max_streams });
   const maxTranscodes = h('input', { type: 'number', min: 0, max: 16, value: s.max_transcodes });
@@ -445,6 +447,9 @@ async function settingsTab(body, ctx) {
       h('div.grid2', field('Lectures simultanées (max.)', maxStreams), field('Transcodages simultanés (max.)', maxTranscodes,
         '0 = interdire le transcodage (seules les lectures directes et remux passent).')),
       h('button.btn.primary', { onclick: () => save({ max_streams: Number(maxStreams.value), max_transcodes: Number(maxTranscodes.value) }, 'Enregistré') }, 'Enregistrer'),
+      h('h3.sub', 'Téléchargements hors ligne'),
+      h('p.muted.small', 'Chacun peut télécharger films et épisodes dans l’application pour les regarder sans connexion, comme sur Netflix. Nexis prépare une copie à la qualité choisie (une conversion occupe le processeur ou la carte graphique, en priorité basse, une à la fois), puis l’efface dès qu’elle est récupérée.'),
+      downloadsToggle,
       h('h3.sub', 'Transcodage matériel'),
       h('p.muted.small', 'Une carte graphique décode et encode la vidéo à la place du processeur : bien plus de transcodages en même temps, presque sans charge. Nexis fait un essai réel avant d’enregistrer, et repasse tout seul sur le processeur si la carte refuse un fichier. Voir le README pour donner la carte au conteneur LXC.'),
       h('div.grid2', field('Accélération matérielle', hwEngine), hwDeviceField),

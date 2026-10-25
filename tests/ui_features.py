@@ -388,6 +388,36 @@ with sync_playwright() as pw:
     page.goto(base + "/#/")
     bctx4.close()
 
+    # --- téléchargement pour regarder hors ligne : fiche -> téléchargements -> réseau coupé -> lecture -> position renvoyée
+    polar = ctx.db.one("SELECT id FROM items WHERE type='movie' AND title='Nuit polaire'")["id"]
+    bctx5, page5 = browser_ctx(browser, admin)
+    page5.goto(base + f"/#/item/{polar}")
+    page5.click(".detail-actions button[aria-label='Télécharger pour regarder hors ligne']")
+    page5.click(".modal button:has-text('Télécharger')")
+    page5.goto(base + "/#/downloads")
+    page5.wait_for_selector(".dl-row a:has-text('Lire')", timeout=120000)
+    check(not ctx.downloads.jobs, "copie du serveur effacée une fois récupérée")
+    bctx5.set_offline(True)
+    page5.goto(base + "/")
+    page5.wait_for_selector(".offline-banner", timeout=15000)
+    page5.screenshot(path=f"{out}/16c-hors-ligne.png")
+    page5.click(".dl-row a.dl-thumb")
+    page5.wait_for_function("document.querySelector('video') && document.querySelector('video').currentTime > 2", timeout=30000)
+    page5.evaluate("(() => { const v = document.querySelector('video'); v.currentTime = 40; })()")
+    page5.wait_for_timeout(1200)
+    page5.evaluate("document.querySelector('video').pause()")
+    page5.wait_for_timeout(600)
+    bctx5.set_offline(False)
+    page5.evaluate("window.dispatchEvent(new Event('online'))")
+    page5.goto(base + "/#/")
+    for _ in range(30):
+        row = ctx.db.one("SELECT position_ms FROM progress WHERE user_id=1 AND rating_key=?", (str(polar),))
+        if row and row["position_ms"] > 39000:
+            break
+        time.sleep(0.5)
+    check(row and row["position_ms"] > 39000, f"lecture hors ligne puis position renvoyée au serveur ({row and row['position_ms']})")
+    bctx5.close()
+
     # --- mobile
     bctx3, page3 = browser_ctx(browser, lea, mobile=True)
     page3.goto(base + "/#/live")

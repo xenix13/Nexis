@@ -1166,6 +1166,45 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(self.lea.call("GET", "/api/admin/update")[0], 403)
         self.assertEqual(self.lea.call("POST", "/api/admin/update")[0], 403)
 
+    def test_offline_downloads(self):
+        """Téléchargements hors ligne : MP4 lisible tel quel envoyé direct, MKV préparé en MP4, reprise par plages,
+        positions hors ligne renvoyées au retour du réseau."""
+        voyage, polar = self.movie("Le Grand Voyage"), self.movie("Nuit polaire")
+        st, j = self.admin.call("POST", "/api/downloads", {"id": voyage["id"], "quality": "original"})
+        self.assertEqual((st, j["state"], j["mode"]), (200, "ready", "original"), j)
+        st, part, h = self.admin.call("GET", f"/api/downloads/{j['id']}/file", raw=True, headers={"Range": "bytes=0-99"})
+        self.assertEqual((st, len(part), h["Content-Type"]), (206, 100, "video/mp4"))
+        self.assertEqual(self.lea.call("GET", f"/api/downloads/{j['id']}")[0], 404)  # le téléchargement d'un autre
+        # MKV : préparé en MP4 (son AC3 converti), une étape à la fois
+        st, j = self.admin.call("POST", "/api/downloads", {"id": polar["id"], "quality": "original"})
+        self.assertIn(j["state"], ("queued", "preparing", "ready"))
+        for _ in range(120):
+            st, j = self.admin.call("GET", f"/api/downloads/{j['id']}")
+            if j["state"] in ("ready", "error"):
+                break
+            time.sleep(0.5)
+        self.assertEqual(j["state"], "ready", j)
+        st, data, h = self.admin.call("GET", f"/api/downloads/{j['id']}/file", raw=True)
+        self.assertEqual(len(data), j["size"])
+        self.assertEqual(ffprobe_codec(data), "h264")
+        self.admin.call("DELETE", f"/api/downloads/{j['id']}")
+        self.assertEqual(self.admin.call("GET", f"/api/downloads/{j['id']}")[0], 404)
+        self.assertEqual(self.admin.call("POST", "/api/downloads", {"id": polar["id"], "burn": 999})[0], 400)
+        # positions enregistrées hors ligne : appliquées, sauf si on a regardé ailleurs depuis
+        now = int(time.time())
+        st, r = self.admin.call("POST", "/api/progress/offline", {"items": [
+            {"id": polar["id"], "position": 40000, "duration": 90000, "at": now},
+            {"id": voyage["id"], "position": 30000, "duration": 90000, "at": now - 10 ** 6}]})
+        self.assertEqual(st, 200)
+        row = self.ctx.db.one("SELECT position_ms FROM progress WHERE user_id=1 AND rating_key=?", (str(polar["id"]),))
+        self.assertEqual(row["position_ms"], 40000)
+        # désactivé par l'administrateur
+        self.ctx.db.set_setting("downloads", "0")
+        try:
+            self.assertEqual(self.admin.call("POST", "/api/downloads", {"id": voyage["id"]})[0], 403)
+        finally:
+            self.ctx.db.set_setting("downloads", "1")
+
     def test_web_app_install(self):
         """Web app installable : manifeste, icônes aux bonnes tailles, service worker généré et versionné."""
         import io

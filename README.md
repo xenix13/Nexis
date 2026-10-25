@@ -256,6 +256,22 @@ Nexis s'installe comme une application, sans magasin d'applications. On obtient 
 
 Une fois installée, une flèche retour apparaît dans la barre du haut, puisqu'il n'y a plus celle du navigateur. Si le serveur est injoignable, l'application s'ouvre quand même et propose de réessayer. Elle reste toujours à jour : les fichiers sont redemandés au serveur à chaque ouverture, et la copie locale ne sert que hors ligne.
 
+### Télécharger pour regarder hors ligne
+
+Comme sur Netflix, on télécharge un film, un épisode ou une saison entière pour les regarder sans connexion : dans le train, l'avion, ou là où le réseau ne suit pas.
+
+- **Télécharger** : le bouton ⤓ sur la fiche d'un film ou d'un épisode, ou **Télécharger la saison** au-dessus de la liste des épisodes (seulement les épisodes non vus s'il y en a). On choisit la qualité : 720p recommandée (environ 1,9 Go par heure), 1080p, 480p économe, ou l'originale quand elle est lisible telle quelle. On choisit aussi la langue et les sous-titres à garder.
+- **Suivre** : menu de l'avatar → **Téléchargements**. On y voit la préparation, le transfert, la place utilisée et la place restante, et on peut supprimer.
+  - Le transfert se fait par morceaux et reprend tout seul après une coupure ou à la réouverture de l'application.
+  - Le navigateur est prié de ne pas effacer ces fichiers pour faire de la place.
+- **Hors ligne** : l'application s'ouvre directement sur tes téléchargements. On les regarde avec le lecteur habituel : sous-titres, passer l'intro, chapitres, épisode suivant téléchargé. La position de lecture est renvoyée au serveur au retour du réseau, sans écraser ce que tu aurais regardé ailleurs entre-temps.
+- **Côté serveur** : Nexis prépare une copie MP4 (H.264 / AAC) lisible sur tous les appareils. Un MP4 déjà lisible est envoyé tel quel, un MKV H.264 est recopié sans perte, le reste est converti.
+  - La conversion passe en priorité basse, une à la fois, et attend qu'aucune lecture n'ait besoin du transcodage.
+  - La copie est effacée dès que l'appareil l'a récupérée, ou au bout de 48 h.
+  - L'administrateur peut désactiver les téléchargements dans *Administration → Métadonnées et lecture*.
+
+Les téléchargements restent sur l'appareil, rangés par profil : chacun ne voit que les siens. À la déconnexion, l'appareil oublie qui regardait. Ils demandent un accès HTTPS. Sur iPhone et iPad, installe Nexis sur l'écran d'accueil : Safari efface au bout de quelques semaines les données d'un site simplement visité, pas celles d'une application installée.
+
 ## Accès depuis l'extérieur (HTTPS)
 
 Place Nexis derrière un reverse proxy HTTPS (Caddy, nginx, Nginx Proxy Manager…). Dans `/etc/seance/seance.env` :
@@ -486,6 +502,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 ### Applications (en dernier)
 Une seule interface à maintenir : celle du serveur. Elle s'installe comme une application (web app) sur Windows, Android, iPhone et iPad, et se met à jour en même temps que le serveur. Seule la TV a besoin d'une vraie application, légère, qui affiche cette même interface.
 - [x] Web app installable (PWA) : icônes adaptatives, fenêtre à part, raccourcis, « Installer l'application » (instructions sur iPhone/iPad), flèche retour en mode application, ouverture hors ligne ; demande un accès HTTPS. Remplace une application Windows séparée
+- [x] Téléchargements pour regarder hors ligne (film, épisode, saison), comme Netflix : copie préparée par le serveur, transfert par morceaux qui reprend après une coupure, lecture et positions hors ligne renvoyées au retour du réseau
 - [ ] Navigation complète à la télécommande et à la manette (flèches, OK, retour), utile à la TV comme sur PC
 - [ ] Application Android TV légère : adresse du serveur demandée au premier lancement, puis l'interface Nexis en plein écran
 - [ ] Plus tard, si besoin : lecteur natif dans l'application Android TV pour envoyer le son multicanal (DTS, TrueHD, Atmos) tel quel à un ampli, ce qu'aucun navigateur ne sait faire

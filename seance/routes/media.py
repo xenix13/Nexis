@@ -10,6 +10,7 @@ from .. import media
 from ..catalog import EXTERNAL_BASE, PREPARE_WINDOW_MS, RK, SID, WATCHED_RATIO, stream_lists
 from ..keyframes import mkv_keyframes
 from ..subtitles import parse_subtitles
+from ..downloads import DownloadError
 from ..transcoder import Busy, QUALITY, StreamError, plan
 from ..web import HTTPError, Response
 
@@ -472,6 +473,92 @@ def register(app, ctx, x):
         r = require_item(req.user, rk)
         watched = record_progress(req.user, r, pos, dur, state, str(b.get("stream") or ""), b.get("ended"))
         return {"ok": True, "watched": watched}
+
+    # ------------------------------------------------------------ téléchargements (hors ligne)
+    JID = r"(?P<jid>[A-Za-z0-9_-]{8,20})"
+
+    def own_job(req):
+        job = ctx.downloads.get(req.params["jid"], req.user["id"])
+        if not job:
+            raise HTTPError(404, "Téléchargement introuvable : redemande-le")
+        return job
+
+    @app.route("POST", "/api/downloads")
+    def download_request(req):
+        if db.setting("downloads", "1") != "1":
+            raise HTTPError(403, "Les téléchargements sont désactivés par l'administrateur")
+        b = req.json()
+        rk = str(b.get("id") or "")
+        if not rk.isdigit():
+            raise HTTPError(400, "Identifiant invalide")
+        r = require_item(req.user, rk)
+        if r["type"] not in ("movie", "episode"):
+            raise HTTPError(400, "Seuls les films et les épisodes se téléchargent")
+        if not r["key"] or not os.path.isfile(r["key"]):
+            raise HTTPError(404, "Fichier introuvable : le partage est-il monté ?")
+        probe = json.loads(r["probe"] or "{}")
+        audio, subs = stream_lists(probe)
+        quality = b.get("quality") or "720p"
+        if quality not in QUALITY:
+            raise HTTPError(400, "Qualité invalide")
+        audio_id = b.get("audio")
+        if audio_id is not None and audio_id not in {a["id"] for a in audio}:
+            raise HTTPError(400, "Piste audio invalide")
+        burn = b.get("burn")  # sous-titres image (PGS, VobSub) : incrustés dans la vidéo téléchargée
+        if burn is not None and burn not in {s["id"] for s in subs if not s["overlay"]}:
+            raise HTTPError(400, "Sous-titres à incruster invalides")
+        p = plan(probe, audio_id, burn, quality, parse_caps(b.get("caps")), db.setting("downmix_algo", "none"),
+                 float(db.setting("downmix_boost", "2") or 2))
+        if p["mode"] == "direct" and media.is_strm(r["key"]):
+            p["mode"] = "copy"  # flux distant : on en fait un fichier
+        if p["mode"] == "transcode" and ctx.limits()[1] == 0:
+            raise HTTPError(403, "Ce titre doit être converti pour être téléchargé, et la conversion est désactivée sur ce serveur")
+        try:
+            job = ctx.downloads.request(req.user["id"], r, p, probe.get("duration") or (r["duration_ms"] or 0) / 1000)
+        except DownloadError as e:
+            raise HTTPError(429, str(e))
+        out = job.view()
+        out["estimate"] = job.size or ctx.downloads._estimate(job)
+        return out
+
+    @app.route("GET", f"/api/downloads/{JID}")
+    def download_status(req):
+        return own_job(req).view()
+
+    @app.route("GET", f"/api/downloads/{JID}/file")
+    def download_file(req):
+        job = own_job(req)
+        if job.state != "ready":
+            raise HTTPError(409, "Pas encore prêt")
+        db.release()  # transfert long : pas de connexion à la base pendant ce temps
+        resp = file_response(req, job.path)
+        resp.headers["Content-Type"] = "video/mp4"
+        return resp
+
+    @app.route("DELETE", f"/api/downloads/{JID}")
+    def download_done(req):
+        ctx.downloads.delete(req.params["jid"], req.user["id"])
+        return {"ok": True}
+
+    @app.route("POST", "/api/progress/offline")
+    def progress_offline(req):
+        """Positions enregistrées sans réseau, renvoyées au retour de la connexion (la plus récente gagne)."""
+        items = req.json().get("items")
+        if not isinstance(items, list) or len(items) > 500:
+            raise HTTPError(400, "Liste invalide")
+        done = 0
+        for it in items:
+            try:
+                rk, pos, dur, at = str(int(it["id"])), max(0, int(it["position"])), max(0, int(it.get("duration") or 0)), int(it["at"])
+                r = require_item(req.user, rk)
+            except (KeyError, TypeError, ValueError, HTTPError):
+                continue
+            row = db.one("SELECT updated_at FROM progress WHERE user_id=? AND rating_key=?", (req.user["id"], rk))
+            if row and row["updated_at"] > at:
+                continue  # regardé depuis sur un autre appareil : on ne recule pas
+            record_progress(req.user, r, pos, dur, "stopped", "", bool(it.get("ended")))
+            done += 1
+        return {"ok": True, "applied": done}
 
     @app.route("POST", "/api/stop")
     def stop(req):

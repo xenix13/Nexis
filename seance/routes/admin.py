@@ -315,6 +315,7 @@ def register(app, ctx, x):
         return {"watch_interval": ctx.setting_int("watch_interval", 60),
                 "subs_prefetch": db.setting("subs_prefetch", "1") == "1",
                 "trickplay": db.setting("trickplay", "1") == "1",
+                "downloads": db.setting("downloads", "1") == "1",
                 "downmix_algo": db.setting("downmix_algo", "none"),
                 "downmix_boost": float(db.setting("downmix_boost", "2") or 2),
                 "subs_queue": len(ctx.subtitles.urgent) + len(ctx.subtitles.idle),
@@ -360,6 +361,8 @@ def register(app, ctx, x):
             db.set_setting("trickplay", "1" if b["trickplay"] else "0")
             if b["trickplay"]:
                 threading.Thread(target=ctx.prefetch_missing_subtitles, daemon=True).start()
+        if "downloads" in b:
+            db.set_setting("downloads", "1" if b["downloads"] else "0")
         if "subs_prefetch" in b:
             db.set_setting("subs_prefetch", "1" if b["subs_prefetch"] else "0")
             if b["subs_prefetch"]:

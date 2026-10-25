@@ -15,6 +15,8 @@ import { renderPlayer } from './player.js';
 import { renderTogether } from './views/together.js';
 import { createGroupDialog, currentGroups, isFreshFeed, onGroups, startGroupsFeed, stopGroupsFeed } from './groups.js';
 import { canInstall, install, onInstallChange, setupInstall } from './install.js';
+import { forgetMe, list as listDownloads, pump, rememberMe, rememberedMe, supported as offlineSupported, syncProgress } from './offline.js';
+import { renderDownloads } from './views/downloads.js';
 import { renderLive, renderLivePlayer } from './views/live.js';
 
 export const state = { me: null, status: null };
@@ -56,9 +58,46 @@ export function applyPrefs(prefs) {
 
 export async function refreshMe() {
   state.me = await get('/api/me');
+  state.offline = false;
   applyPrefs(state.me.prefs);
+  rememberMe(state.me); // pour retrouver ses téléchargements hors ligne
+  syncProgress(state.me.user.id); // positions enregistrées hors ligne
+  pump(); // téléchargements à reprendre
   return state.me;
 }
+
+// Hors ligne (serveur injoignable) : on bascule sur les téléchargements de la dernière personne connectée
+async function offlineMode(e, page, parts, token) {
+  const me = rememberedMe();
+  if (e.status !== 0 || !me || !offlineSupported() || !(await listDownloads(me.user.id)).length) return false;
+  if (token !== renderToken) return true;
+  state.me = me;
+  state.offline = true;
+  applyPrefs(me.prefs);
+  const ctx = { query: new URLSearchParams(), parts, isCurrent: () => token === renderToken,
+    setCleanup: (fn) => { cleanup = fn; }, offline: true };
+  if (page === 'offline' && parts[1]) {
+    document.body.classList.add('playing');
+    document.title = 'Nexis';
+    const stopPlayer = await renderPlayer(root, parts[1], ctx);
+    if (token === renderToken) cleanup = stopPlayer; else stopPlayer();
+    return true;
+  }
+  document.body.classList.remove('playing');
+  document.title = 'Téléchargements · Nexis';
+  const main = h('main.content');
+  clear(root, h('header.topbar.offline-bar', h('span.logo', h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis'),
+    h('div.grow'), h('button.btn.small', { onclick: () => location.reload() }, 'Réessayer la connexion')), main);
+  await renderDownloads(main, ctx, { offline: true });
+  return true;
+}
+window.addEventListener('online', () => {
+  if (!state.offline) return;
+  state.status = null;
+  state.me = null;
+  toast('Connexion retrouvée', 'ok');
+  route();
+});
 
 function parseHash() {
   const raw = location.hash.replace(/^#/, '') || '/';
@@ -110,6 +149,7 @@ function shell(active) {
     h('a', { href: '#/playlists' }, 'Mes playlists'),
     h('a', { href: '#/together' }, 'Regarder ensemble'),
     h('a', { href: '#/history' }, 'Historique'),
+    me.features && me.features.downloads && offlineSupported() ? h('a', { href: '#/downloads' }, 'Téléchargements') : null,
     h('a', { href: '#/settings' }, 'Réglages'),
     h('button.install-app', { hidden: !canInstall(), onclick: () => install() }, icon('install'), 'Installer l’application'),
     me.user.is_admin ? h('a', { href: '#/admin' }, 'Administration') : null,
@@ -170,6 +210,7 @@ onGroups((list) => {
 
 async function logout() {
   closeMini();
+  forgetMe(); // appareil partagé : le mode hors ligne ne montre plus les téléchargements de cette personne
   stopGroupsFeed();
   try { await post('/api/logout'); } catch { /* ignore */ }
   state.me = null;
@@ -185,6 +226,7 @@ async function route() {
 
   if (!state.status) {
     try { state.status = await get('/api/status'); } catch (e) {
+      if (await offlineMode(e, page, parts, token)) return;
       clear(root, h('div.center-page', errorBox(e, () => location.reload())));
       return;
     }
@@ -209,6 +251,7 @@ async function route() {
   if (!state.me) {
     try { await refreshMe(); } catch (e) {
       if (e.status === 401) { location.hash = '#/login'; return; }
+      if (await offlineMode(e, page, parts, token)) return;
       clear(root, h('div.center-page', errorBox(e, route)));
       return;
     }
@@ -227,7 +270,8 @@ async function route() {
     cleanup = m.stop;
     return;
   }
-  if (page === 'play' || page === 'tv') {
+  if (page === 'offline') ctx.offline = true; // téléchargement lu depuis l'appareil (aussi en ligne : pas de réseau utilisé)
+  if (page === 'play' || page === 'tv' || page === 'offline') {
     closeMini(); // une autre vidéo remplace celle du lecteur réduit
     document.body.classList.add('playing');
     const stopPlayer = page === 'tv' ? await renderLivePlayer(root, parts[1], ctx) : await renderPlayer(root, parts[1], ctx);
@@ -239,7 +283,7 @@ async function route() {
   const active = page === '' ? 'home' : page === 'library' ? `lib:${parts[1]}` : page;
   const main = shell(active);
   main.append(spinner());
-  const titles = { '': 'Accueil', live: 'TV en direct', together: 'Regarder ensemble', watchlist: 'À regarder', discover: 'Découvrir', playlists: 'Mes playlists', search: 'Recherche', history: 'Historique', settings: 'Réglages', admin: 'Administration' };
+  const titles = { '': 'Accueil', live: 'TV en direct', together: 'Regarder ensemble', watchlist: 'À regarder', discover: 'Découvrir', playlists: 'Mes playlists', search: 'Recherche', history: 'Historique', downloads: 'Téléchargements', settings: 'Réglages', admin: 'Administration' };
   document.title = `${titles[page] || 'Nexis'} · Nexis`;
   try {
     switch (page) {
@@ -252,6 +296,7 @@ async function route() {
       case 'discover': await renderDiscover(main, ctx); break;
       case 'live': await renderLive(main, ctx); break;
       case 'together': await renderTogether(main, parts[1], ctx); break;
+      case 'downloads': await renderDownloads(main, ctx); break;
       case 'playlists': await renderPlaylists(main, ctx); break;
       case 'playlist': await renderPlaylist(main, parts[1], ctx); break;
       case 'history': await renderHistory(main, ctx); break;

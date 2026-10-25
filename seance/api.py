@@ -15,6 +15,7 @@ from . import catalog, collections_api, discover, livetv, media, suggest, syncpl
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
+from .downloads import Downloads
 from .images import Images
 from .introdetect import FingerprintCache
 from .metadata import Metadata
@@ -45,6 +46,7 @@ class Ctx:
         self.images = Images(self)
         self.scanner = Scanner(self)
         self.transcoder = Transcoder(os.path.join(data_dir, "transcodes"), self.limits, self.hw)
+        self.downloads = Downloads(self)
         self.subtitles = SubtitleCache(self)
         self.chapter_images = ChapterImages(self)
         self.fingerprints = FingerprintCache(os.path.join(data_dir, "cache", "fingerprints"))
@@ -169,6 +171,7 @@ def janitor(ctx, stop_event):
             db.run("DELETE FROM sessions WHERE expires_at < ?", (now,))
             ctx.live.reap()
             ctx.together.reap()
+            ctx.downloads.reap()
         except Exception:
             log.exception("Erreur du nettoyage périodique")
         finally:

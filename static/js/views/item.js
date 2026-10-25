@@ -1,6 +1,7 @@
 import { del, get, post, put } from '../api.js';
 import { state } from '../app.js';
 import { launchableGroups } from '../groups.js';
+import { download as offlineDownload, find as findDownload, onDownloads, supported as offlineSupported } from '../offline.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from '../tracks.js';
 import { chapterStrip } from '../chapters.js';
 import { clear, episodeCode, field, fmtDuration, fmtTime, h, icon, img, modal, moreMenu, posterCard, progressBar, select, spinner, toast, toggle } from '../ui.js';
@@ -227,6 +228,97 @@ async function watchTogether(target) {
   if (g) location.hash = `#/play/${target.id}?group=${g.id}`;
 }
 
+// ------------------------------------------------------------ téléchargements (regarder hors ligne)
+const DL_QUALITIES = [['720p', '720p : recommandé (environ 1,9 Go par heure)'], ['1080p', '1080p (environ 3,7 Go par heure)'],
+  ['480p', '480p : économe (environ 0,8 Go par heure)'], ['original', 'Originale (le fichier d’origine quand il est lisible tel quel)']];
+const dlQuality = () => { try { return localStorage.getItem('nexis.dl.quality') || '720p'; } catch { return '720p'; } };
+const canDownload = () => state.me.features && state.me.features.downloads && offlineSupported();
+
+// choix des pistes comme au lancement de la lecture (langues préférées, sous-titres forcés…)
+function defaultTracks(it) {
+  const prefs = state.me.prefs;
+  const audio = pickAudio(it.audio || [], prefs, it.track_prefs);
+  const sub = fixForced(pickSubtitle(it.subtitles || [], audio, prefs, it.track_prefs), audio, it.subtitles || []);
+  return { audio: audio ? audio.id : null, subs: sub && sub.overlay ? [sub.id] : [], burn: sub && !sub.overlay ? sub.id : null };
+}
+
+async function startDownloads(items, opts) {
+  try { localStorage.setItem('nexis.dl.quality', opts.quality); } catch { /* ignore */ }
+  for (const it of items) {
+    const full = it.audio ? it : await get(`/api/items/${it.id}`); // les épisodes d'une saison : pistes à connaître
+    await offlineDownload(state.me.user.id, full, { ...defaultTracks(full), ...opts.tracks, quality: opts.quality });
+  }
+  toast(items.length > 1 ? `${items.length} épisodes ajoutés aux téléchargements` : 'Téléchargement lancé', 'ok',
+    { label: 'Voir', onClick: () => { location.hash = '#/downloads'; } });
+}
+
+async function downloadDialog(items, title) {
+  const one = items.length === 1 && items[0].audio ? items[0] : null;
+  const quality = select(DL_QUALITIES, dlQuality());
+  const rows = [field('Qualité', quality, 'La copie est préparée par le serveur (lisible sur tous les appareils), puis gardée sur celui-ci.')];
+  let audioSel = null;
+  const subChecks = [];
+  let burnSel = null;
+  if (one) {
+    const d = defaultTracks(one);
+    if ((one.audio || []).length > 1) {
+      audioSel = select(one.audio.map((a) => [String(a.id), a.title]), String(d.audio));
+      rows.push(field('Langue', audioSel));
+    }
+    const text = (one.subtitles || []).filter((x) => x.overlay);
+    if (text.length) {
+      rows.push(field('Sous-titres à garder', h('div.checks.single', text.map((x) => {
+        const t = toggle(x.title, d.subs.includes(x.id));
+        subChecks.push([x.id, t.querySelector('input')]);
+        return t;
+      }))));
+    }
+    const image = (one.subtitles || []).filter((x) => !x.overlay);
+    if (image.length) {
+      burnSel = select([['', 'Aucun'], ...image.map((x) => [String(x.id), x.title])], d.burn ? String(d.burn) : '');
+      rows.push(field('Sous-titres image à incruster', burnSel, 'Ils deviennent une partie de l’image (impossible de les masquer ensuite).'));
+    }
+  } else {
+    rows.push(h('p.muted.small', 'Langue et sous-titres : ceux de tes préférences, comme à la lecture.'));
+  }
+  const ok = await modal(`Télécharger ${title}`, h('div.form', ...rows), [
+    { label: 'Annuler', value: false },
+    { label: 'Télécharger', primary: true, value: true },
+  ]);
+  if (!ok) return;
+  const tracks = one ? {
+    audio: audioSel ? Number(audioSel.value) : defaultTracks(one).audio,
+    subs: subChecks.filter(([, c]) => c.checked).map(([id]) => id),
+    burn: burnSel && burnSel.value ? Number(burnSel.value) : null,
+  } : {};
+  startDownloads(items, { quality: quality.value, tracks });
+}
+
+// Bouton qui suit l'état du téléchargement de ce titre sur l'appareil
+function downloadButton(d) {
+  if (!canDownload() || !['movie', 'episode'].includes(d.type)) return null;
+  const btn = h('button.btn.ghost.icon-only', { title: 'Télécharger', 'aria-label': 'Télécharger pour regarder hors ligne' }, icon('install'));
+  const paint = async () => {
+    if (!btn.isConnected && btn.dataset.painted) { stop(); return; }
+    btn.dataset.painted = '1';
+    const rec = await findDownload(state.me.user.id, d.id);
+    const st = rec ? rec.state : null;
+    btn.classList.toggle('on', st === 'done');
+    btn.replaceChildren(icon(st === 'done' ? 'check' : 'install'));
+    const label = st === 'done' ? 'Téléchargé : lire hors ligne' : st && st !== 'error' ? 'Téléchargement en cours' : 'Télécharger pour regarder hors ligne';
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+    btn.onclick = () => {
+      if (st === 'done') location.hash = `#/offline/${d.id}`;
+      else if (st && st !== 'error') location.hash = '#/downloads';
+      else downloadDialog([d], d.type === 'episode' ? `${episodeCode(d)} · ${d.title}` : d.title);
+    };
+  };
+  const stop = onDownloads(paint);
+  paint();
+  return btn;
+}
+
 function togetherButton(target) {
   if (!target) return null;
   return h('button.btn.ghost.icon-only', { title: 'Regarder ensemble', 'aria-label': 'Regarder ensemble',
@@ -309,7 +401,7 @@ export async function renderItem(main, rk, ctx) {
   }
   const together = d.type === 'show' ? togetherButton(d.play_target ? { ...d.play_target, show: d.title } : null)
     : (['movie', 'episode'].includes(d.type) ? togetherButton(d) : null);
-  actions.append(...[watchlistButton(d), together, trailerButton(d)].filter(Boolean), itemMenu(d, rerender));
+  actions.append(...[watchlistButton(d), together, downloadButton(d), trailerButton(d)].filter(Boolean), itemMenu(d, rerender));
   const chooser = trackChooser(d, d.type === 'show' ? d.play_target : null, (au, su) => {
     for (const l of playLinks) l.setAttribute('href', withTracks(l.dataset.base, au, su));
   });
@@ -399,7 +491,14 @@ export async function renderItem(main, rk, ctx) {
       h('button.btn.small.ghost', { onclick: async () => {
         await post(`/api/items/${current.id}/watched`, { watched: !current.watched });
         rerender();
-      } }, 'Saison vue / non vue')), list));
+      } }, 'Saison vue / non vue'),
+      canDownload() ? h('button.btn.small.ghost', { onclick: async () => {
+        const eps = await get(`/api/items/${current.id}/children`);
+        const todo = eps.filter((e) => !e.watched);
+        const pick = todo.length ? todo : eps;
+        const name = current.index === 0 ? 'les spéciaux' : `la saison ${current.index}`;
+        downloadDialog(pick, `${name} (${pick.length} épisode${pick.length > 1 ? 's' : ''}${todo.length && todo.length < eps.length ? ' non vus' : ''})`);
+      } }, icon('install'), 'Télécharger la saison') : null), list));
     loadSeason(current);
   }
 

@@ -238,6 +238,41 @@ def hw_test(hw, tmp_dir):
             pass
 
 
+def media_args(p, hw=None, seglen=SEGMENT):
+    """Vidéo et son d'un plan (copie ou conversion, échelle, sous-titres incrustés, carte graphique) :
+    communs au flux de lecture (HLS) et aux téléchargements (MP4)."""
+    vi = p["video_index"]
+    if p["mode"] == "copy":
+        out = ["-map", f"0:{vi}", "-codec:v:0", "copy"]
+        if p.get("video_codec") == "hevc":
+            out += ["-tag:v:0", "hvc1"]
+    else:
+        scale = f"scale=-2:{p['height']}:flags=bicubic," if p["src_height"] > p["height"] else ""
+        fmt = "format=nv12,hwupload" if hw and hw["engine"] == "vaapi" else "format=yuv420p"
+        if p["burn_index"] is not None:
+            out = ["-filter_complex",
+                   f"[0:{p['burn_index']}]format=yuva420p[s];"
+                   f"[0:{vi}][s]overlay=eof_action=pass:repeatlast=0[o];[o]{scale}{fmt}[v]",
+                   "-map", "[v]"]
+        else:
+            out = ["-map", f"0:{vi}", "-vf", f"{scale}{fmt}"]
+        gop = math.ceil(seglen * (p.get("fps") or 24))
+        out += video_encoder(hw, p["kbps"], gop, seglen)
+    if p["audio_index"] is not None:
+        out += ["-map", f"0:{p['audio_index']}"]
+        if p["acopy"]:
+            out += ["-codec:a:0", "copy"]
+            if p.get("audio_codec") in ("flac", "opus"):
+                out += ["-strict", "-2"]
+        else:
+            out += ["-codec:a:0", "aac", "-ac", "2", "-ab", "192000", "-ar", "48000"]
+            if p.get("audio_filter"):
+                out += ["-af", p["audio_filter"]]
+    else:
+        out += ["-an"]
+    return out
+
+
 def build_command(path, p, start, out_dir, start_number=0, threads=0, hw=None):
     """Commande ffmpeg d'un flux HLS fMP4 démarrant à `start` (secondes) au segment `start_number`.
 
@@ -261,36 +296,8 @@ def build_command(path, p, start, out_dir, start_number=0, threads=0, hw=None):
         cmd += ["-ss", f"{ss:.3f}"]
     cmd += [*media.input_args(path), "-map_metadata", "-1", "-map_chapters", "-1",
             "-threads", str(threads if p["mode"] == "transcode" else 0)]
-    vi = p["video_index"]
     seglen = p.get("seglen") or SEGMENT
-    if p["mode"] == "copy":
-        cmd += ["-map", f"0:{vi}", "-codec:v:0", "copy", "-start_at_zero"]
-        if p.get("video_codec") == "hevc":
-            cmd += ["-tag:v:0", "hvc1"]
-    else:
-        scale = f"scale=-2:{p['height']}:flags=bicubic," if p["src_height"] > p["height"] else ""
-        fmt = "format=nv12,hwupload" if hw and hw["engine"] == "vaapi" else "format=yuv420p"
-        if p["burn_index"] is not None:
-            cmd += ["-filter_complex",
-                    f"[0:{p['burn_index']}]format=yuva420p[s];"
-                    f"[0:{vi}][s]overlay=eof_action=pass:repeatlast=0[o];[o]{scale}{fmt}[v]",
-                    "-map", "[v]"]
-        else:
-            cmd += ["-map", f"0:{vi}", "-vf", f"{scale}{fmt}"]
-        gop = math.ceil(seglen * (p.get("fps") or 24))
-        cmd += [*video_encoder(hw, p["kbps"], gop, seglen), "-start_at_zero"]
-    if p["audio_index"] is not None:
-        cmd += ["-map", f"0:{p['audio_index']}"]
-        if p["acopy"]:
-            cmd += ["-codec:a:0", "copy"]
-            if p.get("audio_codec") in ("flac", "opus"):
-                cmd += ["-strict", "-2"]
-        else:
-            cmd += ["-codec:a:0", "aac", "-ac", "2", "-ab", "192000", "-ar", "48000"]
-            if p.get("audio_filter"):
-                cmd += ["-af", p["audio_filter"]]
-    else:
-        cmd += ["-an"]
+    cmd += [*media_args(p, hw, seglen), "-start_at_zero"]
     seg_opt = "-hls_segment_options" if media.has_option("hls_segment_options") else "-hls_ts_options"
     cmd += ["-sn", "-dn", "-copyts", "-avoid_negative_ts", "disabled", "-max_muxing_queue_size", "2048",
             "-f", "hls", "-max_delay", "5000000", "-hls_time", f"{seglen:g}", "-hls_segment_type", "fmp4",

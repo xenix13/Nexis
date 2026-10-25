@@ -898,3 +898,27 @@ img.fade.in { opacity: 1; }
   .controls { padding-bottom: env(safe-area-inset-bottom); }
   body { overscroll-behavior-y: none; } /* pas de « tirer pour rafraîchir » qui recharge l'application */
 }
+
+/* ---------- téléchargements (regarder hors ligne) ---------- */
+.dl-list { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.dl-row { display: flex; align-items: center; gap: 16px; padding: 10px; border-radius: 12px; background: var(--surface); }
+.dl-thumb { position: relative; flex: none; width: 160px; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; background: var(--surface-2); }
+.dl-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.dl-thumb:hover .play-hover { opacity: 1; }
+.dl-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.dl-body strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.dl-progress { height: 4px; border-radius: 4px; background: var(--surface-2); overflow: hidden; margin-top: 6px; max-width: 320px; }
+.dl-progress span { display: block; height: 100%; background: var(--accent); transition: width 0.4s; }
+.dl-progress.preparing span { opacity: 0.55; }
+.dl-progress.error span { background: var(--danger); }
+.offline-banner { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: 12px; margin: 6px 0 12px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text); font-weight: 600; }
+.offline-banner .icon { width: 22px; height: 22px; fill: var(--accent); flex: none; }
+.offline-bar .logo { display: flex; align-items: center; gap: 10px; font: 800 22px var(--display); }
+.detail-actions .btn.on .icon { fill: var(--accent); }
+@media (max-width: 760px) {
+  .dl-thumb { width: 112px; }
+  .dl-row { gap: 10px; align-items: flex-start; }
+  .dl-actions .btn { display: none; } /* la vignette suffit pour lancer */
+}
