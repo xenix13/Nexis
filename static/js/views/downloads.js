@@ -1,6 +1,6 @@
 // « Téléchargements » : ce qui est gardé sur cet appareil pour regarder hors ligne.
 import { state } from '../app.js';
-import { list, onDownloads, posterUrl, pump, removeDownload, retry, supported, usage } from '../offline.js';
+import { askPersist, list, onDownloads, posterUrl, pump, removeDownload, retry, supported, usage } from '../offline.js';
 import { clear, confirmDialog, episodeCode, fmtDuration, h, icon, toast } from '../ui.js';
 
 const GB = 1024 ** 3;
@@ -30,6 +30,8 @@ export async function renderDownloads(main, ctx, { offline = false } = {}) {
   const uid = state.me.user.id;
   const box = h('div.dl-list');
   const meter = h('p.muted.small');
+  const room = h('div.dl-room');
+  const firefox = /firefox|fxios/i.test(navigator.userAgent);
   const posters = new Map();
   const paint = async () => {
     const items = await list(uid);
@@ -37,7 +39,18 @@ export async function renderDownloads(main, ctx, { offline = false } = {}) {
     const u = await usage();
     const used = items.reduce((n, d) => n + (d.state === 'done' ? d.size : (d.got || 0) * 8 * 1024 * 1024), 0);
     meter.textContent = `${items.length} téléchargement(s) · ${size(used)} sur cet appareil`
-      + (u && u.quota ? ` · ${size(Math.max(0, u.quota - u.usage))} encore disponibles` : '');
+      + (u && u.quota ? ` · le navigateur accorde jusqu’à ${size(Math.max(0, u.quota - u.usage))} de plus à Nexis` : '');
+    // La limite vient du navigateur, pas du téléphone : Firefox plafonne un site à 10 Go tant qu'on ne l'autorise pas
+    // à garder ses données (jusqu'à la moitié de l'appareil ensuite) ; Chrome, Edge et Safari vont jusqu'à ~60 %.
+    room.replaceChildren(...(u && !u.persisted ? [
+      h('p.small', firefox
+        ? 'Firefox limite chaque site à 10 Go tant que tu ne l’autorises pas à garder ses données. Une fois autorisé, Nexis peut utiliser jusqu’à la moitié du stockage de l’appareil, et tes téléchargements ne seront jamais effacés pour faire de la place.'
+        : 'Le navigateur peut effacer ces téléchargements s’il manque de place. Autorise-le à les garder (sur iPhone et Android, installer Nexis sur l’écran d’accueil aide aussi).'),
+      h('button.btn.small', { onclick: async () => {
+        const ok = await askPersist();
+        toast(ok ? 'Stockage autorisé : les téléchargements sont gardés' : 'Le navigateur a refusé (ou l’a déjà décidé) : vérifie les autorisations du site', ok ? 'ok' : 'bad');
+        paint();
+      } }, 'Autoriser plus de place')] : []));
     if (!items.length) {
       box.replaceChildren(h('div.empty', offline ? 'Rien n’est téléchargé sur cet appareil.'
         : 'Rien de téléchargé pour l’instant. Sur la fiche d’un film ou d’un épisode, touche « Télécharger » pour le regarder plus tard sans connexion.'));
@@ -72,7 +85,7 @@ export async function renderDownloads(main, ctx, { offline = false } = {}) {
   clear(main,
     h('div.page-head', h('h1', 'Téléchargements')),
     offline ? h('div.offline-banner', icon('cloud-off'), 'Hors ligne : tu peux regarder ce qui est téléchargé sur cet appareil.') : null,
-    meter, box);
+    meter, room, box);
   await paint();
   const stop = onDownloads(() => paint());
   ctx.setCleanup(() => { stop(); posters.forEach((u) => u && URL.revokeObjectURL(u)); });

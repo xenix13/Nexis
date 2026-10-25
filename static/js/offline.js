@@ -177,7 +177,7 @@ async function work(rec) {
     return true;
   } catch (e) {
     if (e.name === 'QuotaExceededError') {
-      await save(rec, { state: 'error', error: 'Plus assez de place sur cet appareil' });
+      await save(rec, { state: 'error', error: 'Place accordée par le navigateur épuisée : touche « Autoriser plus de place » ou supprime un téléchargement' });
       return true;
     }
     if (!navigator.onLine || e.status === 0 || e instanceof TypeError) {
@@ -273,6 +273,15 @@ export async function syncProgress(uid) {
   }
 }
 
+// Place accordée par le NAVIGATEUR à Nexis (ce n'est pas la place libre du téléphone) et stockage persistant
 export async function usage() {
-  try { return await navigator.storage.estimate(); } catch { return null; }
+  try {
+    const [est, persisted] = await Promise.all([navigator.storage.estimate(), navigator.storage.persisted ? navigator.storage.persisted() : false]);
+    return { ...est, persisted };
+  } catch { return null; }
+}
+
+// Demande au navigateur de garder les téléchargements (et, sur Firefox, de lever la limite de 10 Go)
+export async function askPersist() {
+  try { return navigator.storage && navigator.storage.persist ? await navigator.storage.persist() : false; } catch { return false; }
 }

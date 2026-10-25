@@ -922,3 +922,7 @@ img.fade.in { opacity: 1; }
   .dl-row { gap: 10px; align-items: flex-start; }
   .dl-actions .btn { display: none; } /* la vignette suffit pour lancer */
 }
+
+.dl-room { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 8px; }
+.dl-room:empty { display: none; }
+.dl-room p { margin: 0; flex: 1; min-width: 240px; color: var(--muted); }
