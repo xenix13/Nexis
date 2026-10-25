@@ -14,6 +14,7 @@ import { renderAdmin } from './views/admin.js';
 import { renderPlayer } from './player.js';
 import { renderTogether } from './views/together.js';
 import { createGroupDialog, currentGroups, isFreshFeed, onGroups, startGroupsFeed, stopGroupsFeed } from './groups.js';
+import { canInstall, install, onInstallChange, setupInstall } from './install.js';
 import { renderLive, renderLivePlayer } from './views/live.js';
 
 export const state = { me: null, status: null };
@@ -48,6 +49,9 @@ export function applyPrefs(prefs) {
   r.style.setProperty('--accent', prefs.accent);
   r.dataset.theme = prefs.theme;
   r.dataset.poster = prefs.poster_size;
+  // barre d'état du téléphone / de la fenêtre installée à la couleur du thème
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = getComputedStyle(r).getPropertyValue('--bg').trim() || '#0b0b0e';
 }
 
 export async function refreshMe() {
@@ -107,11 +111,15 @@ function shell(active) {
     h('a', { href: '#/together' }, 'Regarder ensemble'),
     h('a', { href: '#/history' }, 'Historique'),
     h('a', { href: '#/settings' }, 'Réglages'),
+    h('button.install-app', { hidden: !canInstall(), onclick: () => install() }, icon('install'), 'Installer l’application'),
     me.user.is_admin ? h('a', { href: '#/admin' }, 'Administration') : null,
     h('button', { onclick: logout }, 'Se déconnecter'));
   const userBtn = h('button.user-btn', { 'aria-label': 'Menu utilisateur', 'aria-haspopup': 'true',
     onclick: (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; } }, avatar(me.user, 34));
   const header = h('header.topbar',
+    // application installée : plus de bouton « précédent » du navigateur, on en met un
+    h('button.icon-btn.topbar-back', { type: 'button', 'aria-label': 'Retour', title: 'Retour', hidden: active === 'home',
+      onclick: () => { if (history.length > 1) history.back(); else location.hash = '#/'; } }, icon('back')),
     h('a.logo', { href: '#/', 'aria-label': 'Nexis — accueil' }, h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis'),
     h('nav.nav', navLinks(me, active)),
     h('div.topbar-right', h('span.together-slot', { dataset: { active } }),
@@ -291,6 +299,9 @@ new MutationObserver((records) => {
     }
   }
 }).observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
+
+setupInstall();
+onInstallChange(() => document.querySelectorAll('.install-app').forEach((b) => { b.hidden = !canInstall(); }));
 
 window.addEventListener('hashchange', route);
 route();

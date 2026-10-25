@@ -113,6 +113,15 @@ with sync_playwright() as pw:
     browser = pw.chromium.launch()
     bctx, page = browser_ctx(browser, admin)
 
+    # --- web app installable : Chrome ne doit signaler aucun problème (manifeste, icônes, service worker)
+    page.goto(base + "/#/")
+    page.wait_for_selector(".topbar")
+    page.evaluate("navigator.serviceWorker.ready")
+    cdp = bctx.new_cdp_session(page)
+    errs = cdp.send("Page.getInstallabilityErrors").get("installabilityErrors")
+    check(errs == [], f"application installable ({errs})")
+    check(cdp.send("Page.getAppManifest").get("errors") == [], "manifeste sans erreur")
+
     # --- Seerr : plus que la connexion à Seerr
     page.goto(base + "/#/admin/requests")
     page.wait_for_selector("text=Clé d’API de Seerr")

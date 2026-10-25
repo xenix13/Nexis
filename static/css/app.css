@@ -14,6 +14,7 @@
   --ok: #3dd68c;
   --radius: 10px;
   --topbar-h: 76px;
+  --safe-top: 0px; /* hauteur de la barre d'état de l'iPhone dans l'application installée */
   --poster-w: 160px;
   --display: "Outfit", system-ui, -apple-system, "Segoe UI", sans-serif;
   --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -146,8 +147,8 @@ input[type="range"] { accent-color: var(--accent); }
 .plex-status.bad { background: color-mix(in srgb, var(--danger) 18%, transparent); }
 
 /* ---------- top bar ---------- */
-.topbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 28px; min-height: var(--topbar-h);
-  padding: 12px var(--gutter); background: linear-gradient(rgba(0, 0, 0, 0.7), transparent);
+.topbar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 28px;
+  min-height: calc(var(--topbar-h) + var(--safe-top)); padding: calc(12px + var(--safe-top)) var(--gutter) 12px; background: linear-gradient(rgba(0, 0, 0, 0.7), transparent);
   transition: background 0.25s, box-shadow 0.25s; }
 .topbar.scrolled { background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(14px);
   box-shadow: 0 1px 0 var(--line); }
@@ -183,7 +184,7 @@ input[type="range"] { accent-color: var(--accent); }
 .filters select { width: auto; }
 
 /* ---------- hero ---------- */
-.hero { position: relative; margin: calc(-8px - var(--topbar-h)) calc(var(--gutter) * -1) 12px; min-height: min(82vh, 760px);
+.hero { position: relative; margin: calc(-8px - var(--topbar-h) - var(--safe-top)) calc(var(--gutter) * -1) 12px; min-height: min(82vh, 760px);
   display: flex; align-items: flex-end; background: var(--surface) center 20%/cover no-repeat; overflow: hidden; color: #f5f3ef; }
 .hero-shade { position: absolute; inset: 0;
   background: linear-gradient(90deg, rgba(11, 11, 14, 0.92) 0%, rgba(11, 11, 14, 0.55) 38%, transparent 70%),
@@ -236,8 +237,8 @@ a.row-title:hover { color: var(--accent); }
 .sentinel { min-height: 40px; }
 
 /* ---------- detail page ---------- */
-.detail { position: relative; margin: calc(-8px - var(--topbar-h)) calc(var(--gutter) * -1) 10px;
-  padding: calc(var(--topbar-h) + 40px) var(--gutter) 30px; overflow: hidden; }
+.detail { position: relative; margin: calc(-8px - var(--topbar-h) - var(--safe-top)) calc(var(--gutter) * -1) 10px;
+  padding: calc(var(--topbar-h) + var(--safe-top) + 40px) var(--gutter) 30px; overflow: hidden; }
 .detail-backdrop { position: absolute; inset: 0; background: var(--backdrop, none) center/cover no-repeat; opacity: 0.45;
   mask-image: linear-gradient(to bottom, #000 30%, transparent 100%); }
 .detail-backdrop::after { content: ""; position: absolute; inset: 0;
@@ -881,3 +882,19 @@ img.fade.in { opacity: 1; }
 .lobby-member .chip { font-size: 11px; }
 .lobby-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
 @media (max-width: 760px) { .group-new { display: none; } }
+
+/* ---------- application installée (web app) ---------- */
+.topbar-back { display: none; color: var(--text); flex: none; }
+.user-menu .install-app { display: flex; align-items: center; gap: 8px; color: var(--accent); font-weight: 600; }
+.user-menu .install-app[hidden] { display: none; }
+.user-menu .install-app .icon { width: 18px; height: 18px; fill: currentColor; }
+.install-steps ol { padding-left: 20px; line-height: 1.9; }
+.install-steps .icon { width: 18px; height: 18px; vertical-align: -3px; fill: var(--accent); }
+@media (display-mode: standalone) {
+  .topbar-back:not([hidden]) { display: inline-grid; margin-right: -16px; }
+  /* iPhone : la barre d'état est par-dessus l'application (black-translucent) */
+  :root { --safe-top: env(safe-area-inset-top, 0px); }
+  .player-top { padding-top: env(safe-area-inset-top); }
+  .controls { padding-bottom: env(safe-area-inset-bottom); }
+  body { overscroll-behavior-y: none; } /* pas de « tirer pour rafraîchir » qui recharge l'application */
+}

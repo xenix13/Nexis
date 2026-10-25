@@ -5,6 +5,7 @@ python3 -m unittest discover -s tests -t .
 import http.cookiejar
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1164,6 +1165,33 @@ class SeanceTest(unittest.TestCase):
         self.assertFalse(u["can_update"])  # pas de service root dans les tests
         self.assertEqual(self.lea.call("GET", "/api/admin/update")[0], 403)
         self.assertEqual(self.lea.call("POST", "/api/admin/update")[0], 403)
+
+    def test_web_app_install(self):
+        """Web app installable : manifeste, icônes aux bonnes tailles, service worker généré et versionné."""
+        import io
+        from PIL import Image
+        st, body, h = self.admin.call("GET", "/manifest.webmanifest", raw=True)
+        self.assertEqual((st, h["Content-Type"]), (200, "application/manifest+json"))
+        m = json.loads(body)
+        self.assertEqual((m["display"], m["start_url"], m["scope"]), ("standalone", "/", "/"))
+        purposes = {i["purpose"] for i in m["icons"]}
+        self.assertEqual(purposes, {"any", "maskable"})
+        for icon in m["icons"]:
+            st, data, _ = self.admin.call("GET", icon["src"], raw=True)
+            self.assertEqual(st, 200, icon["src"])
+            w, hgt = Image.open(io.BytesIO(data)).size
+            self.assertEqual(f"{w}x{hgt}", icon["sizes"], icon["src"])
+        st, sw, h = self.admin.call("GET", "/sw.js", raw=True)
+        code = sw.decode()
+        self.assertEqual((st, h["Cache-Control"]), (200, "no-cache"))
+        self.assertNotIn("const VERSION = 'dev'", code)
+        shell = json.loads(re.search(r"^const SHELL = (.*);$", code, re.M).group(1))
+        self.assertIn("/js/app.js", shell)
+        self.assertIn("/js/views/home.js", shell)
+        self.assertFalse([u for u in shell if u.startswith(("/api/", "/vendor/"))])
+        for u in shell:  # tout ce qui est mis en cache existe (sinon l'installation du service worker échoue)
+            self.assertEqual(self.admin.call("GET", u, raw=True)[0], 200, u)
+        self.assertEqual(self.admin.call("GET", "/sw.js", raw=True, headers={"If-None-Match": h["ETag"]})[0], 304)
 
     def test_static(self):
         st, body, h = self.admin.call("GET", "/", raw=True)

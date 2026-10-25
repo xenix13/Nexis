@@ -1,5 +1,6 @@
 """Minimal HTTP framework on top of the standard library (no dependencies)."""
 import gzip
+import hashlib
 import http.server
 import json
 import logging
@@ -152,6 +153,8 @@ class App:
         root = os.path.realpath(self.static_dir)
         rel = urllib.parse.unquote(path).lstrip("/") or "index.html"
         full = os.path.realpath(os.path.join(root, rel))
+        if rel == "sw.js" and os.path.isfile(full):
+            return self.service_worker(root, full, req)
         if not full.startswith(root + os.sep) or not os.path.isfile(full):
             if "." in os.path.basename(rel):
                 raise HTTPError(404, "Fichier introuvable")
@@ -184,7 +187,34 @@ class App:
         return Response(data, 200, ctype, headers)
 
 
-COMPRESSIBLE = ("text/", "application/javascript", "application/json", "application/wasm", "image/svg+xml")
+    @staticmethod
+    def service_worker(root, full, req):
+        """sw.js avec la liste des fichiers de l'interface et une version qui change dès que l'un d'eux change
+        (le navigateur installe alors le nouveau service worker et recharge son cache)."""
+        shell = ["/", "/manifest.webmanifest", "/css/app.css", "/favicon.png", "/img/nexis-logo.webp"]
+        for sub, ext in (("js", ".js"), ("fonts", ".woff"), ("icons", ".png")):
+            for dirpath, _, files in os.walk(os.path.join(root, sub)):
+                shell += ["/" + os.path.relpath(os.path.join(dirpath, f), root).replace(os.sep, "/")
+                          for f in sorted(files) if f.endswith(ext)]
+        shell = [u for u in shell if os.path.isfile(os.path.join(root, "index.html" if u == "/" else u.lstrip("/")))]
+        stamp = []
+        for u in [*shell, "/sw.js"]:
+            st = os.stat(os.path.join(root, "index.html" if u == "/" else u.lstrip("/")))
+            stamp.append(f"{u}:{st.st_size}:{st.st_mtime_ns}")
+        version = hashlib.sha1("|".join(stamp).encode()).hexdigest()[:12]
+        etag = f'"sw-{version}"'
+        headers = {"Cache-Control": "no-cache", "ETag": etag}
+        if req and req.headers.get("If-None-Match") == etag:
+            return Response(b"", 304, "application/javascript; charset=utf-8", headers)
+        with open(full, encoding="utf-8") as f:
+            code = f.read()
+        code = re.sub(r"^const VERSION = .*$", f"const VERSION = '{version}';", code, count=1, flags=re.M)
+        code = re.sub(r"^const SHELL = .*$", "const SHELL = " + json.dumps(shell) + ";", code, count=1, flags=re.M)
+        return Response(code, 200, "application/javascript; charset=utf-8", headers)
+
+
+COMPRESSIBLE = ("text/", "application/javascript", "application/json", "application/wasm", "image/svg+xml",
+                "application/manifest+json")
 _gz_lock = threading.Lock()
 _gz_cache = {}  # (chemin, empreinte) -> fichier compressé : on ne recompresse pas hls.js à chaque visite
 
@@ -226,6 +256,7 @@ JASSUB_CSP = ("default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-
 mimetypes.add_type("application/wasm", ".wasm")
 mimetypes.add_type("font/woff2", ".woff2")
 mimetypes.add_type("font/woff", ".woff")
+mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
 def make_handler(app, trust_proxy=False, hsts=False):

@@ -246,6 +246,16 @@ Les sous-titres ASS (fansubs, Crunchyroll, ADN…) contiennent bien plus que du 
 
 La lecture ne démarre qu’avec une réserve de vidéo déjà chargée : 5 secondes en lecture directe, 12 secondes en remux, 20 secondes en transcodage (la conversion produit à peine plus vite que le temps réel). Après un saut dans la vidéo, la réserve demandée est plus courte (3 à 10 secondes). Si le réseau ou le processeur décroche en cours de route, le lecteur se met en pause le temps de refaire une vraie réserve (15 à 25 secondes) au lieu de repartir et de recouper aussitôt. Si cela se répète en transcodage, il propose de passer en 720p.
 
+## Installer Nexis comme une application
+
+Nexis s'installe comme une application, sans magasin d'applications. On obtient une icône, une fenêtre à part sans barre d'adresse, et des raccourcis (Regarder ensemble, TV en direct, À regarder). L'application se met à jour en même temps que le serveur. Il faut que Nexis soit ouvert en **HTTPS** (voir la section suivante).
+
+- **Windows, Mac, Linux (Chrome ou Edge)** : menu de l'avatar → **Installer l'application**, ou l'icône d'installation dans la barre d'adresse.
+- **Android (Chrome)** : menu de l'avatar → **Installer l'application**. L'icône s'adapte à la forme choisie par le téléphone.
+- **iPhone et iPad (Safari)** : bouton **Partager** → **Sur l'écran d'accueil**. Le menu de l'avatar rappelle la marche à suivre.
+
+Une fois installée, une flèche retour apparaît dans la barre du haut, puisqu'il n'y a plus celle du navigateur. Si le serveur est injoignable, l'application s'ouvre quand même et propose de réessayer. Elle reste toujours à jour : les fichiers sont redemandés au serveur à chaque ouverture, et la copie locale ne sert que hors ligne.
+
 ## Accès depuis l'extérieur (HTTPS)
 
 Place Nexis derrière un reverse proxy HTTPS (Caddy, nginx, Nginx Proxy Manager…). Dans `/etc/seance/seance.env` :
@@ -475,7 +485,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 
 ### Applications (en dernier)
 Une seule interface à maintenir : celle du serveur. Elle s'installe comme une application (web app) sur Windows, Android, iPhone et iPad, et se met à jour en même temps que le serveur. Seule la TV a besoin d'une vraie application, légère, qui affiche cette même interface.
-- [ ] Web app installable (PWA) : icônes, fenêtre à part, bouton « Installer Nexis » ; demande un accès HTTPS (reverse proxy), comme celui décrit plus haut. Remplace une application Windows séparée
+- [x] Web app installable (PWA) : icônes adaptatives, fenêtre à part, raccourcis, « Installer l'application » (instructions sur iPhone/iPad), flèche retour en mode application, ouverture hors ligne ; demande un accès HTTPS. Remplace une application Windows séparée
 - [ ] Navigation complète à la télécommande et à la manette (flèches, OK, retour), utile à la TV comme sur PC
 - [ ] Application Android TV légère : adresse du serveur demandée au premier lancement, puis l'interface Nexis en plein écran
 - [ ] Plus tard, si besoin : lecteur natif dans l'application Android TV pour envoyer le son multicanal (DTS, TrueHD, Atmos) tel quel à un ampli, ce qu'aucun navigateur ne sait faire

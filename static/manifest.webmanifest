@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "Nexis",
+  "short_name": "Nexis",
+  "description": "Tes films, séries et animes, partout : lecture, reprise, regarder ensemble et TV en direct.",
+  "lang": "fr",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b0b0e",
+  "theme_color": "#0b0b0e",
+  "categories": ["entertainment", "video"],
+  "launch_handler": { "client_mode": "focus-existing" },
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Regarder ensemble", "url": "/#/together", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "TV en direct", "url": "/#/live", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "À regarder", "url": "/#/watchlist", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
