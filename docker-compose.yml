@@ -1,0 +1,31 @@
+# Nexis avec Docker : docker compose up -d, puis http://<serveur>:8420
+# Le code d'installation du premier lancement s'affiche avec : docker compose logs nexis
+services:
+  nexis:
+    image: ghcr.io/xenix13/nexis:latest
+    container_name: nexis
+    restart: unless-stopped
+    ports:
+      - "8420:8420"
+    environment:
+      # derrière un reverse proxy HTTPS (nginx, Caddy…) : cookies sécurisés et vraie IP des clients
+      SEANCE_COOKIE_SECURE: "0"
+      SEANCE_TRUST_PROXY: "0"
+    volumes:
+      - ./data:/data                 # base, cache des images et sous-titres (doit appartenir à l'uid 1000)
+      - /mnt/films:/media/films:ro   # tes médias, en lecture seule ; ajoute une ligne par dossier
+      - /mnt/series:/media/series:ro
+    # Transcodage matériel Intel / AMD (VAAPI) : décommente, et mets le GID du groupe « render » de l'hôte
+    # (getent group render) dans group_add
+    # devices:
+    #   - /dev/dri:/dev/dri
+    # group_add:
+    #   - "993"
+    # Transcodage matériel NVIDIA : pilote sur l'hôte + NVIDIA Container Toolkit, puis décommente
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu, video, compute, utility]

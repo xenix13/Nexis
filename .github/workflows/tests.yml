@@ -13,5 +13,47 @@ jobs:
       - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - run: pip install pillow
       - run: python -m unittest discover -s tests -t . -v
-      - run: bash -n deploy/install.sh
+      - run: for f in deploy/*.sh; do bash -n "$f"; done
+      - run: deploy/build-deb.sh dist && dpkg-deb --info dist/*.deb
       - run: for f in static/js/*.js static/js/views/*.js; do node --check --input-type=module < "$f"; done
+
+  # Après les tests, sur main : image Docker (ghcr.io/<propriétaire>/nexis) et, à chaque nouvelle version,
+  # une publication GitHub avec le paquet .deb.
+  release:
+    needs: api
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version
+        id: v
+        run: |
+          echo "version=$(python3 -c 'import re; print(re.search(r"__version__ = \"(.+?)\"", open("seance/__init__.py").read()).group(1))')" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/nexis" >> "$GITHUB_OUTPUT"
+      - name: Paquet .deb et publication (nouvelle version seulement)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=${{ steps.v.outputs.version }}
+          if gh release view "v$V" >/dev/null 2>&1; then echo "v$V déjà publiée"; exit 0; fi
+          deploy/build-deb.sh dist
+          gh release create "v$V" dist/nexis_${V}_all.deb --target "$GITHUB_SHA" --title "Nexis $V" --generate-notes
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.v.outputs.image }}:latest
+            ${{ steps.v.outputs.image }}:${{ steps.v.outputs.version }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}

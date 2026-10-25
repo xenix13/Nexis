@@ -92,6 +92,40 @@ Le script installe Python, git, ffmpeg et les outils SMB (cifs-utils, smbclient)
 
 Pour suivre une autre branche (par exemple `test`), installe avec `curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/test/deploy/install.sh | SEANCE_BRANCH=test bash` : les mises à jour depuis l'interface suivront ensuite cette branche.
 
+### Conteneur LXC en une commande (Proxmox)
+
+Sur l'**hôte** Proxmox, en root :
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/proxmox-lxc.sh)"
+```
+
+Le script télécharge le modèle Ubuntu 24.04 et crée le conteneur : 4 cœurs, 4 Go de mémoire, 2 Go de swap, 16 Go de disque, réseau DHCP sur `vmbr0`, démarrage automatique. Il y installe ensuite Nexis et affiche l'adresse et le code d'installation. Le conteneur est **privilégié** par défaut (avec `mount=cifs`) pour que Nexis puisse monter tes partages SMB lui-même. Tout se règle par variables, par exemple `CTID=120 MEMORY=6144 STORAGE=local-zfs PRIVILEGED=0 bash -c "$(curl …)"`. Les variables disponibles sont listées en tête du script.
+
+### Paquet .deb
+
+Chaque version est publiée sur la page **Releases** du dépôt avec son paquet. Sur Debian 12/13 ou Ubuntu 22.04/24.04 :
+
+```bash
+apt install ./nexis_<version>_all.deb
+```
+
+apt installe aussi ffmpeg, Python et les outils SMB. Le paquet prépare le système comme le script : utilisateur `seance`, `/etc/seance/seance.env`, services, accès à la carte graphique. `apt remove nexis` garde les données et la configuration, `apt purge nexis` les efface. Pour fabriquer le paquet toi-même : `deploy/build-deb.sh`.
+
+### Docker
+
+L'image `ghcr.io/xenix13/nexis` (amd64 et arm64) est publiée à chaque version. Exemple complet dans [`docker-compose.yml`](docker-compose.yml) :
+
+```bash
+mkdir -p data && chown 1000:1000 data     # Nexis tourne sous l'uid 1000 dans le conteneur
+docker compose up -d
+docker compose logs nexis                 # code d'installation du premier lancement
+```
+
+- **Médias** : ajoute un volume par dossier, en lecture seule (`/mnt/films:/media/films:ro`), puis crée les bibliothèques sur `/media/...`. Les partages SMB se montent sur l'hôte : l'onglet *Partages réseau* ne fonctionne pas dans Docker.
+- **Mise à jour** : `docker compose pull && docker compose up -d`. Le bouton de l'interface ne sert pas avec Docker.
+- **Transcodage matériel** : `devices: /dev/dri` (Intel/AMD) ou la réservation `nvidia` (avec le NVIDIA Container Toolkit sur l'hôte). Les deux sont en commentaire dans le fichier d'exemple ; le reste se règle dans l'administration comme ailleurs.
+
 ### Donner accès aux médias
 
 **Méthode 1 : depuis Nexis (VM ou LXC privilégié).** L'onglet **Administration → Partages réseau** monte tes partages SMB/CIFS sans ligne de commande. Tu saisis l'adresse du NAS et les identifiants, Nexis liste les partages disponibles, tu en choisis un, il est monté en lecture seule dans `/mnt/seance/<nom>`, et tu crées la bibliothèque en un clic. Les partages sont remontés automatiquement au démarrage et toutes les 5 minutes s'ils sont tombés (NAS redémarré). Les mots de passe sont stockés dans `/etc/seance/smb/` (lisibles par root seulement), jamais dans la base de Nexis.
@@ -436,7 +470,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 - [x] Transcodage matériel optionnel : l'administrateur choisit le moteur selon sa machine (NVIDIA NVENC, Intel / AMD VAAPI), avec un essai réel avant d'enregistrer et un repli automatique sur le processeur
 
 ### Installation et mises à jour
-- [ ] Paquet `.deb` pour machine virtuelle et conteneur LXC, et image Docker
+- [x] Paquet `.deb` (publié avec chaque version), image Docker multi-architecture, et création d'un conteneur LXC Proxmox en une commande
 - [x] Mise à jour du serveur depuis l'interface (administrateur) : version disponible, derniers changements, installation suivie en direct ; la web app se met à jour avec le serveur
 
 ### Applications (en dernier)

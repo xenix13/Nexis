@@ -17,6 +17,7 @@ from ..transcoder import DOWNMIX_ALGOS, system_memory
 from ..web import HTTPError, Response
 
 log = logging.getLogger("seance.admin")
+IN_DOCKER = os.environ.get("SEANCE_DOCKER") == "1"
 
 
 def register(app, ctx, x):
@@ -447,6 +448,9 @@ def register(app, ctx, x):
             out["available"] = update.newer(out["latest"], VERSION)
         except update.UpdateError as e:
             out["check_error"] = str(e)
+        if IN_DOCKER:
+            out.update(can_update=False, update_error="Avec Docker, mets à jour l'image : docker compose pull && docker compose up -d")
+            return out
         try:
             out.update(mountd.call("update_status", sock_path=os.environ.get("SEANCE_MOUNTD_SOCK"), timeout=10))
             out["can_update"] = True
@@ -472,6 +476,8 @@ def register(app, ctx, x):
         try:
             st = mountd.call("status", sock_path=os.environ.get("SEANCE_MOUNTD_SOCK"), timeout=20)
         except mountd.MountError as e:
+            if IN_DOCKER:
+                e = "Avec Docker, monte tes partages sur l'hôte puis donne-les au conteneur (volumes du docker-compose.yml)"
             return {"available": False, "error": str(e), "shares": [], "env": None}
         libs = db.all("SELECT id, name, paths FROM libraries")
         for sh in st["shares"]:
