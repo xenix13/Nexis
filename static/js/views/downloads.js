@@ -38,8 +38,9 @@ export async function renderDownloads(main, ctx, { offline = false } = {}) {
     if (!ctx.isCurrent()) return;
     const u = await usage();
     const used = items.reduce((n, d) => n + (d.state === 'done' ? d.size : (d.got || 0) * 8 * 1024 * 1024), 0);
-    meter.textContent = `${items.length} téléchargement(s) · ${size(used)} sur cet appareil`
-      + (u && u.quota ? ` · le navigateur accorde jusqu’à ${size(Math.max(0, u.quota - u.usage))} de plus à Nexis` : '');
+    // Pas de « place restante » : Chrome (depuis la version 144) annonce volontairement « utilisé + 10 Go » pour ne pas
+    // révéler la taille du disque, alors que la vraie limite est ~60 % du stockage. Le chiffre tromperait.
+    meter.textContent = `${items.length} téléchargement(s) · ${size(used)} sur cet appareil`;
     // La limite vient du navigateur, pas du téléphone : Firefox plafonne un site à 10 Go tant qu'on ne l'autorise pas
     // à garder ses données (jusqu'à la moitié de l'appareil ensuite) ; Chrome, Edge et Safari vont jusqu'à ~60 %.
     room.replaceChildren(...(u && !u.persisted ? [

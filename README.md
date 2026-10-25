@@ -271,7 +271,7 @@ Comme sur Netflix, on télécharge un film, un épisode ou une saison entière p
   - La copie est effacée dès que l'appareil l'a récupérée, ou au bout de 48 h.
   - L'administrateur peut désactiver les téléchargements dans *Administration → Métadonnées et lecture*.
 
-**Place disponible** : c'est le navigateur qui fixe la place accordée à Nexis, pas le téléphone. Firefox plafonne chaque site à 10 Go tant qu'on ne l'autorise pas à garder ses données ; après **Autoriser plus de place** (page Téléchargements), Nexis peut utiliser jusqu'à la moitié du stockage. Chrome, Edge et Safari vont jusqu'à environ 60 % du stockage de l'appareil.
+**Place disponible** : c'est le navigateur qui fixe la place accordée à Nexis, pas le téléphone. Firefox plafonne chaque site à 10 Go tant qu'on ne l'autorise pas à garder ses données ; après **Autoriser plus de place** (page Téléchargements), Nexis peut utiliser jusqu'à la moitié du stockage. Chrome, Edge et Safari vont jusqu'à environ 60 % du stockage de l'appareil. Chrome annonce aux sites une place fictive (« utilisé + 10 Go ») pour ne pas révéler la taille du stockage : Nexis n'affiche donc pas de place restante.
 
 Les téléchargements restent sur l'appareil, rangés par profil : chacun ne voit que les siens. À la déconnexion, l'appareil oublie qui regardait. Ils demandent un accès HTTPS. Sur iPhone et iPad, installe Nexis sur l'écran d'accueil : Safari efface au bout de quelques semaines les données d'un site simplement visité, pas celles d'une application installée.
 
