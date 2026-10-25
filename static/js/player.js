@@ -14,6 +14,9 @@ const PREROLL = { direct: 5, copy: 12, transcode: 20 };
 const PREROLL_SEEK = { direct: 3, copy: 6, transcode: 10 }; // après un saut : réserve plus courte
 const REBUFFER = { direct: 6, copy: 15, transcode: 25 };
 const PREPARE_MAX = 10 * 60 * 1000;
+// décalage d'horloge avec le serveur (regarder ensemble), gardé d'un épisode à l'autre
+const clock = { offset: 0, at: 0 };
+const CLOCK_TTL = 10 * 60 * 1000;
 
 
 export async function renderPlayer(root, rk, ctx) {
@@ -140,7 +143,7 @@ export async function renderPlayer(root, rk, ctx) {
   if (groupId) {
     try {
       const g = await post(`/api/together/${groupId}/join`);
-      group = { id: groupId, name: g.name, state: g, members: g.members, hostOnly: g.host_only, isHost: g.is_host, offset: 0, es: null };
+      group = { id: groupId, name: g.name, state: g, members: g.members, hostOnly: g.host_only, isHost: g.is_host, es: null };
       await syncClock();
       if (destroyed || !current()) return () => {};
       if (g.item_id && g.item_id !== String(item.id)) { location.replace(`#/play/${g.item_id}?group=${groupId}`); return () => {}; }
@@ -831,6 +834,7 @@ export async function renderPlayer(root, rk, ctx) {
 
   // ------------------------------------------------------------ regarder ensemble
   async function syncClock() {
+    if (Date.now() - clock.at < CLOCK_TTL) return; // mesuré récemment (épisode précédent) : rien à refaire
     // décalage entre l'horloge du serveur et la nôtre : on garde la mesure au plus court aller-retour
     let best = null;
     for (let i = 0; i < 3; i++) {
@@ -841,9 +845,14 @@ export async function renderPlayer(root, rk, ctx) {
         if (!best || t1 - t0 < best.rtt) best = { rtt: t1 - t0, offset: r.now - (t0 + t1) / 2 };
       } catch { break; }
     }
-    if (best && group) group.offset = best.offset;
+    if (best) Object.assign(clock, { offset: best.offset, at: Date.now() });
   }
-  function serverNow() { return Date.now() + (group ? group.offset : 0); }
+  // chaque événement porte l'heure du serveur à l'envoi : elle ne peut pas être en avance sur la nôtre
+  // corrigée, donc elle affine la mesure sans requête de plus
+  function refineClock(serverMs) {
+    if (serverMs) clock.offset = Math.max(clock.offset, serverMs - Date.now());
+  }
+  function serverNow() { return Date.now() + (group ? clock.offset : 0); }
   function groupTarget(st) {
     return st.position + (st.playing && !st.waiting ? Math.max(0, serverNow() - st.ref) : 0);
   }
@@ -863,6 +872,7 @@ export async function renderPlayer(root, rk, ctx) {
       let m;
       try { m = JSON.parse(ev.data); } catch { return; }
       if (!group) return;
+      refineClock(m.server_now);
       if (m.type === 'state') {
         if (group.state && m.seq && group.state.seq && m.seq < group.state.seq) return;
         const prev = group.state;
@@ -944,9 +954,10 @@ export async function renderPlayer(root, rk, ctx) {
     if (now - lastDrift < 1000) return;
     lastDrift = now;
     const diff = p - groupTarget(st);
-    if (Math.abs(diff) > 2500) { video.playbackRate = 1; seekTo(groupTarget(st), true); return; }
-    // petit écart : on accélère ou ralentit à peine, sans saut visible
-    video.playbackRate = Math.abs(diff) < 200 ? 1 : Math.min(1.05, Math.max(0.95, 1 - diff / 5000));
+    if (Math.abs(diff) > 2000) { video.playbackRate = 1; seekTo(groupTarget(st), true); return; }
+    // petit écart : on accélère ou ralentit un peu (le son garde sa hauteur), sans saut visible ;
+    // ±8 % rattrape 1 s en une douzaine de secondes
+    video.playbackRate = Math.abs(diff) < 150 ? 1 : Math.min(1.08, Math.max(0.92, 1 - diff / 2500));
   }
   function paintGroup() {
     groupBtn.classList.toggle('on', !!group);

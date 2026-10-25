@@ -385,7 +385,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 - [x] Quand un membre change de langue, de qualité ou de sous-titres incrustés, le groupe se met en pause pendant son chargement ; les sous-titres affichés par le navigateur changent sans recharger la vidéo
 - [x] Liste des groupes mise à jour en temps réel, sans recharger la page (accueil, page des groupes, barre du haut)
 - [x] Bouton dans la barre du haut pour créer un groupe à l'avance et inviter (salon d'attente, lancement pour tous depuis une fiche)
-- [ ] Optimisation générale (resynchronisation plus rapide, moins de requêtes)
+- [ ] Optimisation générale (resynchronisation plus rapide, moins de requêtes) — première passe faite : horloge mesurée une fois pour toute la soirée et affinée sans requête, écart rattrapé environ 3 fois plus vite, liste des groupes coupée pendant la lecture ; à poursuivre avec les constats de test réels
 
 ### Médiathèque
 - [ ] Fichiers `.strm` : lecture du flux distant qu'ils désignent, avec affiche et métadonnées comme un fichier local (source et fonctionnement à définir ensemble)

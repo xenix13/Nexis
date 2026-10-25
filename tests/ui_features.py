@@ -339,6 +339,14 @@ with sync_playwright() as pw:
         if abs(t1 - t2) < 1 and t2 > 18:
             break
     check(abs(t1 - t2) < 1 and t2 > 18, f"saut partagé ({t1:.1f} / {t2:.1f})")
+    # recalage : une fois calés, les deux lecteurs restent ensemble, sans saut ni oscillation
+    gaps, jumps = [], 0
+    for _ in range(10):
+        page2.wait_for_timeout(500)
+        gaps.append(abs(page2.evaluate("document.querySelector('video').currentTime")
+                        - page.evaluate("document.querySelector('video').currentTime")))
+        jumps += page2.evaluate("document.querySelector('video').seeking")
+    check(max(gaps) < 0.5 and jumps == 0, f"lecteurs stables après recalage (écarts {[round(g, 2) for g in gaps]}, sauts {jumps})")
     page.mouse.move(700, 420)
     page.click("button[aria-label='Regarder ensemble']")
     page.wait_for_selector(".group-member:has-text('Léa')")

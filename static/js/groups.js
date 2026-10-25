@@ -16,10 +16,24 @@ export function onGroups(fn) {
   return () => listeners.delete(fn);
 }
 
-export function startGroupsFeed() {
+// paused : lecteur en plein écran, personne ne voit la liste ; on rend la connexion aux segments vidéo
+// (la présence dans un groupe passe alors par le flux du groupe lui-même)
+export function startGroupsFeed({ paused = false } = {}) {
   wanted = true;
-  if (!document.hidden) openFeed();
+  // membre d'un groupe : la liste reste ouverte, c'est elle qui nous garde présent (bande-annonce, aperçu…)
+  feedPaused = paused && !groups.some((g) => g.member);
+  if (feedPaused) closeFeed();
+  else if (!document.hidden) openFeed();
 }
+
+function closeFeed() {
+  if (source) source.close();
+  source = null;
+  reopened = true;
+}
+
+let reopened = true; // le premier envoi après (ré)ouverture : on ne sait pas ce qui a changé entre-temps
+export function isFreshFeed() { return reopened; }
 
 function openFeed() {
   if (source || typeof EventSource === 'undefined') return;
@@ -30,30 +44,38 @@ function openFeed() {
     if (msg.type !== 'groups') return;
     groups = msg.groups;
     for (const fn of [...listeners]) { try { fn(groups); } catch (err) { console.warn(err); } }
+    reopened = false;
   };
-  // en cas de coupure, le navigateur se reconnecte tout seul (retry: 3000)
+  // coupure réseau : le navigateur se reconnecte seul ; refus du serveur (trop de connexions…) : il abandonne,
+  // on retente plus tard
+  const es = source;
+  source.onerror = () => {
+    if (es.readyState !== EventSource.CLOSED || source !== es) return;
+    source = null;
+    setTimeout(() => { if (wanted && !feedPaused && !document.hidden) openFeed(); }, 10000);
+  };
 }
 
 // Onglet en arrière-plan : on libère la connexion (les navigateurs en limitent le nombre par serveur),
 // sauf si l'on fait partie d'un groupe (rester présent dans le salon pendant qu'on fait autre chose).
 let wanted = false;
+let feedPaused = false;
 let hiddenTimer = null;
 document.addEventListener('visibilitychange', () => {
   clearTimeout(hiddenTimer);
   if (!wanted) return;
   if (document.hidden) {
     hiddenTimer = setTimeout(() => {
-      if (document.hidden && source && !groups.some((g) => g.member)) { source.close(); source = null; }
+      if (document.hidden && !groups.some((g) => g.member)) closeFeed();
     }, 30000);
-  } else if (!source) {
+  } else if (!feedPaused) {
     openFeed();
   }
 });
 
 export function stopGroupsFeed() {
   wanted = false;
-  if (source) source.close();
-  source = null;
+  closeFeed();
   groups = [];
   for (const fn of [...listeners]) { try { fn(groups); } catch { /* ignore */ } }
 }

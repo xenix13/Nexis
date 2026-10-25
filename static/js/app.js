@@ -13,7 +13,7 @@ import { renderSettings } from './views/settings.js';
 import { renderAdmin } from './views/admin.js';
 import { renderPlayer } from './player.js';
 import { renderTogether } from './views/together.js';
-import { createGroupDialog, currentGroups, onGroups, startGroupsFeed, stopGroupsFeed } from './groups.js';
+import { createGroupDialog, currentGroups, isFreshFeed, onGroups, startGroupsFeed, stopGroupsFeed } from './groups.js';
 import { renderLive, renderLivePlayer } from './views/live.js';
 
 export const state = { me: null, status: null };
@@ -149,11 +149,12 @@ onGroups((list) => paintTogetherSlot(document.querySelector('.topbar .together-s
 // lecture lancée dans un groupe dont on fait partie, pendant qu'on navigue ailleurs : on propose de la rejoindre
 const launched = new Map();
 onGroups((list) => {
+  const fresh = isFreshFeed(); // liste rouverte (retour du lecteur…) : on ne sait pas ce qu'on a manqué, on ne propose rien
   for (const g of list) {
     const was = launched.get(g.id);
     const now = g.member && g.item && !g.item.hidden ? g.item.id : null;
     launched.set(g.id, now);
-    if (now && was === null && !location.hash.includes(`group=${g.id}`) && !location.hash.startsWith(`#/together/${g.id}`)) {
+    if (now && was === null && !fresh && !location.hash.includes(`group=${g.id}`) && !location.hash.startsWith(`#/together/${g.id}`)) {
       toast(`${g.name} : la lecture commence`, 'ok', { label: 'Rejoindre', onClick: () => { location.hash = `#/play/${now}?group=${g.id}`; } });
     }
   }
@@ -205,7 +206,7 @@ async function route() {
     }
   }
   if (token !== renderToken) return;
-  startGroupsFeed();
+  startGroupsFeed({ paused: page === 'play' || page === 'tv' });
 
   const ctx = { query, parts, isCurrent: () => token === renderToken, setCleanup: (fn) => { cleanup = fn; },
     minimize, closeMini };

@@ -469,9 +469,34 @@ class FeaturesTest(unittest.TestCase):
             self.ctx.together.reap()
             members = {m["name"] for m in self.lea.call("GET", f"/api/together/{gid}")[1]["members"]}
             self.assertEqual(members, {"Léa"})
+            # salon oublié sur un écran resté allumé : la présence ne garde pas membre indéfiniment
+            g = self.ctx.together.get(gid)
+            g.members[next(iter(g.members))].seen -= syncplay.PRESENT_FOR + 1
+            self.ctx.together.reap()
+            self.assertEqual(g.members, {})
         finally:
             syncplay.GONE_AFTER = old
         self.lea.call("POST", f"/api/together/{gid}/leave")
+
+    def test_watch_together_feed_ends_with_session(self):
+        """Déconnexion (ou compte supprimé) : la liste en direct s'arrête."""
+        from seance import syncplay
+        c = Client(self.base)
+        c.call("POST", "/api/login", {"username": "lea", "password": "motdepasse2"})
+        old, syncplay.FEED_PING = syncplay.FEED_PING, 0.5
+        try:
+            cookie = "; ".join(f"{k.name}={k.value}" for k in c.jar)
+            conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+            conn.request("GET", "/api/together/feed", headers={"Cookie": cookie})
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 200)
+            c.call("POST", "/api/logout")
+            t0 = time.time()
+            resp.read()  # se termine quand le serveur coupe le flux
+            self.assertLess(time.time() - t0, 5)
+            conn.close()
+        finally:
+            syncplay.FEED_PING = old
 
 
 if __name__ == "__main__":

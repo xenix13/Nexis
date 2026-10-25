@@ -24,7 +24,9 @@ WAIT_TIMEOUT = 12        # s : on repart sans le membre trop lent
 RELOAD_TIMEOUT = 60      # s : un membre qui change de langue ou de qualité (extraction, relance de ffmpeg)
 GONE_AFTER = 40          # s sans connexion : le membre a quitté
 EMPTY_AFTER = 120        # s : groupe vide supprimé
+PRESENT_FOR = 1800       # s : Nexis ouvert ailleurs garde membre d'un groupe, pas plus (salon oublié sur une TV)
 MAX_STREAMS_PER_USER = 6  # connexions d'événements ouvertes en même temps par une personne (onglets, appareils)
+FEED_PING = 10           # s : ping de la liste en direct (détecte aussi un onglet fermé ou une session finie)
 MAX_FEEDS_PER_USER = 8    # listes de groupes en direct ouvertes en même temps par une personne (onglets, appareils)
 
 
@@ -351,7 +353,8 @@ class Groups:
             for g in list(self.groups.values()):
                 for uid, m in list(g.members.items()):
                     # on reste membre tant que Nexis est ouvert (on cherche un film pendant que les autres attendent)
-                    if not m.connections and uid not in present and now - m.seen > GONE_AFTER:
+                    away = now - m.seen
+                    if not m.connections and away > GONE_AFTER and (uid not in present or away > PRESENT_FOR):
                         self._remove(g, uid, f"{m.name} a quitté le groupe")
                 if not g.members and now - (g.empty_since or now) > EMPTY_AFTER:
                     self._send(g, {"type": "closed", "server_now": now_ms()})
@@ -411,6 +414,7 @@ def register(app, ctx, x):
     def together_feed(req):
         """Liste des groupes en direct (Server-Sent Events) : accueil, page des groupes, barre du haut."""
         user = dict(req.user)
+        session = req.session_hash
         try:
             q = groups.watch(user)
         except OverflowError as e:
@@ -424,15 +428,26 @@ def register(app, ctx, x):
             finally:
                 db.release()  # pas de connexion à la base gardée pendant toute la durée du flux
 
+        def signed_in():
+            try:
+                return bool(db.scalar("SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? "
+                                      "AND s.expires_at>? AND NOT u.disabled", (session, int(time.time()))))
+            finally:
+                db.release()
+
         def gen():
             last = snapshot()
             yield b"retry: 3000\n\n" + last
             while not closed.is_set():
                 try:
-                    q.get(timeout=20)
+                    q.get(timeout=FEED_PING)
                 except queue.Empty:
+                    if not signed_in():  # déconnexion ou compte supprimé : on coupe (la reconnexion recevra 401)
+                        return
                     yield b": ping\n\n"
                     continue
+                if not signed_in():
+                    return
                 closed.wait(0.25)  # plusieurs changements d'un coup : un seul envoi
                 data = snapshot()
                 if data != last:

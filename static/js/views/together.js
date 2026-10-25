@@ -85,5 +85,10 @@ async function renderLobby(main, gid, ctx) {
     else if (msg.type === 'state' && msg.item_id) { es.close(); location.replace(`#/play/${msg.item_id}?group=${gid}`); }
     else if (msg.type === 'closed') { es.close(); toast('Le groupe a été fermé'); location.hash = '#/together'; }
   };
+  es.onerror = () => {
+    if (es.readyState !== EventSource.CLOSED || !ctx.isCurrent()) return;
+    toast('Le groupe est terminé');
+    location.hash = '#/together';
+  };
   ctx.setCleanup(() => es.close()); // on reste membre en naviguant : on peut aller chercher un film
 }
