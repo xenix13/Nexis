@@ -57,3 +57,49 @@ jobs:
             ${{ steps.v.outputs.image }}:latest
             ${{ steps.v.outputs.image }}:${{ steps.v.outputs.version }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+  # Appli Android TV : compilée à chaque passage sur main, jointe à la publication de la version.
+  # Signature : secrets NEXIS_KEYSTORE (clé en base64) et NEXIS_KEYSTORE_PASSWORD (voir le README).
+  android:
+    needs: release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+      - name: Compilation de l'APK
+        env:
+          KEYSTORE_B64: ${{ secrets.NEXIS_KEYSTORE }}
+          NEXIS_KEYSTORE_PASSWORD: ${{ secrets.NEXIS_KEYSTORE_PASSWORD }}
+        run: |
+          V=$(python3 -c 'import re; print(re.search(r"__version__ = \"(.+?)\"", open("seance/__init__.py").read()).group(1))')
+          CODE=$(python3 -c "a,b,c=(int(x) for x in '$V'.split('.')[:3]); print(a*10000+b*100+c)")
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/nexis.p12"
+            export NEXIS_KEYSTORE="$RUNNER_TEMP/nexis.p12"
+          else
+            echo "::warning::Secrets NEXIS_KEYSTORE absents : APK signé avec une clé de développement"
+          fi
+          set +e
+          gradle -p android assembleRelease --no-daemon -PnexisVersionName="$V" -PnexisVersionCode="$CODE" > build.log 2>&1
+          status=$?
+          set -e
+          if [ $status -ne 0 ]; then
+            grep -E "error:|e: |What went wrong|FAILED|Could not|> " build.log | head -40 | while IFS= read -r l; do echo "::error::$l"; done
+            exit $status
+          fi
+          cp android/app/build/outputs/apk/release/app-release.apk "nexis-tv-$V.apk"
+          echo "V=$V" >> "$GITHUB_ENV"
+      - name: Ajout à la publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "v$V" >/dev/null 2>&1 && gh release upload "v$V" "nexis-tv-$V.apk" --clobber || echo "Pas de publication v$V"

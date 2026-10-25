@@ -1,0 +1,54 @@
+// Appli Android TV de Nexis : une coquille légère qui affiche l'interface web du serveur.
+// Version et signature viennent de la CI (voir .github/workflows/tests.yml).
+plugins {
+    id 'com.android.application'
+}
+
+def keystore = System.getenv('NEXIS_KEYSTORE')
+
+android {
+    namespace 'fr.nexis.tv'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'fr.nexis.tv'
+        minSdk 23
+        targetSdk 34
+        versionCode((project.findProperty('nexisVersionCode') ?: '1') as int)
+        versionName(project.findProperty('nexisVersionName') ?: 'dev')
+    }
+
+    signingConfigs {
+        release {
+            if (keystore) {
+                storeFile file(keystore)
+                storePassword System.getenv('NEXIS_KEYSTORE_PASSWORD')
+                keyAlias 'nexis'
+                keyPassword System.getenv('NEXIS_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            // sans clé fournie (secrets GitHub), signature de développement : l'APK s'installe, mais les
+            // mises à jour demanderont de désinstaller d'abord
+            signingConfig keystore ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

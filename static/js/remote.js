@@ -9,7 +9,7 @@ const KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 
 // Télécommande de TV ou manette : on adapte quelques comportements (lecteur : haut / bas montrent les commandes)
 export const remoteMode = () => document.documentElement.classList.contains('remote');
 const markRemote = () => document.documentElement.classList.add('remote');
-if (/android tv|googletv|smart-?tv|aft[a-z]|bravia|crkey|tizen|web0s/i.test(navigator.userAgent)) markRemote();
+if (/android tv|googletv|smart-?tv|aft[a-z]|bravia|crkey|tizen|web0s|nexisapp/i.test(navigator.userAgent)) markRemote();
 
 const visible = (el) => {
   const r = el.getBoundingClientRect();
@@ -102,6 +102,19 @@ function onKey(e) {
   }
 }
 document.addEventListener('keydown', onKey);
+
+// Appli Android TV : la touche Retour de la télécommande arrive ici. -> true si Nexis l'a prise en charge,
+// false si l'on est déjà à l'accueil (l'appli propose alors de quitter).
+window.nexisBack = () => {
+  const menuOpen = [...document.querySelectorAll('.more-list, .user-menu')].some((m) => !m.hidden);
+  if (menuOpen) { back(); return true; }
+  if (document.querySelector('.modal-overlay, .player:not(.mini)')) {
+    (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    return true;
+  }
+  if (location.hash && location.hash !== '#/' && location.hash !== '#') { history.back(); return true; }
+  return false;
+};
 // le lecteur demande la navigation spatiale dans ses commandes
 export { move as moveFocus };
 
