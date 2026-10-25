@@ -71,6 +71,10 @@ chmod -R a+rX "$APP_DIR"
 chown -R seance:seance "$DATA_DIR"
 chmod 700 "$DATA_DIR"
 
+# d'où vient cette installation : la mise à jour depuis l'interface repartira de là
+printf 'SEANCE_REPO=%s\nSEANCE_BRANCH=%s\n' "$REPO_URL" "$BRANCH" > "$CONF_DIR/source"
+chmod 644 "$CONF_DIR/source"
+
 if [ ! -f "$CONF_DIR/seance.env" ]; then
   cat > "$CONF_DIR/seance.env" <<'ENVFILE'
 # Port d'écoute de Nexis

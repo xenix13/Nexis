@@ -1,7 +1,8 @@
 """seance-mountd : petit service root qui monte les partages SMB demandés par Nexis.
 
-Nexis tourne sans privilèges ; ce service ne sait faire qu'une chose : monter des partages
-SMB/CIFS en lecture seule sous /mnt/seance/<nom>. Il écoute sur un socket Unix accessible
+Nexis tourne sans privilèges ; ce service ne sait faire que deux choses : monter des partages
+SMB/CIFS en lecture seule sous /mnt/seance/<nom>, et lancer la mise à jour de Nexis (depuis la source
+notée à l'installation, sans paramètre venant de Nexis). Il écoute sur un socket Unix accessible
 uniquement à l'utilisateur « seance » (vérifié par SO_PEERCRED) et revalide chaque demande.
 
 Lancement : python3 -m seance.mountd   (en root, via seance-mountd.service)
@@ -20,6 +21,8 @@ import subprocess
 import tempfile
 import threading
 import time
+
+from . import update
 
 log = logging.getLogger("seance.mountd")
 
@@ -502,6 +505,11 @@ class Mounts:
 
     def dispatch(self, req):
         cmd = req.get("cmd")
+        if cmd in ("update", "update_status"):
+            try:
+                return update.start() if cmd == "update" else update.status()
+            except update.UpdateError as e:
+                raise MountError(str(e))
         fn = {"status": self.status, "discover": self.discover, "add": self.add, "remove": self.remove,
               "remount": self.remount}.get(cmd)
         if not fn:

@@ -449,7 +449,65 @@ async function settingsTab(body, ctx) {
       h('p.muted.small', 'Une carte graphique décode et encode la vidéo à la place du processeur : bien plus de transcodages en même temps, presque sans charge. Nexis fait un essai réel avant d’enregistrer, et repasse tout seul sur le processeur si la carte refuse un fichier. Voir le README pour donner la carte au conteneur LXC.'),
       h('div.grid2', field('Accélération matérielle', hwEngine), hwDeviceField),
       hwSave),
-    h('p.muted.small', `Nexis ${s.version}`));
+    updatePanel(s.version));
+}
+
+// --------------------------------------------------------------- mise à jour
+// Panneau rempli après coup : la vérification interroge GitHub (quelques secondes au pire).
+function updatePanel(version) {
+  const box = h('div', h('p.muted.small', 'Recherche d’une nouvelle version…'));
+  const panel = h('section.panel', h('h2', 'Mise à jour'), h('p.muted.small', `Version installée : Nexis ${version}`), box);
+  get('/api/admin/update').then((u) => {
+    const manual = h('p.muted.small', 'À la main : relance la commande d’installation sur le serveur (README → Installation).');
+    const parts = [];
+    if (u.check_error) parts.push(h('div.plex-status.bad', `Vérification impossible : ${u.check_error}`));
+    else if (u.available) parts.push(h('div.plex-status.ok', `Nouvelle version disponible : Nexis ${u.latest}`));
+    else parts.push(h('div.plex-status.ok', `Nexis est à jour (${u.source}).`));
+    if (u.available && u.changes && u.changes.length) {
+      parts.push(h('details', h('summary.small', 'Derniers changements'),
+        h('ul.small', u.changes.map((c) => h('li', c.title)))));
+    }
+    if (u.running) parts.push(h('p.small', 'Une mise à jour est en cours…'), h('pre.log', (u.log || []).join('\n')));
+    if (!u.can_update) parts.push(h('p.form-error.small', u.update_error || 'Mise à jour automatique indisponible ici.'), manual);
+    else if (!u.running) {
+      parts.push(h('button.btn', { class: u.available ? 'btn primary' : 'btn', onclick: () => runUpdate(version) },
+        u.available ? `Mettre à jour vers ${u.latest}` : 'Réinstaller la dernière version'));
+    }
+    box.replaceChildren(...parts);
+  }).catch((e) => box.replaceChildren(h('p.form-error.small', e.message)));
+  return panel;
+}
+
+async function runUpdate(version) {
+  if (!await confirmDialog('Mettre à jour Nexis ?', 'Nexis télécharge la dernière version puis redémarre (environ une minute) : les lectures en cours seront coupées.', 'Mettre à jour', false)) return;
+  try { await post('/api/admin/update'); } catch (e) { toast(e.message, 'bad'); return; }
+  const log = h('pre.log', 'Démarrage…');
+  const status = h('p.small', 'Téléchargement et installation…');
+  modal('Mise à jour de Nexis', h('div', status, log));
+  const started = Date.now();
+  // suivi : journal de l'installation, puis attente du redémarrage (le serveur ne répond plus un moment)
+  const tick = async () => {
+    try {
+      const st = await get('/api/status');
+      if (st.version !== version) {
+        status.textContent = `Nexis ${st.version} est installé. Rechargement…`;
+        setTimeout(() => location.reload(), 1500);
+        return;
+      }
+      const u = await get('/api/admin/update');
+      log.textContent = (u.log || []).join('\n') || '…';
+      const end = (u.log || []).find((l) => l.startsWith('[terminé, code'));
+      if (!u.running && end) {
+        status.textContent = end.includes('code 0') ? 'Installation terminée : redémarrage…' : 'La mise à jour a échoué (voir le journal ci-dessous).';
+        if (!end.includes('code 0')) return;
+      }
+    } catch {
+      status.textContent = 'Redémarrage de Nexis…';
+    }
+    if (Date.now() - started < 10 * 60 * 1000) setTimeout(tick, 2000);
+    else status.textContent = 'Toujours pas terminé après 10 minutes : regarde le journal sur le serveur (/var/log/seance-update.log).';
+  };
+  setTimeout(tick, 2000);
 }
 
 // --------------------------------------------------------------- demandes

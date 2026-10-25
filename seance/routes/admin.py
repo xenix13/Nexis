@@ -1,19 +1,22 @@
 """Administration : utilisateurs, bibliothèques, scan, réglages, webhook, lectures, partages, identification."""
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
 import threading
 import time
 
-from .. import __version__ as VERSION, media, mountd, transcoder
+from .. import __version__ as VERSION, media, mountd, transcoder, update
 from ..auth import USERNAME, USERNAME_RULE, find_user, hash_password, normalize_username, validate_password
 from ..catalog import HEX, RK, SID
 from ..metadata import MetaError
 from ..scanner import like_prefix
 from ..transcoder import DOWNMIX_ALGOS, system_memory
 from ..web import HTTPError, Response
+
+log = logging.getLogger("seance.admin")
 
 
 def register(app, ctx, x):
@@ -433,6 +436,28 @@ def register(app, ctx, x):
                "ON CONFLICT(rating_key,kind) DO UPDATE SET start_ms=excluded.start_ms, end_ms=excluded.end_ms, "
                "source='manual'", (rk, kind, start, end))
         return {"ok": True}
+
+    # ---------------------------------------------------- mise à jour de Nexis
+    @app.route("GET", "/api/admin/update", auth="admin")
+    def admin_update(req):
+        db.release()  # appels réseau : pas de connexion à la base gardée pendant ce temps
+        out = {"current": VERSION}
+        try:
+            out.update(update.check_latest())
+            out["available"] = update.newer(out["latest"], VERSION)
+        except update.UpdateError as e:
+            out["check_error"] = str(e)
+        try:
+            out.update(mountd.call("update_status", sock_path=os.environ.get("SEANCE_MOUNTD_SOCK"), timeout=10))
+            out["can_update"] = True
+        except mountd.MountError as e:
+            out.update(can_update=False, update_error=str(e))
+        return out
+
+    @app.route("POST", "/api/admin/update", auth="admin")
+    def admin_update_start(req):
+        log.warning("Mise à jour de Nexis lancée par %s", req.user["username"])
+        return mounts("update")
 
     # ---------------------------------------------------- admin partages SMB
     def mounts(cmd, args=None):

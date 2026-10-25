@@ -88,7 +88,9 @@ curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.s
 
 Le script installe Python, git, ffmpeg et les outils SMB (cifs-utils, smbclient), récupère le code, l'installe dans `/opt/seance`, crée l'utilisateur système `seance` et le service `seance.service`, puis affiche l'adresse et le **code d'installation**.
 
-**Mettre à jour** : relance la même commande. Les données (`/var/lib/seance`) et la configuration (`/etc/seance/seance.env`) sont conservées.
+**Mettre à jour** : depuis l'interface, *Administration → Métadonnées et lecture → Mise à jour*. Nexis indique s'il existe une version plus récente et ses derniers changements. **Mettre à jour** lance la même installation qu'à la main, depuis le dépôt et la branche d'origine (notés dans `/etc/seance/source`), puis Nexis redémarre (environ une minute, lectures en cours coupées). Le journal s'affiche pendant l'opération ; il est aussi dans `/var/log/seance-update.log`. À la main, relance simplement la même commande. Dans les deux cas, les données (`/var/lib/seance`) et la configuration (`/etc/seance/seance.env`) sont conservées.
+
+Pour suivre une autre branche (par exemple `test`), installe avec `curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/test/deploy/install.sh | SEANCE_BRANCH=test bash` : les mises à jour depuis l'interface suivront ensuite cette branche.
 
 ### Donner accès aux médias
 
@@ -435,7 +437,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 
 ### Installation et mises à jour
 - [ ] Paquet `.deb` pour machine virtuelle et conteneur LXC, et image Docker
-- [ ] Mise à jour du serveur et des applications depuis l'interface (administrateur)
+- [x] Mise à jour du serveur depuis l'interface (administrateur) : version disponible, derniers changements, installation suivie en direct ; la web app se met à jour avec le serveur
 
 ### Applications (en dernier)
 Une seule interface à maintenir : celle du serveur. Elle s'installe comme une application (web app) sur Windows, Android, iPhone et iPad, et se met à jour en même temps que le serveur. Seule la TV a besoin d'une vraie application, légère, qui affiche cette même interface.

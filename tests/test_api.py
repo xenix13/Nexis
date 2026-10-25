@@ -1155,6 +1155,16 @@ class SeanceTest(unittest.TestCase):
         me = [u for u in users if u["username"] == "colas"][0]
         self.assertEqual(self.admin.call("DELETE", f"/api/admin/users/{me['id']}")[0], 400)
 
+    def test_admin_update_check(self):
+        from unittest import mock
+        from seance import __version__, update
+        with mock.patch.object(update, "check_latest", lambda: {"latest": "99.0.0", "changes": [{"title": "Nouveau"}], "source": "x/y (main)"}):
+            st, u = self.admin.call("GET", "/api/admin/update")
+        self.assertEqual((st, u["current"], u["available"]), (200, __version__, True))
+        self.assertFalse(u["can_update"])  # pas de service root dans les tests
+        self.assertEqual(self.lea.call("GET", "/api/admin/update")[0], 403)
+        self.assertEqual(self.lea.call("POST", "/api/admin/update")[0], 403)
+
     def test_static(self):
         st, body, h = self.admin.call("GET", "/", raw=True)
         self.assertIn(b"<!doctype html>", body.lower())
@@ -1172,6 +1182,40 @@ class SeanceTest(unittest.TestCase):
 
 
 class UnitTests(unittest.TestCase):
+    def test_update_source_and_command(self):
+        """Mise à jour depuis l'interface : source validée, commande lancée sans rien venant de Nexis."""
+        from unittest import mock
+        from seance import update
+        work = tempfile.mkdtemp()
+        src = os.path.join(work, "source")
+        with mock.patch.object(update, "SOURCE", src):
+            self.assertEqual(update.read_source(), ("xenix13", "Nexis", "main"))  # installation ancienne : défaut
+            with open(src, "w") as f:
+                f.write("SEANCE_REPO=https://github.com/xenix13/Nexis.git\nSEANCE_BRANCH=test\n")
+            self.assertEqual(update.read_source(), ("xenix13", "Nexis", "test"))
+            for repo, branch in (("https://evil.example/x/y.git", "main"), ("https://github.com/a/b", "main; rm -rf /"),
+                                 ("https://github.com/a/b", "../../etc")):
+                with open(src, "w") as f:
+                    f.write(f"SEANCE_REPO={repo}\nSEANCE_BRANCH={branch}\n")
+                with self.assertRaises(update.UpdateError):
+                    update.read_source()
+            with open(src, "w") as f:
+                f.write("SEANCE_REPO=https://github.com/xenix13/Nexis\nSEANCE_BRANCH=main\n")
+            calls = []
+
+            def fake_run(cmd, **kw):
+                calls.append(cmd)
+                return subprocess.CompletedProcess(cmd, 3 if cmd[0] == "systemctl" else 0, b"", b"")
+            with mock.patch.object(update.subprocess, "run", fake_run):
+                self.assertEqual(update.start(), {"started": True})
+            run = calls[-1]
+            self.assertEqual(run[:2], ["systemd-run", "--unit=seance-update"])
+            self.assertIn("https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh", run[-1])
+            self.assertIn("SEANCE_BRANCH=main", run[-1])
+        self.assertTrue(update.newer("3.10.0", "3.9.2"))
+        self.assertFalse(update.newer("3.6.1", "3.6.1"))
+        shutil.rmtree(work, ignore_errors=True)
+
     def test_throttle_pauses_ffmpeg_ahead(self):
         from seance import transcoder as tr
         work = tempfile.mkdtemp()
