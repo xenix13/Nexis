@@ -5,9 +5,10 @@ ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 \
     SEANCE_HOST=0.0.0.0 SEANCE_PORT=8420 SEANCE_DATA=/data SEANCE_STATIC=/opt/seance/static SEANCE_DOCKER=1 \
     NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
 
-# ffmpeg d'Ubuntu (NVENC, VAAPI, QSV compilés) ; pilotes VAAPI Intel et AMD pour le transcodage matériel
+# ffmpeg d'Ubuntu (NVENC, VAAPI, QSV compilés) ; pilotes VAAPI AMD, et Intel (n'existe qu'en amd64)
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 ffmpeg ca-certificates intel-media-va-driver mesa-va-drivers \
+ && INTEL=$([ "$(dpkg --print-architecture)" = amd64 ] && echo intel-media-va-driver || true) \
+ && apt-get install -y --no-install-recommends python3 ffmpeg ca-certificates mesa-va-drivers $INTEL \
  && rm -rf /var/lib/apt/lists/* \
  && (userdel -r ubuntu 2>/dev/null || true) \
  && useradd --uid 1000 --user-group --home-dir /data --shell /usr/sbin/nologin seance \
