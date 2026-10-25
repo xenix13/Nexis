@@ -4,11 +4,11 @@ import os
 import re
 import time
 
-from .. import __version__ as VERSION, media
+from .. import __version__ as VERSION, media, update
 from ..auth import (USERNAME, USERNAME_RULE, check_credentials, clear_session, create_session, hash_password,
                     normalize_username, validate_password, verify_password)
 from ..catalog import HEX, validate_prefs
-from ..web import HTTPError
+from ..web import HTTPError, Response
 
 
 def register(app, ctx, x):
@@ -22,6 +22,17 @@ def register(app, ctx, x):
         return {"setup": db.scalar("SELECT COUNT(*) FROM users") == 0,
                 "libraries": db.scalar("SELECT COUNT(*) FROM libraries"),
                 "ffmpeg": media.available(), "version": VERSION}
+
+    @app.route("GET", "/tv", auth=None)
+    def tv_app(req):
+        """Adresse courte à taper dans l'appli Downloader de la TV : renvoie vers le dernier APK publié."""
+        try:
+            owner, repo, _ = update.read_source()
+        except update.UpdateError:
+            owner, repo = "xenix13", "Nexis"
+        return Response(b"", 302, "text/plain",
+                        {"Location": f"https://github.com/{owner}/{repo}/releases/latest/download/nexis-tv.apk",
+                         "Cache-Control": "no-store"})
 
     @app.route("POST", "/api/setup", auth="setup")
     def setup(req):

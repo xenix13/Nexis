@@ -294,7 +294,12 @@ Toute l'interface se parcourt sans souris, comme sur une Android TV.
 Une appli légère pour Android TV, Google TV et les boîtiers comme la Shield ou le Chromecast avec Google TV. Elle demande l'adresse du serveur au premier lancement (`https://nexis.mondomaine.fr` ou `192.168.1.20:8420`), vérifie que c'est bien Nexis, puis affiche l'interface en plein écran. Toute l'application vit sur le serveur : elle se met à jour avec lui, sans réinstaller l'appli.
 
 - **Télécommande** : les flèches et OK parcourent l'interface. **Retour** ferme ce qui est ouvert, quitte le lecteur ou revient en arrière. À l'accueil, il propose de quitter ou de **changer de serveur**.
-- **Installation** : l'APK `nexis-tv-<version>.apk` est joint à chaque version sur la page **Releases**. Sur la TV, autorise les sources inconnues pour ton gestionnaire de fichiers, puis ouvre l'APK. Tu peux le transférer avec *Send Files to TV*, une clé USB, ou `adb install nexis-tv-<version>.apk`. L'appli apparaît dans la rangée des applications avec sa bannière.
+- **Installation avec l'appli Downloader** (le plus simple, gratuit) :
+  1. Sur la TV, installe **Downloader** (de AFTVnews) depuis le Play Store.
+  2. Dans *Paramètres → Applications → Accès spécifiques → Installer des applis inconnues*, autorise Downloader.
+  3. Dans Downloader, tape l'adresse de ton serveur suivie de `/tv` (par exemple `nexis.mondomaine.fr/tv`). Elle mène toujours au dernier APK publié.
+  4. Lance l'installation, puis ouvre Nexis depuis la rangée des applications.
+- **Autres moyens** : l'APK `nexis-tv-<version>.apk` est aussi joint à chaque version sur la page **Releases**. Tu peux le transférer avec *Send Files to TV*, une clé USB, ou `adb install`.
 - **Mises à jour de l'appli elle-même** (rares) : installe le nouvel APK par-dessus. Pour que ce soit possible, chaque version doit être signée avec la même clé. Ajoute une fois pour toutes, dans *GitHub → Settings → Secrets and variables → Actions*, les secrets `NEXIS_KEYSTORE` (la clé en base64) et `NEXIS_KEYSTORE_PASSWORD`. Sans eux, l'APK est signé avec une clé de développement, et chaque mise à jour demande de désinstaller d'abord.
 
 ## Accès depuis l'extérieur (HTTPS)

@@ -102,4 +102,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "v$V" >/dev/null 2>&1 && gh release upload "v$V" "nexis-tv-$V.apk" --clobber || echo "Pas de publication v$V"
+          cp "nexis-tv-$V.apk" nexis-tv.apk  # nom fixe : …/releases/latest/download/nexis-tv.apk (adresse /tv du serveur)
+          gh release view "v$V" >/dev/null 2>&1 && gh release upload "v$V" "nexis-tv-$V.apk" nexis-tv.apk --clobber || echo "Pas de publication v$V"

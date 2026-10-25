@@ -113,12 +113,15 @@ def json_response(data, status=200):
 class App:
     def __init__(self):
         self.routes = []
+        self.plain_paths = set()  # routes hors /api/ (adresses fixes, ex. /tv), le reste est l'interface
         self.before = []  # callables(req, route_opts)
         self.static_dir = None
         self.teardown = []
 
     def route(self, method, pattern, **opts):
         regex = re.compile("^" + pattern + "$")
+        if not pattern.startswith("/api/"):
+            self.plain_paths.add(pattern)
 
         def deco(fn):
             self.routes.append((method, regex, fn, opts))
@@ -126,7 +129,7 @@ class App:
         return deco
 
     def dispatch(self, req):
-        if req.path.startswith("/api/"):
+        if req.path.startswith("/api/") or req.path in self.plain_paths:
             allowed = False
             for method, regex, fn, opts in self.routes:
                 m = regex.match(req.path)

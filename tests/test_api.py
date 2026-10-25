@@ -1238,6 +1238,21 @@ class SeanceTest(unittest.TestCase):
             self.assertEqual(self.admin.call("GET", u, raw=True)[0], 200, u)
         self.assertEqual(self.admin.call("GET", "/sw.js", raw=True, headers={"If-None-Match": h["ETag"]})[0], 304)
 
+    def test_tv_app_short_link(self):
+        """Adresse courte pour l'appli Downloader de la TV : renvoie vers le dernier APK, sans connexion."""
+        import urllib.request
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *a, **k):
+                return None
+        opener = urllib.request.build_opener(NoRedirect)
+        try:
+            r = opener.open(self.base + "/tv")
+            code, loc = r.status, r.headers["Location"]
+        except urllib.error.HTTPError as e:
+            code, loc = e.code, e.headers["Location"]
+        self.assertEqual(code, 302)
+        self.assertTrue(loc.endswith("/releases/latest/download/nexis-tv.apk"), loc)
+
     def test_static(self):
         st, body, h = self.admin.call("GET", "/", raw=True)
         self.assertIn(b"<!doctype html>", body.lower())
