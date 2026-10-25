@@ -483,11 +483,12 @@ def register(app, ctx, x):
             raise HTTPError(404, "Téléchargement introuvable : redemande-le")
         return job
 
-    @app.route("POST", "/api/downloads")
-    def download_request(req):
+    DL_QUALITIES = ("auto", "1080p", "720p", "480p")
+
+    def download_plan(req, b, quality):
+        """Plan de préparation d'un téléchargement pour CET appareil : on ne convertit que ce qu'il ne sait pas lire."""
         if db.setting("downloads", "1") != "1":
             raise HTTPError(403, "Les téléchargements sont désactivés par l'administrateur")
-        b = req.json()
         rk = str(b.get("id") or "")
         if not rk.isdigit():
             raise HTTPError(400, "Identifiant invalide")
@@ -498,8 +499,7 @@ def register(app, ctx, x):
             raise HTTPError(404, "Fichier introuvable : le partage est-il monté ?")
         probe = json.loads(r["probe"] or "{}")
         audio, subs = stream_lists(probe)
-        quality = b.get("quality") or "720p"
-        if quality not in QUALITY:
+        if quality not in DL_QUALITIES and quality not in QUALITY:
             raise HTTPError(400, "Qualité invalide")
         audio_id = b.get("audio")
         if audio_id is not None and audio_id not in {a["id"] for a in audio}:
@@ -507,14 +507,40 @@ def register(app, ctx, x):
         burn = b.get("burn")  # sous-titres image (PGS, VobSub) : incrustés dans la vidéo téléchargée
         if burn is not None and burn not in {s["id"] for s in subs if not s["overlay"]}:
             raise HTTPError(400, "Sous-titres à incruster invalides")
-        p = plan(probe, audio_id, burn, quality, parse_caps(b.get("caps")), db.setting("downmix_algo", "none"),
-                 float(db.setting("downmix_boost", "2") or 2))
+        caps = parse_caps(b.get("caps"))
+        caps["containers"] = {"mp4"}  # le fichier gardé est un MP4
+        p = plan(probe, audio_id, burn, "original" if quality == "auto" else quality, caps,
+                 db.setting("downmix_algo", "none"), float(db.setting("downmix_boost", "2") or 2))
         if p["mode"] == "direct" and media.is_strm(r["key"]):
             p["mode"] = "copy"  # flux distant : on en fait un fichier
+        duration = probe.get("duration") or (r["duration_ms"] or 0) / 1000
+        if p["mode"] == "direct":
+            size = r["file_size"] or 0
+        elif p["mode"] == "copy":  # vidéo recopiée, son en AAC stéréo
+            size = int((r["file_size"] or 0) * 0.95) if not media.is_strm(r["key"]) else 0
+        else:
+            size = int((p["kbps"] + 192) * 1000 / 8 * duration)
+        return r, p, duration, size
+
+    @app.route("POST", "/api/downloads/options")
+    def download_options(req):
+        """Pour chaque qualité : taille et conversion nécessaire ou non (le dialogue de téléchargement l'affiche)."""
+        b = req.json()
+        out = []
+        for q in DL_QUALITIES:
+            r, p, _, size = download_plan(req, b, q)
+            out.append({"quality": q, "convert": p["mode"] == "transcode", "size": size,
+                        "height": p["height"] if p["mode"] == "transcode" else p["src_height"], "reasons": p["reasons"]})
+        return {"options": out}
+
+    @app.route("POST", "/api/downloads")
+    def download_request(req):
+        b = req.json()
+        r, p, duration, _ = download_plan(req, b, b.get("quality") or "auto")
         if p["mode"] == "transcode" and ctx.limits()[1] == 0:
             raise HTTPError(403, "Ce titre doit être converti pour être téléchargé, et la conversion est désactivée sur ce serveur")
         try:
-            job = ctx.downloads.request(req.user["id"], r, p, probe.get("duration") or (r["duration_ms"] or 0) / 1000)
+            job = ctx.downloads.request(req.user["id"], r, p, duration)
         except DownloadError as e:
             raise HTTPError(429, str(e))
         out = job.view()

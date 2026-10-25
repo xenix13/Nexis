@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import types
 import time
 import unittest
 import urllib.error
@@ -1189,6 +1190,11 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(ffprobe_codec(data), "h264")
         self.admin.call("DELETE", f"/api/downloads/{j['id']}")
         self.assertEqual(self.admin.call("GET", f"/api/downloads/{j['id']}")[0], 404)
+        # le dialogue annonce ce que coûte chaque qualité : ici, « auto » se contente d'une copie
+        st, o = self.admin.call("POST", "/api/downloads/options", {"id": polar["id"]})
+        auto = next(x for x in o["options"] if x["quality"] == "auto")
+        self.assertEqual((st, auto["convert"]), (200, False), o)
+        self.assertGreater(auto["size"], 0)
         self.assertEqual(self.admin.call("POST", "/api/downloads", {"id": polar["id"], "burn": 999})[0], 400)
         # positions enregistrées hors ligne : appliquées, sauf si on a regardé ailleurs depuis
         now = int(time.time())
@@ -1249,6 +1255,35 @@ class SeanceTest(unittest.TestCase):
 
 
 class UnitTests(unittest.TestCase):
+    def test_download_prep_yields_to_viewers(self):
+        """La préparation d'un téléchargement se met en pause tant que quelqu'un regarde."""
+        from seance import downloads as dl
+        viewing = {"v": True}
+        mgr = dl.Downloads.__new__(dl.Downloads)
+        mgr.ctx = types.SimpleNamespace(viewing=lambda: viewing["v"])
+        job = types.SimpleNamespace(waiting=False)
+        proc = subprocess.Popen(["sleep", "30"])
+        old = dl.time.sleep
+        try:
+            t = threading.Thread(target=mgr._yield_to_viewers, args=(job, proc), daemon=True)
+            t.start()
+            state = lambda: open(f"/proc/{proc.pid}/stat").read().split(") ")[1][0]
+            for _ in range(50):
+                if state() == "T":
+                    break
+                time.sleep(0.1)
+            self.assertEqual((state(), job.waiting), ("T", True))  # arrêtée pendant la lecture
+            viewing["v"] = False
+            for _ in range(60):
+                if state() != "T":
+                    break
+                time.sleep(0.1)
+            self.assertNotEqual(state(), "T")  # reprend ensuite
+            self.assertFalse(job.waiting)
+        finally:
+            proc.kill()
+            proc.wait()
+
     def test_update_source_and_command(self):
         """Mise à jour depuis l'interface : source validée, commande lancée sans rien venant de Nexis."""
         from unittest import mock

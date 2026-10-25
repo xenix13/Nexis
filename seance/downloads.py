@@ -12,6 +12,7 @@ import logging
 import os
 import secrets
 import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -25,6 +26,10 @@ log = logging.getLogger("seance.downloads")
 KEEP = 48 * 3600
 MAX_PER_USER = 40
 SPARE_DISK = 2 * 1024 ** 3   # on garde toujours 2 Go libres sur le disque du serveur
+# Ménager le serveur : une conversion coûte ~30 s de processeur par minute de vidéo en 1080p, une copie ~2 s.
+THREADS = max(1, min(4, (os.cpu_count() or 2) // 4))  # jamais tout le processeur d'un coup
+COPY_READRATE = 20          # copie : lecture du partage plafonnée à 20x le temps réel (le NAS reste fluide)
+IONICE = shutil.which("ionice")
 
 
 class DownloadError(Exception):
@@ -47,10 +52,11 @@ class Job:
         self.error = None
         self.created = self.touched = time.time()
         self.proc = None
+        self.waiting = False      # en pause : quelqu'un regarde, il passe en premier
 
     def view(self):
         return {"id": self.id, "item_id": str(self.item_id), "state": self.state, "mode": self.mode,
-                "progress": round(self.progress, 3), "size": self.size, "error": self.error}
+                "progress": round(self.progress, 3), "size": self.size, "error": self.error, "waiting": self.waiting}
 
 
 class Downloads:
@@ -140,10 +146,6 @@ class Downloads:
         if shutil.disk_usage(self.base).free < self._estimate(job) + SPARE_DISK:
             job.state, job.error = "error", "Espace disque insuffisant sur le serveur pour préparer ce téléchargement"
             return
-        if job.plan["mode"] == "transcode":
-            # priorité à ceux qui regardent : on attend qu'un transcodage se libère
-            while self.ctx.transcoder.counts()[1] >= max(1, self.ctx.limits()[1]) and job.state != "cancelled":
-                time.sleep(10)
         hw = self.ctx.hw() if job.plan["mode"] == "transcode" else None
         for attempt_hw in ([hw, None] if hw else [None]):  # carte graphique, sinon repli sur le processeur
             if job.state == "cancelled":
@@ -156,8 +158,13 @@ class Downloads:
 
     def _run(self, job, out_dir, hw):
         part, final = os.path.join(out_dir, "video.part.mp4"), os.path.join(out_dir, "video.mp4")
-        cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-y", *(hw_input(hw) if hw else []),
+        copy = job.plan["mode"] == "copy"
+        cmd = [*([IONICE, "-c", "3"] if IONICE else []),  # disque : seulement quand personne d'autre ne s'en sert
+               media.FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-y", *(hw_input(hw) if hw else []),
+               "-threads", str(THREADS),
+               *(["-readrate", str(COPY_READRATE)] if copy and media.has_option("readrate") else []),
                *media.input_args(job.source), "-map_metadata", "-1", "-map_chapters", "-1",
+               "-threads", str(THREADS), "-filter_threads", "1",
                *media_args(job.plan, hw), "-sn", "-dn", "-movflags", "+faststart", "-max_muxing_queue_size", "2048",
                "-progress", "pipe:1", "-nostats", "-f", "mp4", part]
         log.info("Préparation du téléchargement %s (%s%s)", job.id, job.mode, f", {hw['engine']}" if hw else "")
@@ -165,10 +172,11 @@ class Downloads:
         try:
             with open(log_path, "wb") as log_file:
                 job.proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=log_file,
-                                            preexec_fn=lambda: os.nice(10))  # après les lectures en cours
+                                            preexec_fn=lambda: os.nice(19))  # priorité la plus basse
         except OSError as e:
             job.error = f"ffmpeg introuvable ({e})"
             return False
+        threading.Thread(target=self._yield_to_viewers, args=(job, job.proc), daemon=True).start()
         with job.proc.stdout:
             for line in job.proc.stdout:
                 if line.startswith(b"out_time_us=") and job.duration:
@@ -181,6 +189,7 @@ class Downloads:
                 err = f.read().strip().splitlines()
         except OSError:
             err = []
+        job.waiting = False
         if job.proc.wait() != 0 or not os.path.isfile(part):
             job.error = "Préparation impossible : " + (err[-1] if err else "ffmpeg s'est arrêté")
             log.warning("Téléchargement %s : %s", job.id, job.error)
@@ -188,3 +197,15 @@ class Downloads:
         os.replace(part, final)
         job.path, job.size, job.progress, job.state, job.error = final, os.path.getsize(final), 1.0, "ready", None
         return True
+
+    def _yield_to_viewers(self, job, proc):
+        """Met la préparation en pause tant que quelqu'un regarde (lecture, remux ou transcodage)."""
+        while proc.poll() is None:
+            busy = self.ctx.viewing()
+            if busy != job.waiting:
+                try:
+                    os.kill(proc.pid, signal.SIGSTOP if busy else signal.SIGCONT)
+                    job.waiting = busy
+                except OSError:
+                    return
+            time.sleep(3)

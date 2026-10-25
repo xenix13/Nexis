@@ -5,12 +5,14 @@
 //   l'avancement dans IndexedDB. Rien ne quitte l'appareil.
 // - Hors ligne, les positions de lecture sont gardées puis renvoyées au serveur au retour du réseau.
 import { del, get, post } from './api.js';
+import { browserCaps } from './caps.js';
 import { img } from './ui.js';
 
 const DB_NAME = 'nexis-offline';
 const MEDIA = 'nexis-offline-media';
 const CHUNK = 8 * 1024 * 1024;
-const SAFE_CAPS = { video: ['h264'], audio: ['aac', 'mp3'], containers: ['mp4'] }; // relisible sans conversion
+// ce que CET appareil sait lire (le fichier gardé n'est lu que sur lui) : le serveur ne convertit que le reste
+export const deviceCaps = () => { const c = browserCaps(); return { video: c.video, audio: c.audio, containers: ['mp4'] }; };
 
 let dbPromise = null;
 function db() {
@@ -142,7 +144,7 @@ async function work(rec) {
       }
       if (!job) {
         job = await post('/api/downloads', { id: rec.rk, quality: rec.opts.quality, audio: rec.opts.audio ?? null,
-          burn: rec.opts.burn ?? null, caps: SAFE_CAPS });
+          burn: rec.opts.burn ?? null, caps: deviceCaps() });
         await save(rec, { job: job.id, state: 'preparing', got: 0, chunks: 0 });
       }
       if (job.state === 'error') { await save(rec, { state: 'error', error: job.error }); return true; }
@@ -150,7 +152,7 @@ async function work(rec) {
         if (!rec.chunks || rec.size !== job.size) await save(rec, { size: job.size, chunks: Math.ceil(job.size / CHUNK), got: 0 });
         break;
       }
-      await save(rec, { state: 'preparing', prep: job.progress || 0 });
+      await save(rec, { state: 'preparing', prep: job.progress || 0, waiting: !!job.waiting, convert: job.mode === 'transcode' });
       await new Promise((r) => setTimeout(r, 2500));
       const fresh = await one('downloads', rec.key);
       if (!fresh) return true; // supprimé entre-temps

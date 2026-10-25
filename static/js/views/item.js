@@ -1,7 +1,7 @@
 import { del, get, post, put } from '../api.js';
 import { state } from '../app.js';
 import { launchableGroups } from '../groups.js';
-import { download as offlineDownload, find as findDownload, onDownloads, supported as offlineSupported } from '../offline.js';
+import { deviceCaps, download as offlineDownload, find as findDownload, onDownloads, supported as offlineSupported } from '../offline.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from '../tracks.js';
 import { chapterStrip } from '../chapters.js';
 import { clear, episodeCode, field, fmtDuration, fmtTime, h, icon, img, modal, moreMenu, posterCard, progressBar, select, spinner, toast, toggle } from '../ui.js';
@@ -229,9 +229,31 @@ async function watchTogether(target) {
 }
 
 // ------------------------------------------------------------ téléchargements (regarder hors ligne)
-const DL_QUALITIES = [['720p', '720p : recommandé (environ 1,9 Go par heure)'], ['1080p', '1080p (environ 3,7 Go par heure)'],
-  ['480p', '480p : économe (environ 0,8 Go par heure)'], ['original', 'Originale (le fichier d’origine quand il est lisible tel quel)']];
-const dlQuality = () => { try { return localStorage.getItem('nexis.dl.quality') || '720p'; } catch { return '720p'; } };
+// « Auto » : le fichier tel quel dès que l'appareil sait le lire (une copie ne coûte presque rien au serveur,
+// une conversion environ 30 s de processeur par minute de vidéo)
+const SEASON_QUALITIES = [['auto', 'Auto : sans conversion quand c’est possible (recommandé, léger pour le serveur)'],
+  ['1080p', '1080p au plus'], ['720p', '720p (converti : plus léger sur l’appareil, plus long à préparer)'],
+  ['480p', '480p (converti : le plus léger sur l’appareil)']];
+const dlQuality = () => { try { return localStorage.getItem('nexis.dl.quality') || 'auto'; } catch { return 'auto'; } };
+const GB = 1024 ** 3;
+const fmtSize = (b) => (!b ? 'taille inconnue' : b >= GB ? `${(b / GB).toFixed(1).replace('.', ',')} Go` : `${Math.round(b / 1024 ** 2)} Mo`);
+
+async function qualityChoices(one, tracks) {
+  let opts;
+  try {
+    opts = (await post('/api/downloads/options', { id: one.id, audio: tracks.audio, burn: tracks.burn, caps: deviceCaps() })).options;
+  } catch { return SEASON_QUALITIES; }
+  const seen = new Set();
+  const out = [];
+  for (const o of opts) {
+    const sig = `${o.convert}:${o.height}`;
+    if (seen.has(sig)) continue; // même résultat qu'une option déjà proposée
+    seen.add(sig);
+    const what = o.quality === 'auto' ? (o.convert ? `Auto (${o.height}p)` : `Qualité d’origine${o.height ? ` (${o.height}p)` : ''}`) : o.quality;
+    out.push([o.quality, `${what} · ${fmtSize(o.size)} · ${o.convert ? 'conversion par le serveur' : 'sans conversion, prêt vite'}`]);
+  }
+  return out;
+}
 const canDownload = () => state.me.features && state.me.features.downloads && offlineSupported();
 
 // choix des pistes comme au lancement de la lecture (langues préférées, sous-titres forcés…)
@@ -254,8 +276,10 @@ async function startDownloads(items, opts) {
 
 async function downloadDialog(items, title) {
   const one = items.length === 1 && items[0].audio ? items[0] : null;
-  const quality = select(DL_QUALITIES, dlQuality());
-  const rows = [field('Qualité', quality, 'La copie est préparée par le serveur (lisible sur tous les appareils), puis gardée sur celui-ci.')];
+  const choices = one ? await qualityChoices(one, defaultTracks(one)) : SEASON_QUALITIES;
+  const wanted = dlQuality();
+  const quality = select(choices, choices.some(([q]) => q === wanted) ? wanted : choices[0][0]);
+  const rows = [field('Qualité', quality, 'Sans conversion, le serveur recopie simplement le fichier. Une conversion le fait travailler en arrière-plan (en pause dès que quelqu’un regarde).')];
   let audioSel = null;
   const subChecks = [];
   let burnSel = null;
@@ -276,7 +300,7 @@ async function downloadDialog(items, title) {
     const image = (one.subtitles || []).filter((x) => !x.overlay);
     if (image.length) {
       burnSel = select([['', 'Aucun'], ...image.map((x) => [String(x.id), x.title])], d.burn ? String(d.burn) : '');
-      rows.push(field('Sous-titres image à incruster', burnSel, 'Ils deviennent une partie de l’image (impossible de les masquer ensuite).'));
+      rows.push(field('Sous-titres image à incruster', burnSel, 'Ils deviennent une partie de l’image (impossible de les masquer ensuite), ce qui impose une conversion par le serveur.'));
     }
   } else {
     rows.push(h('p.muted.small', 'Langue et sous-titres : ceux de tes préférences, comme à la lecture.'));

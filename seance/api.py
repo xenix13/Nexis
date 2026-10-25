@@ -83,6 +83,13 @@ class Ctx:
         return (self.setting_int("max_streams", 6),
                 self.setting_int("max_transcodes", 1 if cpus <= 2 else 2))
 
+    def viewing(self):
+        """Quelqu'un regarde-t-il en ce moment (lecture signalée il y a moins de 40 s) ?"""
+        try:
+            return bool(self.db.scalar("SELECT 1 FROM streams WHERE last_seen > ? LIMIT 1", (int(time.time()) - 40,)))
+        finally:
+            self.db.release()
+
     def hw(self):
         """Transcodage matériel choisi par l'administrateur, ou None (processeur)."""
         engine = self.db.setting("hw_engine", "none")

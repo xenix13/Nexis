@@ -8,7 +8,8 @@ const size = (b) => (b >= GB ? `${(b / GB).toFixed(1).replace('.', ',')} Go` : `
 
 function status(d) {
   if (d.state === 'done') return d.item.watched ? 'Vu' : (d.item.position ? `Commencé · ${fmtDuration(d.item.duration - d.item.position)} restantes` : 'Prêt à regarder');
-  if (d.state === 'preparing') return `Préparation sur le serveur… ${Math.round((d.prep || 0) * 100)} %`;
+  if (d.state === 'preparing' && d.waiting) return 'Préparation en pause : quelqu’un regarde sur le serveur, elle reprendra ensuite';
+  if (d.state === 'preparing') return `${d.convert ? 'Conversion' : 'Préparation'} sur le serveur… ${Math.round((d.prep || 0) * 100)} %`;
   if (d.state === 'downloading') return `Téléchargement… ${d.chunks ? Math.round((d.got / d.chunks) * 100) : 0} %`;
   if (d.state === 'paused') return 'En pause : reprendra avec la connexion';
   if (d.state === 'error') return d.error || 'Échec';

@@ -260,13 +260,14 @@ Une fois installée, une flèche retour apparaît dans la barre du haut, puisqu'
 
 Comme sur Netflix, on télécharge un film, un épisode ou une saison entière pour les regarder sans connexion : dans le train, l'avion, ou là où le réseau ne suit pas.
 
-- **Télécharger** : le bouton ⤓ sur la fiche d'un film ou d'un épisode, ou **Télécharger la saison** au-dessus de la liste des épisodes (seulement les épisodes non vus s'il y en a). On choisit la qualité : 720p recommandée (environ 1,9 Go par heure), 1080p, 480p économe, ou l'originale quand elle est lisible telle quelle. On choisit aussi la langue et les sous-titres à garder.
+- **Télécharger** : le bouton ⤓ sur la fiche d'un film ou d'un épisode, ou **Télécharger la saison** au-dessus de la liste des épisodes (seulement les épisodes non vus s'il y en a). On choisit la qualité. Pour chaque choix, le dialogue affiche la taille et indique si le serveur devra convertir. **Auto** (par défaut) garde le fichier tel quel dès que l'appareil sait le lire : c'est quasi gratuit pour le serveur, environ 2 s de processeur par minute de vidéo contre 30 s pour une conversion. Les formats que l'appareil ne lit pas sont convertis ; un iPhone lit le HEVC, donc ces fichiers-là ne sont pas convertis pour lui. 720p et 480p allègent l'appareil, au prix d'une conversion. On choisit aussi la langue et les sous-titres à garder.
 - **Suivre** : menu de l'avatar → **Téléchargements**. On y voit la préparation, le transfert, la place utilisée et la place restante, et on peut supprimer.
   - Le transfert se fait par morceaux et reprend tout seul après une coupure ou à la réouverture de l'application.
   - Le navigateur est prié de ne pas effacer ces fichiers pour faire de la place.
 - **Hors ligne** : l'application s'ouvre directement sur tes téléchargements. On les regarde avec le lecteur habituel : sous-titres, passer l'intro, chapitres, épisode suivant téléchargé. La position de lecture est renvoyée au serveur au retour du réseau, sans écraser ce que tu aurais regardé ailleurs entre-temps.
 - **Côté serveur** : Nexis prépare une copie MP4 (H.264 / AAC) lisible sur tous les appareils. Un MP4 déjà lisible est envoyé tel quel, un MKV H.264 est recopié sans perte, le reste est converti.
-  - La conversion passe en priorité basse, une à la fois, et attend qu'aucune lecture n'ait besoin du transcodage.
+  - La préparation ménage le serveur. Elle se fait une à la fois, avec au plus 4 cœurs, en priorité processeur et disque la plus basse. Une copie lit le NAS au plus 20 fois plus vite que la lecture, pour ne pas le saturer.
+  - Elle se **met en pause dès que quelqu'un regarde** et reprend ensuite. Avec une carte graphique réglée dans l'administration, les conversions passent par elle.
   - La copie est effacée dès que l'appareil l'a récupérée, ou au bout de 48 h.
   - L'administrateur peut désactiver les téléchargements dans *Administration → Métadonnées et lecture*.
 
