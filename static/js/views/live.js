@@ -1,6 +1,6 @@
 // TV en direct : grille des chaînes (programme en cours / à suivre), guide des programmes et lecteur.
 import { get, post } from '../api.js';
-import { clear, errorBox, h, icon, modal, spinner, store, toast } from '../ui.js';
+import { clear, errorBox, h, icon, loadHls, modal, spinner, store, toast } from '../ui.js';
 
 const PX_PER_HOUR = 320;
 const hhmm = (t) => new Date(t * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -215,7 +215,7 @@ export async function renderLivePlayer(root, cid, ctx) {
     loader.hidden = false;
     if (hls) { hls.destroy(); hls = null; }
     try {
-      [info, session] = await Promise.all([get(`/api/live/${cid}`), post(`/api/live/${cid}/play`)]);
+      [info, session] = await Promise.all([get(`/api/live/${cid}`), post(`/api/live/${cid}/play`), loadHls()]);
     } catch (e) { if (!destroyed) showError(e.message); return; }
     if (destroyed) { post(`/api/live/s/${session.session}/stop`).catch(() => {}); return; }
     document.title = `${info.name} · TV en direct · Nexis`;

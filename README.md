@@ -430,7 +430,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 - [x] Fichiers `.strm` : lecture du flux distant qu'ils désignent, avec affiche et métadonnées comme un fichier local
 
 ### Performances
-- [ ] Optimiser le serveur et l'interface (requêtes, cache, poids des pages, mémoire)
+- [x] Optimiser le serveur et l'interface (requêtes, cache, poids des pages, mémoire) : serveur mesuré sur 15 800 éléments (toutes les pages sous 55 ms, rien à reprendre) ; interface compressée et revalidée (premier chargement ~910 Ko → ~230 Ko, revisite en réponses 304), hls.js chargé seulement par le lecteur, logo en WebP
 - [x] Transcodage matériel optionnel : l'administrateur choisit le moteur selon sa machine (NVIDIA NVENC, Intel / AMD VAAPI), avec un essai réel avant d'enregistrer et un repli automatique sur le processeur
 
 ### Installation et mises à jour

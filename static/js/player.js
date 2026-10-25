@@ -4,7 +4,7 @@ import { get, post, put } from './api.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from './tracks.js';
 import { state } from './app.js';
 import { chapterStrip, chapterTitle } from './chapters.js';
-import { avatar, clear, episodeCode, errorBox, fmtTime, h, icon, img, spinner, store, toast } from './ui.js';
+import { avatar, clear, episodeCode, errorBox, fmtTime, h, icon, img, loadHls, spinner, store, toast } from './ui.js';
 
 const REPORT_EVERY = 10000;
 const HIDE_AFTER = 3000;
@@ -20,6 +20,7 @@ const CLOCK_TTL = 10 * 60 * 1000;
 
 
 export async function renderPlayer(root, rk, ctx) {
+  const hlsReady = loadHls(); // en parallèle du chargement de la fiche
   const prefs = state.me.prefs;
   const isAdmin = state.me.user.is_admin;
   const video = h('video.video', { playsinline: true, preload: 'auto' });
@@ -227,6 +228,8 @@ export async function renderPlayer(root, rk, ctx) {
       }
       video.play().catch(() => { loader.hidden = true; paintPlay(); });
     };
+    await hlsReady;
+    if (seq !== startSeq || destroyed) return;
     if (session.mode === 'direct') {
       // le navigateur lit le fichier tel quel
       video.src = session.url;

@@ -1,4 +1,5 @@
 """Minimal HTTP framework on top of the standard library (no dependencies)."""
+import gzip
 import http.server
 import json
 import logging
@@ -145,9 +146,9 @@ class App:
             raise HTTPError(404, "Introuvable")
         if req.method not in ("GET", "HEAD"):
             raise HTTPError(405, "Méthode non autorisée")
-        return self.serve_static(req.path)
+        return self.serve_static(req.path, req)
 
-    def serve_static(self, path):
+    def serve_static(self, path, req=None):
         root = os.path.realpath(self.static_dir)
         rel = urllib.parse.unquote(path).lstrip("/") or "index.html"
         full = os.path.realpath(os.path.join(root, rel))
@@ -158,17 +159,51 @@ class App:
         ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
             ctype += "; charset=utf-8"
-        with open(full, "rb") as f:
-            data = f.read()
+        st = os.stat(full)
+        # empreinte du fichier : après le délai de cache, le navigateur demande « inchangé ? » (304, rien à renvoyer)
+        etag = f'W/"{st.st_size:x}-{st.st_mtime_ns:x}"'
         cache = "no-cache" if full.endswith(".html") else "public, max-age=300"
-        headers = {"Cache-Control": cache}
+        headers = {"Cache-Control": cache, "ETag": etag}
         if "/vendor/" in full:
             headers["Cache-Control"] = "public, max-age=604800"
         if "/vendor/jassub/" in full:
             # le moteur de sous-titres (libass compilé en WebAssembly) tourne dans un worker qui a besoin
             # de compiler du WebAssembly ; cette politique ne vaut que pour ses propres fichiers
             headers["Content-Security-Policy"] = JASSUB_CSP
+        compressible = ctype.startswith(COMPRESSIBLE)
+        if compressible:
+            headers["Vary"] = "Accept-Encoding"
+        if req and req.headers.get("If-None-Match") == etag:
+            return Response(b"", 304, ctype, headers)
+        data = _gzipped(full, etag) if compressible and req and "gzip" in (req.headers.get("Accept-Encoding") or "") else None
+        if data is not None:
+            headers["Content-Encoding"] = "gzip"
+        else:
+            with open(full, "rb") as f:
+                data = f.read()
         return Response(data, 200, ctype, headers)
+
+
+COMPRESSIBLE = ("text/", "application/javascript", "application/json", "application/wasm", "image/svg+xml")
+_gz_lock = threading.Lock()
+_gz_cache = {}  # (chemin, empreinte) -> fichier compressé : on ne recompresse pas hls.js à chaque visite
+
+
+def _gzipped(full, etag):
+    key = (full, etag)
+    with _gz_lock:
+        data = _gz_cache.get(key)
+    if data is None:
+        with open(full, "rb") as f:
+            raw = f.read()
+        if len(raw) < 1400:
+            return None
+        data = gzip.compress(raw, 6)
+        with _gz_lock:
+            if sum(len(v) for v in _gz_cache.values()) > 32 * 1024 * 1024:
+                _gz_cache.clear()  # shortcut: vidé en bloc ; une LRU si l'interface grossit beaucoup
+            _gz_cache[key] = data
+    return data
 
 
 SECURITY_HEADERS = {

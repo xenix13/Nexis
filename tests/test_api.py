@@ -1159,6 +1159,16 @@ class SeanceTest(unittest.TestCase):
         st, body, h = self.admin.call("GET", "/", raw=True)
         self.assertIn(b"<!doctype html>", body.lower())
         self.assertEqual(self.admin.call("GET", "/../seance/api.py", raw=True)[0], 404)
+        # compression et revalidation : la revisite ne retélécharge rien
+        st, body, h = self.admin.call("GET", "/js/player.js", raw=True, headers={"Accept-Encoding": "gzip"})
+        self.assertEqual((st, h.get("Content-Encoding")), (200, "gzip"))
+        import gzip as gz
+        self.assertIn(b"renderPlayer", gz.decompress(body))
+        self.assertEqual(self.admin.call("GET", "/js/player.js", raw=True,
+                                         headers={"If-None-Match": h["ETag"]})[0], 304)
+        st, body, h2 = self.admin.call("GET", "/js/player.js", raw=True)
+        self.assertNotIn("Content-Encoding", h2)  # client sans gzip : fichier tel quel
+        self.assertEqual(self.admin.call("GET", "/img/nexis-logo.webp", raw=True)[2].get("Content-Encoding"), None)
 
 
 class UnitTests(unittest.TestCase):

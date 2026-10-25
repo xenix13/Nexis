@@ -197,6 +197,19 @@ export function arrange(keys, order = []) {
   return [...known, ...rest];
 }
 
+// hls.js (400 Ko) : chargé seulement quand un lecteur en a besoin, pas sur chaque page
+let hlsPromise = null;
+export function loadHls() {
+  if (window.Hls) return Promise.resolve();
+  hlsPromise = hlsPromise || new Promise((resolve) => {
+    const s = document.createElement('script');
+    s.src = '/vendor/hls.min.js';
+    s.onload = s.onerror = () => resolve(); // absent : le lecteur affiche son message d'erreur
+    document.head.append(s);
+  });
+  return hlsPromise;
+}
+
 export function toggle(label, checked, attrs = {}) {
   return h('label.toggle', h('input', { type: 'checkbox', checked, ...attrs }), h('span.toggle-ui'), h('span', label));
 }
