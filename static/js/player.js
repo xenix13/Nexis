@@ -4,6 +4,7 @@ import { get, post, put } from './api.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from './tracks.js';
 import { state } from './app.js';
 import { browserCaps } from './caps.js';
+import { moveFocus, remoteMode } from './remote.js';
 import { nextDownloaded, playable, saveProgress } from './offline.js';
 import { chapterStrip, chapterTitle } from './chapters.js';
 import { avatar, clear, episodeCode, errorBox, fmtTime, h, icon, img, loadHls, spinner, store, toast } from './ui.js';
@@ -1158,8 +1159,28 @@ export async function renderPlayer(root, rk, ctx) {
       cards[i].scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
       return;
     }
+    // télécommande : flèches = d'un bouton à l'autre quand on est dans les commandes (sauf la barre de temps)
+    const inControls = player.contains(document.activeElement) && document.activeElement !== player
+      && !document.activeElement.classList.contains('video');
+    const arrow = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key);
+    if (arrow && inControls && !(document.activeElement === timeline && ['ArrowLeft', 'ArrowRight'].includes(e.key))) {
+      e.preventDefault();
+      moveFocus({ ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }[e.key]);
+      return;
+    }
+    if (!inControls && remoteMode() && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      playBtn.focus(); // comme sur une TV : haut / bas font apparaître les commandes
+      return;
+    }
     switch (e.key) {
-      case ' ': case 'k': e.preventDefault(); togglePlay(); break;
+      case ' ': case 'k': case 'MediaPlayPause': e.preventDefault(); togglePlay(); break;
+      case 'Enter': if (!inControls) { e.preventDefault(); togglePlay(); } break;
+      case 'MediaPlay': if (video.paused) togglePlay(); break;
+      case 'MediaPause': if (!video.paused) togglePlay(); break;
+      case 'MediaFastForward': seekBy(30000); break;
+      case 'MediaRewind': seekBy(-10000); break;
+      case 'MediaTrackNext': if (session && session.next) playNext(); break;
       case 'ArrowLeft': e.preventDefault(); seekBy(-10000); break;
       case 'ArrowRight': e.preventDefault(); seekBy(10000); break;
       case 'ArrowUp': e.preventDefault(); video.volume = Math.min(1, video.volume + 0.1); break;
@@ -1170,9 +1191,10 @@ export async function renderPlayer(root, rk, ctx) {
       case 'n': if (session && session.next) playNext(); break;
       case 'c': if (chapters.length > 1) openChapters(); break;
       case 'i': minimize(); break;
-      case 'Escape':
+      case 'Escape': case 'BrowserBack': case 'GoBack':
         if (!chapterPanel.hidden) chapterPanel.hidden = true;
         else if (!menu.hidden) menu.hidden = true;
+        else if (inControls && remoteMode()) { document.activeElement.blur(); player.classList.add('idle'); } // cacher les commandes
         else if (!document.fullscreenElement) goBack();
         break;
       default:

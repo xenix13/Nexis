@@ -275,6 +275,20 @@ Comme sur Netflix, on télécharge un film, un épisode ou une saison entière p
 
 Les téléchargements restent sur l'appareil, rangés par profil : chacun ne voit que les siens. À la déconnexion, l'appareil oublie qui regardait. Ils demandent un accès HTTPS. Sur iPhone et iPad, installe Nexis sur l'écran d'accueil : Safari efface au bout de quelques semaines les données d'un site simplement visité, pas celles d'une application installée.
 
+### Télécommande, clavier et manette
+
+Toute l'interface se parcourt sans souris, comme sur une Android TV.
+
+- **Déplacement** : les flèches mènent à l'élément le plus proche dans leur direction. Gauche et droite restent sur la même rangée.
+- **OK / Entrée** ouvre.
+- **Retour** (touche Retour de la télécommande, Retour arrière, ou B à la manette) ferme le menu ouvert ou revient à la page précédente.
+- **Manettes** (Xbox, PlayStation…) : la croix ou le stick gauche déplacent, A valide, B revient, Start met en lecture ou en pause.
+- **Dans le lecteur** :
+  - gauche et droite reculent ou avancent ;
+  - avec une télécommande ou une manette, haut et bas font apparaître les commandes, puis les flèches passent d'un bouton à l'autre ;
+  - Retour cache les commandes, puis quitte le lecteur ;
+  - les touches multimédia (lecture/pause, avance et retour rapides, suivant) fonctionnent.
+
 ## Accès depuis l'extérieur (HTTPS)
 
 Place Nexis derrière un reverse proxy HTTPS (Caddy, nginx, Nginx Proxy Manager…). Dans `/etc/seance/seance.env` :
@@ -506,6 +520,6 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 Une seule interface à maintenir : celle du serveur. Elle s'installe comme une application (web app) sur Windows, Android, iPhone et iPad, et se met à jour en même temps que le serveur. Seule la TV a besoin d'une vraie application, légère, qui affiche cette même interface.
 - [x] Web app installable (PWA) : icônes adaptatives, fenêtre à part, raccourcis, « Installer l'application » (instructions sur iPhone/iPad), flèche retour en mode application, ouverture hors ligne ; demande un accès HTTPS. Remplace une application Windows séparée
 - [x] Téléchargements pour regarder hors ligne (film, épisode, saison), comme Netflix : copie préparée par le serveur, transfert par morceaux qui reprend après une coupure, lecture et positions hors ligne renvoyées au retour du réseau
-- [ ] Navigation complète à la télécommande et à la manette (flèches, OK, retour), utile à la TV comme sur PC
+- [x] Navigation complète à la télécommande et à la manette (flèches, OK, retour), utile à la TV comme sur PC
 - [ ] Application Android TV légère : adresse du serveur demandée au premier lancement, puis l'interface Nexis en plein écran
 - [ ] Plus tard, si besoin : lecteur natif dans l'application Android TV pour envoyer le son multicanal (DTS, TrueHD, Atmos) tel quel à un ampli, ce qu'aucun navigateur ne sait faire

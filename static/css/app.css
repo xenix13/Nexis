@@ -926,3 +926,12 @@ img.fade.in { opacity: 1; }
 .dl-room { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 4px 0 8px; }
 .dl-room:empty { display: none; }
 .dl-room p { margin: 0; flex: 1; min-width: 240px; color: var(--muted); }
+
+/* ---------- télécommande, clavier, manette : on voit toujours où l'on est ---------- */
+.card:focus-visible .card-img, html.remote .card:focus .card-img, .dl-thumb:focus-visible, .episode-thumb:focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 3px; }
+html.remote :focus { outline: 3px solid var(--accent); outline-offset: 3px; }
+html.remote .card:focus { outline: none; }
+html.remote .card:focus .card-img { transform: translateY(-4px) scale(1.04); }
+.card-slot:focus-within .card-watch { opacity: 1; }
+html.remote .player .ctl:focus { background: rgba(255, 255, 255, 0.2); outline-offset: 0; }

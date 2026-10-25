@@ -298,7 +298,10 @@ export function row(title, items, render, opts = {}) {
 // Menu « ⋯ » : bouton + liste d'actions, fermé au clic extérieur ou avec Échap.
 export function moreMenu(items, label = 'Plus d’actions') {
   const list = h('div.more-list', { role: 'menu', hidden: true });
-  const close = () => { list.hidden = true; document.removeEventListener('click', onDoc, true); document.removeEventListener('keydown', onKey); };
+  const close = () => {
+    if (list.contains(document.activeElement)) btn.focus({ preventScroll: true }); // télécommande : on revient au bouton
+    list.hidden = true; document.removeEventListener('click', onDoc, true); document.removeEventListener('keydown', onKey);
+  };
   const onDoc = (e) => { if (!wrap.contains(e.target)) close(); };
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   for (const it of items.filter(Boolean)) {
@@ -313,6 +316,8 @@ export function moreMenu(items, label = 'Plus d’actions') {
       list.hidden = false;
       document.addEventListener('click', onDoc, true);
       document.addEventListener('keydown', onKey);
+      const first = list.querySelector('.more-item');
+      if (first) first.focus({ preventScroll: true }); // au clavier / à la télécommande : on est dans le menu
     } else close();
   } }, icon('more'));
   const wrap = h('div.more-wrap', btn, list);

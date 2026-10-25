@@ -388,6 +388,38 @@ with sync_playwright() as pw:
     page.goto(base + "/#/")
     bctx4.close()
 
+    # --- télécommande / clavier / manette : flèches, OK, retour ; dans le lecteur, bas = commandes, B = retour
+    bctx6, page6 = browser_ctx(browser, admin)
+    page6.goto(base + "/#/library/" + str(ctx.db.scalar("SELECT id FROM libraries WHERE name='Films'")))
+    page6.wait_for_selector(".card")
+    for _ in range(5):
+        page6.keyboard.press("ArrowDown"); page6.wait_for_timeout(120)
+        if page6.evaluate("document.activeElement.classList.contains('card')"):
+            break
+    for _ in range(4):
+        page6.keyboard.press("ArrowLeft"); page6.wait_for_timeout(80)
+    c1 = page6.evaluate("document.activeElement.getAttribute('href')")
+    page6.keyboard.press("ArrowRight"); page6.wait_for_timeout(150)
+    c2 = page6.evaluate("document.activeElement.getAttribute('href')")
+    check(bool(c1 and c2 and c1 != c2), f"flèches : d'une carte à l'autre ({c1} -> {c2})")
+    page6.keyboard.press("Enter"); page6.wait_for_selector(".detail-actions")
+    page6.keyboard.press("Backspace"); page6.wait_for_timeout(400)
+    check("#/library/" in page6.evaluate("location.hash"), "OK ouvre, Retour revient")
+    page6.evaluate("""(() => { const pad = { index: 0, axes: [0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false })) };
+      window.__pad = pad; navigator.getGamepads = () => [pad]; window.dispatchEvent(new Event('gamepadconnected')); })()""")
+
+    def tap(btn):
+        page6.evaluate(f"window.__pad.buttons[{btn}].pressed = true"); page6.wait_for_timeout(120)
+        page6.evaluate(f"window.__pad.buttons[{btn}].pressed = false"); page6.wait_for_timeout(150)
+    page6.goto(base + f"/#/play/{voyage}")
+    page6.wait_for_function("document.querySelector('video') && document.querySelector('video').currentTime > 1", timeout=60000)
+    tap(13)
+    check(page6.evaluate("document.activeElement.getAttribute('aria-label')") == "Lecture/Pause", "manette : bas montre les commandes")
+    tap(1); tap(1)
+    page6.wait_for_timeout(500)
+    check("/play/" not in page6.evaluate("location.hash"), "manette : B cache les commandes puis quitte le lecteur")
+    bctx6.close()
+
     # --- téléchargement pour regarder hors ligne : fiche -> téléchargements -> réseau coupé -> lecture -> position renvoyée
     polar = ctx.db.one("SELECT id FROM items WHERE type='movie' AND title='Nuit polaire'")["id"]
     bctx5, page5 = browser_ctx(browser, admin)

@@ -13,6 +13,7 @@ import { renderSettings } from './views/settings.js';
 import { renderAdmin } from './views/admin.js';
 import { renderPlayer } from './player.js';
 import { renderTogether } from './views/together.js';
+import './remote.js'; // télécommande, clavier et manette
 import { createGroupDialog, currentGroups, isFreshFeed, onGroups, startGroupsFeed, stopGroupsFeed } from './groups.js';
 import { canInstall, install, onInstallChange, setupInstall } from './install.js';
 import { forgetMe, list as listDownloads, pump, rememberMe, rememberedMe, supported as offlineSupported, syncProgress } from './offline.js';
@@ -155,7 +156,12 @@ function shell(active) {
     me.user.is_admin ? h('a', { href: '#/admin' }, 'Administration') : null,
     h('button', { onclick: logout }, 'Se déconnecter'));
   const userBtn = h('button.user-btn', { 'aria-label': 'Menu utilisateur', 'aria-haspopup': 'true',
-    onclick: (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; } }, avatar(me.user, 34));
+    onclick: (e) => {
+      e.stopPropagation();
+      menu.hidden = !menu.hidden;
+      const first = !menu.hidden && menu.querySelector('a, button:not([hidden])');
+      if (first) first.focus({ preventScroll: true });
+    } }, avatar(me.user, 34));
   const header = h('header.topbar',
     // application installée : plus de bouton « précédent » du navigateur, on en met un
     h('button.icon-btn.topbar-back', { type: 'button', 'aria-label': 'Retour', title: 'Retour', hidden: active === 'home',
