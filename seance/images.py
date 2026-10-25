@@ -79,7 +79,7 @@ class Images:
             video = item
         elif t in ("show", "season"):
             video = self._first_episode(item["show_id"] or item["id"])
-        if video and video["key"] and os.path.isfile(video["key"]):
+        if video and video["key"] and os.path.isfile(video["key"]) and not media.is_strm(video["key"]):
             dur = (video["duration_ms"] or 0) / 1000
             return ("frame", video["key"], max(1.0, dur * (0.2 if t == "movie" else 0.15)) if dur else 10.0)
         return None

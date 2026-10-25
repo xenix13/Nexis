@@ -17,6 +17,35 @@ _image_slots = threading.BoundedSemaphore(3)  # limite les ffmpeg d'images simul
 # une liste « concat » déguisée en .mkv) pourrait sinon lui faire ouvrir des adresses réseau ou d'autres fichiers.
 LOCAL_ONLY = ["-protocol_whitelist", "file,pipe"]
 REFUSED_FORMATS = {"hls", "applehttp", "concat", "ffconcat", "tee"}
+# Fichiers .strm : une adresse http(s) vers la vidéo (VOD IPTV, autre serveur…). ffmpeg n'y ouvre que du réseau
+# (jamais de fichier local, même si une playlist distante en désigne un) et se reconnecte en cas de coupure.
+STRM_EXT = ".strm"
+REMOTE_ONLY = ["-protocol_whitelist", "http,https,tcp,tls,crypto", "-reconnect", "1", "-reconnect_streamed", "1",
+               "-reconnect_delay_max", "10", "-rw_timeout", "20000000"]
+
+
+def is_strm(path):
+    return bool(path) and path.lower().endswith(STRM_EXT)
+
+
+def strm_url(path):
+    """Adresse contenue dans un .strm (première ligne utile), http(s) seulement."""
+    try:
+        with open(path, encoding="utf-8-sig", errors="replace") as f:
+            lines = f.read(8192).splitlines()
+    except OSError as e:
+        raise MediaError(f"fichier .strm illisible ({e.strerror})")
+    url = next((l.strip() for l in lines if l.strip() and not l.strip().startswith("#")), "")
+    if not url.lower().startswith(("http://", "https://")) or len(url) > 4000 or any(c.isspace() or ord(c) < 32 for c in url):
+        raise MediaError("le fichier .strm doit contenir une adresse http(s)")
+    return url
+
+
+def input_args(path):
+    """Arguments d'entrée de ffmpeg / ffprobe pour un fichier de bibliothèque (local ou .strm)."""
+    if is_strm(path):
+        return [*REMOTE_ONLY, "-i", strm_url(path)]
+    return [*LOCAL_ONLY, "-i", path]
 
 
 class MediaError(Exception):
@@ -92,11 +121,13 @@ def attachments(path):
 
 
 def probe(path):
-    out = run([FFPROBE, "-v", "error", *LOCAL_ONLY, "-print_format", "json", "-show_format", "-show_streams",
-               "-show_chapters", path], timeout=90)
+    remote = is_strm(path)
+    args = input_args(path)
+    out = run([FFPROBE, "-v", "error", *args[:-2], "-print_format", "json", "-show_format", "-show_streams",
+               "-show_chapters", args[-1]], timeout=90)
     data = json.loads(out or b"{}")
     fmt = data.get("format", {})
-    if set((fmt.get("format_name") or "").split(",")) & REFUSED_FORMATS:
+    if not remote and set((fmt.get("format_name") or "").split(",")) & REFUSED_FORMATS:
         raise MediaError("liste de lecture déguisée en vidéo : fichier ignoré")
     info = {
         "container": fmt.get("format_name", ""),
@@ -132,11 +163,13 @@ def probe(path):
                 "layout": s.get("channel_layout") or "", "rate": int(s.get("sample_rate") or 0),
                 "lang": _lang(tags), "title": tags.get("title") or "", "default": bool(disp.get("default")),
             })
-        elif kind == "attachment":
+        elif kind == "attachment" and not remote:
             att = attachment_info(s, tags)
             if att:
                 info["attachments"].append(att)
-        elif kind == "subtitle":
+        elif kind == "subtitle" and not remote:
+            # shortcut: sous-titres internes d'un .strm ignorés (les extraire relirait tout le flux distant,
+            # et un fournisseur IPTV coupe souvent la 2e connexion) ; les .srt posés à côté restent proposés
             info["subs"].append({
                 "index": s["index"], "codec": s.get("codec_name") or "", "lang": _lang(tags),
                 "title": tags.get("title") or "", "forced": bool(disp.get("forced")),

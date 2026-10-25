@@ -85,7 +85,7 @@ class ChapterImages:
         return made
 
     def _grab(self, item, chapter, dest):
-        if not item["key"] or not os.path.isfile(item["key"]):
+        if not item["key"] or not os.path.isfile(item["key"]) or media.is_strm(item["key"]):
             return False
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         start, end = float(chapter["start"]), float(chapter["end"])

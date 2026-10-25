@@ -22,7 +22,7 @@ def _videos_in(dirpath, filenames, videos):
         if f.startswith("."):
             continue
         ext = os.path.splitext(f)[1].lower()
-        if ext not in VIDEO_EXT:
+        if ext not in VIDEO_EXT and ext != media.STRM_EXT:
             continue
         full = os.path.join(dirpath, f)
         try:

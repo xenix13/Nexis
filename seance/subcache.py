@@ -180,7 +180,7 @@ class SubtitleCache:
             return None
 
     def needs_trick(self, item):
-        if self.ctx.db.setting("trickplay", "1") != "1":
+        if self.ctx.db.setting("trickplay", "1") != "1" or media.is_strm(item["key"]):
             return False
         probe = json.loads(item["probe"] or "{}") if isinstance(item["probe"], str) else item["probe"]
         if not (probe or {}).get("video") or (probe.get("duration") or 0) < 60:

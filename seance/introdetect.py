@@ -146,6 +146,8 @@ class FingerprintCache:
         duration = (item["duration_ms"] or 0) / 1000
         length = min(minutes * 60, duration)
         start = 0.0 if part == "head" else max(0.0, duration - length)
+        if media.is_strm(item["key"]):
+            raise FingerprintError("flux distant (.strm) : pas d'analyse")
         fp = fingerprint(item["key"], start, length)
         with open(path + ".tmp", "w", encoding="utf-8") as f:
             json.dump({"fp": fp, "start": start}, f)

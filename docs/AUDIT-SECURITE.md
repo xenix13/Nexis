@@ -57,6 +57,7 @@ Aucune faille critique (exécution de code à distance, contournement de l'authe
 ### 4. Fichier piégé dans la médiathèque
 **Constat.** ffmpeg reconnaît les formats par leur contenu. Un « film » qui est en réalité une playlist HLS ou une liste `concat` lui fait ouvrir les adresses qu'elle contient : fichiers du serveur, ou adresses du réseau local.
 **Correctif** (`media.py`, `transcoder.py`, `subcache.py`, `introdetect.py`). Toutes les lectures de fichiers des bibliothèques passent `-protocol_whitelist file,pipe` (aucun accès réseau). L'analyse refuse les formats `hls`, `concat` et `tee` : un tel fichier n'est jamais indexé ni lu.
+**Fichiers `.strm` (3.5.2).** Exception voulue : un `.strm` désigne une vidéo distante. Seule une adresse `http(s)://` est acceptée (sinon le fichier n'est pas indexé). ffmpeg l'ouvre avec `-protocol_whitelist http,https,tcp,tls,crypto` : jamais de fichier local, même si une playlist distante en désigne un. Risque accepté : un `.strm` peut viser une adresse du réseau local. Les dossiers des bibliothèques sont choisis par l'administrateur, et seul ce qui y est déposé est lu ; ne pas y laisser écrire des personnes non fiables.
 
 ### 5. Déni de service par connexions lentes
 **Constat.** Le serveur n'avait aucun délai de lecture ni d'écriture et créait un fil par connexion, sans limite. Quelques connexions ouvertes sans rien envoyer (« slowloris ») suffisaient à l'épuiser.

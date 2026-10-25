@@ -143,6 +143,8 @@ Si un film ou une série est mal identifié, ouvre sa fiche puis **Identifier…
 
 Une série = un dossier sous la racine de la bibliothèque. Les numéros de saison viennent du dossier `Season XX` / `Saison XX` ou du `SxxEyy` du nom de fichier.
 
+**Fichiers `.strm`** (vidéo hébergée ailleurs : VOD d'un fournisseur IPTV, autre serveur, service cloud) : un fichier texte qui contient l'adresse `http(s)://…` de la vidéo, nommé et rangé comme une vidéo normale (`Inception (2010)/Inception (2010).strm`). Il est identifié sur TMDB, et le `.nfo`, les images et les `.srt` posés à côté sont pris en compte comme pour un fichier local. Nexis relaie toujours le flux (remux ou transcodage, jamais de lecture directe), avec reconnexion en cas de coupure. Pour ne pas multiplier les connexions vers le fournisseur (beaucoup n'en autorisent qu'une), Nexis ne fait pas sur ces flux les analyses qui reliraient toute la vidéo : aperçus de la barre, images de chapitres, détection d'intro, sous-titres internes. Seules les adresses http(s) sont acceptées.
+
 ## Nouveautés détectées automatiquement
 
 Sur un partage SMB, Linux n'est pas prévenu des fichiers ajoutés depuis une autre machine. Nexis compare donc régulièrement les dates de modification des **dossiers** de chaque bibliothèque, ce qui reste très léger même avec des milliers de dossiers. Après un changement, il attend que les dossiers ne bougent plus (copie terminée) et ne revoit **que les dossiers qui ont changé** (scan partiel) : un nouvel épisode ne fait relire que le dossier de sa saison, pas toute la bibliothèque. Les fichiers déjà connus et inchangés ne sont ni réanalysés ni réécrits. Un fichier modifié il y a moins de 45 secondes est considéré comme en cours de copie : il est repris au passage suivant. La fréquence se règle dans **Administration → Métadonnées et lecture** (par défaut : toutes les minutes).
@@ -388,8 +390,7 @@ L'interface (`static/`) est en JavaScript sans étape de compilation.
 - [ ] Optimisation générale (resynchronisation plus rapide, moins de requêtes) — première passe faite : horloge mesurée une fois pour toute la soirée et affinée sans requête, écart rattrapé environ 3 fois plus vite, liste des groupes coupée pendant la lecture ; à poursuivre avec les constats de test réels
 
 ### Médiathèque
-- [ ] Fichiers `.strm` : lecture du flux distant qu'ils désignent, avec affiche et métadonnées comme un fichier local (source et fonctionnement à définir ensemble)
-- [ ] Import de l'historique « vu » depuis Jellyfin, par utilisateur
+- [x] Fichiers `.strm` : lecture du flux distant qu'ils désignent, avec affiche et métadonnées comme un fichier local
 
 ### Performances
 - [ ] Optimiser le serveur et l'interface (requêtes, cache, poids des pages, mémoire)

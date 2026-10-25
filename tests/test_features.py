@@ -319,6 +319,47 @@ class FeaturesTest(unittest.TestCase):
             self.ctx.live.stop_all()
             self.admin.call("DELETE", f"/api/admin/live/sources/{sid}")
 
+    # ------------------------------------------------------------ fichiers .strm
+    def test_strm_remote_file(self):
+        """Un .strm (adresse http) : scanné comme un film, lu via Nexis (jamais en direct), pas d'analyse lourde."""
+        import functools
+        import http.server
+        src = os.path.join(self.media, "films", "Le Grand Voyage (2019)")
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(
+            http.server.SimpleHTTPRequestHandler, directory=src))
+        srv.handle_error = lambda *a: None  # ffmpeg coupe la connexion en s'arrêtant
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        folder = os.path.join(self.media, "films", "Lointain (2020)")
+        os.makedirs(folder)
+        with open(os.path.join(folder, "Lointain (2020).strm"), "w") as f:
+            f.write(f"http://127.0.0.1:{srv.server_address[1]}/Le Grand Voyage (2019).mp4".replace(" ", "%20") + "\n")
+        with open(os.path.join(folder, "Piège (2020).strm"), "w") as f:
+            f.write("file:///etc/passwd\n")  # refusé : pas de fichier local par ce biais
+        try:
+            self.admin.call("POST", "/api/admin/scan", {"library": self.libs["Films"]})
+            wait_scan(self.admin)
+            row = self.ctx.db.one("SELECT * FROM items WHERE key LIKE '%Lointain (2020).strm'")
+            self.assertIsNotNone(row)
+            self.assertGreater(row["duration_ms"], 1000)
+            self.assertIsNone(self.ctx.db.one("SELECT id FROM items WHERE key LIKE '%Piège%'"))
+            self.assertFalse(self.ctx.subtitles.needs_trick(row))  # pas de vignettes : relirait tout le flux
+            st, p = self.admin.call("POST", "/api/play", {"id": row["id"], "quality": "original"})
+            self.assertEqual(st, 200, p)
+            self.assertNotEqual(p["mode"], "direct")  # relayé par Nexis
+            for _ in range(60):
+                st, body, h = self.admin.call("GET", p["url"], raw=True)
+                if st == 200:
+                    break
+                time.sleep(0.5)
+            self.assertEqual(st, 200)
+            self.assertIn(b"#EXTM3U", body)
+            self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
+        finally:
+            shutil.rmtree(folder)
+            srv.shutdown()
+            self.admin.call("POST", "/api/admin/scan", {"library": self.libs["Films"]})
+            wait_scan(self.admin)
+
     # ------------------------------------------------------------ regarder ensemble
     def events(self, client, gid, n, timeout=10, path=None):
         """Lit n événements SSE du groupe (connexion HTTP brute avec le cookie de session)."""

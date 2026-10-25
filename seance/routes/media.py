@@ -264,8 +264,8 @@ def register(app, ctx, x):
             stop_stream(str(b["replace"]), uid)
         p = plan(probe, audio_id, burn, quality, caps, db.setting("downmix_algo", "none"),
                  float(db.setting("downmix_boost", "2") or 2))
-        if p["mode"] == "direct" and b.get("no_direct"):
-            p["mode"] = "copy"  # le navigateur a refusé la lecture directe
+        if p["mode"] == "direct" and (b.get("no_direct") or media.is_strm(r["key"])):
+            p["mode"] = "copy"  # le navigateur a refusé la lecture directe, ou flux distant (.strm) relayé par Nexis
         sid = secrets.token_urlsafe(12)
         try:
             kf = keyframes_for(r) if p["mode"] == "copy" else None
@@ -382,7 +382,7 @@ def register(app, ctx, x):
     def stream_file(req):
         st = own_stream(req, req.params["sid"])
         r = db.one("SELECT key FROM items WHERE id=?", (int(st["rating_key"]),))
-        if not r or not os.path.isfile(r["key"]):
+        if not r or not os.path.isfile(r["key"]) or media.is_strm(r["key"]):
             raise HTTPError(404, "Fichier introuvable")
         return file_response(req, r["key"])
 
