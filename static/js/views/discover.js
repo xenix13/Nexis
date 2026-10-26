@@ -50,7 +50,7 @@ export async function renderDiscover(main, ctx) {
   const data = await get('/api/discover/home');
   if (!ctx.isCurrent()) return;
   const intro = data.seerr ? null : h('p.muted.small.discover-note', state.me.user.is_admin
-    ? h('span', 'Les demandes ne sont pas encore branchées : configure Seerr dans ', h('a', { href: '#/admin/requests' }, 'Administration → Demandes'), '.')
+    ? h('span', 'Les demandes ne sont pas encore branchées : configure Seerr dans ', h('a', { href: '#/admin/requests' }, 'Paramètres → Demandes'), '.')
     : 'Les demandes ne sont pas encore activées sur ce serveur.');
   clear(main, head, intro,
     row('Tendances de la semaine', data.trending, discoverCard),

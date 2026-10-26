@@ -1,4 +1,5 @@
 import { put } from '../api.js';
+import { ADMIN_ALIASES, ADMIN_GROUPS, renderAdminSection } from './admin.js';
 import { applyPrefs, navItems, refreshMe, repaintNav, state } from '../app.js';
 import { arrange, avatar, clear, field, h, icon, select, toast, toggle } from '../ui.js';
 
@@ -55,7 +56,19 @@ function layoutList(items, isOn, onOrder, onShow) {
   return list;
 }
 
-export async function renderSettings(main) {
+// ---------------------------------------------------------------- Mon compte
+export const ACCOUNT_GROUP = { title: 'Mon compte', items: [
+  { id: 'profile', label: 'Profil', icon: 'user', lead: 'Ton nom, ton avatar, ton code PIN et ton mot de passe.',
+    keys: 'nom avatar couleur pin code mot de passe sécurité' },
+  { id: 'playback', label: 'Lecture', icon: 'play', lead: 'Qualité, langues, sous-titres et enchaînement des épisodes.',
+    keys: 'qualité langue audio sous-titres taille épisode suivant générique intro automatique' },
+  { id: 'appearance', label: 'Apparence', icon: 'palette', lead: 'Thème, couleur d’accent et taille des affiches.',
+    keys: 'thème sombre clair oled couleur accent affiches taille' },
+  { id: 'layout', label: 'Accueil et menu', icon: 'home', lead: 'Les rangées de l’accueil et les liens de la barre du haut : ordre et affichage.',
+    keys: 'accueil rangées ordre barre du haut menu liens masquer réorganiser' },
+] };
+
+function accountPage(id, body, rerender) {
   const me = state.me;
   const p = { ...me.prefs };
 
@@ -74,61 +87,101 @@ export async function renderSettings(main) {
     t.querySelector('input').addEventListener('change', (e) => save({ [key]: e.target.checked }));
     return t;
   };
-
-  // --- profile
-  const name = h('input', { value: me.user.display_name, maxlength: 50 });
-  let color = me.user.avatar_color;
-  const preview = h('span');
-  const paintPreview = () => preview.replaceChildren(avatar({ ...me.user, display_name: name.value, avatar_color: color }, 56));
-  paintPreview();
-  name.addEventListener('input', paintPreview);
   const swatches = (current, onPick) => h('div.swatches', ACCENTS.map((c) => h('button.swatch', {
     type: 'button', style: { background: c }, 'aria-label': c, class: c === current ? 'swatch on' : 'swatch',
     onclick: (e) => {
-      e.currentTarget.parentElement.querySelectorAll('.swatch').forEach((s) => s.classList.remove('on'));
+      e.currentTarget.parentElement.querySelectorAll('.swatch').forEach((sw) => sw.classList.remove('on'));
       e.currentTarget.classList.add('on');
       onPick(c);
     } })));
 
-  const profile = h('section.panel', h('h2', 'Profil'),
-    h('div.profile-row', preview, h('div.grow',
-      field('Nom affiché', name),
-      field('Couleur de l’avatar', swatches(color, (c) => { color = c; paintPreview(); })),
-      h('button.btn.primary', { onclick: async () => {
-        try { await put('/api/me/profile', { display_name: name.value.trim(), avatar_color: color }); await refreshMe(); toast('Profil mis à jour', 'ok'); }
-        catch (e) { toast(e.message, 'bad'); }
-      } }, 'Enregistrer le profil'))));
+  if (id === 'profile') {
+    const name = h('input', { value: me.user.display_name, maxlength: 50 });
+    let color = me.user.avatar_color;
+    const preview = h('span');
+    const paintPreview = () => preview.replaceChildren(avatar({ ...me.user, display_name: name.value, avatar_color: color }, 56));
+    paintPreview();
+    name.addEventListener('input', paintPreview);
+    const profile = h('section.panel', h('h2', 'Nom et avatar'),
+      h('div.profile-row', preview, h('div.grow',
+        field('Nom affiché', name),
+        field('Couleur de l’avatar', swatches(color, (c) => { color = c; paintPreview(); })),
+        h('button.btn.primary', { onclick: async () => {
+          try { await put('/api/me/profile', { display_name: name.value.trim(), avatar_color: color }); await refreshMe(); toast('Profil mis à jour', 'ok'); }
+          catch (e) { toast(e.message, 'bad'); }
+        } }, 'Enregistrer le profil'))));
 
-  // --- playback
-  const subSize = h('input', { type: 'range', min: 60, max: 200, step: 10, value: p.sub_size });
-  const subSizeLabel = h('span.muted', `${p.sub_size} %`);
-  subSize.addEventListener('input', () => { subSizeLabel.textContent = `${subSize.value} %`; });
-  subSize.addEventListener('change', () => save({ sub_size: Number(subSize.value) }));
-  const playback = h('section.panel', h('h2', 'Lecture'),
-    h('div.grid2',
-      field('Qualité par défaut', bindSelect('quality', [['original', 'Originale (le moins de transcodage)'],
-        ['1080p', '1080p · 10 Mb/s'], ['720p', '720p · 4 Mb/s'], ['480p', '480p · 1,5 Mb/s']]),
-      '« Originale » évite au maximum de faire travailler le processeur du serveur (lecture directe ou remux quand c’est possible).'),
-      field('Langue audio préférée', bindSelect('audio_lang', LANGS)),
-      field('Sous-titres', bindSelect('sub_mode', [['foreign', 'Si l’audio n’est pas dans ma langue'],
-        ['always', 'Toujours'], ['never', 'Jamais']])),
-      field('Langue des sous-titres', bindSelect('sub_lang', LANGS)),
-      field('Taille des sous-titres', h('div.inline', subSize, subSizeLabel))),
-    bindToggle('autoplay_next', 'Enchaîner automatiquement l’épisode suivant'),
-    field('Délai avant l’épisode suivant', bindSelect('next_delay', [0, 3, 5, 10, 15, 20, 30].map((n) => [String(n), n ? `${n} secondes` : 'Immédiatement']), Number),
-      'À la fin de l’épisode, un compte à rebours laisse le choix : lire tout de suite ou annuler. Pendant le générique, l’épisode suivant est seulement proposé.'),
-    bindToggle('auto_skip_intro', 'Passer les génériques d’ouverture automatiquement'));
+    const pin = h('input', { type: 'password', inputmode: 'numeric', maxlength: 8, autocomplete: 'off', placeholder: '4 à 8 chiffres' });
+    const pinPass = h('input', { type: 'password', autocomplete: 'current-password' });
+    const pinPanel = me.user.home ? h('section.panel', h('h2', 'Code PIN du profil'),
+      h('p.muted.small', me.user.has_pin
+        ? 'Ton profil est protégé : le code est demandé quand quelqu’un passe sur ton profil depuis « Changer de profil ».'
+        : 'Sans code, n’importe quel membre du foyer peut passer sur ton profil depuis « Changer de profil » (ton mot de passe est alors demandé).'),
+      h('div.grid2', field('Nouveau code PIN', pin), me.user.managed ? null : field('Mot de passe actuel', pinPass)),
+      h('div.actions-row',
+        h('button.btn.primary', { onclick: async () => {
+          try { await put('/api/me/pin', { pin: pin.value, password: pinPass.value }); await refreshMe(); toast('Code PIN enregistré', 'ok'); rerender(); }
+          catch (e) { toast(e.message, 'bad'); }
+        } }, 'Enregistrer le code'),
+        me.user.has_pin ? h('button.btn', { onclick: async () => {
+          try { await put('/api/me/pin', { pin: '', password: pinPass.value }); await refreshMe(); toast('Code PIN retiré', 'ok'); rerender(); }
+          catch (e) { toast(e.message, 'bad'); }
+        } }, 'Retirer le code') : null)) : null;
 
-  // --- display
-  const hidden = new Set(p.hidden_libraries);
-  const display = h('section.panel', h('h2', 'Affichage'),
-    field('Couleur d’accent', swatches(p.accent, (c) => save({ accent: c }, 'Couleur appliquée'))),
-    h('div.grid2',
-      field('Thème', bindSelect('theme', [['dark', 'Sombre'], ['oled', 'Noir profond (OLED)'], ['light', 'Clair']])),
-      field('Taille des affiches', bindSelect('poster_size', [['s', 'Petites'], ['m', 'Moyennes'], ['l', 'Grandes']]))),
-  );
+    const cur = h('input', { type: 'password', autocomplete: 'current-password' });
+    const nw = h('input', { type: 'password', autocomplete: 'new-password' });
+    const nw2 = h('input', { type: 'password', autocomplete: 'new-password' });
+    const security = me.user.managed ? null : h('section.panel', h('h2', 'Mot de passe'),
+      h('div.grid3', field('Actuel', cur), field('Nouveau', nw), field('Confirmation', nw2)),
+      h('button.btn', { onclick: async () => {
+        if (nw.value !== nw2.value) { toast('Les mots de passe ne correspondent pas', 'bad'); return; }
+        try {
+          await put('/api/me/password', { current: cur.value, new: nw.value });
+          cur.value = nw.value = nw2.value = '';
+          toast('Mot de passe changé. Tes autres sessions ont été déconnectées.', 'ok');
+        } catch (e) { toast(e.message, 'bad'); }
+      } }, 'Changer le mot de passe'));
+    clear(body, profile, pinPanel, security);
+    return;
+  }
+
+  if (id === 'playback') {
+    const subSize = h('input', { type: 'range', min: 60, max: 200, step: 10, value: p.sub_size });
+    const subSizeLabel = h('span.muted', `${p.sub_size} %`);
+    subSize.addEventListener('input', () => { subSizeLabel.textContent = `${subSize.value} %`; });
+    subSize.addEventListener('change', () => save({ sub_size: Number(subSize.value) }));
+    clear(body,
+      h('section.panel', h('h2', 'Qualité et langue'),
+        h('div.grid2',
+          field('Qualité par défaut', bindSelect('quality', [['original', 'Originale (le moins de transcodage)'],
+            ['1080p', '1080p · 10 Mb/s'], ['720p', '720p · 4 Mb/s'], ['480p', '480p · 1,5 Mb/s']]),
+          '« Originale » évite au maximum de faire travailler le processeur du serveur (lecture directe ou remux quand c’est possible).'),
+          field('Langue audio préférée', bindSelect('audio_lang', LANGS)))),
+      h('section.panel', h('h2', 'Sous-titres'),
+        h('div.grid2',
+          field('Afficher les sous-titres', bindSelect('sub_mode', [['foreign', 'Si l’audio n’est pas dans ma langue'],
+            ['always', 'Toujours'], ['never', 'Jamais']])),
+          field('Langue des sous-titres', bindSelect('sub_lang', LANGS))),
+        field('Taille des sous-titres', h('div.inline', subSize, subSizeLabel))),
+      h('section.panel', h('h2', 'Séries'),
+        bindToggle('autoplay_next', 'Enchaîner automatiquement l’épisode suivant'),
+        field('Délai avant l’épisode suivant', bindSelect('next_delay', [0, 3, 5, 10, 15, 20, 30].map((n) => [String(n), n ? `${n} secondes` : 'Immédiatement']), Number),
+          'À la fin de l’épisode, un compte à rebours laisse le choix : lire tout de suite ou annuler. Pendant le générique, l’épisode suivant est seulement proposé.'),
+        bindToggle('auto_skip_intro', 'Passer les génériques d’ouverture automatiquement')));
+    return;
+  }
+
+  if (id === 'appearance') {
+    clear(body, h('section.panel', h('h2', 'Couleurs et affiches'),
+      field('Couleur d’accent', swatches(p.accent, (c) => save({ accent: c }, 'Couleur appliquée'))),
+      h('div.grid2',
+        field('Thème', bindSelect('theme', [['dark', 'Sombre'], ['oled', 'Noir profond (OLED)'], ['light', 'Clair']])),
+        field('Taille des affiches', bindSelect('poster_size', [['s', 'Petites'], ['m', 'Moyennes'], ['l', 'Grandes']])))));
+    return;
+  }
 
   // --- accueil et barre du haut : ordre et rangées affichées
+  const hidden = new Set(p.hidden_libraries);
   const homeHidden = new Set(p.home_hidden);
   const homeItems = [
     { key: 'together', label: 'Regarder ensemble', hint: 'quand un groupe est ouvert' },
@@ -152,7 +205,7 @@ export async function renderSettings(main) {
   };
   const navHidden = new Set(p.nav_hidden);
   const layoutPanel = (title, lead, list, resetPatch) => h('section.panel', h('h2', title), h('p.muted.small', lead), list(),
-    h('button.btn.ghost', { type: 'button', onclick: async () => { await save(resetPatch, 'Ordre par défaut rétabli'); Object.assign(p, me.prefs); renderSettings(main); } },
+    h('button.btn.ghost', { type: 'button', onclick: async () => { await save(resetPatch, 'Ordre par défaut rétabli'); rerender(); } },
       'Rétablir l’ordre par défaut'));
   const homePanel = layoutPanel('Accueil', 'Glisse les rangées ou utilise les flèches pour choisir leur ordre ; l’interrupteur les affiche ou les masque.',
     () => layoutList(arrange(homeItems.map((i) => i.key), p.home_order).map((k) => homeById.get(k)), homeOn,
@@ -160,42 +213,65 @@ export async function renderSettings(main) {
     { home_order: [] });
   const navPanel = layoutPanel('Barre du haut', 'Ordre des liens en haut de l’écran. Les liens masqués restent accessibles depuis l’accueil.',
     () => layoutList(navItems(me), (k) => !navHidden.has(k),
-      async (keys) => { await save({ nav_order: keys }, 'Barre du haut enregistrée'); refreshShell(); },
-      async (k, on) => { if (on) navHidden.delete(k); else navHidden.add(k); await save({ nav_hidden: [...navHidden] }, 'Barre du haut enregistrée'); refreshShell(); }),
+      async (keys) => { await save({ nav_order: keys }, 'Barre du haut enregistrée'); repaintNav(); },
+      async (k, on) => { if (on) navHidden.delete(k); else navHidden.add(k); await save({ nav_hidden: [...navHidden] }, 'Barre du haut enregistrée'); repaintNav(); }),
     { nav_order: [] });
-  const refreshShell = repaintNav; // la barre du haut reflète tout de suite le nouvel ordre
+  clear(body, homePanel, navPanel);
+}
 
-  // --- password
-  const cur = h('input', { type: 'password', autocomplete: 'current-password' });
-  const nw = h('input', { type: 'password', autocomplete: 'new-password' });
-  const nw2 = h('input', { type: 'password', autocomplete: 'new-password' });
-  const security = h('section.panel', h('h2', 'Mot de passe'),
-    h('div.grid3', field('Actuel', cur), field('Nouveau', nw), field('Confirmation', nw2)),
-    h('button.btn', { onclick: async () => {
-      if (nw.value !== nw2.value) { toast('Les mots de passe ne correspondent pas', 'bad'); return; }
-      try {
-        await put('/api/me/password', { current: cur.value, new: nw.value });
-        cur.value = nw.value = nw2.value = '';
-        toast('Mot de passe changé. Tes autres sessions ont été déconnectées.', 'ok');
-      } catch (e) { toast(e.message, 'bad'); }
-    } }, 'Changer le mot de passe'));
+// ---------------------------------------------------------------- l'espace Paramètres
+// Un seul endroit pour tout régler : menu groupé à gauche (sur téléphone : le menu, puis la page choisie),
+// une page par sujet. Réglages personnels sous /settings/…, réglages du serveur sous /admin/….
+export async function renderSettingsArea(main, area, section, ctx) {
+  const me = state.me;
+  const groups = [{ ...ACCOUNT_GROUP, area: 'settings' },
+    ...(me.user.is_admin ? ADMIN_GROUPS.map((g) => ({ ...g, area: 'admin' })) : [])];
+  if (area === 'admin') section = ADMIN_ALIASES[section] || section;
+  const all = groups.flatMap((g) => g.items.map((it) => ({ ...it, area: g.area })));
+  const chosen = section ? all.find((it) => it.area === area && it.id === section) : null;
+  const current = chosen || all.find((it) => it.area === area) || all[0];
 
-  const pin = h('input', { type: 'password', inputmode: 'numeric', maxlength: 8, autocomplete: 'off', placeholder: '4 à 8 chiffres' });
-  const pinPass = h('input', { type: 'password', autocomplete: 'current-password' });
-  const pinPanel = me.user.home ? h('section.panel', h('h2', 'Code PIN du profil'),
-    h('p.muted.small', me.user.has_pin
-      ? 'Ton profil est protégé : le code est demandé quand quelqu’un passe sur ton profil depuis « Changer de profil ».'
-      : 'Sans code, n’importe quel membre du foyer peut passer sur ton profil depuis « Changer de profil » (ton mot de passe est alors demandé).'),
-    h('div.grid2', field('Nouveau code PIN', pin), me.user.managed ? null : field('Mot de passe actuel', pinPass)),
-    h('div.actions-row',
-      h('button.btn.primary', { onclick: async () => {
-        try { await put('/api/me/pin', { pin: pin.value, password: pinPass.value }); await refreshMe(); toast('Code PIN enregistré', 'ok'); renderSettings(main); }
-        catch (e) { toast(e.message, 'bad'); }
-      } }, 'Enregistrer le code'),
-      me.user.has_pin ? h('button.btn', { onclick: async () => {
-        try { await put('/api/me/pin', { pin: '', password: pinPass.value }); await refreshMe(); toast('Code PIN retiré', 'ok'); renderSettings(main); }
-        catch (e) { toast(e.message, 'bad'); }
-      } }, 'Retirer le code') : null)) : null;
+  const search = h('input.settings-search', { type: 'search', placeholder: 'Rechercher un réglage…', 'aria-label': 'Rechercher un réglage' });
+  const nav = h('nav.settings-nav', { 'aria-label': 'Sections des paramètres' }, search,
+    groups.map((g) => h('div.settings-group', h('div.settings-group-title', g.title),
+      g.items.map((it) => {
+        const on = it.id === current.id && g.area === current.area;
+        const badge = g.area === 'admin' && it.id === 'update' && me.update
+          ? h('span.settings-badge', { title: `Nexis ${me.update} est disponible` }, 'Nouveau') : null;
+        return h('a.settings-link', { href: `#/${g.area}/${it.id}`, dataset: { keys: `${it.label} ${it.lead} ${it.keys}` },
+          class: on ? 'settings-link active' : 'settings-link', 'aria-current': on ? 'page' : null }, icon(it.icon), h('span', it.label), badge);
+      }))),
+    h('p.settings-empty.muted.small', { hidden: true }, 'Aucun réglage ne correspond.'));
+  const fold = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  search.addEventListener('input', () => {
+    const words = fold(search.value).split(/\s+/).filter(Boolean);
+    let shown = 0;
+    nav.querySelectorAll('.settings-group').forEach((g) => {
+      let any = false;
+      g.querySelectorAll('.settings-link').forEach((a) => {
+        const ok = words.every((w) => fold(a.dataset.keys).includes(w));
+        a.hidden = !ok;
+        any = any || ok;
+        shown += ok ? 1 : 0;
+      });
+      g.hidden = !any;
+    });
+    nav.querySelector('.settings-empty').hidden = shown > 0;
+  });
+  search.addEventListener('keydown', (e) => { // Entrée : ouvre le premier résultat
+    if (e.key !== 'Enter') return;
+    const first = [...nav.querySelectorAll('.settings-link')].find((a) => !a.hidden);
+    if (first) { e.preventDefault(); location.hash = first.getAttribute('href'); }
+  });
 
-  clear(main, h('div.page-head', h('h1', 'Réglages')), h('div.panels', profile, playback, display, homePanel, navPanel, pinPanel, me.user.managed ? null : security));
+  const body = h('div.settings-body');
+  const content = h('section.settings-content',
+    h('a.settings-back', { href: `#/${area}` }, icon('back'), 'Paramètres'),
+    h('header.settings-head', h('h2', current.label), h('p.muted', current.lead)),
+    body);
+  clear(main, h('div.settings-page', { class: section ? 'settings-page' : 'settings-page no-section' },
+    h('div.page-head', h('h1', 'Paramètres')), h('div.settings-layout', nav, content)));
+  document.title = `${current.label} · Paramètres · Nexis`;
+  if (current.area === 'admin') await renderAdminSection(current.id, body, ctx);
+  else accountPage(current.id, body, () => renderSettingsArea(main, area, section, ctx));
 }

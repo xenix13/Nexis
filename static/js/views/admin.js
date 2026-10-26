@@ -3,12 +3,44 @@ import { refreshMe, state } from '../app.js';
 import { followUpdate } from '../updater.js';
 import { avatar, clear, confirmDialog, field, fmtTime, h, icon, modal, select, toast, toggle } from '../ui.js';
 
-function tabs(active) {
-  const t = (id, label) => h('a.tab', { href: `#/admin/${id}`, class: id === active ? 'tab active' : 'tab' }, label);
-  return h('div.tabs', t('libraries', 'Bibliothèques'), t('shares', 'Partages réseau'), t('users', 'Utilisateurs'), t('settings', 'Métadonnées et lecture'),
-    t('tasks', 'Tâches planifiées'), t('live', 'TV en direct'), t('requests', 'Demandes'),
-    t('streams', 'Lectures en cours'));
-}
+// Pages de l'administration, rangées par thème dans le menu des Paramètres.
+// keys : mots qui la font trouver avec la recherche du menu.
+export const ADMIN_GROUPS = [
+  { title: 'Serveur', items: [
+    { id: 'dashboard', label: 'Vue d’ensemble', icon: 'dashboard', lead: 'Version, état du serveur et lectures en cours.',
+      keys: 'tableau de bord lectures en cours streams mémoire swap charge processeur version arrêter' },
+    { id: 'users', label: 'Utilisateurs', icon: 'group', lead: 'Comptes, profils du foyer, contrôle parental et accès aux bibliothèques.',
+      keys: 'compte profil enfant pin âge restriction administrateur désactiver mot de passe foyer' },
+    { id: 'update', label: 'Mise à jour', icon: 'upgrade', lead: 'Installer la dernière version de Nexis.',
+      keys: 'version mettre à jour github nouveautés changements réinstaller' },
+    { id: 'tasks', label: 'Tâches planifiées', icon: 'clock', lead: 'Travaux de fond : scans, métadonnées, intros, sous-titres, nettoyage.',
+      keys: 'planification scan automatique nettoyage cache intro générique chapitres horaire' },
+  ] },
+  { title: 'Médiathèque', items: [
+    { id: 'libraries', label: 'Bibliothèques', icon: 'folder', lead: 'Les dossiers de films et de séries, et leur analyse.',
+      keys: 'dossier films séries animes scanner rescanner ajouter chemin' },
+    { id: 'shares', label: 'Partages réseau', icon: 'storage', lead: 'Monter les dossiers de ton NAS (SMB) pour y créer des bibliothèques.',
+      keys: 'nas smb cifs samba montage monter partage réseau' },
+    { id: 'metadata', label: 'Métadonnées', icon: 'film', lead: 'Affiches, résumés et titres d’épisodes (TMDB).',
+      keys: 'tmdb clé api affiches résumés langue actualiser images' },
+    { id: 'detection', label: 'Ajout des nouveautés', icon: 'eye', lead: 'Repérer tout seul les fichiers ajoutés, ou être prévenu par Radarr / Sonarr.',
+      keys: 'surveillance dossiers webhook radarr sonarr nouveaux fichiers détection' },
+    { id: 'requests', label: 'Demandes', icon: 'star', lead: 'Brancher Seerr pour que chacun puisse demander films et séries.',
+      keys: 'seerr overseerr jellyseerr demander radarr sonarr découvrir' },
+  ] },
+  { title: 'Lecture', items: [
+    { id: 'transcoding', label: 'Transcodage', icon: 'bolt', lead: 'Lectures simultanées et carte graphique.',
+      keys: 'processeur cpu gpu carte graphique nvidia nvenc vaapi intel amd limites lectures simultanées matériel' },
+    { id: 'subtitles', label: 'Sous-titres et son', icon: 'subs', lead: 'Préparation des sous-titres intégrés et mixage du son 5.1 / 7.1.',
+      keys: 'sous-titres préparer audio son 5.1 7.1 stéréo mixage downmix volume dialogues' },
+    { id: 'downloads', label: 'Téléchargements', icon: 'install', lead: 'Autoriser le visionnage hors ligne dans l’application.',
+      keys: 'hors ligne télécharger offline téléphone' },
+    { id: 'live', label: 'TV en direct', icon: 'tv', lead: 'Listes de chaînes IPTV (M3U) et guide des programmes.',
+      keys: 'iptv m3u xmltv chaînes guide epg télévision box' },
+  ] },
+];
+// anciennes adresses (favoris, liens) -> nouvelles pages
+export const ADMIN_ALIASES = { settings: 'metadata', streams: 'dashboard' };
 
 function since(ts) {
   if (!ts) return 'jamais';
@@ -357,21 +389,87 @@ async function sharesTab(body, ctx) {
       : h('div.empty', 'Aucun partage réseau géré par Nexis.'));
 }
 
-// --------------------------------------------------------------- settings
-async function settingsTab(body, ctx) {
+// --------------------------------------------------------------- réglages du serveur
+// Chaque page lit les réglages, puis se redessine après un enregistrement.
+async function withSettings(body, ctx, build) {
   const s = await get('/api/admin/settings');
   if (!ctx.isCurrent()) return;
+  const save = async (payload, msg) => {
+    try { await put('/api/admin/settings', payload); toast(msg, 'ok'); withSettings(body, ctx, build); } catch (e) { toast(e.message, 'bad'); }
+  };
+  clear(body, ...[build(s, save, () => withSettings(body, ctx, build))].flat());
+}
+
+const metadataPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   const key = h('input', { type: 'password', autocomplete: 'off',
     placeholder: s.tmdb_set ? 'Clé enregistrée (laisser vide pour la garder)' : 'Clé API (v3) ou jeton de lecture (v4)' });
   const lang = select([['fr-FR', 'Français (France)'], ['fr-CA', 'Français (Canada)'], ['en-US', 'Anglais'], ['de-DE', 'Allemand'],
     ['es-ES', 'Espagnol'], ['it-IT', 'Italien']], s.language);
+  return [
+    h('section.panel', h('h2', 'Clé TMDB et langue'),
+      h('p.muted.small', 'Affiches, résumés, distribution et titres d’épisodes viennent de The Movie Database. Crée un compte gratuit sur themoviedb.org, puis Paramètres → API → « Clé d’API ». Sans clé, Nexis utilise les noms de fichiers, les .nfo et les images présents dans tes dossiers.'),
+      h('div.plex-status', { class: s.tmdb_set ? 'plex-status ok' : 'plex-status' }, s.tmdb_set ? 'Clé TMDB configurée.' : 'Aucune clé TMDB.'),
+      h('div.grid2', field('Clé TMDB', key), field('Langue des métadonnées', lang)),
+      h('div.actions-row',
+        h('button.btn.primary', { onclick: () => save({ ...(key.value.trim() ? { tmdb_key: key.value.trim() } : {}), language: lang.value }, 'Métadonnées enregistrées') }, 'Enregistrer'),
+        s.tmdb_set ? h('button.btn', { onclick: () => save({ tmdb_key: '' }, 'Clé supprimée') }, 'Supprimer la clé') : null)),
+    h('section.panel', h('h2', 'Actualisation'),
+      h('p.muted.small', 'Nexis complète tout seul les fiches incomplètes (tâche « Actualiser les métadonnées »). Tu peux aussi tout recharger maintenant, par exemple après avoir changé de langue.'),
+      h('div.actions-row',
+        h('button.btn', { onclick: async () => {
+          try { await post('/api/admin/scan', { refresh_metadata: true }); toast('Actualisation de toutes les métadonnées lancée', 'ok'); }
+          catch (e) { toast(e.message, 'bad'); }
+        } }, 'Tout réactualiser maintenant'),
+        h('a.btn.ghost', { href: '#/admin/tasks' }, 'Planifier l’actualisation…'))),
+  ];
+});
+
+const detectionPage = (body, ctx) => withSettings(body, ctx, (s, save, reload) => {
   const watch = select([['0', 'Désactivée'], ['30', 'Toutes les 30 secondes'], ['60', 'Toutes les minutes'], ['300', 'Toutes les 5 minutes'],
     ['900', 'Toutes les 15 minutes']], String(s.watch_interval));
   const hookInput = h('input', { readonly: true, value: `${location.origin}${s.webhook_path}`, onfocus: (e) => e.target.select() });
+  return [
+    h('section.panel', h('h2', 'Surveillance des dossiers'),
+      h('p.muted.small', 'Sur un partage réseau, le système n’est pas prévenu des fichiers ajoutés depuis une autre machine. Nexis surveille donc les dossiers (très léger) et rescanne la bibliothèque concernée dès qu’une copie est terminée.'),
+      h('div.grid2', field('Surveiller les dossiers', watch, 'Le scan complet de sécurité se règle dans « Tâches planifiées ».')),
+      h('button.btn.primary', { onclick: () => save({ watch_interval: Number(watch.value) }, 'Enregistré') }, 'Enregistrer'),
+      s.watch_events.length ? h('details', h('summary.small', 'Derniers déclenchements'),
+        h('ul.small', s.watch_events.map((e) => h('li', `${new Date(e.t * 1000).toLocaleString('fr-FR')} — ${e.text}`)))) : null),
+    h('section.panel', h('h2', 'Webhook Radarr / Sonarr'),
+      h('p.muted.small', 'Pour un ajout instantané : Radarr et Sonarr préviennent Nexis dès qu’un fichier est importé.'),
+      h('div.copy-row', hookInput,
+        h('button.btn.small', { onclick: async () => {
+          try { await navigator.clipboard.writeText(hookInput.value); toast('Adresse copiée', 'ok'); }
+          catch { hookInput.select(); }
+        } }, 'Copier'),
+        h('button.btn.small.ghost', { onclick: async () => {
+          if (!await confirmDialog('Nouvelle adresse ?', 'L’ancienne adresse cessera de fonctionner : il faudra la remplacer dans Radarr et Sonarr.', 'Régénérer')) return;
+          await post('/api/admin/webhook/regenerate'); reload();
+        } }, 'Régénérer')),
+      h('p.muted.small', 'Dans Radarr et Sonarr : Paramètres → Connect → + → Webhook. Colle cette adresse dans « URL », méthode POST, et coche « On Import », « On Upgrade », « On Rename » et « On Delete ». Si Radarr est sur une autre machine, remplace l’adresse par celle du serveur Nexis vue depuis Radarr.')),
+  ];
+});
+
+const subtitlesPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   const prefetch = toggle('Préparer les sous-titres des nouveaux fichiers à l’avance', s.subs_prefetch);
-  const downloadsToggle = toggle('Autoriser les téléchargements pour regarder hors ligne', s.downloads);
-  downloadsToggle.querySelector('input').addEventListener('change', (e) => save({ downloads: e.target.checked }, 'Enregistré'));
   prefetch.querySelector('input').addEventListener('change', (e) => save({ subs_prefetch: e.target.checked }, 'Enregistré'));
+  const algo = select([['none', 'ffmpeg (Jellyfin par défaut)'], ['dave750', 'Dave750'], ['nightmode', 'Dialogues (nuit)'],
+    ['rfc7845', 'RFC 7845'], ['ac4', 'AC-4']], s.downmix_algo);
+  const boost = select([['1', '× 1 (aucun)'], ['1.5', '× 1,5'], ['2', '× 2 (Jellyfin par défaut)'], ['2.5', '× 2,5'], ['3', '× 3']], String(s.downmix_boost));
+  return [
+    h('section.panel', h('h2', 'Sous-titres intégrés'),
+      h('p.muted.small', 'Les sous-titres intégrés aux fichiers (MKV) ne peuvent être lus qu’en parcourant tout le fichier. Nexis les prépare à l’avance (toutes les pistes en une seule lecture), quand aucune lecture n’est en cours, pour qu’ils soient là dès la première seconde. Au lancement, le lecteur attend qu’ils soient prêts.'),
+      prefetch,
+      h('p.muted.small', s.subs_queue ? `${s.subs_queue} fichier(s) en attente de préparation.` : 'Aucun fichier en attente.'),
+      h('button.btn', { onclick: () => save({ subs_prefetch: true }, 'Préparation lancée pour toute la médiathèque') }, 'Tout préparer maintenant')),
+    h('section.panel', h('h2', 'Son 5.1 / 7.1 sur des enceintes stéréo'),
+      h('p.muted.small', 'Mêmes réglages que Jellyfin. « ffmpeg » garde un équilibre neutre ; « Dave750 » met un peu plus en avant les dialogues ; « Dialogues (nuit) » réduit fortement les effets et la musique ; « RFC 7845 » et « AC-4 » sont les mixages normalisés. Le gain remonte le volume après le mixage ; Nexis ajoute toujours un limiteur pour qu’il ne puisse pas saturer.'),
+      h('div.grid2', field('Mixage', algo), field('Gain après mixage', boost)),
+      h('button.btn.primary', { onclick: () => save({ downmix_algo: algo.value, downmix_boost: Number(boost.value) }, 'Mixage enregistré (prochaines lectures)') }, 'Enregistrer')),
+  ];
+});
+
+const transcodingPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   const maxStreams = h('input', { type: 'number', min: 1, max: 50, value: s.max_streams });
   const maxTranscodes = h('input', { type: 'number', min: 0, max: 16, value: s.max_transcodes });
   // transcodage matériel : moteurs proposés selon ce que le conteneur voit
@@ -394,75 +492,35 @@ async function settingsTab(body, ctx) {
     hwSave.disabled = false;
     hwSave.textContent = 'Tester et enregistrer';
   } }, 'Tester et enregistrer');
-  const save = async (payload, msg) => {
-    try { await put('/api/admin/settings', payload); toast(msg, 'ok'); settingsTab(body, ctx); } catch (e) { toast(e.message, 'bad'); }
-  };
-  clear(body,
-    h('section.panel', h('h2', 'Métadonnées (TMDB)'),
-      h('p.muted.small', 'Affiches, résumés, distribution et titres d’épisodes viennent de The Movie Database. Crée un compte gratuit sur themoviedb.org, puis Paramètres → API → « Clé d’API ». Sans clé, Nexis utilise les noms de fichiers, les .nfo et les images présents dans tes dossiers.'),
-      h('div.plex-status', { class: s.tmdb_set ? 'plex-status ok' : 'plex-status' }, s.tmdb_set ? 'Clé TMDB configurée.' : 'Aucune clé TMDB.'),
-      h('div.grid2', field('Clé TMDB', key), field('Langue des métadonnées', lang)),
-      h('div.actions-row',
-        h('button.btn.primary', { onclick: () => save({ ...(key.value.trim() ? { tmdb_key: key.value.trim() } : {}), language: lang.value }, 'Métadonnées enregistrées') }, 'Enregistrer'),
-        s.tmdb_set ? h('button.btn', { onclick: () => save({ tmdb_key: '' }, 'Clé supprimée') }, 'Supprimer la clé') : null,
-        h('button.btn', { onclick: async () => {
-          try { await post('/api/admin/scan', { refresh_metadata: true }); toast('Actualisation de toutes les métadonnées lancée', 'ok'); }
-          catch (e) { toast(e.message, 'bad'); }
-        } }, 'Tout réactualiser'),
-        h('a.btn.ghost', { href: '#/admin/tasks' }, 'Planifier l’actualisation…'))),
-    h('section.panel', h('h2', 'Détection des nouveautés'),
-      h('p.muted.small', 'Sur un partage réseau, le système n’est pas prévenu des fichiers ajoutés depuis une autre machine. Nexis surveille donc les dossiers (très léger) et rescanne la bibliothèque concernée dès qu’une copie est terminée. Pour un ajout instantané depuis Radarr / Sonarr, utilise le webhook ci-dessous.'),
-      h('div.grid2',
-        field('Surveiller les dossiers', watch, 'Le scan complet de sécurité se règle dans « Tâches planifiées ».')),
-      h('button.btn.primary', { onclick: () => save({ watch_interval: Number(watch.value) }, 'Enregistré') }, 'Enregistrer'),
-      h('h3.sub', 'Webhook Radarr / Sonarr'),
-      h('div.copy-row', hookInput,
-        h('button.btn.small', { onclick: async () => {
-          try { await navigator.clipboard.writeText(hookInput.value); toast('Adresse copiée', 'ok'); }
-          catch { hookInput.select(); }
-        } }, 'Copier'),
-        h('button.btn.small.ghost', { onclick: async () => {
-          if (!await confirmDialog('Nouvelle adresse ?', 'L’ancienne adresse cessera de fonctionner : il faudra la remplacer dans Radarr et Sonarr.', 'Régénérer')) return;
-          await post('/api/admin/webhook/regenerate'); settingsTab(body, ctx);
-        } }, 'Régénérer')),
-      h('p.muted.small', 'Dans Radarr et Sonarr : Paramètres → Connect → + → Webhook. Colle cette adresse dans « URL », méthode POST, et coche « On Import », « On Upgrade », « On Rename » et « On Delete ». Si Radarr est sur une autre machine, remplace l’adresse par celle du serveur Nexis vue depuis Radarr.'),
-      s.watch_events.length ? h('details', h('summary.small', 'Derniers déclenchements'),
-        h('ul.small', s.watch_events.map((e) => h('li', `${new Date(e.t * 1000).toLocaleString('fr-FR')} — ${e.text}`)))) : null),
-    h('section.panel', h('h2', 'Sous-titres'),
-      h('p.muted.small', 'Les sous-titres intégrés aux fichiers (MKV) ne peuvent être lus qu’en parcourant tout le fichier. Nexis les prépare à l’avance (toutes les pistes en une seule lecture), quand aucune lecture n’est en cours, pour qu’ils soient là dès la première seconde. Au lancement, le lecteur attend qu’ils soient prêts.'),
-      prefetch,
-      h('p.muted.small', s.subs_queue ? `${s.subs_queue} fichier(s) en attente de préparation.` : 'Aucun fichier en attente.'),
-      h('button.btn', { onclick: () => save({ subs_prefetch: true }, 'Préparation lancée pour toute la médiathèque') }, 'Tout préparer maintenant')),
-    h('section.panel', h('h2', 'Son multicanal (5.1 / 7.1) sur des enceintes stéréo'),
-      h('p.muted.small', 'Mêmes réglages que Jellyfin. « ffmpeg » garde un équilibre neutre ; « Dave750 » met un peu plus en avant les dialogues ; « Dialogues (nuit) » réduit fortement les effets et la musique ; « RFC 7845 » et « AC-4 » sont les mixages normalisés. Le gain remonte le volume après le mixage ; Nexis ajoute toujours un limiteur pour qu’il ne puisse pas saturer.'),
-      h('div.grid2',
-        field('Mixage', select([['none', 'ffmpeg (Jellyfin par défaut)'], ['dave750', 'Dave750'], ['nightmode', 'Dialogues (nuit)'],
-          ['rfc7845', 'RFC 7845'], ['ac4', 'AC-4']], s.downmix_algo, { id: 'downmix-algo' })),
-        field('Gain après mixage', select([['1', '× 1 (aucun)'], ['1.5', '× 1,5'], ['2', '× 2 (Jellyfin par défaut)'], ['2.5', '× 2,5'], ['3', '× 3']],
-          String(s.downmix_boost), { id: 'downmix-boost' }))),
-      h('button.btn.primary', { onclick: () => save({ downmix_algo: document.getElementById('downmix-algo').value,
-        downmix_boost: Number(document.getElementById('downmix-boost').value) }, 'Mixage enregistré (prochaines lectures)') }, 'Enregistrer')),
-    h('section.panel', h('h2', 'Lecture et processeur'),
+  return [
+    h('section.panel', h('h2', 'Lectures simultanées'),
       h('p.muted.small', `Ce serveur a ${s.cpus} cœur(s)${s.hw_engine === 'none' ? ' et transcode avec le processeur' : ', le transcodage passe par la carte graphique'}. Une lecture directe ou un remux ne coûtent presque rien ; un transcodage (HEVC, 10 bits, sous-titres image, qualité réduite) occupe 1 à 2 cœurs par lecture en 1080p sans carte graphique.`),
       s.ffmpeg ? null : h('div.plex-status.bad', 'ffmpeg est introuvable : installe-le (apt install ffmpeg).'),
       h('div.grid2', field('Lectures simultanées (max.)', maxStreams), field('Transcodages simultanés (max.)', maxTranscodes,
         '0 = interdire le transcodage (seules les lectures directes et remux passent).')),
-      h('button.btn.primary', { onclick: () => save({ max_streams: Number(maxStreams.value), max_transcodes: Number(maxTranscodes.value) }, 'Enregistré') }, 'Enregistrer'),
-      h('h3.sub', 'Téléchargements hors ligne'),
-      h('p.muted.small', 'Chacun peut télécharger films et épisodes dans l’application pour les regarder sans connexion, comme sur Netflix. Nexis prépare une copie à la qualité choisie (une conversion occupe le processeur ou la carte graphique, en priorité basse, une à la fois), puis l’efface dès qu’elle est récupérée.'),
-      downloadsToggle,
-      h('h3.sub', 'Transcodage matériel'),
+      h('button.btn.primary', { onclick: () => save({ max_streams: Number(maxStreams.value), max_transcodes: Number(maxTranscodes.value) }, 'Enregistré') }, 'Enregistrer')),
+    h('section.panel', h('h2', 'Carte graphique'),
       h('p.muted.small', 'Une carte graphique décode et encode la vidéo à la place du processeur : bien plus de transcodages en même temps, presque sans charge. Nexis fait un essai réel avant d’enregistrer, et repasse tout seul sur le processeur si la carte refuse un fichier. Voir le README pour donner la carte au conteneur LXC.'),
       h('div.grid2', field('Accélération matérielle', hwEngine), hwDeviceField),
       hwSave),
-    updatePanel(s.version));
-}
+  ];
+});
+
+const downloadsPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
+  const downloadsToggle = toggle('Autoriser les téléchargements pour regarder hors ligne', s.downloads);
+  downloadsToggle.querySelector('input').addEventListener('change', (e) => save({ downloads: e.target.checked }, 'Enregistré'));
+  return h('section.panel', h('h2', 'Visionnage hors ligne'),
+    h('p.muted.small', 'Chacun peut télécharger films et épisodes dans l’application pour les regarder sans connexion, comme sur Netflix. Nexis prépare une copie à la qualité choisie (une conversion occupe le processeur ou la carte graphique, en priorité basse, une à la fois), puis l’efface dès qu’elle est récupérée.'),
+    downloadsToggle);
+});
 
 // --------------------------------------------------------------- mise à jour
 // Panneau rempli après coup : la vérification interroge GitHub (quelques secondes au pire).
-function updatePanel(version) {
+function updatePage(body) {
+  const version = state.status.version;
   const box = h('div', h('p.muted.small', 'Recherche d’une nouvelle version…'));
-  const panel = h('section.panel#update', h('h2', 'Mise à jour'), h('p.muted.small', `Version installée : Nexis ${version}`), box);
+  const panel = h('section.panel#update', h('h2', `Nexis ${version}`), h('p.muted.small', 'Version installée sur ce serveur.'), box);
+  clear(body, panel);
   get('/api/admin/update').then((u) => {
     const manual = h('p.muted.small', 'À la main : relance la commande d’installation sur le serveur (README → Installation).');
     const parts = [];
@@ -483,9 +541,7 @@ function updatePanel(version) {
         u.available ? `Mettre à jour vers ${u.latest}` : 'Réinstaller la dernière version'));
     }
     box.replaceChildren(...parts);
-    if (/[?&]update\b/.test(location.hash)) panel.scrollIntoView({ block: 'start', behavior: 'smooth' }); // depuis l'indicateur du haut
   }).catch((e) => box.replaceChildren(h('p.form-error.small', e.message)));
-  return panel;
 }
 
 async function runUpdate(version) {
@@ -758,7 +814,12 @@ async function liveTab(body, ctx) {
 // ---------------------------------------------------------------- streams
 const MODES = { direct: 'Lecture directe', copy: 'Remux (vidéo copiée)', transcode: 'Transcodage' };
 
-async function streamsTab(body, ctx) {
+async function dashboardPage(body, ctx) {
+  const version = state.status.version;
+  const latest = state.me.update;
+  const versionCard = h('div.panel.scan', h('strong', `Nexis ${version}`), latest
+    ? h('div.small', h('span.tag.accent', 'Mise à jour'), ` Nexis ${latest} est disponible · `, h('a', { href: '#/admin/update' }, 'Mettre à jour'))
+    : h('div.muted.small', 'À jour (vérifié automatiquement toutes les 6 heures) · ', h('a', { href: '#/admin/update' }, 'Détails')));
   const load = async () => {
     const [list, sys] = await Promise.all([get('/api/admin/streams'), get('/api/admin/system').catch(() => null)]);
     if (!ctx.isCurrent()) return;
@@ -768,7 +829,7 @@ async function streamsTab(body, ctx) {
       `Mémoire libre ${gb(sys.mem_available)} sur ${gb(sys.mem_total)} · swap utilisé ${gb(sys.swap_used)} sur ${gb(sys.swap_total || 0)} · `,
       `${sys.ffmpeg} ffmpeg (${gb(sys.ffmpeg_mb)}) · charge ${String(sys.load).replace('.', ',')} pour ${sys.cpus} cœur(s)`),
       swapHigh ? h('div.form-error.small', 'Le serveur utilise beaucoup de swap : les lectures peuvent saccader. Réduis le nombre de transcodages simultanés ou ajoute de la mémoire.') : null) : null;
-    clear(body, server, list.length ? h('div.user-list', list.map((s) => h('div.user-row',
+    clear(body, versionCard, server, h('h3.sub', 'Lectures en cours'), list.length ? h('div.user-list', list.map((s) => h('div.user-row',
       h('div.grow', h('strong', s.title), h('div.muted.small',
         `${s.user} · ${s.state === 'paused' ? 'en pause' : 'en lecture'} à ${fmtTime(s.position_ms)} · ${MODES[s.mode] || s.mode}`,
         s.hw ? ` · carte graphique (${s.hw === 'nvenc' ? 'NVIDIA' : 'VAAPI'})` : '',
@@ -784,16 +845,10 @@ async function streamsTab(body, ctx) {
   ctx.setCleanup(() => clearInterval(t));
 }
 
-export async function renderAdmin(main, tab, ctx) {
-  const body = h('div.admin-body');
-  clear(main, h('div.page-head', h('h1', 'Administration')), tabs(tab), body);
-  if (tab === 'users') await usersTab(body, ctx);
-  else if (tab === 'settings') await settingsTab(body, ctx);
-  else if (tab === 'streams') await streamsTab(body, ctx);
-  else if (tab === 'requests') await requestsTab(body, ctx);
-  else if (tab === 'tasks') await tasksTab(body, ctx);
-  else if (tab === 'live') await liveTab(body, ctx);
-  else if (tab === 'shares') await sharesTab(body, ctx);
-  else await librariesTab(body, ctx);
-}
+const PAGES = { dashboard: dashboardPage, users: usersTab, update: updatePage, tasks: tasksTab, libraries: librariesTab,
+  shares: sharesTab, metadata: metadataPage, detection: detectionPage, requests: requestsTab, transcoding: transcodingPage,
+  subtitles: subtitlesPage, downloads: downloadsPage, live: liveTab };
 
+export async function renderAdminSection(id, body, ctx) {
+  await PAGES[id](body, ctx);
+}

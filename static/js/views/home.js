@@ -8,7 +8,7 @@ export async function renderHome(main, ctx) {
   const data = await get('/api/home');
   if (!ctx.isCurrent()) return;
   const parts = [];
-  const sections = new Map(); // clé -> rangée ; affichées dans l'ordre choisi (Réglages → Affichage)
+  const sections = new Map(); // clé -> rangée ; affichées dans l'ordre choisi (Paramètres → Accueil et menu)
   const hero = data.continue[0] || data.hero;
   if (hero) {
     const art = hero.type === 'episode' ? (hero.show_art || hero.art) : hero.art;

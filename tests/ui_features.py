@@ -225,6 +225,11 @@ with sync_playwright() as pw:
     # --- ordre de l'accueil et de la barre du haut (Réglages → Accueil / Barre du haut)
     lctx, lpage = browser_ctx(browser, lea)
     lpage.goto(base + "/#/settings")
+    lpage.wait_for_selector(".settings-nav")
+    check(lpage.locator(".settings-group-title").all_inner_texts() == ["MON COMPTE"] or
+          [t.lower() for t in lpage.locator(".settings-group-title").all_inner_texts()] == ["mon compte"],
+          "un simple utilisateur ne voit que « Mon compte »")
+    lpage.click(".settings-link:has-text('Accueil et menu')")
     lpage.wait_for_selector(".layout-list")
     home_list = ".panel:has(h2:text-is('Accueil')) .layout-list"
     up = f"{home_list} button[aria-label='Monter Films']"
@@ -260,6 +265,38 @@ with sync_playwright() as pw:
     lctx.close()
 
     # --- tâches planifiées
+    # --- Paramètres : menu groupé, une page par sujet, recherche, anciennes adresses
+    page.goto(base + "/#/admin")
+    page.wait_for_selector(".settings-head h2:text-is('Vue d’ensemble')")
+    groups = [t.lower() for t in page.locator(".settings-group-title").all_inner_texts()]
+    check(groups == ["mon compte", "serveur", "médiathèque", "lecture"], f"groupes du menu : {groups}")
+    page.screenshot(path=f"{out}/40-parametres-vue-ensemble.png")
+    for sec, needle in (("users", ".user-row"), ("update", "#update"), ("libraries", ".user-row"), ("shares", ".settings-body > *"),
+                        ("metadata", "text=Clé TMDB et langue"), ("detection", "text=Webhook Radarr / Sonarr"),
+                        ("requests", "text=Clé d’API de Seerr"), ("transcoding", "text=Carte graphique"),
+                        ("subtitles", "text=Son 5.1 / 7.1"), ("downloads", "text=Visionnage hors ligne"), ("live", "text=Sources de chaînes")):
+        page.goto(base + f"/#/admin/{sec}")
+        page.wait_for_selector(needle)
+        page.wait_for_timeout(400)
+        page.screenshot(path=f"{out}/41-parametres-{sec}.png")
+    for sec in ("profile", "playback", "appearance"):
+        page.goto(base + f"/#/settings/{sec}")
+        page.wait_for_selector(".settings-body .panel")
+        page.wait_for_timeout(400)
+        page.screenshot(path=f"{out}/42-parametres-{sec}.png")
+    page.goto(base + "/#/admin/settings")  # ancienne adresse
+    page.wait_for_selector(".settings-head h2:text-is('Métadonnées')")
+    page.fill(".settings-search", "carte graphique")
+    visible = [t for t in page.locator(".settings-link:visible").all_inner_texts()]
+    check(visible == ["Transcodage"], f"recherche « carte graphique » : {visible}")
+    page.fill(".settings-search", "radarr")
+    visible = sorted(page.locator(".settings-link:visible").all_inner_texts())
+    check(visible == ["Ajout des nouveautés", "Demandes"], f"recherche « radarr » : {visible}")
+    page.wait_for_timeout(400)
+    page.screenshot(path=f"{out}/43-parametres-recherche.png")
+    page.press(".settings-search", "Enter")
+    page.wait_for_selector(".settings-head h2:text-is('Ajout des nouveautés')")
+
     page.goto(base + "/#/admin/tasks")
     page.wait_for_selector(".task-row")
     check(page.locator(".task-row").count() == 7, "7 tâches")
@@ -465,6 +502,9 @@ with sync_playwright() as pw:
     page_lea.goto(base + "/#/")
     page_lea.wait_for_selector(".topbar")
     check(page_lea.locator(".update-btn").count() == 0, "pas d'indicateur pour un simple utilisateur")
+    page_lea.goto(base + "/#/admin/update")
+    page_lea.wait_for_selector(".hero-title, .row-title, .empty")
+    check("#/admin" not in page_lea.url, "un simple utilisateur est renvoyé hors de l'administration")
     bctx_lea.close()
     plan = {"n": 0, "started": False}
     steps = [dict(running=True, done=False, percent=25, step="Téléchargement de la nouvelle version"),
@@ -522,6 +562,22 @@ with sync_playwright() as pw:
     bctx6.close()
 
     # --- mobile
+    bctx3, page3 = browser_ctx(browser, admin, mobile=True)
+    page3.goto(base + "/#/admin")
+    page3.wait_for_selector(".settings-link")
+    check(page3.locator(".settings-content").is_hidden(), "téléphone : d'abord le menu des paramètres")
+    page3.screenshot(path=f"{out}/44-mobile-parametres-menu.png", full_page=True)
+    page3.click(".settings-link:has-text('Transcodage')")
+    page3.wait_for_selector("text=Carte graphique")
+    check(page3.locator(".settings-nav").is_hidden() and page3.locator(".settings-back").is_visible(),
+          "téléphone : la page choisie, avec un retour vers le menu")
+    page3.wait_for_timeout(400)
+    page3.screenshot(path=f"{out}/45-mobile-parametres-page.png", full_page=True)
+    sw = page3.evaluate("document.documentElement.scrollWidth")
+    check(sw <= 390, f"paramètres sans défilement horizontal sur téléphone ({sw})")
+    page3.click(".settings-back")
+    page3.wait_for_selector(".settings-nav:visible")
+    bctx3.close()
     bctx3, page3 = browser_ctx(browser, lea, mobile=True)
     page3.goto(base + "/#/live")
     page3.wait_for_selector(".ch-card")

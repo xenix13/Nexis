@@ -101,16 +101,18 @@ with sync_playwright() as pw:
     page.wait_for_selector("text=Aucune bibliothèque.")
 
     # --- clé TMDB
-    page.click("a.tab:has-text('Métadonnées')")
+    page.click(".settings-link:has-text('Métadonnées')")
     page.wait_for_selector("text=Aucune clé TMDB")
     page.fill("input[placeholder^='Clé API']", TMDB.key)
     page.click("section.panel:has-text('TMDB') button.primary")
     page.wait_for_selector("text=Clé TMDB configurée")
     page.screenshot(path=f"{out}/02-reglages-serveur.png", full_page=True)
+    page.click(".settings-link:has-text('Ajout des nouveautés')")
+    page.wait_for_selector("text=Webhook Radarr / Sonarr")
     check(page.locator("input[value*='/api/hooks/scan?token=']").count() == 1, "adresse du webhook affichée")
 
     # --- bibliothèque via l'interface, avec le sélecteur de dossier
-    page.click("a.tab:has-text('Bibliothèques')")
+    page.click(".settings-link:has-text('Bibliothèques')")
     page.click("text=+ Ajouter")
     m = page.locator(".modal")
     m.locator("input").first.fill("Films")

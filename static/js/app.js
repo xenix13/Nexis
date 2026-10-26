@@ -9,8 +9,7 @@ import { renderLibrary } from './views/library.js';
 import { renderItem } from './views/item.js';
 import { renderSearch } from './views/search.js';
 import { renderHistory } from './views/history.js';
-import { renderSettings } from './views/settings.js';
-import { renderAdmin } from './views/admin.js';
+import { renderSettingsArea } from './views/settings.js';
 import { renderPlayer } from './player.js';
 import { renderTogether } from './views/together.js';
 import './remote.js'; // télécommande, clavier et manette
@@ -123,7 +122,7 @@ function navLink(href, label, active) {
   return h('a.nav-link', { href, class: active ? 'nav-link active' : 'nav-link' }, label);
 }
 
-// Liens de la barre du haut, dans l'ordre choisi par l'utilisateur (Réglages → Affichage)
+// Liens de la barre du haut, dans l'ordre choisi par l'utilisateur (Paramètres → Accueil et menu)
 export function navItems(me) {
   const items = [{ key: 'home', href: '#/', label: 'Accueil', fixed: true }, { key: 'watchlist', href: '#/watchlist', label: 'À regarder' }];
   if (me.features && me.features.discover) items.push({ key: 'discover', href: '#/discover', label: 'Découvrir' });
@@ -164,9 +163,9 @@ function shell(active) {
     h('a', { href: '#/together' }, 'Regarder ensemble'),
     h('a', { href: '#/history' }, 'Historique'),
     me.features && me.features.downloads && offlineSupported() ? h('a', { href: '#/downloads' }, 'Téléchargements') : null,
-    h('a', { href: '#/settings' }, 'Réglages'),
+    h('a', { href: '#/settings' }, 'Paramètres'),
     h('button.install-app', { hidden: !canInstall(), onclick: () => install() }, icon('install'), 'Installer l’application'),
-    me.user.is_admin ? h('a', { href: '#/admin' }, 'Administration') : null,
+    me.user.is_admin ? h('a', { href: '#/admin' }, 'Administration du serveur') : null,
     h('button', { onclick: logout }, 'Se déconnecter'));
   const userBtn = h('button.user-btn', { 'aria-label': 'Menu utilisateur', 'aria-haspopup': 'true',
     onclick: (e) => {
@@ -184,7 +183,7 @@ function shell(active) {
     h('div.topbar-right', h('span.together-slot', { dataset: { active } }),
       h('button.icon-btn.group-new', { type: 'button', title: 'Créer un groupe « Regarder ensemble »', 'aria-label': 'Créer un groupe',
         onclick: () => createGroupDialog(me) }, icon('group'), h('span.plus', '+')),
-      me.update ? h('a.icon-btn.update-btn', { href: '#/admin/settings?update', title: `Nexis ${me.update} est disponible`,
+      me.update ? h('a.icon-btn.update-btn', { href: '#/admin/update', title: `Nexis ${me.update} est disponible`,
         'aria-label': `Mise à jour disponible : Nexis ${me.update}` }, icon('upgrade')) : null,
       h('label.search', icon('search'), search), h('div.user-wrap', userBtn, menu)));
   paintTogetherSlot(header.querySelector('.together-slot'));
@@ -307,7 +306,7 @@ async function route() {
   const active = page === '' ? 'home' : page === 'library' ? `lib:${parts[1]}` : page;
   const main = shell(active);
   main.append(spinner());
-  const titles = { '': 'Accueil', live: 'TV en direct', together: 'Regarder ensemble', watchlist: 'À regarder', discover: 'Découvrir', playlists: 'Mes playlists', search: 'Recherche', history: 'Historique', downloads: 'Téléchargements', settings: 'Réglages', admin: 'Administration' };
+  const titles = { '': 'Accueil', live: 'TV en direct', together: 'Regarder ensemble', watchlist: 'À regarder', discover: 'Découvrir', playlists: 'Mes playlists', search: 'Recherche', history: 'Historique', downloads: 'Téléchargements', settings: 'Paramètres', admin: 'Paramètres' };
   document.title = `${titles[page] || 'Nexis'} · Nexis`;
   try {
     switch (page) {
@@ -324,10 +323,10 @@ async function route() {
       case 'playlists': await renderPlaylists(main, ctx); break;
       case 'playlist': await renderPlaylist(main, parts[1], ctx); break;
       case 'history': await renderHistory(main, ctx); break;
-      case 'settings': await renderSettings(main, ctx); break;
+      case 'settings': await renderSettingsArea(main, 'settings', parts[1], ctx); break;
       case 'admin':
         if (!state.me.user.is_admin) { location.hash = '#/'; return; }
-        await renderAdmin(main, parts[1] || 'libraries', ctx); break;
+        await renderSettingsArea(main, 'admin', parts[1], ctx); break;
       default: clear(main, h('div.empty', 'Page introuvable.'));
     }
   } catch (e) {
