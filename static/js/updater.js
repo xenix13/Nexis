@@ -19,6 +19,19 @@ export const updatePending = () => !!saved();
 
 let overlay = null;
 
+// Avant de recharger : on retélécharge chaque fichier de l'interface (le cache du navigateur pourrait sinon
+// resservir l'ancienne version), et on prévient le service worker qu'il y en a un nouveau.
+async function refreshShell() {
+  try {
+    const code = await (await fetch('/sw.js', { cache: 'reload' })).text();
+    const m = /^const SHELL = (.*);$/m.exec(code);
+    const files = m ? JSON.parse(m[1]) : [];
+    await Promise.all(files.map((u) => fetch(u, { cache: 'reload' }).catch(() => null)));
+    const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+    if (reg) await reg.update();
+  } catch { /* au pire, rechargement simple */ }
+}
+
 // from : version installée au lancement
 export function followUpdate(from) {
   const st = saved() || { from, at: Date.now() };
@@ -44,10 +57,11 @@ export function followUpdate(from) {
     pct.textContent = `${Math.round(percent)} %`;
     step.textContent = text;
   };
-  const finish = (text) => {
+  const finish = async (text) => {
     save(null);
     show(100, text);
-    setTimeout(() => location.reload(), 1200);
+    await refreshShell();
+    setTimeout(() => location.reload(), 600);
   };
   const fail = (text) => {
     save(null);

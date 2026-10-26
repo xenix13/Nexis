@@ -166,7 +166,8 @@ function shell(active) {
     h('a', { href: '#/settings' }, 'Paramètres'),
     h('button.install-app', { hidden: !canInstall(), onclick: () => install() }, icon('install'), 'Installer l’application'),
     me.user.is_admin ? h('a', { href: '#/admin' }, 'Administration du serveur') : null,
-    h('button', { onclick: logout }, 'Se déconnecter'));
+    h('button', { onclick: logout }, 'Se déconnecter'),
+    state.status ? h('div.menu-version', `Nexis ${state.status.version}`) : null);
   const userBtn = h('button.user-btn', { 'aria-label': 'Menu utilisateur', 'aria-haspopup': 'true',
     onclick: (e) => {
       e.stopPropagation();
