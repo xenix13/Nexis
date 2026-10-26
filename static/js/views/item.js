@@ -113,6 +113,13 @@ function itemMenu(d, rerender) {
     } catch (e) { toast(e.message, 'bad'); }
   } }];
   if (['movie', 'show', 'season', 'episode'].includes(d.type)) items.push({ label: 'Ajouter à une playlist…', onClick: () => addToPlaylist(d) });
+  if (['movie', 'show', 'episode'].includes(d.type)) {
+    items.push({ label: d.opinion === 0 ? 'Suggérer à nouveau' : 'Ne plus suggérer', onClick: async () => {
+      if (setOpinion) await setOpinion(0);
+      d.opinion = d.opinion === 0 ? null : 0;
+      rerender();
+    } });
+  }
   if (state.me.user.is_admin) {
     items.push({ divider: true }, { heading: 'Administration' },
       { label: 'Identifier…', onClick: () => identify(d, rerender) },
@@ -124,6 +131,36 @@ function itemMenu(d, rerender) {
     if (d.type === 'movie' || d.type === 'episode') items.push({ label: 'Informations sur le fichier', onClick: () => fileInfo(d) });
   }
   return moreMenu(items);
+}
+
+// Avis : j'aime / je n'aime pas (un second clic retire l'avis) ; servent aux suggestions.
+// (fonction gardée à part : l'objet du titre peut être rangé tel quel dans IndexedDB par un téléchargement)
+let setOpinion = null;
+function opinionButtons(d) {
+  if (!['movie', 'show', 'episode'].includes(d.type)) return null;
+  let value = d.opinion ?? null;
+  const set = async (v) => {
+    const next = value === v ? null : v;
+    try {
+      await put(`/api/items/${d.id}/opinion`, { value: next });
+      value = next;
+      paint();
+      toast(next === 1 ? 'Noté : j’aime' : next === -1 ? 'Noté : je n’aime pas' : next === 0 ? 'Ne sera plus suggéré' : 'Avis retiré', 'ok');
+    } catch (e) { toast(e.message, 'bad'); }
+  };
+  const up = h('button.btn.ghost.icon-only', { type: 'button', onclick: () => set(1) }, icon('thumb-up'));
+  const down = h('button.btn.ghost.icon-only', { type: 'button', onclick: () => set(-1) }, icon('thumb-down'));
+  const paint = () => {
+    for (const [b, v, label] of [[up, 1, 'J’aime'], [down, -1, 'Je n’aime pas']]) {
+      b.classList.toggle('on', value === v);
+      b.setAttribute('aria-pressed', String(value === v));
+      b.title = label;
+      b.setAttribute('aria-label', label);
+    }
+  };
+  paint();
+  setOpinion = set;
+  return [up, down];
 }
 
 function watchlistButton(d) {
@@ -375,7 +412,8 @@ function metaLine(d) {
 
 function episodeRow(e, refresh) {
   return h('div.episode', { class: e.watched ? 'episode watched' : 'episode' },
-    h('a.episode-thumb', { href: `#/play/${e.id}${e.position && !e.watched ? '?resume=1' : ''}`, 'aria-label': `Lire ${e.title}` },
+    h('a.episode-thumb', { href: `#/play/${e.id}${e.position && !e.watched ? '?resume=1' : ''}`, 'aria-label': `Lire ${e.title}`,
+      class: e.watched ? 'episode-thumb' : 'episode-thumb spoiler-img' },
       e.thumb ? h('img', { src: img(e.thumb, 320, 180), alt: '', loading: 'lazy' }) : h('div.noimg'),
       h('span.play-hover', icon('play')), progressBar(e.position, e.duration)),
     h('div.episode-body',
@@ -387,7 +425,7 @@ function episodeRow(e, refresh) {
           onclick: async () => {
             try { await post(`/api/items/${e.id}/watched`, { watched: !e.watched }); refresh(); } catch (x) { toast(x.message, 'bad'); }
           } }, icon('check'))),
-      e.summary ? h('p.episode-summary', e.summary) : null));
+      e.summary ? h('p.episode-summary', { class: e.watched ? 'episode-summary' : 'episode-summary spoiler' }, e.summary) : null));
 }
 
 export async function renderItem(main, rk, ctx) {
@@ -425,7 +463,7 @@ export async function renderItem(main, rk, ctx) {
   }
   const together = d.type === 'show' ? togetherButton(d.play_target ? { ...d.play_target, show: d.title } : null)
     : (['movie', 'episode'].includes(d.type) ? togetherButton(d) : null);
-  actions.append(...[watchlistButton(d), together, downloadButton(d), trailerButton(d)].filter(Boolean), itemMenu(d, rerender));
+  actions.append(...[watchlistButton(d), ...(opinionButtons(d) || []), together, downloadButton(d), trailerButton(d)].filter(Boolean), itemMenu(d, rerender));
   const chooser = trackChooser(d, d.type === 'show' ? d.play_target : null, (au, su) => {
     for (const l of playLinks) l.setAttribute('href', withTracks(l.dataset.base, au, su));
   });
@@ -437,7 +475,7 @@ export async function renderItem(main, rk, ctx) {
     d.tagline ? h('p.tagline', d.tagline) : null,
     actions,
     chooser,
-    d.summary ? h('p.summary', d.summary) : null,
+    d.summary ? h('p.summary', { class: d.type === 'episode' && !d.watched ? 'summary spoiler' : 'summary' }, d.summary) : null,
     d.genres && d.genres.length ? h('div.chips', d.genres.map((g) => h('span.chip', g))) : null,
     h('dl.facts',
       d.directors && d.directors.length ? [h('dt', 'Réalisation'), h('dd', d.directors.join(', '))] : null,

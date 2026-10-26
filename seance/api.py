@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from . import __version__, catalog, collections_api, discover, livetv, media, suggest, syncplay, tasks, update
+from . import __version__, catalog, collections_api, discover, livetv, media, notify, suggest, syncplay, tasks, update
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
@@ -173,7 +173,7 @@ def build_app(ctx):
     app.before.append(before)
 
     catalog.install(ctx, x)
-    for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest):
+    for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify):
         module.register(app, ctx, x)
     return app
 

@@ -14,7 +14,7 @@ Serveur multimédia auto-hébergé pour films, séries et animes. Nexis analyse 
 | **Reconnaissance** | `Titre (Année)/…`, noms de type « scène » (`Inception.2010.1080p.BluRay…`), `S01E02`, `1x02`, `Saison 1/…`, animes `[Groupe] Titre - 12 [1080p]`, numérotation absolue (`Episode 1071`), épisodes spéciaux (`Season 00`, `Specials`) |
 | **Métadonnées** | TMDB (affiches, fonds, résumés, genres, distribution, titres et images d'épisodes, classification), en français avec repli en anglais. Les fichiers `.nfo` et `poster.jpg` / `fanart.jpg` existants sont pris en compte. Correction manuelle avec « Identifier… » |
 | **Comptes** | Comptes propres à Nexis, administrateurs, accès par bibliothèque, désactivation, photo de profil |
-| **Espace personnel** | Reprise de lecture, « Reprendre et à suivre », suggestions, historique, épisodes vus/non vus, langues audio et sous-titres préférées, thème, couleur d'accent, taille des affiches, ordre de l'accueil et du menu |
+| **Espace personnel** | Reprise de lecture, « Reprendre et à suivre », suggestions affinées par « J'aime / Je n'aime pas / Ne plus suggérer », notifications de nouveaux épisodes, historique et bilan de visionnage, épisodes vus/non vus, langues préférées, apparence des sous-titres, anti-spoiler, thème, couleur d'accent, taille des affiches, page d'ouverture, rangées épinglées, ordre de l'accueil et du menu, réglages par appareil |
 | **Collections et listes** | Sagas créées automatiquement depuis TMDB, collections manuelles, liste « À regarder » par utilisateur, playlists personnelles |
 | **Bonus** | Bandes-annonces (YouTube via TMDB ou fichiers locaux), coulisses, scènes coupées, interviews, rangés sous le film ou la série |
 | **Découvrir et demandes** | Catalogues des plateformes de streaming (via TMDB) croisés avec le contenu du serveur, bouton « Demander » relié à Seerr |
@@ -95,7 +95,7 @@ La mise à jour exécute la même installation que la commande manuelle, depuis 
 
 Mise à jour manuelle : relancer la commande d'installation. Les données (`/var/lib/seance`) et la configuration (`/etc/seance/seance.env`) sont conservées.
 
-Pour suivre une autre branche, par exemple `test` : `curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/test/deploy/install.sh | SEANCE_BRANCH=test bash`. Les mises à jour depuis l'interface suivront ensuite cette branche.
+**Canal de mise à jour** : *Stable* (branche `main`, versions validées) ou *Test* (branche `test`, nouveautés en cours de validation), au choix sur la même page. Les nouveautés sont publiées d'abord sur *Test*, puis sur *Stable* une fois validées. Repasser sur *Stable* puis réinstaller ramène le serveur à la dernière version stable. À l'installation : `curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/test/deploy/install.sh | SEANCE_BRANCH=test bash`.
 
 ### Conteneur LXC en une commande (Proxmox)
 
@@ -375,6 +375,24 @@ Plusieurs personnes regardent la même vidéo en même temps, chacune sur son ap
 
 Configuration : *Paramètres → Serveur → Utilisateurs*.
 
+## Personnalisation
+
+Chaque utilisateur règle son interface dans *Paramètres → Mon compte* :
+
+- **Profil** : nom, photo (image envoyée ou avatar prédéfini), code PIN, mot de passe.
+- **Lecture** : qualité, langues, enchaînement des épisodes, **apparence des sous-titres** (taille, police, couleur, fond, bordure, position, avec aperçu ; ne s'applique pas aux sous-titres ASS stylés ni aux PGS) et **anti-spoiler** (vignettes floutées et résumés masqués pour les épisodes non vus ; un clic affiche le résumé).
+- **Apparence** : thème, couleur d'accent, taille des affiches.
+- **Cet appareil** : qualité et taille des sous-titres propres à ce navigateur ou à cette TV, animations réduites, navigation à la télécommande forcée ou désactivée. Ces réglages restent sur l'appareil et priment sur ceux du profil.
+- **Accueil et menu** : **page d'ouverture** (accueil, « À regarder », Découvrir, TV en direct ou une bibliothèque), ordre et affichage des rangées et des liens. Une collection, une playlist ou un genre d'une bibliothèque s'**épingle sur l'accueil** avec le bouton *Épingler à l'accueil* de sa page (20 rangées au plus).
+
+**Avis** : sur la fiche d'un film ou d'une série, *J'aime* et *Je n'aime pas* orientent les suggestions (les titres proches d'un titre non aimé reculent) ; *Ne plus suggérer* (menu ⋯) l'exclut des suggestions et des titres similaires.
+
+**Notifications** : la cloche de la barre du haut signale les épisodes ajoutés depuis moins de 30 jours, et pas encore vus, des séries suivies (dont un épisode a été regardé, ou présentes dans « À regarder »).
+
+**Bilan** : la page *Historique* présente, par année ou par mois, le temps de visionnage, le nombre de films et d'épisodes, les jours actifs, la plus longue série de jours consécutifs, le jour préféré, la répartition par mois, les genres et les titres les plus regardés.
+
+**Interface enfant** : option du compte (*Paramètres → Utilisateurs*), à combiner avec une restriction d'âge. Grandes vignettes, textes plus gros, menu limité à l'accueil, « À regarder » et aux bibliothèques ; Découvrir, la TV en direct et la création de groupes sont masqués.
+
 ## Collections, « À regarder » et playlists
 
 - **Collections** : lorsqu'un film appartient à une saga selon TMDB, la collection est créée automatiquement (affiche, fond et résumé compris). Elle apparaît dans l'onglet **Collections** de la bibliothèque et sur la fiche des films concernés. Un administrateur peut créer, renommer ou supprimer ses propres collections (menu ⋯ → *Collections…*).
@@ -470,7 +488,7 @@ Organisation de `seance/` :
 - `watcher.py` : détection des nouveautés ; `subcache.py` : préparation des sous-titres
 - `tasks.py` : tâches planifiées ; `chapters.py` : images de chapitres ; `introdetect.py` : intros par empreinte audio
 - `livetv.py` : TV en direct ; `syncplay.py` : « Regarder ensemble »
-- `update.py` : mise à jour depuis l'interface ; `downloads.py` : téléchargements hors ligne ; `suggest.py` : suggestions
+- `update.py` : mise à jour depuis l'interface ; `downloads.py` : téléchargements hors ligne ; `suggest.py` : suggestions et avis ; `notify.py` : notifications et bilan
 - `api.py` : assemblage du serveur ; `catalog.py` : outils partagés par les routes ; `routes/` : routes HTTP par thème
 - `auth.py`, `db.py`, `web.py` : socle
 
@@ -479,13 +497,12 @@ L'interface (`static/`) est en JavaScript, sans étape de compilation.
 ## Feuille de route
 
 ### À faire
-- [ ] « Regarder ensemble » à deux : saturation du swap et lignes vertes dans la vidéo (en cours d'analyse)
-- [ ] « Regarder ensemble » : décalage des sous-titres par rapport à l'audio
 - [ ] « Regarder ensemble » : seconde passe d'optimisation après les tests réels
 - [ ] Lecteur natif optionnel dans l'application Android TV, pour transmettre le son multicanal (DTS, TrueHD, Atmos) à un amplificateur
 
 ### Réalisé
-- Interface multi-utilisateurs, profils, code PIN, contrôle parental, photos de profil
+- Interface multi-utilisateurs, profils, code PIN, contrôle parental, photos et avatars de profil, interface enfant
+- Personnalisation : apparence des sous-titres, anti-spoiler, page d'ouverture, rangées épinglées, réglages par appareil, avis sur les titres, notifications de nouveaux épisodes, bilan de visionnage
 - Scan, TMDB, lecture directe / remux / transcodage, transcodage matériel (NVENC, VAAPI)
 - Détection des intros et génériques par empreinte audio
 - Collections, « À regarder », playlists, bonus et bandes-annonces, suggestions

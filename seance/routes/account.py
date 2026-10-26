@@ -93,7 +93,7 @@ def register(app, ctx, x):
         return {"id": u["id"], "username": u["username"], "display_name": u["display_name"],
                 "is_admin": bool(u["is_admin"]), "avatar_color": u["avatar_color"],
                 "managed": bool(u.get("managed")), "has_pin": bool(u.get("pin_hash")),
-                "max_age": u.get("max_age"), "home": bool(u.get("home", 1)),
+                "max_age": u.get("max_age"), "home": bool(u.get("home", 1)), "kids": bool(u.get("kids")),
                 "avatar": avatar_url(u)}
 
     @app.route("GET", "/api/me")
@@ -106,7 +106,8 @@ def register(app, ctx, x):
                              "requests": bool(db.setting("seerr_url") and db.setting("seerr_key")),
                              "live": x.live_available(req.user),
                              "downloads": db.setting("downloads", "1") == "1"},
-                "update": ctx.update_latest if req.user["is_admin"] else None}
+                "update": ctx.update_latest if req.user["is_admin"] else None,
+                "notifications": x.unread_notifications(req.user)}
 
     @app.route("PUT", "/api/me/prefs")
     def me_prefs(req):

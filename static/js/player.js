@@ -1,5 +1,7 @@
 // Web player: HLS stream proxied through Nexis, custom controls, resume,
 // per-user track preferences, "skip intro" banner and next-episode countdown.
+import { applySubStyle } from './substyle.js';
+import { deviceOverrides } from './device.js';
 import { get, post, put } from './api.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from './tracks.js';
 import { state } from './app.js';
@@ -24,7 +26,7 @@ const CLOCK_TTL = 10 * 60 * 1000;
 
 export async function renderPlayer(root, rk, ctx) {
   const hlsReady = loadHls(); // en parallèle du chargement de la fiche
-  const prefs = state.me.prefs;
+  const prefs = { ...state.me.prefs, ...deviceOverrides() }; // réglages de l'appareil prioritaires
   const isAdmin = state.me.user.is_admin;
   const video = h('video.video', { playsinline: true, preload: 'auto' });
   const subLayer = h('div.sub-layer', { style: { fontSize: `${(prefs.sub_size / 100) * 2.4}vmin` } });
@@ -77,6 +79,7 @@ export async function renderPlayer(root, rk, ctx) {
   const top = h('div.player-top', backBtn, titleEl, h('div.grow'), miniBtn);
   const player = h('div.player', video, subLayer, subTop, subsPending, loader, errorLayer, top, groupBanner, skipBtn, nextCard,
     menu, chapterPanel, controls, miniBar);
+  applySubStyle(player, prefs);
   clear(root, player);
 
   // ------------------------------------------------------------ state

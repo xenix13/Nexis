@@ -297,7 +297,7 @@ with sync_playwright() as pw:
     page.wait_for_timeout(400)
     page.screenshot(path=f"{out}/46-photo-profil.png")
     page.click(".user-btn")
-    menu_links = page.locator(".user-menu").inner_text()
+    menu_links = page.locator(".user-menu:not(.notif-menu)").inner_text()
     check("Administration" not in menu_links and "Paramètres" in menu_links, f"menu du profil : {menu_links!r}")
     page.keyboard.press("Escape")
     page.click("text=Retirer la photo")
@@ -505,6 +505,94 @@ with sync_playwright() as pw:
         time.sleep(0.5)
     check(row and row["position_ms"] > 39000, f"lecture hors ligne puis position renvoyée au serveur ({row and row['position_ms']})")
     bctx5.close()
+
+    # --- personnalisation : sous-titres, anti-spoiler, épingles, avis, avatars, page d'ouverture, appareil,
+    #     interface enfant, notifications, bilan
+    pctx, pp = browser_ctx(browser, lea)
+    kaze_show = ctx.db.one("SELECT show_id FROM items WHERE id=?", (kaze,))["show_id"]
+    lea.call("POST", f"/api/items/{kaze}/watched", {"watched": True})  # série suivie, épisodes suivants « nouveaux »
+    pp.goto(base + "/#/settings/playback")
+    pp.wait_for_selector(".sub-preview .sub-line")
+    pp.select_option(".panel:has(h2:text-is('Apparence des sous-titres')) select >> nth=0", "serif")
+    pp.wait_for_function("getComputedStyle(document.querySelector('.sub-preview .sub-line')).fontFamily.includes('Georgia')")
+    pp.click(".panel:has(h2:text-is('Apparence des sous-titres')) .swatch >> nth=2")
+    pp.wait_for_timeout(300)
+    check(lea.call("GET", "/api/me")[1]["prefs"]["sub_font"] == "serif", "police des sous-titres enregistrée")
+    pp.click("label:has-text('Anti-spoiler')")
+    pp.wait_for_function("document.documentElement.classList.contains('no-spoilers')")
+    pp.screenshot(path=f"{out}/50-sous-titres-style.png", full_page=True)
+    pp.goto(base + f"/#/item/{kaze_show}")
+    pp.wait_for_selector(".episode")
+    blurred = pp.evaluate("[...document.querySelectorAll('.episode:not(.watched) .episode-summary')].every((e) => getComputedStyle(e).filter.includes('blur'))")
+    check(blurred, "résumés des épisodes non vus masqués")
+    pp.wait_for_timeout(500)
+    pp.screenshot(path=f"{out}/51-anti-spoiler.png")
+    # avis
+    pp.click(".detail-actions button[aria-label='J’aime']")
+    pp.wait_for_selector(".detail-actions button[aria-label='J’aime'].on")
+    check(lea.call("GET", f"/api/items/{kaze_show}")[1]["opinion"] == 1, "j'aime enregistré")
+    # épingler un genre sur l'accueil
+    films = next(l for l in lea.call("GET", "/api/me")[1]["libraries"] if l["title"] == "Films")
+    genre = lea.call("GET", f"/api/libraries/{films['id']}/genres")[1][0]["title"]
+    import urllib.parse as _up
+    pp.goto(base + f"/#/library/{films['id']}?genre={_up.quote(genre)}")
+    pp.click(".pin-btn")
+    pp.wait_for_selector(".pin-btn:has-text('Retirer de l’accueil')")
+    pp.goto(base + "/#/")
+    pp.wait_for_selector(f".row-title:has-text('{genre} · Films')")
+    check(True, "rangée épinglée sur l'accueil")
+    # notifications : la série suivie a de nouveaux épisodes
+    pp.wait_for_selector(".notif-badge:not([hidden])")
+    pp.click(".notif-btn")
+    pp.wait_for_selector(".notif-item")
+    pp.wait_for_timeout(300)
+    pp.screenshot(path=f"{out}/52-notifications.png")
+    pp.wait_for_selector(".notif-badge[hidden]", state="attached")
+    pp.keyboard.press("Escape")
+    pp.mouse.click(5, 300)
+    # bilan
+    pp.goto(base + "/#/history")
+    pp.wait_for_selector(".recap .stat")
+    pp.wait_for_timeout(400)
+    pp.screenshot(path=f"{out}/53-bilan.png", full_page=True)
+    # avatars prédéfinis
+    pp.goto(base + "/#/settings/profile")
+    pp.click("button:has-text('Avatars')")
+    pp.wait_for_selector(".preset-grid .preset")
+    pp.screenshot(path=f"{out}/54-avatars.png")
+    pp.click(".preset-grid .preset >> nth=3")
+    pp.wait_for_selector(".user-btn .avatar img")
+    check(pp.locator(".modal-overlay").count() == 0, "fenêtre des avatars fermée")
+    # page d'ouverture et appareil
+    pp.goto(base + "/#/settings/layout")
+    pp.select_option(".panel:has(h2:text-is('Page d’ouverture')) select", "watchlist")
+    pp.wait_for_timeout(300)
+    pp.goto(base + "/#/settings/device")
+    pp.select_option(".panel:has(h2:text-is('Lecture sur cet appareil')) select >> nth=0", "480p")
+    pp.select_option(".panel:has(h2:text-is('Affichage et navigation')) select >> nth=0", "reduced")
+    check(pp.evaluate("document.documentElement.classList.contains('reduce-motion')"), "animations réduites sur cet appareil")
+    pp.screenshot(path=f"{out}/55-appareil.png")
+    pp.goto(base + "/")
+    pp.reload()
+    pp.wait_for_function("location.hash === '#/watchlist'")
+    check(True, "page d'ouverture appliquée")
+    pctx.close()
+    lea.call("PUT", "/api/me/prefs", {"start_page": "home", "home_pins": [], "home_order": [], "hide_spoilers": False,
+                                      "sub_font": "sans", "sub_color": "#ffffff"})
+    # interface enfant
+    st, kid = admin.call("POST", "/api/admin/users", {"username": "mini", "display_name": "Mini", "password": "motdepasse5",
+                                                      "kids": True, "max_age": 7})
+    kc = Client(base)
+    kc.call("POST", "/api/login", {"username": "mini", "password": "motdepasse5"})
+    kctx, kp = browser_ctx(browser, kc)
+    kp.goto(base + "/#/")
+    kp.wait_for_selector("header .nav")
+    links = kp.eval_on_selector_all("header .nav .nav-link", "els => els.map((e) => e.textContent)")
+    check(kp.evaluate("document.documentElement.classList.contains('kids')") and "Découvrir" not in links
+          and "TV en direct" not in links and kp.locator(".group-new").is_hidden(), f"interface enfant : {links}")
+    kp.wait_for_timeout(500)
+    kp.screenshot(path=f"{out}/56-interface-enfant.png")
+    kctx.close()
 
     # --- mise à jour : indicateur pour les administrateurs, progression, attente du redémarrage, rechargement
     import json as _json

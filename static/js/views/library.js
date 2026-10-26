@@ -1,6 +1,7 @@
 import { get } from '../api.js';
 import { state } from '../app.js';
 import { clear, h, posterCard, select, spinner } from '../ui.js';
+import { pinButton } from '../pins.js';
 
 const PAGE = 60;
 
@@ -38,7 +39,8 @@ export async function renderLibrary(main, sid, ctx) {
   const count = h('span.muted');
   const grid = h('div.grid');
   const sentinel = h('div.sentinel');
-  clear(main, h('div.page-head', h('h1', lib.title), count, h('div.filters', sortSel, genreSel)), viewTabs, grid, sentinel);
+  const pin = genre ? pinButton({ type: 'genre', ref: genre, lib: sid, title: `${genre} · ${lib.title}` }) : null;
+  clear(main, h('div.page-head', h('h1', lib.title), count, h('div.filters', sortSel, genreSel, pin)), viewTabs, grid, sentinel);
 
   let start = 0, total = Infinity, loading = false;
   async function more() {

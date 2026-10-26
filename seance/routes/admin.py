@@ -56,7 +56,7 @@ def register(app, ctx, x):
         if b.get("password"):
             validate_password(b["password"])
             fields["password_hash"] = hash_password(b["password"])
-        for k in ("managed", "home", "allow_unrated"):
+        for k in ("managed", "home", "allow_unrated", "kids"):
             if k in b:
                 fields[k] = 1 if b[k] else 0
         if "max_age" in b:
@@ -414,7 +414,12 @@ def register(app, ctx, x):
     def admin_system(req):
         """Charge du serveur, pour comprendre une lecture qui saccade (mémoire, swap, ffmpeg en cours)."""
         load = os.getloadavg() if hasattr(os, "getloadavg") else (0, 0, 0)
-        return {**system_memory(), **ctx.transcoder.processes(), "cpus": os.cpu_count(), "load": round(load[0], 2)}
+        # sécurité de l'accès : réglages actifs et ce que le serveur voit de cette requête
+        security = {"cookie_secure": bool(ctx.cookie_secure), "trust_proxy": bool(ctx.trust_proxy),
+                    "client_ip": req.client_ip, "https": (req.headers.get("X-Forwarded-Proto") or "").lower() == "https",
+                    "via_proxy": bool(req.headers.get("X-Forwarded-For"))}
+        return {**system_memory(), **ctx.transcoder.processes(), "cpus": os.cpu_count(), "load": round(load[0], 2),
+                "security": security}
 
     @app.route("DELETE", f"/api/admin/streams/{SID}", auth="admin")
     def admin_stop_stream(req):
@@ -446,7 +451,11 @@ def register(app, ctx, x):
     @app.route("GET", "/api/admin/update", auth="admin")
     def admin_update(req):
         db.release()  # appels réseau : pas de connexion à la base gardée pendant ce temps
-        out = {"current": VERSION}
+        out = {"current": VERSION, "channels": update.CHANNELS}
+        try:
+            out["branch"] = update.read_source()[2]
+        except update.UpdateError:
+            pass
         if req.arg("refresh") == "1":
             update.forget()  # bouton « Rechercher une mise à jour » : on ne se fie pas au résultat gardé 30 min
         try:
@@ -464,6 +473,18 @@ def register(app, ctx, x):
         except mountd.MountError as e:
             out.update(can_update=False, update_error=str(e))
         return out
+
+    @app.route("PUT", "/api/admin/update/channel", auth="admin")
+    def admin_update_channel(req):
+        branch = str(req.json().get("branch") or "")
+        if branch not in update.CHANNELS:
+            raise HTTPError(400, "Canal inconnu")
+        if IN_DOCKER:
+            raise HTTPError(400, "Avec Docker, le canal se choisit par l'étiquette de l'image")
+        log.warning("Canal de mise à jour : %s (par %s)", branch, req.user["username"])
+        r = mounts("update_channel", {"branch": branch})
+        ctx.update_checked = 0  # nouvelle vérification de l'indicateur au prochain passage
+        return r
 
     @app.route("POST", "/api/admin/update", auth="admin")
     def admin_update_start(req):

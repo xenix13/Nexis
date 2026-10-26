@@ -1,7 +1,11 @@
 import { del, put } from '../api.js';
 import { ADMIN_ALIASES, ADMIN_GROUPS, renderAdminSection } from './admin.js';
 import { applyPrefs, navItems, refreshMe, repaintNav, repaintUser, state } from '../app.js';
-import { arrange, avatar, clear, field, h, icon, select, toast, toggle } from '../ui.js';
+import { PIN_LABELS, pins, removePin } from '../pins.js';
+import { SUB_BGS, SUB_COLORS, SUB_EDGES, SUB_FONTS, SUB_POSITIONS, applySubStyle } from '../substyle.js';
+import { arrange, avatar, clear, field, h, icon, modal, select, toast, toggle } from '../ui.js';
+import { PRESETS, drawPreset, presetDataUrl } from '../avatars.js';
+import { device, setDevice } from '../device.js';
 
 const LANGS = [['fra', 'Français'], ['eng', 'Anglais'], ['jpn', 'Japonais'], ['spa', 'Espagnol'], ['deu', 'Allemand'],
   ['ita', 'Italien'], ['por', 'Portugais'], ['kor', 'Coréen'], ['zho', 'Chinois'], ['', 'Pas de préférence']];
@@ -33,7 +37,8 @@ function layoutList(items, isOn, onOrder, onShow) {
         h('div.layout-label', it.label, it.hint ? h('span.muted.small', it.hint) : null),
         h('button.icon-btn', { type: 'button', 'aria-label': `Monter ${it.label}`, disabled: i === 0, onclick: () => move(k, -1) }, icon('up')),
         h('button.icon-btn', { type: 'button', 'aria-label': `Descendre ${it.label}`, disabled: i === keys.length - 1, onclick: () => move(k, 1) }, icon('down')),
-        sw);
+        sw,
+        it.remove ? h('button.icon-btn', { type: 'button', title: 'Retirer de l’accueil', 'aria-label': `Retirer ${it.label}`, onclick: it.remove }, icon('trash')) : null);
       li.addEventListener('dragstart', (e) => { dragged = k; li.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
       li.addEventListener('dragend', () => { dragged = null; li.classList.remove('dragging'); });
       li.addEventListener('dragover', (e) => { if (dragged && dragged !== k) e.preventDefault(); });
@@ -80,11 +85,13 @@ export const ACCOUNT_GROUP = { title: 'Mon compte', items: [
   { id: 'profile', label: 'Profil', icon: 'user', lead: 'Nom, photo, code PIN et mot de passe.',
     keys: 'nom avatar couleur pin code mot de passe sécurité' },
   { id: 'playback', label: 'Lecture', icon: 'play', lead: 'Qualité, langues, sous-titres et enchaînement des épisodes.',
-    keys: 'qualité langue audio sous-titres taille épisode suivant générique intro automatique' },
+    keys: 'qualité langue audio sous-titres taille police couleur style épisode suivant générique intro automatique spoiler anti-spoiler résumé' },
   { id: 'appearance', label: 'Apparence', icon: 'palette', lead: 'Thème, couleur d’accent et taille des affiches.',
     keys: 'thème sombre clair oled couleur accent affiches taille' },
+  { id: 'device', label: 'Cet appareil', icon: 'tv', lead: 'Réglages propres à ce navigateur ou à cette TV, prioritaires sur ceux du profil.',
+    keys: 'appareil tv téléphone qualité sous-titres taille animations mouvement télécommande manette navigateur' },
   { id: 'layout', label: 'Accueil et menu', icon: 'home', lead: 'Ordre et affichage des rangées de l’accueil et des liens de la barre du haut.',
-    keys: 'accueil rangées ordre barre du haut menu liens masquer réorganiser' },
+    keys: 'accueil rangées ordre barre du haut menu liens masquer réorganiser épingler page d’ouverture démarrage' },
 ] };
 
 function accountPage(id, body, rerender) {
@@ -127,16 +134,29 @@ function accountPage(id, body, rerender) {
       const f = file.files[0];
       file.value = '';
       if (!f) return;
-      try {
-        const image = await squareImage(f, 256);
-        await put('/api/me/avatar', { image });
-        await refreshMe(); repaintUser();
-        toast('Photo de profil enregistrée', 'ok');
-        rerender();
-      } catch (e) { toast(e.message || 'Image illisible', 'bad'); }
+      try { await uploadAvatar(await squareImage(f, 256), 'Photo de profil enregistrée'); }
+      catch (e) { toast(e.message || 'Image illisible', 'bad'); }
     });
+    const uploadAvatar = async (image, msg) => {
+      await put('/api/me/avatar', { image });
+      await refreshMe(); repaintUser();
+      toast(msg, 'ok');
+      rerender();
+    };
+    const choosePreset = async () => {
+      const grid = h('div.preset-grid', PRESETS.map((pr) => {
+        const btn = h('button.preset', { type: 'button', 'aria-label': `Avatar ${pr.motif}` }, drawPreset(pr, 96));
+        btn.addEventListener('click', async () => {
+          btn.closest('.modal').querySelector('.modal-head .icon-btn').click(); // ferme la fenêtre proprement
+          try { await uploadAvatar(presetDataUrl(pr), 'Avatar enregistré'); } catch (e) { toast(e.message, 'bad'); }
+        });
+        return btn;
+      }));
+      await modal('Choisir un avatar', grid, [{ label: 'Annuler', value: null }]);
+    };
     const pictureActions = h('div.avatar-actions',
       h('button.btn.small', { type: 'button', onclick: () => file.click() }, me.user.avatar ? 'Changer la photo' : 'Choisir une photo'),
+      h('button.btn.small', { type: 'button', onclick: choosePreset }, 'Avatars'),
       me.user.avatar ? h('button.btn.small.ghost', { type: 'button', onclick: async () => {
         try { await del('/api/me/avatar'); await refreshMe(); repaintUser(); toast('Photo retirée', 'ok'); rerender(); }
         catch (e) { toast(e.message, 'bad'); }
@@ -185,10 +205,40 @@ function accountPage(id, body, rerender) {
   }
 
   if (id === 'playback') {
-    const subSize = h('input', { type: 'range', min: 60, max: 200, step: 10, value: p.sub_size });
-    const subSizeLabel = h('span.muted', `${p.sub_size} %`);
-    subSize.addEventListener('input', () => { subSizeLabel.textContent = `${subSize.value} %`; });
-    subSize.addEventListener('change', () => save({ sub_size: Number(subSize.value) }));
+    // apparence des sous-titres, avec un aperçu qui suit chaque réglage
+    const subStylePanel = () => {
+      const sample = h('div.sub-layer', h('span.sub-line', 'Aperçu des sous-titres\nsur deux lignes'));
+      const preview = h('div.sub-preview', { 'aria-hidden': 'true' }, sample);
+      const paint = () => {
+        applySubStyle(preview, p);
+        sample.style.fontSize = `${(p.sub_size / 100) * 18}px`;
+      };
+      const set = (patch) => { Object.assign(p, patch); paint(); save(patch, 'Sous-titres enregistrés'); };
+      const opt = (key, table) => select(Object.entries(table).map(([k, v]) => [k, v[0]]), p[key] || Object.keys(table)[0],
+        { onchange: (e) => set({ [key]: e.target.value }) });
+      const subSize = h('input', { type: 'range', min: 60, max: 200, step: 10, value: p.sub_size });
+      const subSizeLabel = h('span.muted', `${p.sub_size} %`);
+      subSize.addEventListener('input', () => { subSizeLabel.textContent = `${subSize.value} %`; p.sub_size = Number(subSize.value); paint(); });
+      subSize.addEventListener('change', () => save({ sub_size: Number(subSize.value) }, 'Sous-titres enregistrés'));
+      const colors = h('div.swatches', SUB_COLORS.map((c) => h('button.swatch', {
+        type: 'button', style: { background: c }, 'aria-label': `Couleur ${c}`, class: c === (p.sub_color || '#ffffff') ? 'swatch on' : 'swatch',
+        onclick: (e) => {
+          colors.querySelectorAll('.swatch').forEach((x) => x.classList.remove('on'));
+          e.currentTarget.classList.add('on');
+          set({ sub_color: c });
+        } })));
+      paint();
+      return h('section.panel', h('h2', 'Apparence des sous-titres'),
+        h('p.muted.small', 'S’applique aux sous-titres texte (SRT, WebVTT, ASS simplifiés). Les sous-titres ASS stylés et les PGS gardent leur apparence d’origine.'),
+        preview,
+        h('div.grid2',
+          field('Taille', h('div.inline', subSize, subSizeLabel)),
+          field('Police', opt('sub_font', SUB_FONTS)),
+          field('Fond', opt('sub_bg', SUB_BGS)),
+          field('Bordure du texte', opt('sub_edge', SUB_EDGES)),
+          field('Position', opt('sub_position', SUB_POSITIONS))),
+        field('Couleur du texte', colors));
+    };
     clear(body,
       h('section.panel', h('h2', 'Qualité et langue'),
         h('div.grid2',
@@ -200,13 +250,36 @@ function accountPage(id, body, rerender) {
         h('div.grid2',
           field('Afficher les sous-titres', bindSelect('sub_mode', [['foreign', 'Si l’audio n’est pas dans ma langue'],
             ['always', 'Toujours'], ['never', 'Jamais']])),
-          field('Langue des sous-titres', bindSelect('sub_lang', LANGS))),
-        field('Taille des sous-titres', h('div.inline', subSize, subSizeLabel))),
+          field('Langue des sous-titres', bindSelect('sub_lang', LANGS)))),
+      subStylePanel(),
       h('section.panel', h('h2', 'Séries'),
         bindToggle('autoplay_next', 'Enchaîner automatiquement l’épisode suivant'),
         field('Délai avant l’épisode suivant', bindSelect('next_delay', [0, 3, 5, 10, 15, 20, 30].map((n) => [String(n), n ? `${n} secondes` : 'Immédiatement']), Number),
           'Un compte à rebours s’affiche à la fin de l’épisode, avec « Lire maintenant » et « Annuler ». Pendant le générique, l’épisode suivant est seulement proposé.'),
-        bindToggle('auto_skip_intro', 'Passer les génériques d’ouverture automatiquement')));
+        bindToggle('auto_skip_intro', 'Passer les génériques d’ouverture automatiquement'),
+        bindToggle('hide_spoilers', 'Anti-spoiler : flouter les vignettes et masquer les résumés des épisodes non vus'),
+        h('p.field-hint.toggle-hint', 'Un clic sur un résumé masqué l’affiche.')));
+    return;
+  }
+
+  if (id === 'device') {
+    const d = device();
+    const set = (patch, msg = 'Réglage enregistré sur cet appareil') => { setDevice(patch); toast(msg, 'ok'); };
+    const pick = (key, options) => select(options, d[key] || '', { onchange: (e) => set({ [key]: e.target.value }) });
+    clear(body,
+      h('section.panel', h('h2', 'Lecture sur cet appareil'),
+        h('div.grid2',
+          field('Qualité', pick('quality', [['', `Selon le profil (${({ original: 'originale', '1080p': '1080p', '720p': '720p', '480p': '480p' })[p.quality] || p.quality})`],
+            ['original', 'Originale'], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p']]),
+          'Utile pour réduire la qualité sur un téléphone en données mobiles.'),
+          field('Taille des sous-titres', pick('sub_size', [['', `Selon le profil (${p.sub_size} %)`],
+            ...[80, 100, 120, 140, 160, 180, 200].map((n) => [String(n), `${n} %`])]), 'Une TV regardée de loin demande souvent des sous-titres plus grands.'))),
+      h('section.panel', h('h2', 'Affichage et navigation'),
+        h('div.grid2',
+          field('Animations', pick('motion', [['', 'Selon le système'], ['reduced', 'Réduites']])),
+          field('Navigation à la télécommande', pick('remote', [['', 'Automatique'], ['on', 'Toujours activée'], ['off', 'Désactivée']]),
+            'Repères de sélection visibles et déplacement aux flèches, comme sur une TV.'))),
+      h('p.muted.small', 'Ces réglages sont enregistrés dans ce navigateur uniquement.'));
     return;
   }
 
@@ -229,6 +302,8 @@ function accountPage(id, body, rerender) {
     { key: 'suggest', label: 'Suggestions', hint: 'selon vos visionnages récents' },
     { key: 'because', label: 'Parce que vous avez regardé…', hint: 'titres proches de vos derniers visionnages' },
     ...me.libraries.map((l) => ({ key: `lib:${l.id}`, label: l.title, hint: l.type === 'show' ? 'nouveaux épisodes' : 'ajoutés récemment' })),
+    ...pins().map((pn) => ({ key: `pin:${pn.id}`, label: pn.title, hint: `rangée épinglée (${PIN_LABELS[pn.type]})`,
+      remove: async () => { try { await removePin(pn.id); rerender(); } catch (e) { toast(e.message, 'bad'); } } })),
   ];
   const homeById = new Map(homeItems.map((i) => [i.key, i]));
   const homeOn = (k) => (k === 'continue' ? p.show_continue : k.startsWith('lib:') ? !hidden.has(k.slice(4)) : !homeHidden.has(k));
@@ -246,7 +321,7 @@ function accountPage(id, body, rerender) {
   const layoutPanel = (title, lead, list, resetPatch) => h('section.panel', h('h2', title), h('p.muted.small', lead), list(),
     h('button.btn.ghost', { type: 'button', onclick: async () => { await save(resetPatch, 'Ordre par défaut rétabli'); rerender(); } },
       'Rétablir l’ordre par défaut'));
-  const homePanel = layoutPanel('Accueil', 'Faites glisser les rangées ou utilisez les flèches pour les réordonner. L’interrupteur affiche ou masque chaque rangée.',
+  const homePanel = layoutPanel('Accueil', 'Faites glisser les rangées ou utilisez les flèches pour les réordonner. L’interrupteur affiche ou masque chaque rangée. Pour épingler une rangée : bouton « Épingler à l’accueil » d’une collection, d’une playlist ou d’un genre filtré dans une bibliothèque.',
     () => layoutList(arrange(homeItems.map((i) => i.key), p.home_order).map((k) => homeById.get(k)), homeOn,
       (keys) => save({ home_order: keys }, 'Ordre de l’accueil enregistré'), homeShow),
     { home_order: [] });
@@ -255,7 +330,11 @@ function accountPage(id, body, rerender) {
       async (keys) => { await save({ nav_order: keys }, 'Barre du haut enregistrée'); repaintNav(); },
       async (k, on) => { if (on) navHidden.delete(k); else navHidden.add(k); await save({ nav_hidden: [...navHidden] }, 'Barre du haut enregistrée'); repaintNav(); }),
     { nav_order: [] });
-  clear(body, homePanel, navPanel);
+  const startSel = select(navItems(me).map((i) => [i.key, i.label]), p.start_page || 'home',
+    { onchange: (e) => save({ start_page: e.target.value }, 'Page d’ouverture enregistrée') });
+  const startPanel = h('section.panel', h('h2', 'Page d’ouverture'),
+    field('Page affichée à l’ouverture de Nexis', startSel, 'Les liens directs (fiche, lecture) s’ouvrent toujours à leur adresse.'));
+  clear(body, startPanel, homePanel, navPanel);
 }
 
 // ---------------------------------------------------------------- l'espace Paramètres
