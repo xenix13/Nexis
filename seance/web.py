@@ -9,6 +9,7 @@ import os
 import re
 import socketserver
 import threading
+import time
 import traceback
 import urllib.parse
 
@@ -155,6 +156,11 @@ class App:
     def serve_static(self, path, req=None):
         root = os.path.realpath(self.static_dir)
         rel = urllib.parse.unquote(path).lstrip("/") or "index.html"
+        # /v/<empreinte>/js/… : le code de l'interface, à une adresse qui change avec chaque version (voir ui_version)
+        stamped = None
+        m = STAMPED.match(rel)
+        if m:
+            stamped, rel = m.group(1), m.group(2)
         full = os.path.realpath(os.path.join(root, rel))
         if rel == "sw.js" and os.path.isfile(full):
             return self.service_worker(root, full, req)
@@ -162,16 +168,24 @@ class App:
             if "." in os.path.basename(rel):
                 raise HTTPError(404, "Fichier introuvable")
             full = os.path.join(root, "index.html")  # SPA fallback
+        if full == os.path.join(root, "index.html"):
+            return self.index_page(root, full, req)
         ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
             ctype += "; charset=utf-8"
         st = os.stat(full)
         # empreinte du fichier : après le délai de cache, le navigateur demande « inchangé ? » (304, rien à renvoyer)
         etag = f'W/"{st.st_size:x}-{st.st_mtime_ns:x}"'
-        cache = "no-cache" if full.endswith(".html") else "public, max-age=300"
+        # interface (HTML, JS, CSS) : toujours revérifiée (réponse 304 légère si rien n'a changé), sinon le
+        # navigateur garde l'ancienne version après une mise à jour du serveur. Images : 5 min sans redemander.
+        cache = "no-cache" if full.endswith((".html", ".js", ".css", ".webmanifest")) else "public, max-age=300"
         headers = {"Cache-Control": cache, "ETag": etag}
         if "/vendor/" in full:
             headers["Cache-Control"] = "public, max-age=604800"
+        if stamped and stamped == ui_version(root):
+            # adresse propre à cette version : gardée telle quelle par le navigateur (et par un proxy qui
+            # mettrait les .js en cache) ; la version suivante aura d'autres adresses
+            headers["Cache-Control"] = "public, max-age=31536000, immutable"
         if "/vendor/jassub/" in full:
             # le moteur de sous-titres (libass compilé en WebAssembly) tourne dans un worker qui a besoin
             # de compiler du WebAssembly ; cette politique ne vaut que pour ses propres fichiers
@@ -191,6 +205,27 @@ class App:
 
 
     @staticmethod
+    def index_page(root, full, req):
+        """index.html qui charge le code et le style de l'interface à des adresses propres à cette version.
+        Sans cela, un proxy (Nginx Proxy Manager « Cache Assets » : expires 30d) ou un cache trop zélé garde
+        l'ancien code après une mise à jour, jusqu'à un Ctrl+F5."""
+        version = ui_version(root)
+        st = os.stat(full)
+        etag = f'W/"ix-{version}-{st.st_mtime_ns:x}"'
+        headers = {"Cache-Control": "no-cache", "ETag": etag, "Vary": "Accept-Encoding"}
+        ctype = "text/html; charset=utf-8"
+        if req and req.headers.get("If-None-Match") == etag:
+            return Response(b"", 304, ctype, headers)
+        with open(full, encoding="utf-8") as f:
+            html = f.read()
+        html = html.replace('href="/css/', f'href="/v/{version}/css/').replace('src="/js/', f'src="/v/{version}/js/')
+        data = html.encode()
+        if req and "gzip" in (req.headers.get("Accept-Encoding") or ""):
+            data = gzip.compress(data, 6)
+            headers["Content-Encoding"] = "gzip"
+        return Response(data, 200, ctype, headers)
+
+    @staticmethod
     def service_worker(root, full, req):
         """sw.js avec la liste des fichiers de l'interface et une version qui change dès que l'un d'eux change
         (le navigateur installe alors le nouveau service worker et recharge son cache)."""
@@ -205,6 +240,8 @@ class App:
             st = os.stat(os.path.join(root, "index.html" if u == "/" else u.lstrip("/")))
             stamp.append(f"{u}:{st.st_size}:{st.st_mtime_ns}")
         version = hashlib.sha1("|".join(stamp).encode()).hexdigest()[:12]
+        ui = ui_version(root)  # le code et le style sont chargés depuis /v/<empreinte>/ (voir index_page)
+        shell = [f"/v/{ui}{u}" if u.startswith(("/js/", "/css/")) else u for u in shell]
         etag = f'"sw-{version}"'
         headers = {"Cache-Control": "no-cache", "ETag": etag}
         if req and req.headers.get("If-None-Match") == etag:
@@ -214,6 +251,25 @@ class App:
         code = re.sub(r"^const VERSION = .*$", f"const VERSION = '{version}';", code, count=1, flags=re.M)
         code = re.sub(r"^const SHELL = .*$", "const SHELL = " + json.dumps(shell) + ";", code, count=1, flags=re.M)
         return Response(code, 200, "application/javascript; charset=utf-8", headers)
+
+
+STAMPED = re.compile(r"^v/([0-9a-f]{12})/((?:js|css)/.+)$")
+_ui = {"at": 0.0, "version": None}
+
+
+def ui_version(root):
+    """Empreinte du code et du style de l'interface (taille et date de chaque fichier), revue toutes les 2 s."""
+    now = time.monotonic()
+    if _ui["version"] and now - _ui["at"] < 2:
+        return _ui["version"]
+    stamp = []
+    for sub in ("js", "css"):
+        for dirpath, _, files in os.walk(os.path.join(root, sub)):
+            for f in sorted(files):
+                st = os.stat(os.path.join(dirpath, f))
+                stamp.append(f"{dirpath}/{f}:{st.st_size}:{st.st_mtime_ns}")
+    _ui.update(at=now, version=hashlib.sha1("|".join(sorted(stamp)).encode()).hexdigest()[:12])
+    return _ui["version"]
 
 
 COMPRESSIBLE = ("text/", "application/javascript", "application/json", "application/wasm", "image/svg+xml",

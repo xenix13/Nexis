@@ -1231,12 +1231,46 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual((st, h["Cache-Control"]), (200, "no-cache"))
         self.assertNotIn("const VERSION = 'dev'", code)
         shell = json.loads(re.search(r"^const SHELL = (.*);$", code, re.M).group(1))
-        self.assertIn("/js/app.js", shell)
-        self.assertIn("/js/views/home.js", shell)
+        self.assertTrue(any(re.fullmatch(r"/v/[0-9a-f]{12}/js/app\.js", u) for u in shell), shell)
+        self.assertTrue(any(u.endswith("/js/views/home.js") for u in shell))
         self.assertFalse([u for u in shell if u.startswith(("/api/", "/vendor/"))])
         for u in shell:  # tout ce qui est mis en cache existe (sinon l'installation du service worker échoue)
             self.assertEqual(self.admin.call("GET", u, raw=True)[0], 200, u)
         self.assertEqual(self.admin.call("GET", "/sw.js", raw=True, headers={"If-None-Match": h["ETag"]})[0], 304)
+        # interface toujours revérifiée : après une mise à jour, jamais l'ancienne version gardée par le navigateur
+        for u in ("/js/app.js", "/js/views/settings.js", "/css/app.css"):
+            self.assertEqual(self.admin.call("GET", u, raw=True)[2]["Cache-Control"], "no-cache", u)
+
+    def test_ui_code_versioned_urls(self):
+        """Le code de l'interface est chargé depuis /v/<empreinte>/ : une nouvelle version change les adresses,
+        aucun cache (navigateur, proxy « Cache Assets ») ne peut resservir l'ancien code."""
+        from seance import web
+        st, page, h = self.admin.call("GET", "/", raw=True)
+        html = page.decode()
+        self.assertEqual(h["Cache-Control"], "no-cache")
+        m = re.search(r'src="/v/([0-9a-f]{12})/js/app\.js"', html)
+        self.assertTrue(m, html)
+        self.assertIn(f'href="/v/{m.group(1)}/css/app.css"', html)
+        st, body, h2 = self.admin.call("GET", f"/v/{m.group(1)}/js/views/home.js", raw=True)
+        self.assertEqual((st, h2["Cache-Control"]), (200, "public, max-age=31536000, immutable"))
+        self.assertIn(b"renderHome", body)
+        # page de l'appli (adresse SPA) : même chose
+        self.assertIn(f"/v/{m.group(1)}/js/app.js", self.admin.call("GET", "/settings/x", raw=True)[1].decode())
+        # une autre empreinte (ancienne page) : le fichier actuel, mais sans le garder
+        st, _, h3 = self.admin.call("GET", "/v/000000000000/js/app.js", raw=True)
+        self.assertEqual((st, h3["Cache-Control"]), (200, "no-cache"))
+        self.assertEqual(self.admin.call("GET", f"/v/{m.group(1)}/../../seance/api.py", raw=True)[0], 404)
+        # nouvelle version de l'interface (fichier modifié) : nouvelle empreinte, donc nouvelles adresses
+        target = os.path.join(STATIC, "js", "caps.js")
+        st0 = os.stat(target)
+        try:
+            os.utime(target, ns=(st0.st_atime_ns, st0.st_mtime_ns + 1_000_000_000))
+            web._ui["at"] = 0
+            html2 = self.admin.call("GET", "/", raw=True)[1].decode()
+            self.assertNotIn(m.group(1), html2)
+        finally:
+            os.utime(target, ns=(st0.st_atime_ns, st0.st_mtime_ns))
+            web._ui["at"] = 0
 
     def test_update_indicator_admin_only(self):
         # indicateur de la barre du haut : administrateurs seulement
