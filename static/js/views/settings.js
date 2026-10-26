@@ -1,10 +1,11 @@
-import { del, put } from '../api.js';
+import { del, get, post, put } from '../api.js';
+import { qrSvg } from '../qr.js';
 import { ADMIN_ALIASES, ADMIN_GROUPS, renderAdminSection } from './admin.js';
 import { applyPrefs, navItems, refreshMe, repaintNav, repaintUser, state } from '../app.js';
 import { PIN_LABELS, pins, removePin } from '../pins.js';
 import { SUB_BGS, SUB_COLORS, SUB_EDGES, SUB_FONTS, SUB_POSITIONS, applySubStyle } from '../substyle.js';
-import { arrange, avatar, clear, field, h, icon, modal, select, toast, toggle } from '../ui.js';
-import { PRESETS, drawPreset, presetDataUrl } from '../avatars.js';
+import { arrange, avatar, clear, field, h, icon, modal, select, spinner, toast, toggle } from '../ui.js';
+import { ART, BACKGROUNDS, CATEGORIES, DEFAULT_BG, artDataUrl, artSvg } from '../avatar-art.js';
 import { device, setDevice } from '../device.js';
 
 const LANGS = [['fra', 'Français'], ['eng', 'Anglais'], ['jpn', 'Japonais'], ['spa', 'Espagnol'], ['deu', 'Allemand'],
@@ -80,10 +81,101 @@ function squareImage(fileObj, size) {
   });
 }
 
+// ---------------------------------------------------------------- double authentification
+function showRecoveryCodes(codes) {
+  const text = codes.join('\n');
+  const file = `Nexis : codes de secours (${new Date().toLocaleDateString('fr-FR')})\nChaque code ne fonctionne qu'une fois.\n\n${text}\n`;
+  return modal('Codes de secours', h('div.form',
+    h('p.small', 'Ces codes remplacent le téléphone s’il est perdu ou indisponible. Chacun ne fonctionne qu’une fois. Rangez-les en lieu sûr (gestionnaire de mots de passe, impression) : ils ne seront plus affichés.'),
+    h('ol.recovery-codes', codes.map((c) => h('li', h('code', c)))),
+    h('div.actions-row',
+      h('button.btn.small', { type: 'button', onclick: async () => {
+        try { await navigator.clipboard.writeText(text); toast('Codes copiés', 'ok'); } catch { toast('Copie impossible : sélectionnez les codes', 'bad'); }
+      } }, 'Copier'),
+      h('a.btn.small', { href: URL.createObjectURL(new Blob([file], { type: 'text/plain' })), download: 'nexis-codes-de-secours.txt' }, 'Télécharger'))),
+  [{ label: 'J’ai enregistré mes codes', primary: true, value: true }]);
+}
+
+async function enableTwoFactor(rerender) {
+  const pass = h('input', { type: 'password', autocomplete: 'current-password' });
+  const err = h('p.form-error');
+  const setup = await modal('Activer la double authentification', h('div.form',
+    h('p.small', 'À chaque connexion, un code à 6 chiffres généré par une application d’authentification sera demandé en plus du mot de passe (Google Authenticator, Microsoft Authenticator, Aegis, 2FAS, Bitwarden…).'),
+    field('Mot de passe actuel', pass), err), [
+    { label: 'Annuler', value: null },
+    { label: 'Continuer', primary: true, handler: async () => {
+      try { return await post('/api/me/2fa/setup', { password: pass.value }); } catch (e) { err.textContent = e.message; return false; }
+    } },
+  ]);
+  if (!setup) return;
+  const qrBox = h('div.qr-box', spinner());
+  qrSvg(setup.uri, 200).then((svg) => qrBox.replaceChildren(svg)).catch(() => qrBox.replaceChildren(h('p.muted.small', 'QR code indisponible : saisissez la clé ci-dessous.')));
+  const code = h('input', { inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: 6, placeholder: '123456',
+    style: { letterSpacing: '0.2em', fontSize: '20px' } });
+  const err2 = h('p.form-error');
+  const done = await modal('Scanner le QR code', h('div.form',
+    h('p.small', '1. Dans l’application d’authentification, ajoutez un compte en scannant ce QR code.'),
+    qrBox,
+    h('details.small', h('summary', 'Impossible de scanner ? Saisir la clé'), h('p', h('code.secret-key', setup.secret.match(/.{1,4}/g).join(' '))),
+      h('p.muted', 'Type : basé sur le temps (TOTP), 6 chiffres, 30 secondes.')),
+    field('2. Code affiché par l’application', code), err2), [
+    { label: 'Annuler', value: null },
+    { label: 'Activer', primary: true, handler: async () => {
+      try { return await post('/api/me/2fa/enable', { code: code.value }); } catch (e) { err2.textContent = e.message; return false; }
+    } },
+  ]);
+  if (!done) return;
+  toast('Double authentification activée', 'ok');
+  await showRecoveryCodes(done.recovery_codes);
+  await refreshMe();
+  rerender();
+}
+
+async function confirmCode(title, lead, withPassword, url) {
+  const pass = h('input', { type: 'password', autocomplete: 'current-password' });
+  const code = h('input', { autocomplete: 'one-time-code', autocapitalize: 'none', maxlength: 9, placeholder: '123456' });
+  const err = h('p.form-error');
+  return modal(title, h('div.form', h('p.small', lead), withPassword ? field('Mot de passe actuel', pass) : null,
+    field('Code de l’application (ou code de secours)', code), err), [
+    { label: 'Annuler', value: null },
+    { label: 'Confirmer', primary: true, handler: async () => {
+      try { return await post(url, { password: pass.value, code: code.value }); } catch (e) { err.textContent = e.message; return false; }
+    } },
+  ]);
+}
+
+function twoFactorPanel(rerender) {
+  const box = h('div', spinner());
+  get('/api/me/2fa').then((st) => {
+    if (!st.available) { box.replaceChildren(h('p.muted.small', 'Non disponible pour ce compte.')); return; }
+    if (!st.enabled) {
+      box.replaceChildren(
+        h('div.status-box', 'Désactivée.'),
+        h('p.muted.small', 'Recommandée pour tout compte accessible depuis Internet, en particulier les comptes administrateurs.'),
+        h('button.btn.primary', { onclick: () => enableTwoFactor(rerender) }, 'Activer'));
+      return;
+    }
+    box.replaceChildren(
+      h('div.status-box.ok', 'Activée : un code est demandé à chaque connexion.'),
+      h('p.muted.small', `Codes de secours restants : ${st.recovery_left} sur 10.`, st.recovery_left <= 3 ? ' Pensez à en générer de nouveaux.' : ''),
+      h('div.actions-row',
+        h('button.btn', { onclick: async () => {
+          const r = await confirmCode('Nouveaux codes de secours', 'Les anciens codes de secours cesseront de fonctionner.', false, '/api/me/2fa/recovery');
+          if (r) { await showRecoveryCodes(r.recovery_codes); rerender(); }
+        } }, 'Générer de nouveaux codes de secours'),
+        h('button.btn.ghost', { onclick: async () => {
+          const r = await confirmCode('Désactiver la double authentification', 'Le mot de passe suffira de nouveau pour se connecter.', true, '/api/me/2fa/disable');
+          if (r) { toast('Double authentification désactivée', 'ok'); await refreshMe(); rerender(); }
+        } }, 'Désactiver')),
+      h('p.muted.small', 'Téléphone perdu et plus de codes de secours : un administrateur peut la réinitialiser (Paramètres → Utilisateurs).'));
+  }).catch((e) => box.replaceChildren(h('p.form-error.small', e.message)));
+  return h('section.panel', h('h2', 'Double authentification'), box);
+}
+
 // ---------------------------------------------------------------- Mon compte
 export const ACCOUNT_GROUP = { title: 'Mon compte', items: [
-  { id: 'profile', label: 'Profil', icon: 'user', lead: 'Nom, photo, code PIN et mot de passe.',
-    keys: 'nom avatar couleur pin code mot de passe sécurité' },
+  { id: 'profile', label: 'Profil', icon: 'user', lead: 'Nom, photo, code PIN, mot de passe et double authentification.',
+    keys: 'nom avatar photo couleur pin code mot de passe sécurité double authentification 2fa totp codes de secours' },
   { id: 'playback', label: 'Lecture', icon: 'play', lead: 'Qualité, langues, sous-titres et enchaînement des épisodes.',
     keys: 'qualité langue audio sous-titres taille police couleur style épisode suivant générique intro automatique spoiler anti-spoiler résumé' },
   { id: 'appearance', label: 'Apparence', icon: 'palette', lead: 'Thème, couleur d’accent et taille des affiches.',
@@ -143,16 +235,43 @@ function accountPage(id, body, rerender) {
       toast(msg, 'ok');
       rerender();
     };
+    // galerie d'avatars : catégories, aperçu, fond au choix
     const choosePreset = async () => {
-      const grid = h('div.preset-grid', PRESETS.map((pr) => {
-        const btn = h('button.preset', { type: 'button', 'aria-label': `Avatar ${pr.motif}` }, drawPreset(pr, 96));
-        btn.addEventListener('click', async () => {
-          btn.closest('.modal').querySelector('.modal-head .icon-btn').click(); // ferme la fenêtre proprement
-          try { await uploadAvatar(presetDataUrl(pr), 'Avatar enregistré'); } catch (e) { toast(e.message, 'bad'); }
-        });
-        return btn;
-      }));
-      await modal('Choisir un avatar', grid, [{ label: 'Annuler', value: null }]);
+      let current = Object.keys(ART)[0];
+      let bg = null; // null : fond conseillé pour l'illustration
+      const preview = h('div.avatar-preview');
+      const label = h('div.avatar-preview-label');
+      const paintPreview = () => {
+        preview.innerHTML = artSvg(current, bg, 160); // dessin fixe du code, pas de contenu externe
+        label.textContent = ART[current][0];
+        swatchRow.querySelectorAll('.swatch').forEach((sw, i) => sw.classList.toggle('on', i === (bg ?? DEFAULT_BG[current] ?? 0)));
+        grid.querySelectorAll('.preset').forEach((b) => b.classList.toggle('on', b.dataset.id === current));
+      };
+      const grid = h('div.preset-grid');
+      const showCategory = (cat) => {
+        tabs.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.cat === cat));
+        grid.replaceChildren(...Object.entries(ART).filter(([, a]) => a[1] === cat).map(([id, a]) => {
+          const btn = h('button.preset', { type: 'button', title: a[0], 'aria-label': a[0], dataset: { id } });
+          btn.innerHTML = artSvg(id, null, 72);
+          btn.addEventListener('click', () => { current = id; bg = null; paintPreview(); });
+          return btn;
+        }));
+        paintPreview();
+      };
+      const tabs = h('div.tabs.avatar-tabs', CATEGORIES.map(([cat, name]) =>
+        h('button.tab', { type: 'button', dataset: { cat }, onclick: () => showCategory(cat) }, name)));
+      const swatchRow = h('div.swatches', BACKGROUNDS.map(([a, b], i) => h('button.swatch', {
+        type: 'button', 'aria-label': `Fond ${i + 1}`, style: { background: `linear-gradient(135deg, ${a}, ${b})` },
+        onclick: () => { bg = i; paintPreview(); } })));
+      showCategory(CATEGORIES[0][0]);
+      const ok = await modal('Choisir un avatar', h('div.avatar-picker',
+        h('div.avatar-side', preview, label, h('div.field-label.small', 'Fond'), swatchRow),
+        h('div.avatar-main', tabs, grid)), [
+        { label: 'Annuler', value: null },
+        { label: 'Utiliser cet avatar', primary: true, value: true },
+      ]);
+      if (!ok) return;
+      try { await uploadAvatar(await artDataUrl(current, bg), 'Avatar enregistré'); } catch (e) { toast(e.message, 'bad'); }
     };
     const pictureActions = h('div.avatar-actions',
       h('button.btn.small', { type: 'button', onclick: () => file.click() }, me.user.avatar ? 'Changer la photo' : 'Choisir une photo'),
@@ -200,7 +319,7 @@ function accountPage(id, body, rerender) {
           toast('Mot de passe modifié. Les autres sessions ont été déconnectées.', 'ok');
         } catch (e) { toast(e.message, 'bad'); }
       } }, 'Changer le mot de passe'));
-    clear(body, profile, pinPanel, security);
+    clear(body, profile, pinPanel, security, me.user.managed ? null : twoFactorPanel(rerender));
     return;
   }
 

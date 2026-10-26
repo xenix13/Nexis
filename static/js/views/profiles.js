@@ -30,8 +30,24 @@ function pinPad(onSubmit, length = 4) {
       d ? h('button.pin-key', { type: 'button', onclick: () => press(d) }, d) : h('span'))));
 }
 
+// Compte protégé par la double authentification : le code est demandé en plus du PIN ou du mot de passe
+async function askCode(p) {
+  const code = h('input', { autocomplete: 'one-time-code', autocapitalize: 'none', maxlength: 9, placeholder: '123456' });
+  return modal(`Double authentification de ${p.display_name}`, h('div',
+    h('p.muted.small', 'Code à 6 chiffres de l’application d’authentification, ou un code de secours.'),
+    field('Code', code)), [
+    { label: 'Annuler', value: null },
+    { label: 'Valider', primary: true, handler: () => code.value.trim() || false },
+  ]);
+}
+
 export async function switchTo(p, onDone) {
   const go = async (payload) => {
+    if (p.needs_code && !p.current) {
+      const code = await askCode(p);
+      if (!code) throw new Error('Changement de profil annulé');
+      payload = { ...payload, code };
+    }
     await post(`/api/profiles/${p.id}/switch`, payload);
     toast(`Bonjour ${p.display_name} !`, 'ok');
     onDone();
@@ -44,9 +60,13 @@ export async function switchTo(p, onDone) {
     const err = h('p.form-error.center');
     await modal(`Code PIN de ${p.display_name}`, h('div.center', avatar(p, 64), pinPad(async (pin, reset) => {
       try {
+        if (p.needs_code) err.closest('.modal').querySelector('.modal-head .icon-btn').click(); // place au code
         await go({ pin });
         document.querySelector('.modal-overlay')?.remove();
-      } catch (e) { err.textContent = e.message; reset(); }
+      } catch (e) {
+        if (p.needs_code) { toast(e.message, 'bad'); return; }
+        err.textContent = e.message; reset();
+      }
     }), err), []);
     return;
   }

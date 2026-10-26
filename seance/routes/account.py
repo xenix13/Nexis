@@ -1,19 +1,21 @@
 """Comptes : installation, connexion, préférences, profils (« Qui regarde ? ») et code PIN."""
 import base64
 import json
+import logging
 import os
 import re
 import subprocess
 import tempfile
 import time
 
-from .. import __version__ as VERSION, media, update
+from .. import __version__ as VERSION, media, twofa, update
 from ..auth import (USERNAME, USERNAME_RULE, check_credentials, clear_session, create_session, hash_password,
                     normalize_username, validate_password, verify_password)
 from ..catalog import HEX, validate_prefs
 from ..web import HTTPError, Response
 
 
+log = logging.getLogger("seance.account")
 AVATAR_MAX = 500 * 1024
 
 
@@ -80,8 +82,34 @@ def register(app, ctx, x):
             ctx.throttle.fail(*keys)
             raise HTTPError(401, "Identifiant ou mot de passe incorrect")
         ctx.throttle.reset(keys[1])
+        if user.get("totp_enabled"):
+            # mot de passe correct : le code de l'application d'authentification est encore demandé
+            return {"two_factor": True, "ticket": tickets.create(user["id"])}
         create_session(db, req, user["id"], ctx.cookie_secure)
         return {"ok": True}
+
+    tickets = twofa.Tickets()
+
+    @app.route("POST", "/api/login/2fa", auth=None)
+    def login_second_factor(req):
+        b = req.json()
+        ticket = str(b.get("ticket") or "")[:64]
+        uid = tickets.peek(ticket)
+        if not uid:
+            raise HTTPError(401, "Délai dépassé : saisissez à nouveau votre mot de passe")
+        keys = ("ip:" + req.client_ip, f"2fa:{uid}")
+        ctx.throttle.check(*keys)
+        user = db.one("SELECT * FROM users WHERE id=? AND disabled=0", (uid,))
+        how = twofa.verify_second_factor(db, user, b.get("code")) if user and user["totp_enabled"] else None
+        if not how:
+            ctx.throttle.fail(*keys)
+            tickets.failed(ticket)
+            raise HTTPError(401, "Code incorrect")
+        tickets.consume(ticket)
+        ctx.throttle.reset(keys[1])
+        create_session(db, req, uid, ctx.cookie_secure)
+        left = twofa.recovery_left(db.scalar("SELECT totp_recovery FROM users WHERE id=?", (uid,)))
+        return {"ok": True, "recovery_used": how == "recovery", "recovery_left": left}
 
     @app.route("POST", "/api/logout", auth=None)
     def logout(req):
@@ -94,7 +122,7 @@ def register(app, ctx, x):
                 "is_admin": bool(u["is_admin"]), "avatar_color": u["avatar_color"],
                 "managed": bool(u.get("managed")), "has_pin": bool(u.get("pin_hash")),
                 "max_age": u.get("max_age"), "home": bool(u.get("home", 1)), "kids": bool(u.get("kids")),
-                "avatar": avatar_url(u)}
+                "avatar": avatar_url(u), "two_factor": bool(u.get("totp_enabled"))}
 
     @app.route("GET", "/api/me")
     def me(req):
@@ -221,6 +249,7 @@ def register(app, ctx, x):
             v["current"] = u["id"] == req.user["id"]
             # sans PIN, un compte complet (avec mot de passe) ou administrateur demande son mot de passe
             v["needs"] = "pin" if u["pin_hash"] else ("none" if u["managed"] and not u["is_admin"] else "password")
+            v["needs_code"] = bool(u["totp_enabled"])
             out.append(v)
         return out
 
@@ -264,11 +293,84 @@ def register(app, ctx, x):
             if not ok:
                 ctx.throttle.fail(key, "ip:" + req.client_ip)
                 raise HTTPError(400, "Code PIN incorrect" if target["pin_hash"] else "Mot de passe incorrect")
+            if target["totp_enabled"] and not twofa.verify_second_factor(db, target, b.get("code")):
+                ctx.throttle.fail(key, "ip:" + req.client_ip)
+                raise HTTPError(400, "Code de double authentification incorrect")
             ctx.throttle.reset(key)
             clear_session(db, req, ctx.cookie_secure)
             req.set_cookies.clear()
             create_session(db, req, uid, ctx.cookie_secure)
         return {"ok": True, "user": user_view(target)}
+
+    # ------------------------------------------------------------ double authentification
+    def two_factor_account(req):
+        u = db.one("SELECT * FROM users WHERE id=?", (req.user["id"],))
+        if u["managed"] or u["password_hash"] == "!":
+            raise HTTPError(403, "La double authentification concerne les comptes qui se connectent avec un mot de passe")
+        return u
+
+    @app.route("GET", "/api/me/2fa")
+    def me_2fa(req):
+        u = db.one("SELECT * FROM users WHERE id=?", (req.user["id"],))
+        return {"available": not u["managed"] and u["password_hash"] != "!", "enabled": bool(u["totp_enabled"]),
+                "recovery_left": twofa.recovery_left(u["totp_recovery"]) if u["totp_enabled"] else 0}
+
+    @app.route("POST", "/api/me/2fa/setup")
+    def me_2fa_setup(req):
+        u = two_factor_account(req)
+        b = req.json()
+        key = f"pw:{u['id']}"
+        ctx.throttle.check(key)
+        if not verify_password(str(b.get("password") or "")[:256], u["password_hash"]):
+            ctx.throttle.fail(key)
+            raise HTTPError(400, "Mot de passe incorrect")
+        if u["totp_enabled"]:
+            raise HTTPError(409, "La double authentification est déjà activée")
+        secret = twofa.new_secret()
+        db.run("UPDATE users SET totp_pending=? WHERE id=?", (secret, u["id"]))
+        return {"secret": secret, "uri": twofa.otpauth_uri(secret, u["username"])}
+
+    @app.route("POST", "/api/me/2fa/enable")
+    def me_2fa_enable(req):
+        u = two_factor_account(req)
+        step = twofa.check_code(u["totp_pending"], req.json().get("code"))
+        if not u["totp_pending"] or not step:
+            raise HTTPError(400, "Code incorrect : vérifiez l'heure du téléphone et saisissez le code affiché")
+        codes, hashed = twofa.new_recovery_codes()
+        db.run("UPDATE users SET totp_enabled=1, totp_secret=totp_pending, totp_pending=NULL, totp_last_step=?, "
+               "totp_recovery=? WHERE id=?", (step, hashed, u["id"]))
+        # les autres sessions de ce compte (autres appareils) devront passer par la double authentification
+        db.run("DELETE FROM sessions WHERE user_id=? AND token_hash<>?", (u["id"], req.session_hash))
+        log.warning("Double authentification activée pour %s", u["username"])
+        return {"enabled": True, "recovery_codes": codes}
+
+    @app.route("POST", "/api/me/2fa/disable")
+    def me_2fa_disable(req):
+        u = two_factor_account(req)
+        b = req.json()
+        key = f"pw:{u['id']}"
+        ctx.throttle.check(key)
+        if not verify_password(str(b.get("password") or "")[:256], u["password_hash"]) or \
+                not twofa.verify_second_factor(db, u, b.get("code")):
+            ctx.throttle.fail(key)
+            raise HTTPError(400, "Mot de passe ou code incorrect")
+        twofa.disable(db, u["id"])
+        log.warning("Double authentification désactivée par %s", u["username"])
+        return {"enabled": False}
+
+    @app.route("POST", "/api/me/2fa/recovery")
+    def me_2fa_recovery(req):
+        u = two_factor_account(req)
+        if not u["totp_enabled"]:
+            raise HTTPError(400, "La double authentification n'est pas activée")
+        key = f"pw:{u['id']}"
+        ctx.throttle.check(key)
+        if not twofa.verify_second_factor(db, u, req.json().get("code")):
+            ctx.throttle.fail(key)
+            raise HTTPError(400, "Code incorrect")
+        codes, hashed = twofa.new_recovery_codes()
+        db.run("UPDATE users SET totp_recovery=? WHERE id=?", (hashed, u["id"]))
+        return {"recovery_codes": codes}
 
     @app.route("PUT", "/api/me/pin")
     def me_pin(req):

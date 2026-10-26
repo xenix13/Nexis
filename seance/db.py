@@ -354,6 +354,14 @@ MIGRATIONS = [
     ALTER TABLE users ADD COLUMN kids INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN notif_seen INTEGER NOT NULL DEFAULT 0;
     """,
+    # 15 : double authentification (secret TOTP, secret en attente de confirmation, codes de secours hachés)
+    """
+    ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN totp_secret TEXT;
+    ALTER TABLE users ADD COLUMN totp_pending TEXT;
+    ALTER TABLE users ADD COLUMN totp_last_step INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN totp_recovery TEXT;
+    """,
 ]
 
 

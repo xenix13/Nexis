@@ -111,3 +111,15 @@ Le lecteur hls.js 1.5.15 est désormais **fourni dans le dépôt** (`static/vend
 - **Messages d'erreur de ffmpeg :** montrés lors d'un échec de lecture, ils peuvent révéler un chemin de fichier à un membre du foyer.
 - **Groupes « Regarder ensemble » :** visibles par tout le foyer. Le titre d'un contenu non autorisé n'est jamais montré.
 
+## Ajout de la version 3.17.0 : double authentification
+
+*26 octobre 2026.*
+
+- **Algorithme** : TOTP (RFC 6238, HMAC-SHA1, 6 chiffres, 30 s), implémenté avec la bibliothèque standard et vérifié avec les vecteurs de test de la RFC. Tolérance d'un pas (±30 s) ; un code déjà accepté est refusé (pas de rejeu).
+- **Connexion en deux étapes** : un mot de passe correct ne crée pas de session pour un compte protégé, mais un jeton temporaire (5 minutes, 5 essais, en mémoire). Les essais erronés comptent dans la même limitation que les mots de passe (par adresse et par compte).
+- **Codes de secours** : 10 codes de 40 bits aléatoires, stockés hachés (SHA-256), à usage unique.
+- **Secret** : stocké dans la base (dossier `/var/lib/seance`, lisible par l'utilisateur `seance` uniquement), jamais renvoyé par l'API après l'activation ni conservé dans l'objet de requête.
+- **Contournements fermés** : le changement de profil vers un compte protégé exige aussi le code ; la désactivation exige mot de passe et code ; un profil géré ne peut pas l'activer, et passer un compte en profil géré la retire.
+- **Récupération** : réinitialisation par un autre administrateur (journalisée), ou par la commande `nexis reset-2fa`, qui suppose un accès root au serveur.
+- **Bibliothèque tierce** : génération du QR code par qrcode-generator 2.0.4 (MIT), fournie dans le dépôt et vérifiée par empreinte SHA-256 à l'installation, chargée uniquement sur la page d'activation.
+

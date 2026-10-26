@@ -17,7 +17,7 @@ RUN apt-get update \
 WORKDIR /opt/seance
 COPY seance ./seance
 COPY static ./static
-RUN cd static/vendor && sha256sum -c --quiet hls.min.js.sha256
+RUN cd static/vendor && sha256sum -c --quiet hls.min.js.sha256 && cd qrcode && sha256sum -c --quiet qrcode.mjs.sha256
 
 USER seance
 VOLUME /data

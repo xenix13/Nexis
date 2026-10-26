@@ -370,7 +370,7 @@ Plusieurs personnes regardent la même vidéo en même temps, chacune sur son ap
 - **« Qui regarde ? »** : après la connexion, chacun choisit son profil ; *Changer de profil* (menu du profil) le rouvre à tout moment.
 - **Profils gérés** (enfants, invités) : sans mot de passe, accessibles depuis « Qui regarde ? », avec un **code PIN** éventuel.
 - **Code PIN** : protège un profil (*Paramètres → Profil*). Sans code, l'accès à un compte complet ou administrateur demande son mot de passe.
-- **Photo de profil** : image au choix (JPEG, PNG ou WebP), recadrée en carré ; les métadonnées (EXIF, position) sont supprimées par le serveur.
+- **Photo de profil** : image au choix (JPEG, PNG ou WebP), recadrée en carré, ou avatar de la galerie (Cinéma, Séries et TV, Musique, Personnages, Motifs) avec le fond de son choix. Les métadonnées des photos (EXIF, position) sont supprimées par le serveur.
 - **Restriction d'âge** par profil (7, 10, 12 ou 16 ans), d'après la classification TMDB ou `.nfo`. Les contenus au-delà de la limite sont masqués partout : bibliothèques, accueil, recherche, fiches et lecture. Les contenus sans classification peuvent être autorisés ou non.
 
 Configuration : *Paramètres → Serveur → Utilisateurs*.
@@ -392,6 +392,24 @@ Chaque utilisateur règle son interface dans *Paramètres → Mon compte* :
 **Bilan** : la page *Historique* présente, par année ou par mois, le temps de visionnage, le nombre de films et d'épisodes, les jours actifs, la plus longue série de jours consécutifs, le jour préféré, la répartition par mois, les genres et les titres les plus regardés.
 
 **Interface enfant** : option du compte (*Paramètres → Utilisateurs*), à combiner avec une restriction d'âge. Grandes vignettes, textes plus gros, menu limité à l'accueil, « À regarder » et aux bibliothèques ; Découvrir, la TV en direct et la création de groupes sont masqués.
+
+## Double authentification
+
+Chaque utilisateur qui se connecte avec un mot de passe peut l'activer dans *Paramètres → Profil* : un code à 6 chiffres, généré par une application d'authentification (Google Authenticator, Microsoft Authenticator, Aegis, 2FAS, Bitwarden…), est alors demandé à chaque connexion. Les profils gérés (sans mot de passe) ne sont pas concernés.
+
+- **Activation** : mot de passe, QR code à scanner (ou clé à saisir), puis un premier code pour confirmer. Les autres appareils connectés à ce compte sont déconnectés.
+- **Codes de secours** : 10 codes à usage unique, affichés une seule fois à l'activation (à copier, télécharger ou imprimer). Ils remplacent le téléphone en cas de perte ; de nouveaux codes se génèrent depuis la même page.
+- **Changement de profil** : passer sur un compte protégé demande aussi son code.
+- **Téléphone perdu** : un administrateur la réinitialise depuis la fiche de l'utilisateur (*Paramètres → Utilisateurs → Modifier → Réinitialiser*). L'utilisateur se connecte alors avec son mot de passe et peut la réactiver.
+- **Administrateur sans accès** : en dernier recours, sur le serveur, en root :
+  ```bash
+  nexis list-users              # comptes et état de leur double authentification
+  nexis reset-2fa <identifiant> # désactive la double authentification de ce compte
+  ```
+  Avec Docker : `docker compose exec nexis python3 -m seance reset-2fa <identifiant>`.
+- La *Vue d'ensemble* indique combien d'administrateurs l'ont activée.
+
+Les codes suivent la norme TOTP (RFC 6238) ; un code déjà utilisé est refusé, et les tentatives erronées sont limitées comme pour le mot de passe.
 
 ## Collections, « À regarder » et playlists
 
@@ -458,6 +476,7 @@ L'audit, les correctifs et les risques acceptés sont décrits dans [docs/AUDIT-
 | Lecture qui ne démarre pas | `journalctl -u seance -f` pendant l'essai ; `SEANCE_DEBUG=1` dans `/etc/seance/seance.env` affiche les commandes ffmpeg |
 | Saccades, swap saturé (LXC) | Un transcodage 4K occupe 0,5 à 0,7 Go : prévoir 2 Go de mémoire par transcodage simultané et 1 à 2 Go de swap |
 | Ancienne interface après une mise à jour | Recharger la page ; depuis la 3.14.1, le code de l'interface change d'adresse à chaque version |
+| Double authentification perdue (administrateur) | `sudo nexis reset-2fa <identifiant>` sur le serveur |
 | Code d'installation perdu | `cat /var/lib/seance/setup-code.txt` (tant qu'aucun compte n'existe) |
 
 Réinitialisation d'un mot de passe en ligne de commande :
@@ -490,7 +509,7 @@ Organisation de `seance/` :
 - `livetv.py` : TV en direct ; `syncplay.py` : « Regarder ensemble »
 - `update.py` : mise à jour depuis l'interface ; `downloads.py` : téléchargements hors ligne ; `suggest.py` : suggestions et avis ; `notify.py` : notifications et bilan
 - `api.py` : assemblage du serveur ; `catalog.py` : outils partagés par les routes ; `routes/` : routes HTTP par thème
-- `auth.py`, `db.py`, `web.py` : socle
+- `twofa.py` : double authentification ; `auth.py`, `db.py`, `web.py` : socle
 
 L'interface (`static/`) est en JavaScript, sans étape de compilation.
 
@@ -501,7 +520,8 @@ L'interface (`static/`) est en JavaScript, sans étape de compilation.
 - [ ] Lecteur natif optionnel dans l'application Android TV, pour transmettre le son multicanal (DTS, TrueHD, Atmos) à un amplificateur
 
 ### Réalisé
-- Interface multi-utilisateurs, profils, code PIN, contrôle parental, photos et avatars de profil, interface enfant
+- Interface multi-utilisateurs, profils, code PIN, contrôle parental, photos et galerie d'avatars, interface enfant
+- Double authentification (TOTP) avec codes de secours, réinitialisation par l'administrateur et en console
 - Personnalisation : apparence des sous-titres, anti-spoiler, page d'ouverture, rangées épinglées, réglages par appareil, avis sur les titres, notifications de nouveaux épisodes, bilan de visionnage
 - Scan, TMDB, lecture directe / remux / transcodage, transcodage matériel (NVENC, VAAPI)
 - Détection des intros et génériques par empreinte audio

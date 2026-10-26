@@ -35,7 +35,8 @@ export function renderLogin(root, onDone) {
       err.textContent = '';
       btn.disabled = true;
       try {
-        await post('/api/login', { username: user.value.trim(), password: pass.value }, { quiet401: true });
+        const r = await post('/api/login', { username: user.value.trim(), password: pass.value }, { quiet401: true });
+        if (r && r.two_factor) { secondStep(r.ticket); return; }
         await onDone();
       } catch (ex) {
         err.textContent = ex.message;
@@ -46,6 +47,37 @@ export function renderLogin(root, onDone) {
   field('Identifiant', user), field('Mot de passe', pass), err, btn,
   h('p.auth-foot', 'Mot de passe oublié ? Contactez l’administrateur du serveur.'));
   layout(root, form);
+
+  // double authentification : le mot de passe est bon, le code de l'application est demandé
+  function secondStep(ticket) {
+    const code = h('input', { name: 'code', autocomplete: 'one-time-code', autocapitalize: 'none', maxlength: 9,
+      placeholder: '123456', required: true, autofocus: true, style: { letterSpacing: '0.2em', fontSize: '20px' } });
+    const err2 = h('p.form-error', { role: 'alert' });
+    const ok = h('button.btn.primary.block', { type: 'submit' }, 'Valider');
+    const card = h('form.auth-card', {
+      onsubmit: async (e) => {
+        e.preventDefault();
+        err2.textContent = '';
+        ok.disabled = true;
+        try {
+          const r = await post('/api/login/2fa', { ticket, code: code.value }, { quiet401: true });
+          if (r.recovery_used) {
+            toast(r.recovery_left ? `Code de secours utilisé. Il en reste ${r.recovery_left}.`
+              : 'Dernier code de secours utilisé : générez-en de nouveaux dans Paramètres → Profil.', 'ok');
+          }
+          await onDone();
+        } catch (ex) {
+          err2.textContent = ex.message;
+          if (ex.status === 401 && /Délai/.test(ex.message)) setTimeout(() => renderLogin(root, onDone), 1500);
+          code.select();
+        } finally { ok.disabled = false; }
+      },
+    }, brand('Double authentification', 'Saisissez le code à 6 chiffres affiché par votre application d’authentification.'),
+    field('Code', code, 'Sans le téléphone : un code de secours (xxxx-xxxx) fonctionne aussi, une seule fois chacun.'), err2, ok,
+    h('p.auth-foot', h('a', { href: '#/login', onclick: (e) => { e.preventDefault(); renderLogin(root, onDone); } }, 'Revenir à la connexion')));
+    layout(root, card);
+    setTimeout(() => code.focus(), 30);
+  }
 }
 
 export function renderSetup(root, onDone) {

@@ -59,8 +59,9 @@ rm -rf "$APP_DIR/static"
 mv "$APP_DIR/static.new" "$APP_DIR/static"
 find "$APP_DIR" -name __pycache__ -type d -prune -exec rm -rf {} +
 
-echo "==> Vérification du lecteur vidéo (hls.js fourni dans le dépôt)"
+echo "==> Vérification des bibliothèques fournies (hls.js, qrcode)"
 ( cd "$APP_DIR/static/vendor" && sha256sum -c --quiet hls.min.js.sha256 ) || { echo "hls.js altéré : installation arrêtée." >&2; exit 1; }
+( cd "$APP_DIR/static/vendor/qrcode" && sha256sum -c --quiet qrcode.mjs.sha256 ) || { echo "qrcode altéré : installation arrêtée." >&2; exit 1; }
 
 rm -rf "$APP_DIR/jellyfin-web"  # dossier d'une ancienne version (retiré)
 
