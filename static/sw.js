@@ -32,6 +32,9 @@ async function networkFirst(req) {
   try {
     const res = await fetch(req);
     if (res.ok && res.type === 'basic') cache.put(key, res.clone());
+    // serveur en train de redémarrer (mise à jour) : le proxy répond 502 / 503 / 504. On ouvre quand même
+    // l'interface, qui affiche « Nexis redémarre… » et se recharge seule.
+    if (res.status >= 502 && res.status <= 504) return (await cache.match(key)) || res;
     return res;
   } catch (err) {
     const hit = await cache.match(key);

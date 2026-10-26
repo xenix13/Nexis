@@ -450,6 +450,77 @@ with sync_playwright() as pw:
     check(row and row["position_ms"] > 39000, f"lecture hors ligne puis position renvoyée au serveur ({row and row['position_ms']})")
     bctx5.close()
 
+    # --- mise à jour : indicateur pour les administrateurs, progression, attente du redémarrage, rechargement
+    import json as _json
+    from seance import __version__ as cur_version
+    ctx.note_latest("999.0")
+    bctx6 = browser.new_context(viewport={"width": 1440, "height": 900}, bypass_csp=True)
+    bctx6.add_cookies(cookies(admin))
+    page6 = bctx6.new_page()
+    page6.on("pageerror", lambda e: errors.append(f"[pageerror] {e}"))
+    page6.goto(base + "/#/")
+    page6.wait_for_selector(".update-btn")
+    check("999.0" in (page6.get_attribute(".update-btn", "title") or ""), "indicateur de mise à jour dans la barre du haut")
+    bctx_lea, page_lea = browser_ctx(browser, lea)
+    page_lea.goto(base + "/#/")
+    page_lea.wait_for_selector(".topbar")
+    check(page_lea.locator(".update-btn").count() == 0, "pas d'indicateur pour un simple utilisateur")
+    bctx_lea.close()
+    plan = {"n": 0, "started": False}
+    steps = [dict(running=True, done=False, percent=25, step="Téléchargement de la nouvelle version"),
+             dict(running=True, done=False, percent=80, step="Redémarrage de Nexis"), "down", "down"]
+
+    def fake_update(route):
+        if route.request.method == "POST":
+            plan["started"] = True
+            return route.fulfill(status=200, content_type="application/json", body='{"started": true}')
+        st = steps[min(max(plan["n"] - 1, 0), len(steps) - 1)] if plan["started"] else dict(running=False, done=True, ok=True)
+        body = dict(current=cur_version, latest="999.0", available=True, source="xenix13/Nexis (main)", changes=[],
+                    can_update=True, log=["==> Paquets système"], **(st if isinstance(st, dict) else {}))
+        route.fulfill(status=200, content_type="application/json", body=_json.dumps(body))
+
+    def fake_status(route):
+        if not plan["started"]:
+            return route.continue_()
+        plan["n"] += 1
+        st = steps[plan["n"] - 1] if plan["n"] <= len(steps) else "new"
+        if st == "down":
+            return route.fulfill(status=502, content_type="text/html", body="<h1>502 Bad Gateway</h1>")
+        version = "999.0" if st == "new" else cur_version
+        route.fulfill(status=200, content_type="application/json",
+                      body=_json.dumps({"setup": False, "libraries": 3, "ffmpeg": True, "version": version}))
+    page6.route("**/api/admin/update", fake_update)
+    page6.route("**/api/status", fake_status)
+    page6.click(".update-btn")
+    page6.wait_for_selector("#update button.btn.primary")
+    page6.click("#update button.btn.primary")
+    page6.click(".modal button.btn.primary")
+    page6.wait_for_selector(".update-overlay")
+    page6.wait_for_function("document.querySelector('.update-pct').textContent === '25 %'", timeout=10000)
+    page6.screenshot(path=f"{out}/30-mise-a-jour.png")
+    page6.wait_for_function("document.querySelector('.update-step').textContent.includes('Redémarrage')", timeout=10000)
+    with page6.expect_navigation(timeout=20000):
+        pass  # Nexis « 999.0 » répond : la page se recharge seule
+    page6.wait_for_selector(".topbar")
+    check(page6.locator(".update-overlay").count() == 0, "rechargement automatique après la mise à jour")
+    ctx.note_latest(None)
+    # page rechargée pendant que le proxy répond 502 : écran d'attente qui se reconnecte seul
+    page6.unroute("**/api/admin/update")
+    page6.unroute("**/api/status")
+    down = {"n": 2}
+
+    def flaky(route):
+        if down["n"] > 0:
+            down["n"] -= 1
+            return route.fulfill(status=502, body="Bad Gateway")
+        route.continue_()
+    page6.route("**/api/status", flaky)
+    page6.reload()
+    page6.wait_for_selector(".restart-box")
+    page6.wait_for_selector(".topbar", timeout=15000)
+    check(down["n"] == 0, "écran « Nexis redémarre » puis reconnexion automatique")
+    bctx6.close()
+
     # --- mobile
     bctx3, page3 = browser_ctx(browser, lea, mobile=True)
     page3.goto(base + "/#/live")

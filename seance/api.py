@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from . import catalog, collections_api, discover, livetv, media, suggest, syncplay, tasks
+from . import __version__, catalog, collections_api, discover, livetv, media, suggest, syncplay, tasks, update
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
@@ -61,6 +61,8 @@ class Ctx:
         if not self.db.setting("webhook_token"):
             self.db.set_setting("webhook_token", secrets.token_urlsafe(24))
         self.sub_locks = {}
+        self.update_latest = None  # version plus récente trouvée sur GitHub (indicateur pour les administrateurs)
+        self.update_checked = 0
         self.setup_code = None
         if not self.db.scalar("SELECT COUNT(*) FROM users"):
             self.setup_code = secrets.token_hex(4).upper()
@@ -71,6 +73,16 @@ class Ctx:
         if not media.available():
             log.error("ffmpeg/ffprobe introuvables : installe-les (apt install ffmpeg)")
         self.db.release()
+
+    def note_latest(self, latest):
+        self.update_latest = latest if latest and update.newer(latest, __version__) else None
+
+    def check_update(self):
+        """Vérification en arrière-plan (toutes les 6 h) : l'indicateur de la barre du haut."""
+        try:
+            self.note_latest(update.check_latest()["latest"])
+        except update.UpdateError as e:
+            log.debug("Vérification de mise à jour : %s", e)
 
     def setting_int(self, key, default):
         try:
@@ -179,6 +191,9 @@ def janitor(ctx, stop_event):
             ctx.live.reap()
             ctx.together.reap()
             ctx.downloads.reap()
+            if time.time() - ctx.update_checked > 6 * 3600:
+                ctx.update_checked = time.time()
+                threading.Thread(target=ctx.check_update, daemon=True).start()
         except Exception:
             log.exception("Erreur du nettoyage périodique")
         finally:

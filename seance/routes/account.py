@@ -93,7 +93,8 @@ def register(app, ctx, x):
                 "features": {"discover": bool(db.setting("tmdb_key")),
                              "requests": bool(db.setting("seerr_url") and db.setting("seerr_key")),
                              "live": x.live_available(req.user),
-                             "downloads": db.setting("downloads", "1") == "1"}}
+                             "downloads": db.setting("downloads", "1") == "1"},
+                "update": ctx.update_latest if req.user["is_admin"] else None}
 
     @app.route("PUT", "/api/me/prefs")
     def me_prefs(req):

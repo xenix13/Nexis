@@ -449,6 +449,7 @@ def register(app, ctx, x):
         try:
             out.update(update.check_latest())
             out["available"] = update.newer(out["latest"], VERSION)
+            ctx.note_latest(out["latest"])
         except update.UpdateError as e:
             out["check_error"] = str(e)
         if IN_DOCKER:

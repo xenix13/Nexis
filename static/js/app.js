@@ -18,6 +18,7 @@ import { createGroupDialog, currentGroups, isFreshFeed, onGroups, startGroupsFee
 import { canInstall, install, onInstallChange, setupInstall } from './install.js';
 import { forgetMe, list as listDownloads, pump, rememberMe, rememberedMe, supported as offlineSupported, syncProgress } from './offline.js';
 import { renderDownloads } from './views/downloads.js';
+import { followUpdate, resumeUpdate, updatePending } from './updater.js';
 import { renderLive, renderLivePlayer } from './views/live.js';
 
 export const state = { me: null, status: null };
@@ -100,6 +101,18 @@ window.addEventListener('online', () => {
   route();
 });
 
+// Le proxy (nginx…) répond « Bad Gateway » le temps que Nexis redémarre : on réessaie tout seul
+function restarting(token) {
+  clear(root, h('div.center-page', h('div.restart-box', spinner(), h('h2', 'Nexis redémarre…'),
+    h('p.muted', 'La page se rechargera automatiquement dès que le serveur répond.'))));
+  const retry = async () => {
+    if (token !== renderToken) return;
+    try { await get('/api/status'); } catch { setTimeout(retry, 3000); return; }
+    route();
+  };
+  setTimeout(retry, 3000);
+}
+
 function parseHash() {
   const raw = location.hash.replace(/^#/, '') || '/';
   const [path, qs] = raw.split('?');
@@ -171,6 +184,8 @@ function shell(active) {
     h('div.topbar-right', h('span.together-slot', { dataset: { active } }),
       h('button.icon-btn.group-new', { type: 'button', title: 'Créer un groupe « Regarder ensemble »', 'aria-label': 'Créer un groupe',
         onclick: () => createGroupDialog(me) }, icon('group'), h('span.plus', '+')),
+      me.update ? h('a.icon-btn.update-btn', { href: '#/admin/settings?update', title: `Nexis ${me.update} est disponible`,
+        'aria-label': `Mise à jour disponible : Nexis ${me.update}` }, icon('upgrade')) : null,
       h('label.search', icon('search'), search), h('div.user-wrap', userBtn, menu)));
   paintTogetherSlot(header.querySelector('.together-slot'));
   const main = h('main.content');
@@ -232,10 +247,13 @@ async function route() {
 
   if (!state.status) {
     try { state.status = await get('/api/status'); } catch (e) {
+      if (updatePending()) { followUpdate(); return; } // page rechargée pendant une mise à jour
+      if ([502, 503, 504].includes(e.status)) { restarting(token); return; }
       if (await offlineMode(e, page, parts, token)) return;
       clear(root, h('div.center-page', errorBox(e, () => location.reload())));
       return;
     }
+    if (await resumeUpdate(state.status)) return;
   }
   if (state.status.setup) {
     document.title = 'Installation · Nexis';

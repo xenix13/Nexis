@@ -1238,6 +1238,16 @@ class SeanceTest(unittest.TestCase):
             self.assertEqual(self.admin.call("GET", u, raw=True)[0], 200, u)
         self.assertEqual(self.admin.call("GET", "/sw.js", raw=True, headers={"If-None-Match": h["ETag"]})[0], 304)
 
+    def test_update_indicator_admin_only(self):
+        # indicateur de la barre du haut : administrateurs seulement
+        self.ctx.note_latest("999.0")
+        try:
+            self.assertEqual(self.admin.call("GET", "/api/me")[1]["update"], "999.0")
+            self.assertIsNone(self.lea.call("GET", "/api/me")[1]["update"])
+        finally:
+            self.ctx.note_latest(None)
+        self.assertIsNone(self.ctx.update_latest)
+
     def test_tv_app_short_link(self):
         """Adresse courte pour l'appli Downloader de la TV : renvoie vers le dernier APK, sans connexion."""
         import urllib.request
@@ -1329,6 +1339,14 @@ class UnitTests(unittest.TestCase):
             self.assertEqual(run[:2], ["systemd-run", "--unit=seance-update"])
             self.assertIn("https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh", run[-1])
             self.assertIn("SEANCE_BRANCH=main", run[-1])
+            self.assertIn("--no-block", run)  # sinon la requête attend la fin de l'installation et expire
+        # progression lue dans le journal de l'installation
+        self.assertEqual(update.progress(["lun.", "==> Paquets système"])[:3], (10, "Mise à jour des paquets système", False))
+        log = ["==> Paquets système", "==> Récupération du code (x)", "==> Copie de l'application dans /opt/seance",
+               "==> Utilisateur système 'seance'", "==> Service systemd"]
+        self.assertEqual(update.progress(log)[:2], (80, "Redémarrage de Nexis"))
+        self.assertEqual(update.progress(log + ["[terminé, code 0]"]), (100, "Terminé", True, True))
+        self.assertEqual(update.progress(log[:2] + ["[terminé, code 1]"]), (25, "Échec", True, False))
         self.assertTrue(update.newer("3.10.0", "3.9.2"))
         self.assertFalse(update.newer("3.6.1", "3.6.1"))
         shutil.rmtree(work, ignore_errors=True)

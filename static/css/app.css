@@ -935,3 +935,26 @@ html.remote .card:focus { outline: none; }
 html.remote .card:focus .card-img { transform: translateY(-4px) scale(1.04); }
 .card-slot:focus-within .card-watch { opacity: 1; }
 html.remote .player .ctl:focus { background: rgba(255, 255, 255, 0.2); outline-offset: 0; }
+
+/* ---- mise à jour : indicateur (administrateurs), suivi, redémarrage */
+.update-btn { position: relative; color: var(--accent); display: inline-grid; place-items: center; }
+.update-btn .icon { width: 24px; height: 24px; fill: currentColor; }
+.update-btn::after { content: ''; position: absolute; top: 4px; right: 4px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--bg); animation: update-pulse 2s ease-in-out infinite; }
+@keyframes update-pulse { 50% { transform: scale(1.5); opacity: 0.5; } }
+.update-overlay { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; padding: 16px;
+  background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(4px); }
+.update-box { width: 100%; max-width: 520px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+  padding: 24px; display: grid; gap: 12px; }
+.update-box h2 { margin: 0; }
+.update-bar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.update-bar-fill { height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width 0.6s var(--ease-out, ease-out); }
+.update-overlay.failed .update-bar-fill { background: var(--bad, #e5484d); }
+.update-row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.update-step { margin: 0; }
+.update-pct { font-variant-numeric: tabular-nums; color: var(--muted); }
+.update-log pre { max-height: 220px; overflow: auto; margin: 8px 0 0; }
+.restart-box { display: grid; justify-items: center; gap: 10px; text-align: center; }
+.restart-box h2 { margin: 6px 0 0; }
+@media (prefers-reduced-motion: reduce) { .update-btn::after { animation: none; } }
+.update-box .modal-actions:empty { display: none; }

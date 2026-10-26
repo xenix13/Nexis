@@ -88,7 +88,10 @@ def check_latest(timeout=8):
 
 # ------------------------------------------------------------------ côté root (seance-mountd)
 def running():
-    return subprocess.run(["systemctl", "is-active", "--quiet", UNIT], stdin=subprocess.DEVNULL).returncode == 0
+    # unité « oneshot » : elle reste « activating » pendant toute l'installation (jamais « active »)
+    p = subprocess.run(["systemctl", "show", "-p", "ActiveState", "--value", UNIT],
+                       capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    return p.stdout.strip() in ("active", "activating", "reloading", "deactivating")
 
 
 def start():
@@ -99,7 +102,8 @@ def start():
     owner, repo, branch = read_source()
     script = (f"set -o pipefail; curl -fsSL {shlex.quote(f'https://raw.githubusercontent.com/{owner}/{repo}/{branch}/deploy/install.sh')}"
               f" | SEANCE_REPO={shlex.quote(f'https://github.com/{owner}/{repo}.git')} SEANCE_BRANCH={shlex.quote(branch)} bash")
-    cmd = ["systemd-run", f"--unit={UNIT}", "--collect", "--quiet", "--property=Type=oneshot", "/bin/bash", "-c",
+    # --no-block : sans lui, systemd-run attend la FIN de l'installation (unité oneshot) et la requête expire
+    cmd = ["systemd-run", f"--unit={UNIT}", "--collect", "--quiet", "--no-block", "--property=Type=oneshot", "/bin/bash", "-c",
            f"{{ date; {script}; echo \"[terminé, code $?]\"; }} > {shlex.quote(LOG)} 2>&1"]
     try:
         p = subprocess.run(cmd, capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
@@ -110,12 +114,40 @@ def start():
     return {"started": True}
 
 
+# Étapes affichées par install.sh / setup-system.sh (« ==> … ») : de quoi montrer une progression
+STEPS = [("Paquets système", 10, "Mise à jour des paquets système"),
+         ("Récupération du code", 25, "Téléchargement de la nouvelle version"),
+         ("Copie de l'application", 45, "Installation des fichiers"),
+         ("Vérification du lecteur", 55, "Vérification des fichiers"),
+         ("Utilisateur système", 65, "Configuration du système"),
+         ("Service systemd", 80, "Redémarrage de Nexis")]
+END = re.compile(r"^\[terminé, code (\d+)\]")
+
+
+def progress(lines):
+    """Où en est l'installation d'après son journal : (pourcentage, étape, terminé, réussi)."""
+    percent, label, done, ok = 3, "Démarrage", False, None
+    for line in lines:
+        m = END.match(line)
+        if m:
+            done, ok = True, m.group(1) == "0"
+            percent, label = (100, "Terminé") if ok else (percent, "Échec")
+            continue
+        if line.startswith("==> "):
+            for key, pct, text in STEPS:
+                if line[4:].startswith(key) and pct >= percent:
+                    percent, label = pct, text
+    return percent, label, done, ok
+
+
 def status():
     try:
         with open(LOG, "rb") as f:
-            f.seek(0, os.SEEK_END)
-            f.seek(max(0, f.tell() - 4000))
-            lines = f.read().decode("utf-8", "replace").splitlines()[-25:]
+            data = f.read()[-200_000:]  # journal entier (pour les étapes), on n'en renvoie que la fin
+            started = os.fstat(f.fileno()).st_ctime
     except OSError:
-        lines = []
-    return {"running": running(), "log": lines}
+        data, started = b"", None
+    lines = data.decode("utf-8", "replace").splitlines()
+    percent, label, done, ok = progress(lines)
+    return {"running": running(), "log": lines[-25:], "percent": percent, "step": label, "done": done, "ok": ok,
+            "log_time": started}
