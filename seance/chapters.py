@@ -1,4 +1,4 @@
-"""Images des chapitres (sélection de chapitre du lecteur et de la fiche, comme Jellyfin).
+"""Images des chapitres (sélection de chapitre du lecteur et de la fiche).
 
 Une image par chapitre, prise un peu après son début : le tout début d'un chapitre est souvent un
 fondu au noir. Si l'image obtenue est presque uniforme (noir, carton), on en reprend une plus loin.

@@ -52,7 +52,7 @@ def run(cmd, timeout=40, env=None):
     try:
         p = subprocess.run(cmd, capture_output=True, timeout=timeout, env=env, stdin=subprocess.DEVNULL)
     except FileNotFoundError:
-        raise MountError(f"Commande introuvable : {cmd[0]} (relance le script d'installation)")
+        raise MountError(f"Commande introuvable : {cmd[0]} (relancer l'installation de Nexis)")
     except subprocess.TimeoutExpired:
         raise MountError("Le NAS ne répond pas (délai dépassé)")
     return p.returncode, p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace")
@@ -257,13 +257,13 @@ def explain_mount(err, env):
             return ("Linux interdit le montage SMB dans un conteneur LXC non privilégié. "
                     "Voir « Partages réseau » dans le README pour les solutions.")
         return ("Montage refusé par le système. Dans Proxmox : pct set <ID> -features mount=cifs,nesting=1 "
-                "puis redémarre le conteneur.")
+                "puis redémarrer le conteneur.")
     if "error(13)" in e or "permission denied" in e:
         if env["container"]:
             prof = env.get("apparmor") or "inconnu"
-            return ("Le NAS accepte tes identifiants mais le noyau refuse le montage. Dans un conteneur LXC, "
-                    "c'est presque toujours AppArmor : vérifie que l'option « mount=cifs » est bien sur CE conteneur "
-                    "(pct config <ID> | grep features), puis ARRÊTE et DÉMARRE le conteneur depuis Proxmox "
+            return ("Le NAS accepte les identifiants mais le noyau refuse le montage. Dans un conteneur LXC, la cause "
+                    "est presque toujours AppArmor : vérifier que l'option « mount=cifs » est active sur ce conteneur "
+                    "(pct config <ID> | grep features), puis arrêter et démarrer le conteneur depuis Proxmox "
                     f"(un redémarrage interne ne suffit pas toujours). Profil AppArmor actuel : {prof}")
         return "Accès refusé par le NAS (droits du compte sur ce partage, ou chiffrement SMB imposé)"
     if "error(2)" in e or "no such file" in e:
@@ -271,9 +271,9 @@ def explain_mount(err, env):
     if "error(112)" in e or "host is down" in e or "error(113)" in e or "no route" in e:
         return "NAS injoignable"
     if "error(95)" in e or "operation not supported" in e:
-        return "Version SMB non prise en charge : choisis-en une autre"
+        return "Version SMB non prise en charge : essayer une autre version"
     if "wrong fs type" in e or "unknown filesystem" in e:
-        return "Le module CIFS n'est pas disponible (installe cifs-utils, ou noyau sans CIFS)"
+        return "Le module CIFS n'est pas disponible (cifs-utils absent, ou noyau sans CIFS)"
     last = [l for l in err.strip().splitlines() if l.strip()]
     return last[-1] if last else "Échec du montage"
 
@@ -604,7 +604,7 @@ def call(cmd, args=None, timeout=90, sock_path=None):
     try:
         s.connect(path)
     except (FileNotFoundError, ConnectionRefusedError):
-        raise MountError("Le service de montage (seance-mountd) n'est pas démarré : relance le script d'installation")
+        raise MountError("Le service de montage (seance-mountd) n'est pas démarré : relancer l'installation de Nexis")
     except PermissionError:
         raise MountError("Accès refusé au service de montage")
     data = b""

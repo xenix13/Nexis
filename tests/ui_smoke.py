@@ -90,10 +90,10 @@ with sync_playwright() as pw:
 
     # --- installation
     page.goto(base + "/")
-    page.wait_for_selector("text=Première installation")
+    page.wait_for_selector("text=Création du compte administrateur")
     page.fill("input[placeholder='Ex. 4F2A9C1B']", code)
     page.fill("input[autocomplete='username']", "colas")
-    page.fill("input[placeholder='Ton prénom']", "Colas")
+    page.fill("input[placeholder='Prénom']", "Colas")
     page.locator("input[autocomplete='new-password']").nth(0).fill("motdepasse1")
     page.locator("input[autocomplete='new-password']").nth(1).fill("motdepasse1")
     page.screenshot(path=f"{out}/01-installation.png")

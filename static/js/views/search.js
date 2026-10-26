@@ -6,7 +6,7 @@ import { discoverCard } from './discover.js';
 export async function renderSearch(main, q, ctx) {
   if (q.length < 2) { clear(main, h('div.empty', 'Tape au moins deux caractères.')); return; }
   const discover = state.me.features && state.me.features.discover;
-  // comme Plex : ce qui est sur le serveur d'abord, puis le reste du catalogue (Netflix, Prime Video…)
+  // ce qui est sur le serveur d'abord, puis le reste du catalogue (Netflix, Prime Video…)
   const elsewhere = discover ? get(`/api/discover/search?q=${encodeURIComponent(q)}`).catch(() => ({ results: [] })) : null;
   const r = await get(`/api/search?q=${encodeURIComponent(q)}`);
   if (!ctx.isCurrent()) return;
@@ -26,7 +26,7 @@ export async function renderSearch(main, q, ctx) {
   if (!ctx.isCurrent()) return;
   const missing = ext.results.filter((c) => !c.item_id);
   if (missing.length) {
-    more.replaceChildren(h('h2', local ? 'Pas encore sur le serveur' : 'Pas sur le serveur — à demander'),
+    more.replaceChildren(h('h2', local ? 'Pas encore sur le serveur' : 'Disponible sur demande'),
       h('div.grid', missing.map(discoverCard)));
   } else more.replaceChildren(local ? '' : h('div.empty', 'Aucun résultat.'));
 }

@@ -177,7 +177,7 @@ async function work(rec) {
     return true;
   } catch (e) {
     if (e.name === 'QuotaExceededError') {
-      await save(rec, { state: 'error', error: 'Place accordée par le navigateur épuisée : touche « Autoriser plus de place » ou supprime un téléchargement' });
+      await save(rec, { state: 'error', error: 'Espace de stockage épuisé. Autorisez plus d’espace ou supprimez un téléchargement.' });
       return true;
     }
     if (!navigator.onLine || e.status === 0 || e instanceof TypeError) {

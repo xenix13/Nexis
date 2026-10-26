@@ -377,7 +377,7 @@ class SeanceTest(unittest.TestCase):
         v, a = first_pts(data, "v"), first_pts(data, "a")
         self.assertLess(abs(v - start), 0.1, (v, start))
         self.assertLess(abs(a - v), 0.35, (a, v))  # le son suit tout de suite
-        # saut loin devant : le serveur relance ffmpeg au bon segment (comme Jellyfin)
+        # saut loin devant : le serveur relance ffmpeg au bon segment
         last = len(durs) - 2
         n2, data2, _ = hls_segment(self.admin, p["url"], n=last)
         self.assertLess(abs(first_pts(data2, "v") - sum(durs[:last])), 0.1)
@@ -1281,6 +1281,39 @@ class SeanceTest(unittest.TestCase):
         finally:
             self.ctx.note_latest(None)
         self.assertIsNone(self.ctx.update_latest)
+
+    def test_avatar_image(self):
+        """Photo de profil : réencodée en JPEG 256 × 256 sans métadonnées, visible par les autres, supprimable."""
+        import base64
+        work = tempfile.mkdtemp()
+        try:
+            png = os.path.join(work, "a.png")
+            subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=400x300", "-frames:v", "1",
+                            "-metadata", "comment=secret-gps", png], check=True)
+            with open(png, "rb") as f:
+                data = f.read()
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        b64 = "data:image/png;base64," + base64.b64encode(data).decode()
+        self.assertEqual(self.lea.call("PUT", "/api/me/avatar", {"image": base64.b64encode(b"GIF89a" + b"x" * 200).decode()})[0], 400)
+        self.assertEqual(self.lea.call("PUT", "/api/me/avatar", {"image": base64.b64encode(b"\x89PNG" + b"x" * 300).decode()})[0], 400)
+        self.assertEqual(self.lea.call("PUT", "/api/me/avatar", {"image": "!!pas du base64!!"})[0], 400)
+        st, r = self.lea.call("PUT", "/api/me/avatar", {"image": b64})
+        self.assertEqual(st, 200, r)
+        me = self.lea.call("GET", "/api/me")[1]["user"]
+        self.assertEqual(me["avatar"], r["avatar"])
+        # visible depuis un autre compte (profils, groupes), en JPEG carré, sans le commentaire d'origine
+        st, img, h = self.admin.call("GET", r["avatar"], raw=True)
+        self.assertEqual((st, h["Content-Type"], img[:3]), (200, "image/jpeg", b"\xff\xd8\xff"))
+        self.assertNotIn(b"secret-gps", img)
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=width,height", "-of", "csv=p=0", "-"],
+                               input=img, capture_output=True).stdout.decode().strip()
+        self.assertEqual(probe, "256,256")
+        lea_row = next(u for u in self.admin.call("GET", "/api/admin/users")[1] if u["username"] == "lea")
+        self.assertEqual(lea_row["avatar"], r["avatar"])
+        self.assertEqual(self.lea.call("DELETE", "/api/me/avatar")[0], 200)
+        self.assertIsNone(self.lea.call("GET", "/api/me")[1]["user"]["avatar"])
+        self.assertEqual(self.admin.call("GET", r["avatar"], raw=True)[0], 404)
 
     def test_tv_app_short_link(self):
         """Adresse courte pour l'appli Downloader de la TV : renvoie vers le dernier APK, sans connexion."""

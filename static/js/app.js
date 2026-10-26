@@ -138,6 +138,16 @@ function navLinks(me, active) {
 }
 
 // après un changement dans Réglages : on redessine les liens sans recharger la page
+// Nom ou photo du profil modifiés : la barre du haut suit sans recharger la page
+export function repaintUser() {
+  const me = state.me;
+  if (!me) return;
+  const btn = document.querySelector('.user-btn .avatar');
+  if (btn) btn.replaceWith(avatar(me.user, 34));
+  const head = document.querySelector('.user-menu-head');
+  if (head) head.replaceChildren(avatar(me.user, 36), h('div', h('strong', me.user.display_name), h('div.muted', `@${me.user.username}`)));
+}
+
 export function repaintNav() {
   const nav = document.querySelector('header.topbar .nav');
   if (nav && state.me) nav.replaceChildren(...navLinks(state.me, null));
@@ -165,7 +175,6 @@ function shell(active) {
     me.features && me.features.downloads && offlineSupported() ? h('a', { href: '#/downloads' }, 'Téléchargements') : null,
     h('a', { href: '#/settings' }, 'Paramètres'),
     h('button.install-app', { hidden: !canInstall(), onclick: () => install() }, icon('install'), 'Installer l’application'),
-    me.user.is_admin ? h('a', { href: '#/admin' }, 'Administration du serveur') : null,
     h('button', { onclick: logout }, 'Se déconnecter'),
     state.status ? h('div.menu-version', `Nexis ${state.status.version}`) : null);
   const userBtn = h('button.user-btn', { 'aria-label': 'Menu utilisateur', 'aria-haspopup': 'true',
@@ -189,7 +198,7 @@ function shell(active) {
       h('label.search', icon('search'), search), h('div.user-wrap', userBtn, menu)));
   paintTogetherSlot(header.querySelector('.together-slot'));
   const main = h('main.content');
-  const banner = me.plex_error ? h('div.banner-error', me.plex_error) : null;
+  const banner = me.warning ? h('div.banner-error', me.warning) : null;
   clear(root, header, banner, main);
   // barre transparente au-dessus de l'image d'accueil, opaque dès qu'on fait défiler
   const onScroll = () => header.classList.toggle('scrolled', window.scrollY > 24);
@@ -206,7 +215,7 @@ function paintTogetherSlot(slot, list = currentGroups()) {
   const mine = list.find((g) => g.member);
   let pill = null;
   if (mine) {
-    pill = h('a.group-pill.mine', { href: `#/together/${mine.id}`, title: `Ton groupe : ${mine.name}` }, icon('group'),
+    pill = h('a.group-pill.mine', { href: `#/together/${mine.id}`, title: `Votre groupe : ${mine.name}` }, icon('group'),
       mine.item ? mine.name : `${mine.name} · salon`, h('span.group-count', String(mine.members.length)));
   } else if (list.length && slot.dataset.active !== 'together') {
     pill = h('a.group-pill', { href: '#/together', title: 'Regarder ensemble' }, icon('group'),
@@ -339,7 +348,7 @@ setUnauthorizedHandler(() => {
   state.me = null;
   stopGroupsFeed();
   if (!location.hash.startsWith('#/login')) {
-    toast('Session expirée, reconnecte-toi');
+    toast('Session expirée. Veuillez vous reconnecter.');
     location.hash = '#/login';
   }
 });

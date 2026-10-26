@@ -1,4 +1,4 @@
-"""Tâches planifiées du serveur (comme l'écran « Tâches planifiées » de Jellyfin).
+"""Tâches planifiées du serveur .
 
 Chaque tâche a une planification (désactivée, toutes les N heures, chaque jour ou chaque semaine à une
 heure donnée), des options, et garde le résultat de sa dernière exécution. Les tâches tournent une à la
@@ -57,7 +57,7 @@ def opt_libraries(kind=None):
 
 
 PAUSE = opt_bool("pause_playback", "Se mettre en pause pendant les lectures", True,
-                 "Laisse le partage réseau et le processeur à la personne qui regarde.")
+                 "Libère le partage réseau et le processeur pendant les lectures.")
 AFTER_SCAN = opt_bool("after_scan", "Lancer aussi après chaque ajout de fichiers", True,
                       "Les nouveaux épisodes et films sont traités dès qu'ils sont scannés.")
 
@@ -89,9 +89,8 @@ def lib_clause(opts, column="i.library_id"):
 class ScanTask(Task):
     id = "scan"
     name = "Analyser les bibliothèques"
-    description = ("Repasse sur tous les dossiers : nouveaux fichiers, fichiers supprimés ou remplacés. Les nouveautés "
-                   "sont déjà repérées en continu par la surveillance des dossiers ; ce passage complet est un filet "
-                   "de sécurité.")
+    description = ("Analyse complète des dossiers : fichiers ajoutés, supprimés ou remplacés. Les ajouts sont "
+                   "normalement détectés en continu ; ce passage complet sert de contrôle.")
     category = "Bibliothèques"
     default = {"mode": "interval", "hours": 24}
     options = [opt_libraries()]
@@ -310,7 +309,7 @@ class SubtitlesTask(Task):
     id = "subtitles"
     name = "Préparer les sous-titres et les aperçus"
     description = ("Met en file les fichiers dont les sous-titres intégrés ou les vignettes de la barre de lecture ne "
-                   "sont pas encore prêts. La préparation avance quand personne ne regarde.")
+                   "sont pas encore prêts. La préparation s'effectue en dehors des lectures.")
     category = "Lecture"
     default = {"mode": "daily", "time": "01:30"}
 
@@ -328,8 +327,8 @@ class LiveTask(Task):
     category = "TV en direct"
     default = {"mode": "interval", "hours": 12}
     options = [opt_bool("check", "Vérifier que chaque chaîne répond", True,
-                        "Une chaîne qui ne répond pas deux fois de suite est masquée, et réapparaît dès qu'elle "
-                        "remarche. Les chaînes sont testées une par une, sans surcharger le fournisseur.")]
+                        "Une chaîne sans réponse deux fois de suite est masquée, puis réaffichée dès qu'elle répond à "
+                        "nouveau. Les chaînes sont testées une par une.")]
 
     def available(self, ctx):
         if not ctx.db.scalar("SELECT COUNT(*) FROM live_sources WHERE enabled=1"):

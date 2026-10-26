@@ -236,8 +236,15 @@ export function errorBox(err, retry) {
 
 export function avatar(user, size = 32) {
   const initial = (user.display_name || user.username || '?').trim().charAt(0).toUpperCase();
-  return h('span.avatar', { style: { background: user.avatar_color, width: `${size}px`, height: `${size}px`,
+  const el = h('span.avatar', { style: { background: user.avatar_color, width: `${size}px`, height: `${size}px`,
     fontSize: `${Math.round(size * 0.45)}px` } }, initial);
+  if (user.avatar) {
+    // image du profil ; l'initiale reste dessous si elle ne se charge pas
+    const pic = h('img', { src: user.avatar, alt: '', loading: 'lazy', decoding: 'async' });
+    pic.addEventListener('error', () => pic.remove());
+    el.append(pic);
+  }
+  return el;
 }
 
 // ---------- media cards ----------

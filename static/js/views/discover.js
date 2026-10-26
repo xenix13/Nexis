@@ -5,7 +5,7 @@ import { clear, h, icon, modal, row, select, spinner, toast } from '../ui.js';
 
 export const STATUS_LABEL = {
   available: 'Disponible', partial: 'En partie disponible', processing: 'En cours de téléchargement',
-  pending: 'Demandé — en attente de validation', blocked: 'Refusé', deleted: null,
+  pending: 'Demandé, en attente de validation', blocked: 'Refusé', deleted: null,
 };
 const STATUS_SHORT = { available: 'Disponible', partial: 'Partiel', processing: 'Bientôt', pending: 'Demandé', blocked: 'Refusé' };
 
@@ -98,11 +98,11 @@ async function renderBrowse(main, head, provider, ctx) {
 async function chooseSeasons(t) {
   const boxes = t.seasons.map((s) => h('label.check-row', h('input', { type: 'checkbox', checked: true, value: s.number }),
     h('span', s.name || `Saison ${s.number}`), h('span.muted.small', ` ${s.episodes || '?'} épisodes${s.year ? ` · ${s.year}` : ''}`)));
-  return modal(`Demander « ${t.title} »`, h('div', h('p.muted.small', 'Quelles saisons veux-tu ?'), h('div.check-list', boxes)), [
+  return modal(`Demander « ${t.title} »`, h('div', h('p.muted.small', 'Saisons à demander :'), h('div.check-list', boxes)), [
     { label: 'Annuler', value: null },
     { label: 'Demander', primary: true, handler: () => {
       const picked = boxes.map((b) => b.querySelector('input')).filter((i) => i.checked).map((i) => Number(i.value));
-      if (!picked.length) { toast('Choisis au moins une saison', 'bad'); return false; }
+      if (!picked.length) { toast('Sélectionnez au moins une saison', 'bad'); return false; }
       return picked.length === t.seasons.length ? 'all' : picked;
     } }]);
 }

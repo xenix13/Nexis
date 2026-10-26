@@ -18,8 +18,8 @@ export async function renderHistory(main, ctx) {
     if (start === 0) {
       const hours = Math.round((r.stats.ms || 0) / 3600000);
       stats.replaceChildren(h('div.stat', h('strong', String(r.stats.n)), h('span', 'visionnages')),
-        h('div.stat', h('strong', `${hours} h`), h('span', 'devant l’écran')));
-      if (!r.items.length) list.append(h('div.empty', 'Rien de regardé pour l’instant. Bonne séance !'));
+        h('div.stat', h('strong', `${hours} h`), h('span', 'de visionnage')));
+      if (!r.items.length) list.append(h('div.empty', 'Aucun visionnage pour le moment.'));
     }
     for (const it of r.items) {
       const day = new Date(it.watched_at * 1000).toLocaleDateString('fr-FR', DAY);

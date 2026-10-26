@@ -87,10 +87,10 @@ export function launchableGroups() {
 
 export async function createGroupDialog(me) {
   const name = h('input', { placeholder: `Chez ${me.user.display_name}`, maxlength: 60 });
-  const hostOnly = toggle('Seul moi peux mettre en pause, avancer ou changer d’épisode', false);
+  const hostOnly = toggle('Seul l’hôte contrôle la lecture (pause, avance, épisode suivant)', false);
   const err = h('p.form-error');
   const g = await modal('Créer un groupe', h('div.form',
-    h('p.muted.small', 'Crée le groupe maintenant et envoie le lien : chacun attend dans le salon pendant que tu choisis quoi regarder. Le film ou l’épisode lancé démarre en même temps pour tout le monde.'),
+    h('p.muted.small', 'Le groupe est créé tout de suite et son lien peut être partagé. Les membres attendent dans le salon ; le titre lancé ensuite démarre en même temps pour tous.'),
     field('Nom du groupe', name), hostOnly, err), [
     { label: 'Annuler', value: null },
     { label: 'Créer le groupe', primary: true, handler: async () => {

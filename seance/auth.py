@@ -139,7 +139,7 @@ class Throttle:
         with self.lock:
             for k in keys:
                 if len(self._recent(k, now)) >= self.limit:
-                    raise HTTPError(429, "Trop de tentatives, réessaie dans quelques minutes")
+                    raise HTTPError(429, "Trop de tentatives. Réessayez dans quelques minutes.")
 
     def fail(self, *keys):
         now = time.time()

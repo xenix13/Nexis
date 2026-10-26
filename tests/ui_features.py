@@ -284,6 +284,25 @@ with sync_playwright() as pw:
         page.wait_for_selector(".settings-body .panel")
         page.wait_for_timeout(400)
         page.screenshot(path=f"{out}/42-parametres-{sec}.png")
+    # photo de profil : choisie, recadrée, affichée dans la barre du haut ; plus de lien « Administration » dans le menu
+    pic = os.path.join(work, "photo.png")
+    import subprocess as _sp
+    _sp.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=s=640x480", "-frames:v", "1", "-y", pic], check=True)
+    page.goto(base + "/#/settings/profile")
+    page.wait_for_selector("text=Choisir une photo")
+    page.set_input_files(".avatar-actions input[type=file]", pic)
+    page.wait_for_selector(".user-btn .avatar img")
+    page.wait_for_selector("text=Retirer la photo")
+    check(page.evaluate("document.querySelector('.user-btn .avatar img').naturalWidth") == 256, "photo de profil recadrée en 256 px")
+    page.wait_for_timeout(400)
+    page.screenshot(path=f"{out}/46-photo-profil.png")
+    page.click(".user-btn")
+    menu_links = page.locator(".user-menu").inner_text()
+    check("Administration" not in menu_links and "Paramètres" in menu_links, f"menu du profil : {menu_links!r}")
+    page.keyboard.press("Escape")
+    page.click("text=Retirer la photo")
+    page.wait_for_selector("text=Choisir une photo")
+    check(page.locator(".user-btn .avatar img").count() == 0, "photo retirée")
     page.goto(base + "/#/admin/settings")  # ancienne adresse
     page.wait_for_selector(".settings-head h2:text-is('Métadonnées')")
     page.fill(".settings-search", "carte graphique")
@@ -529,10 +548,12 @@ with sync_playwright() as pw:
         version = "999.0" if st == "new" else cur_version
         route.fulfill(status=200, content_type="application/json",
                       body=_json.dumps({"setup": False, "libraries": 3, "ffmpeg": True, "version": version}))
-    page6.route("**/api/admin/update", fake_update)
+    page6.route("**/api/admin/update*", fake_update)
     page6.route("**/api/status", fake_status)
     page6.click(".update-btn")
     page6.wait_for_selector("#update button.btn.primary")
+    page6.click("#update button:has-text('Rechercher une mise à jour')")
+    page6.wait_for_selector(".toast:has-text('Nexis 999.0 est disponible')")
     page6.click("#update button.btn.primary")
     page6.click(".modal button.btn.primary")
     page6.wait_for_selector(".update-overlay")
@@ -545,7 +566,7 @@ with sync_playwright() as pw:
     check(page6.locator(".update-overlay").count() == 0, "rechargement automatique après la mise à jour")
     ctx.note_latest(None)
     # page rechargée pendant que le proxy répond 502 : écran d'attente qui se reconnecte seul
-    page6.unroute("**/api/admin/update")
+    page6.unroute("**/api/admin/update*")
     page6.unroute("**/api/status")
     down = {"n": 2}
 

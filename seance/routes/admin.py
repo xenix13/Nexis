@@ -72,7 +72,7 @@ def register(app, ctx, x):
         if managed and fields.get("managed") and "password_hash" not in fields:
             fields["password_hash"] = "!"  # plus de connexion par mot de passe : uniquement via « Changer de profil »
         if not managed and cur["password_hash"] == "!" and "password_hash" not in fields:
-            raise HTTPError(400, "Définis un mot de passe pour ce compte")
+            raise HTTPError(400, "Un mot de passe est requis pour ce compte")
         if fields:
             sets = ",".join(f"{k}=?" for k in fields)
             db.run(f"UPDATE users SET {sets} WHERE id=?", [*fields.values(), uid])
@@ -117,7 +117,7 @@ def register(app, ctx, x):
         losing_admin = ("is_admin" in b and not b["is_admin"]) or b.get("disabled")
         if losing_admin and u["is_admin"]:
             if uid == req.user["id"]:
-                raise HTTPError(400, "Tu ne peux pas retirer tes propres droits ni te désactiver")
+                raise HTTPError(400, "Impossible de retirer ses propres droits d'administration ou de désactiver son propre compte")
             if not other_admins(uid):
                 raise HTTPError(400, "Il doit rester au moins un administrateur actif")
         with db.tx():
@@ -128,12 +128,13 @@ def register(app, ctx, x):
     def admin_delete_user(req):
         uid = int(req.params["uid"])
         if uid == req.user["id"]:
-            raise HTTPError(400, "Tu ne peux pas supprimer ton propre compte")
+            raise HTTPError(400, "Impossible de supprimer son propre compte")
         u = db.one("SELECT is_admin FROM users WHERE id=?", (uid,))
         if not u:
             raise HTTPError(404, "Utilisateur introuvable")
         if u["is_admin"] and not other_admins(uid):
             raise HTTPError(400, "Il doit rester au moins un administrateur actif")
+        x.remove_avatar(uid)
         for s in db.all("SELECT id FROM streams WHERE user_id=?", (uid,)):
             stop_stream(s["id"])
         db.run("DELETE FROM users WHERE id=?", (uid,))
@@ -157,7 +158,7 @@ def register(app, ctx, x):
             raise HTTPError(400, "Type invalide")
         paths = b.get("paths")
         if not isinstance(paths, list) or not paths or len(paths) > 20:
-            raise HTTPError(400, "Indique au moins un dossier")
+            raise HTTPError(400, "Au moins un dossier est requis")
         clean = []
         for p in paths:
             p = os.path.normpath(str(p).strip())
@@ -201,7 +202,7 @@ def register(app, ctx, x):
     @app.route("DELETE", r"/api/admin/libraries/(?P<lid>\d{1,6})", auth="admin")
     def admin_library_delete(req):
         if ctx.scanner.status()["running"]:
-            raise HTTPError(409, "Un scan est en cours, réessaie à la fin")
+            raise HTTPError(409, "Un scan est en cours. Réessayez une fois terminé.")
         db.run("DELETE FROM libraries WHERE id=?", (int(req.params["lid"]),))
         db.run("DELETE FROM user_libraries WHERE section_id=?", (req.params["lid"],))
         return {"ok": True}
@@ -446,6 +447,8 @@ def register(app, ctx, x):
     def admin_update(req):
         db.release()  # appels réseau : pas de connexion à la base gardée pendant ce temps
         out = {"current": VERSION}
+        if req.arg("refresh") == "1":
+            update.forget()  # bouton « Rechercher une mise à jour » : on ne se fie pas au résultat gardé 30 min
         try:
             out.update(update.check_latest())
             out["available"] = update.newer(out["latest"], VERSION)
@@ -453,7 +456,7 @@ def register(app, ctx, x):
         except update.UpdateError as e:
             out["check_error"] = str(e)
         if IN_DOCKER:
-            out.update(can_update=False, update_error="Avec Docker, mets à jour l'image : docker compose pull && docker compose up -d")
+            out.update(can_update=False, update_error="Avec Docker, la mise à jour passe par l'image : docker compose pull && docker compose up -d")
             return out
         try:
             out.update(mountd.call("update_status", sock_path=os.environ.get("SEANCE_MOUNTD_SOCK"), timeout=10))
@@ -481,7 +484,7 @@ def register(app, ctx, x):
             st = mountd.call("status", sock_path=os.environ.get("SEANCE_MOUNTD_SOCK"), timeout=20)
         except mountd.MountError as e:
             if IN_DOCKER:
-                e = "Avec Docker, monte tes partages sur l'hôte puis donne-les au conteneur (volumes du docker-compose.yml)"
+                e = "Avec Docker, les partages se montent sur l'hôte puis se transmettent au conteneur (volumes du docker-compose.yml)"
             return {"available": False, "error": str(e), "shares": [], "env": None}
         libs = db.all("SELECT id, name, paths FROM libraries")
         for sh in st["shares"]:
@@ -524,7 +527,7 @@ def register(app, ctx, x):
         r = root_item(item_row(req.params["rk"]))
         tmdb = ctx.metadata.tmdb()
         if not tmdb.enabled:
-            raise HTTPError(400, "Ajoute d'abord une clé TMDB (Administration → Métadonnées)")
+            raise HTTPError(400, "Une clé TMDB est nécessaire (Paramètres → Métadonnées)")
         q = (req.arg("q") or r["title"]).strip()[:100]
         year = req.arg("year")
         try:

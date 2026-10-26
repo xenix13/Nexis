@@ -67,8 +67,8 @@ export async function renderHome(main, ctx) {
   sections.set('continue', current);
   sections.set('watchlist', row('À regarder', data.watchlist, (c) => posterCard(c), { href: '#/watchlist' }));
   // suggestions calculées à partir de ce qui a été regardé récemment (genres, réalisateurs, acteurs)
-  sections.set('suggest', row('Suggestions pour toi', data.suggestions, (c) => posterCard(c)));
-  const because = (data.because || []).map((b) => row(`Parce que tu as regardé ${b.seed.type === 'show' ? 'la série ' : ''}${b.seed.title}`,
+  sections.set('suggest', row('Suggestions', data.suggestions, (c) => posterCard(c)));
+  const because = (data.because || []).map((b) => row(`Parce que vous avez regardé ${b.seed.type === 'show' ? 'la série ' : ''}${b.seed.title}`,
     b.items, (c) => posterCard(c)));
   sections.set('because', because.length ? h('div.row-group', because) : null);
   for (const r of data.rows) {
@@ -83,7 +83,7 @@ export async function renderHome(main, ctx) {
     parts.push(state.me.user.is_admin
       ? h('div.empty', h('p', 'Aucun média pour l’instant.'),
         h('a.btn.primary', { href: '#/admin/libraries' }, 'Ajouter une bibliothèque'))
-      : h('div.empty', 'Aucune bibliothèque ne t’est accessible pour le moment. Demande à l’administrateur.'));
+      : h('div.empty', 'Aucune bibliothèque n’est accessible avec ce compte. Contactez l’administrateur.'));
   }
   clear(main, parts);
 }

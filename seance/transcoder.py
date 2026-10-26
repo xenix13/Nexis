@@ -1,13 +1,13 @@
-"""Lecture : décision direct / remux / transcodage et flux HLS « dynamiques », sur le modèle de Jellyfin.
+"""Lecture : décision direct / remux / transcodage et flux HLS « dynamiques ».
 
-Choix repris de Jellyfin (DynamicHlsController / EncodingHelper) :
+Principes :
 - une playlist VOD complète est annoncée d'emblée (segments de 6 s ; en remux, calés sur les images clés
   lues dans l'index du MKV) : le lecteur connaît toute la chronologie et avance/recule sans relancer le flux ;
 - les segments sont fabriqués à la demande en fMP4 (pas de conversion TS -> MP4 dans le navigateur) avec les
   horodatages d'origine (-copyts) ; si le lecteur demande un segment loin de ce que ffmpeg prépare,
   ffmpeg est relancé à cet endroit (-ss + -start_number) ;
 - en remux, on vise 0,25 s après l'image clé (sinon ffmpeg retombe sur la précédente) ;
-- options d'entrée tolérantes (analyzeduration / probesize élevés, +genpts), mixages stéréo de Jellyfin.
+- options d'entrée tolérantes (analyzeduration / probesize élevés, +genpts), mixages stéréo normalisés.
 
 Sans GPU, tout l'enjeu reste de ne transcoder la vidéo que lorsque c'est indispensable :
 - direct    : le navigateur lit le fichier tel quel                                  -> 0 % CPU
@@ -31,7 +31,7 @@ from .keyframes import equal_segments, segments_from_keyframes
 log = logging.getLogger("seance.transcode")
 
 QUALITY = {"original": None, "1080p": (1080, 8000), "720p": (720, 4000), "480p": (480, 1500)}
-SEGMENT = 6            # secondes (valeur par défaut de Jellyfin)
+SEGMENT = 6            # secondes
 COPY_SEEK_PAD = 0.25   # remux : viser juste après l'image clé
 SEG_RE = re.compile(r"^(\d{1,6})\.m4s$")
 INIT = "init.mp4"
@@ -44,7 +44,7 @@ INPUT_OPTS = ["-analyzeduration", "200M", "-probesize", "1G"]
 # Navigateur sans profil déclaré : ce que tous savent lire
 DEFAULT_CAPS = {"video": {"h264"}, "audio": {"aac", "mp3"}, "containers": {"mp4", "mov"}}
 
-# Réductions en stéréo de Jellyfin (DownMixAlgorithmsHelper) : (algorithme, disposition) -> filtre
+# Réductions en stéréo : (algorithme, disposition) -> filtre
 DOWNMIX_FILTERS = {
     ("dave750", "5.1"): "pan=stereo|c0=0.5*c2+0.707*c0+0.707*c4+0.5*c3|c1=0.5*c2+0.707*c1+0.707*c5+0.5*c3",
     ("dave750", "7.1"): "pan=5.1(side)|c0=c0|c1=c1|c2=c2|c3=c3|c4=0.707*c4+0.707*c6|c5=0.707*c5+0.707*c7,"
@@ -178,7 +178,7 @@ def plan(probe, audio_index=None, burn_index=None, quality="original", caps=None
     fps = (v or {}).get("fps") or 0
     seglen = float(SEGMENT)
     if mode == "transcode" and fps and abs(fps - math.floor(fps + 0.001)) > 0.001:
-        # 23,976 i/s : le GOP forcé dure 6,006 s, la playlist doit l'annoncer (comme Jellyfin)
+        # 23,976 i/s : le GOP forcé dure 6,006 s, la playlist doit l'annoncer
         seglen = math.ceil(SEGMENT * 1000 * math.ceil(fps) / fps) / 1000
     return {"mode": mode, "video_index": (v or {}).get("index"), "video_codec": (v or {}).get("codec"),
             "audio_index": a["index"] if a else None, "acopy": acopy, "audio_codec": (a or {}).get("codec"),
@@ -291,7 +291,7 @@ def build_command(path, p, start, out_dir, start_number=0, threads=0, hw=None):
         cmd += ["-canvas_size", f"{p['src_width']}x{p['src_height']}"]
     if start > 0:
         # En copie, ffmpeg recule de ~0,13 s avant de chercher et retombait sur l'image clé PRÉCÉDENTE
-        # (Jellyfin ajoute 0,5 s pour la même raison) : on vise juste après l'image clé voulue.
+        # (marge de 0,5 s pour la même raison) : on vise juste après l'image clé voulue.
         ss = start + COPY_SEEK_PAD if p["mode"] == "copy" else start
         cmd += ["-ss", f"{ss:.3f}"]
     cmd += [*media.input_args(path), "-map_metadata", "-1", "-map_chapters", "-1",
@@ -474,7 +474,7 @@ class Transcoder:
             return "ffmpeg s'est arrêté"
 
     def playlist(self, sid):
-        """Playlist VOD complète, comme celle de Jellyfin."""
+        """Playlist VOD complète."""
         s = self.get(sid)
         if not s:
             raise StreamError("Flux expiré")
@@ -548,7 +548,7 @@ class Transcoder:
                 current = produced[-1] if produced else s.run_start - 1
                 running = s.proc and s.proc.poll() is None
                 if not running or idx < s.run_start or idx > current + RESTART_GAP:
-                    # le lecteur a sauté : on relance ffmpeg là où il demande (comme Jellyfin)
+                    # le lecteur a sauté : on relance ffmpeg là où il demande
                     self._spawn(s, idx)
             if s.paused:
                 self._resume(s)

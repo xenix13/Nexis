@@ -196,7 +196,7 @@ async function watchTogether(target) {
   if (lobbies.length) {
     const what = target.type === 'episode' ? `${target.show} · ${episodeCode(target)} — ${target.title}` : target.title;
     const pick = await modal('Regarder ensemble', h('div.form', h('p.small', h('strong', what)),
-      h('p.muted.small', 'Tu fais partie d’un groupe : la lecture démarrera en même temps pour tous ses membres.')), [
+      h('p.muted.small', 'Vous faites partie d’un groupe : la lecture démarrera en même temps pour tous ses membres.')), [
       { label: 'Nouveau groupe', value: 'new' },
       ...lobbies.slice(0, 2).map((g) => ({ label: `Lancer dans « ${g.name} »`, primary: true, value: g.id })),
     ]);
@@ -211,10 +211,10 @@ async function watchTogether(target) {
     }
   }
   const name = h('input', { placeholder: `Chez ${state.me.user.display_name}`, maxlength: 60 });
-  const hostOnly = toggle('Seul moi peux mettre en pause, avancer ou changer d’épisode', false);
+  const hostOnly = toggle('Seul l’hôte contrôle la lecture (pause, avance, épisode suivant)', false);
   const err = h('p.form-error');
   const g = await modal('Regarder ensemble', h('div.form',
-    h('p.muted.small', 'Chaque membre regarde depuis son écran (ou un autre appareil) : lecture, pauses, sauts et épisode suivant sont partagés. Ceux qui rejoignent arrivent au même endroit. Partage le lien d’invitation depuis le lecteur, ou ils trouveront le groupe sur l’accueil.'),
+    h('p.muted.small', 'Chaque membre regarde sur son propre appareil ; lecture, pauses, sauts et épisode suivant sont synchronisés. Le lien d’invitation est disponible dans le lecteur, et le groupe apparaît aussi sur l’accueil des autres utilisateurs.'),
     h('p.small', h('strong', target.type === 'episode' ? `${target.show} · ${episodeCode(target)} — ${target.title}` : target.title)),
     field('Nom du groupe', name), hostOnly, err), [
     { label: 'Annuler', value: null },
@@ -231,9 +231,9 @@ async function watchTogether(target) {
 // ------------------------------------------------------------ téléchargements (regarder hors ligne)
 // « Auto » : le fichier tel quel dès que l'appareil sait le lire (une copie ne coûte presque rien au serveur,
 // une conversion environ 30 s de processeur par minute de vidéo)
-const SEASON_QUALITIES = [['auto', 'Auto : sans conversion quand c’est possible (recommandé, léger pour le serveur)'],
-  ['1080p', '1080p au plus'], ['720p', '720p (converti : plus léger sur l’appareil, plus long à préparer)'],
-  ['480p', '480p (converti : le plus léger sur l’appareil)']];
+const SEASON_QUALITIES = [['auto', 'Automatique : sans conversion si possible (recommandé)'],
+  ['1080p', '1080p au plus'], ['720p', '720p (converti, fichier plus léger)'],
+  ['480p', '480p (converti, fichier le plus léger)']];
 const dlQuality = () => { try { return localStorage.getItem('nexis.dl.quality') || 'auto'; } catch { return 'auto'; } };
 const GB = 1024 ** 3;
 const fmtSize = (b) => (!b ? 'taille inconnue' : b >= GB ? `${(b / GB).toFixed(1).replace('.', ',')} Go` : `${Math.round(b / 1024 ** 2)} Mo`);
@@ -250,7 +250,7 @@ async function qualityChoices(one, tracks) {
     if (seen.has(sig)) continue; // même résultat qu'une option déjà proposée
     seen.add(sig);
     const what = o.quality === 'auto' ? (o.convert ? `Auto (${o.height}p)` : `Qualité d’origine${o.height ? ` (${o.height}p)` : ''}`) : o.quality;
-    out.push([o.quality, `${what} · ${fmtSize(o.size)} · ${o.convert ? 'conversion par le serveur' : 'sans conversion, prêt vite'}`]);
+    out.push([o.quality, `${what} · ${fmtSize(o.size)} · ${o.convert ? 'conversion par le serveur' : 'sans conversion'}`]);
   }
   return out;
 }
@@ -279,7 +279,7 @@ async function downloadDialog(items, title) {
   const choices = one ? await qualityChoices(one, defaultTracks(one)) : SEASON_QUALITIES;
   const wanted = dlQuality();
   const quality = select(choices, choices.some(([q]) => q === wanted) ? wanted : choices[0][0]);
-  const rows = [field('Qualité', quality, 'Sans conversion, le serveur recopie simplement le fichier. Une conversion le fait travailler en arrière-plan (en pause dès que quelqu’un regarde).')];
+  const rows = [field('Qualité', quality, 'Sans conversion, le fichier est copié tel quel. Une conversion s’exécute en arrière-plan sur le serveur et se met en pause pendant les lectures.')];
   let audioSel = null;
   const subChecks = [];
   let burnSel = null;
@@ -300,10 +300,10 @@ async function downloadDialog(items, title) {
     const image = (one.subtitles || []).filter((x) => !x.overlay);
     if (image.length) {
       burnSel = select([['', 'Aucun'], ...image.map((x) => [String(x.id), x.title])], d.burn ? String(d.burn) : '');
-      rows.push(field('Sous-titres image à incruster', burnSel, 'Ils deviennent une partie de l’image (impossible de les masquer ensuite), ce qui impose une conversion par le serveur.'));
+      rows.push(field('Sous-titres image à incruster', burnSel, 'Les sous-titres sont incrustés dans l’image (ils ne pourront plus être masqués), ce qui impose une conversion par le serveur.'));
     }
   } else {
-    rows.push(h('p.muted.small', 'Langue et sous-titres : ceux de tes préférences, comme à la lecture.'));
+    rows.push(h('p.muted.small', 'Langue et sous-titres : selon vos préférences de lecture.'));
   }
   const ok = await modal(`Télécharger ${title}`, h('div.form', ...rows), [
     { label: 'Annuler', value: false },

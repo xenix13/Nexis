@@ -184,7 +184,7 @@ export async function renderPlayer(root, rk, ctx) {
     timeoutRetry: { maxNumRetry: retries, retryDelayMs: 1000, maxRetryDelayMs: 4000 },
     errorRetry: { maxNumRetry: retries, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
   } });
-  // Flux « à la Jellyfin » : playlist VOD complète, horodatages d'origine -> currentTime = position réelle.
+  // Flux HLS : playlist VOD complète, horodatages d'origine -> currentTime = position réelle.
   const HLS_CONFIG = {
     maxBufferLength: 60, maxMaxBufferLength: 120, backBufferLength: 90,
     manifestLoadPolicy: slow(60000, 90000, 2),
@@ -289,7 +289,7 @@ export async function renderPlayer(root, rk, ctx) {
         autoplay();
       }, { once: true });
     } else {
-      showError('Ce navigateur ne lit pas le HLS et hls.js est absent (static/vendor/hls.min.js). Relance le script d’installation.');
+      showError('Ce navigateur ne lit pas le HLS et le lecteur hls.js est absent du serveur. Réinstaller Nexis corrige le problème.');
       return;
     }
     startedAt = Date.now();
@@ -364,8 +364,8 @@ export async function renderPlayer(root, rk, ctx) {
 
   function suggestLowerQuality(cpu) {
     const box = h('div.player-hint',
-      h('span', cpu ? 'Le serveur n’arrive pas à convertir cette vidéo assez vite.'
-        : 'La connexion n’arrive pas à suivre le débit de ce fichier.'),
+      h('span', cpu ? 'Le serveur ne convertit pas cette vidéo assez vite.'
+        : 'La connexion est trop lente pour le débit de ce fichier.'),
       h('button.btn.primary.small', { onclick: () => { box.remove(); quality = '720p'; start(pos()); } }, 'Passer en 720p'),
       h('button.icon-btn', { 'aria-label': 'Fermer', onclick: () => box.remove() }, icon('close')));
     player.append(box);
@@ -474,7 +474,7 @@ export async function renderPlayer(root, rk, ctx) {
     }
   }
 
-  // PGS (Blu-ray) : images rendues dans le navigateur par libpgs, comme le fait Jellyfin (libbitsub)
+  // PGS (Blu-ray) : images rendues dans le navigateur par libpgs
   function dropPgs() {
     if (pgs) { try { pgs.dispose(); } catch { /* */ } if (pgs.ownCanvas) pgs.ownCanvas.remove(); }
     pgs = null;
@@ -578,7 +578,7 @@ export async function renderPlayer(root, rk, ctx) {
     ms = Math.max(0, d ? Math.min(ms, d - 3000) : ms);
     if (group && !remote) gsend('seek', { position: Math.round(ms) });
     // la playlist couvre toute la vidéo : le lecteur va chercher les bons segments, le serveur relance
-    // ffmpeg au bon endroit si besoin (comme Jellyfin) — plus besoin de recréer le flux
+    // ffmpeg au bon endroit si besoin : plus besoin de recréer le flux
     video.currentTime = ms / 1000;
   }
   const seekBy = (delta) => seekTo(pos() + delta);
@@ -789,7 +789,7 @@ export async function renderPlayer(root, rk, ctx) {
           const draft = { start: cur.start ?? 0, end: cur.end ?? 0, [which]: pos() };
           if (draft.end <= draft.start) {
             session.markers = { ...session.markers, intro: { ...draft, end: draft.start + 1 } };
-            toast(which === 'start' ? 'Début noté, place-toi à la fin de l’intro' : 'La fin doit être après le début', which === 'start' ? 'info' : 'bad');
+            toast(which === 'start' ? 'Début enregistré. Placez la lecture à la fin de l’intro.' : 'La fin doit être après le début', which === 'start' ? 'info' : 'bad');
             return;
           }
           try {
@@ -966,7 +966,7 @@ export async function renderPlayer(root, rk, ctx) {
   function groupMenu(opt) {
     if (!group) {
       return h('div.menu-col.group-col', h('h4', 'Regarder ensemble'),
-        h('p.menu-info', 'Crée un groupe : chacun suit la même lecture depuis son écran, les pauses et les sauts sont partagés.'),
+        h('p.menu-info', 'Chaque membre suit la même lecture sur son appareil ; pauses et sauts sont synchronisés.'),
         opt('Créer un groupe avec cette vidéo', false, async () => {
           try {
             const g = await post('/api/together', { item_id: item.id, position: pos() });
@@ -979,12 +979,12 @@ export async function renderPlayer(root, rk, ctx) {
     }
     const status = (m) => (m.online === false ? 'hors ligne' : (m.ready ? 'prêt' : 'chargement…'));
     return h('div.menu-col.group-col', h('h4', group.name),
-      h('div.group-members', (group.members || []).map((m) => h('div.group-member', avatar({ display_name: m.name, avatar_color: m.color }, 26),
+      h('div.group-members', (group.members || []).map((m) => h('div.group-member', avatar({ display_name: m.name, avatar_color: m.color, avatar: m.avatar }, 26),
         h('span.grow', m.name, m.host ? h('span.tag.accent', 'Hôte') : null), h('span.muted.small', status(m))))),
       group.hostOnly ? h('p.menu-info', 'Seul l’hôte contrôle la lecture.') : null,
       opt('Copier le lien d’invitation', false, async () => {
         const link = `${location.origin}/#/together/${group.id}`;
-        try { await navigator.clipboard.writeText(link); toast('Lien copié : envoie-le aux autres membres du foyer', 'ok'); }
+        try { await navigator.clipboard.writeText(link); toast('Lien d’invitation copié', 'ok'); }
         catch { toast(link); }
       }),
       group.isHost ? opt(group.hostOnly ? 'Tout le monde peut contrôler' : 'Seul l’hôte contrôle la lecture', false, async () => {

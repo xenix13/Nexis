@@ -258,7 +258,7 @@ def register(app, ctx, x):
             raise HTTPError(400, "Sous-titres invalides")
         sub = sub_map.get(sub_id) if sub_id else None
         caps = parse_caps(b.get("caps"))
-        # PGS : rendu par le navigateur quand il le peut (comme Jellyfin), incrusté sinon
+        # PGS : rendu par le navigateur quand il le peut, incrusté sinon
         pgs_client = bool(sub and sub.get("pgs") and caps.get("pgs") and not b.get("burn"))
         burn = sub["id"] if sub and not sub["overlay"] and not pgs_client else None
         if b.get("replace"):
@@ -307,7 +307,7 @@ def register(app, ctx, x):
     CONTAINER_CAPS = {"mp4", "mov", "webm", "matroska"}
 
     def parse_caps(c):
-        """Profil déclaré par le navigateur (comme browserDeviceProfile de Jellyfin)."""
+        """Profil de décodage déclaré par le navigateur."""
         if not isinstance(c, dict):
             return {"video": {"h264"}, "audio": {"aac", "mp3"}, "containers": {"mp4", "mov"}, "pgs": False}
         pick = lambda key, allowed: {x for x in (c.get(key) or []) if isinstance(x, str) and x in allowed}
@@ -423,7 +423,7 @@ def register(app, ctx, x):
                         on_close=f.close)
 
     def record_progress(user, r, pos, dur, state="playing", sid="", ended=False):
-        """Position de lecture d'un utilisateur (interface de Nexis et clients Jellyfin). -> vu à l'instant ?"""
+        """Position de lecture d'un utilisateur (interface de Nexis et applications). -> vu à l'instant ?"""
         uid = user["id"]
         rk = str(r["id"])
         if r["type"] == "extra":  # les bonus ne laissent ni reprise ni historique
@@ -480,7 +480,7 @@ def register(app, ctx, x):
     def own_job(req):
         job = ctx.downloads.get(req.params["jid"], req.user["id"])
         if not job:
-            raise HTTPError(404, "Téléchargement introuvable : redemande-le")
+            raise HTTPError(404, "Téléchargement introuvable : relancez-le")
         return job
 
     DL_QUALITIES = ("auto", "1080p", "720p", "480p")

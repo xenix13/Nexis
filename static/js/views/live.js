@@ -128,7 +128,7 @@ export async function renderLive(main, ctx) {
     const list = data.channels.filter((c) => (filter.group === null || (filter.group === '__fav__' ? c.favorite : c.group === filter.group))
       && (!q || c.name.toLowerCase().includes(q)));
     clear(body, list.length ? h('div.ch-grid', list.map((c) => channelCard(c, now)))
-      : h('div.empty', filter.group === '__fav__' ? 'Aucune chaîne favorite : clique sur ☆ pour en ajouter.' : 'Aucune chaîne.'));
+      : h('div.empty', filter.group === '__fav__' ? 'Aucune chaîne favorite. Utilisez ☆ pour en ajouter.' : 'Aucune chaîne.'));
   };
   groupSel.addEventListener('change', () => {
     const v = groupSel.value;

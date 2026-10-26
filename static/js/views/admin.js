@@ -11,21 +11,21 @@ export const ADMIN_GROUPS = [
       keys: 'tableau de bord lectures en cours streams mémoire swap charge processeur version arrêter' },
     { id: 'users', label: 'Utilisateurs', icon: 'group', lead: 'Comptes, profils du foyer, contrôle parental et accès aux bibliothèques.',
       keys: 'compte profil enfant pin âge restriction administrateur désactiver mot de passe foyer' },
-    { id: 'update', label: 'Mise à jour', icon: 'upgrade', lead: 'Installer la dernière version de Nexis.',
+    { id: 'update', label: 'Mise à jour', icon: 'upgrade', lead: 'Version installée et mises à jour de Nexis.',
       keys: 'version mettre à jour github nouveautés changements réinstaller' },
     { id: 'tasks', label: 'Tâches planifiées', icon: 'clock', lead: 'Travaux de fond : scans, métadonnées, intros, sous-titres, nettoyage.',
       keys: 'planification scan automatique nettoyage cache intro générique chapitres horaire' },
   ] },
   { title: 'Médiathèque', items: [
-    { id: 'libraries', label: 'Bibliothèques', icon: 'folder', lead: 'Les dossiers de films et de séries, et leur analyse.',
+    { id: 'libraries', label: 'Bibliothèques', icon: 'folder', lead: 'Dossiers de films et de séries, et leur analyse.',
       keys: 'dossier films séries animes scanner rescanner ajouter chemin' },
-    { id: 'shares', label: 'Partages réseau', icon: 'storage', lead: 'Monter les dossiers de ton NAS (SMB) pour y créer des bibliothèques.',
+    { id: 'shares', label: 'Partages réseau', icon: 'storage', lead: 'Montage des dossiers partagés d’un NAS (SMB) pour y créer des bibliothèques.',
       keys: 'nas smb cifs samba montage monter partage réseau' },
     { id: 'metadata', label: 'Métadonnées', icon: 'film', lead: 'Affiches, résumés et titres d’épisodes (TMDB).',
       keys: 'tmdb clé api affiches résumés langue actualiser images' },
-    { id: 'detection', label: 'Ajout des nouveautés', icon: 'eye', lead: 'Repérer tout seul les fichiers ajoutés, ou être prévenu par Radarr / Sonarr.',
+    { id: 'detection', label: 'Ajout des nouveautés', icon: 'eye', lead: 'Détection automatique des fichiers ajoutés et notifications de Radarr / Sonarr.',
       keys: 'surveillance dossiers webhook radarr sonarr nouveaux fichiers détection' },
-    { id: 'requests', label: 'Demandes', icon: 'star', lead: 'Brancher Seerr pour que chacun puisse demander films et séries.',
+    { id: 'requests', label: 'Demandes', icon: 'star', lead: 'Connexion à Seerr pour permettre aux utilisateurs de demander des films et des séries.',
       keys: 'seerr overseerr jellyseerr demander radarr sonarr découvrir' },
   ] },
   { title: 'Lecture', items: [
@@ -33,7 +33,7 @@ export const ADMIN_GROUPS = [
       keys: 'processeur cpu gpu carte graphique nvidia nvenc vaapi intel amd limites lectures simultanées matériel' },
     { id: 'subtitles', label: 'Sous-titres et son', icon: 'subs', lead: 'Préparation des sous-titres intégrés et mixage du son 5.1 / 7.1.',
       keys: 'sous-titres préparer audio son 5.1 7.1 stéréo mixage downmix volume dialogues' },
-    { id: 'downloads', label: 'Téléchargements', icon: 'install', lead: 'Autoriser le visionnage hors ligne dans l’application.',
+    { id: 'downloads', label: 'Téléchargements', icon: 'install', lead: 'Visionnage hors ligne dans l’application.',
       keys: 'hors ligne télécharger offline téléphone' },
     { id: 'live', label: 'TV en direct', icon: 'tv', lead: 'Listes de chaînes IPTV (M3U) et guide des programmes.',
       keys: 'iptv m3u xmltv chaînes guide epg télévision box' },
@@ -63,8 +63,8 @@ async function userForm(user, libraries) {
   const display = h('input', { value: user.display_name, maxlength: 50 });
   const pass = h('input', { type: 'password', autocomplete: 'new-password',
     placeholder: isNew ? '8 caractères minimum' : 'Laisser vide pour ne pas changer' });
-  const managed = toggle('Profil géré : pas de mot de passe, on y accède par « Changer de profil » (idéal pour les enfants)', user.managed);
-  const home = toggle('Fait partie du foyer (apparaît dans « Qui regarde ? »)', user.home);
+  const managed = toggle('Profil géré : sans mot de passe, accessible depuis « Changer de profil » (adapté aux enfants)', user.managed);
+  const home = toggle('Membre du foyer (affiché dans « Qui regarde ? »)', user.home);
   const pin = h('input', { type: 'password', inputmode: 'numeric', maxlength: 8, autocomplete: 'off',
     placeholder: user.has_pin ? 'Code défini (laisser vide pour le garder)' : '4 à 8 chiffres (facultatif)' });
   const clearPin = user.has_pin ? toggle('Retirer le code PIN', false) : null;
@@ -96,7 +96,7 @@ async function userForm(user, libraries) {
     managed, passField,
     h('h4.form-sub', 'Profil et contrôle parental'),
     home,
-    h('div.grid2', field('Code PIN du profil', pin), field('Restriction d’âge', age, 'Selon la classification (TMDB / .nfo).')),
+    h('div.grid2', field('Code PIN du profil', pin), field('Restriction d’âge', age, 'D’après la classification (TMDB ou .nfo).')),
     clearPin, unrated,
     h('h4.form-sub', 'Droits et bibliothèques'),
     admin, isNew ? null : disabled, all, libBox, err);
@@ -134,7 +134,7 @@ async function usersTab(body, ctx) {
   const reload = () => usersTab(body, ctx);
   const libName = (id) => (libraries.find((l) => l.id === id) || { name: `#${id}` }).name;
   clear(body,
-    h('div.toolbar', h('p.muted', `${users.length} compte(s). Chaque compte a son propre historique, sa reprise de lecture et ses préférences.`),
+    h('div.toolbar', h('p.muted', `${users.length} compte(s). Historique, reprise de lecture et préférences sont propres à chaque compte.`),
       h('button.btn.primary', { onclick: async () => { if (await userForm(null, libraries)) { toast('Utilisateur créé', 'ok'); reload(); } } }, '+ Ajouter')),
     h('div.user-list', users.map((u) => h('div.user-row', { class: u.disabled ? 'user-row off' : 'user-row' },
       avatar(u, 40),
@@ -149,7 +149,7 @@ async function usersTab(body, ctx) {
           ` · vu ${since(u.last_seen)}`)),
       h('button.btn.small', { onclick: async () => { if (await userForm(u, libraries)) { toast('Modifications enregistrées', 'ok'); reload(); } } }, 'Modifier'),
       u.id === state.me.user.id ? null : h('button.icon-btn', { title: 'Supprimer', onclick: async () => {
-        if (!await confirmDialog('Supprimer ce compte ?', `${u.display_name} perdra son historique et ses préférences. Cette action est définitive.`, 'Supprimer')) return;
+        if (!await confirmDialog('Supprimer ce compte ?', `L’historique et les préférences de ${u.display_name} seront supprimés. Cette action est définitive.`, 'Supprimer')) return;
         try { await del(`/api/admin/users/${u.id}`); toast('Compte supprimé', 'ok'); reload(); } catch (e) { toast(e.message, 'bad'); }
       } }, icon('trash'))))));
 }
@@ -197,7 +197,7 @@ async function libraryForm(lib) {
   const err = h('p.form-error');
   const body = h('div.form',
     h('div.grid2', field('Nom', name), field('Type de contenu', kind)),
-    field('Dossiers', paths, 'Chemins vus depuis le serveur Nexis (ex. /mnt/films). Un dossier par sous-dossier de film ou de série.'),
+    field('Dossiers', paths, 'Chemins sur le serveur Nexis (ex. /mnt/films). Chaque film ou série dans son propre sous-dossier.'),
     h('button.btn.small.ghost', { type: 'button', onclick: () => addPath() }, '+ Ajouter un dossier'),
     isNew ? null : h('p.muted.small', 'Changer le type vide la bibliothèque avant de la rescanner.'), err);
   return modal(isNew ? 'Nouvelle bibliothèque' : `Modifier « ${lib.name} »`, body, [
@@ -218,14 +218,14 @@ function scanBox(scan) {
   if (!scan.running && !scan.finished_at) return null;
   const pct = scan.total ? Math.round((scan.done / scan.total) * 100) : 0;
   return h('section.panel.scan',
-    h('div.scan-head', h('strong', scan.running ? `Scan en cours — ${scan.phase}` : `Dernier scan terminé ${since(scan.finished_at)}`),
+    h('div.scan-head', h('strong', scan.running ? `Scan en cours : ${scan.phase}` : `Dernier scan terminé ${since(scan.finished_at)}`),
       scan.running && scan.library ? h('span.muted', ` · ${scan.library}`) : null),
     scan.running ? h('div.bar', h('div.bar-fill', { style: { width: `${pct}%` } })) : null,
     scan.running && scan.total ? h('div.muted.small', `${scan.done} / ${scan.total}`) : null,
     !scan.running ? h('div.muted.small', `${scan.added} ajout(s), ${scan.removed} suppression(s)`) : null,
     scan.unrecognized.length ? h('details', h('summary', `${scan.unrecognized.length} fichier(s) non reconnu(s) comme épisode`),
       h('ul.small', scan.unrecognized.map((f) => h('li', f))),
-      h('p.muted.small', 'Renomme-les avec S01E02 ou « Nom - 02 » pour qu’ils soient reconnus.')) : null,
+      h('p.muted.small', 'Pour qu’ils soient reconnus, les noms doivent contenir S01E02 ou « Nom - 02 ».')) : null,
     scan.errors.length ? h('details', { open: true }, h('summary', `${scan.errors.length} erreur(s)`),
       h('ul.small', scan.errors.map((f) => h('li', f)))) : null);
 }
@@ -239,7 +239,7 @@ async function librariesTab(body, ctx) {
   };
   const c = (l, k) => l.counts[k] || 0;
   clear(body,
-    h('div.toolbar', h('p.muted', 'Chaque bibliothèque devient un onglet. Les animes peuvent avoir leur propre bibliothèque de type « Séries ».'),
+    h('div.toolbar', h('p.muted', 'Chaque bibliothèque apparaît comme un onglet. Les animes peuvent avoir leur propre bibliothèque de type « Séries ».'),
       h('div.actions-row',
         data.libraries.length ? h('button.btn', { onclick: () => startScan({}) }, 'Tout rescanner') : null,
         h('button.btn.primary', { onclick: async () => { if (await libraryForm(null)) { await refreshMe(); toast('Bibliothèque créée, scan en cours', 'ok'); reload(); } } }, '+ Ajouter'))),
@@ -254,10 +254,10 @@ async function librariesTab(body, ctx) {
       h('button.btn.small', { onclick: () => startScan({ library: l.id }) }, 'Scanner'),
       h('button.btn.small', { onclick: async () => { if (await libraryForm(l)) { await refreshMe(); reload(); } } }, 'Modifier'),
       h('button.icon-btn', { title: 'Supprimer', onclick: async () => {
-        if (!await confirmDialog('Supprimer cette bibliothèque ?', `« ${l.name} » disparaîtra de Nexis. Tes fichiers ne sont pas touchés.`, 'Supprimer')) return;
+        if (!await confirmDialog('Supprimer cette bibliothèque ?', `« ${l.name} » sera retirée de Nexis. Les fichiers ne sont pas modifiés.`, 'Supprimer')) return;
         try { await del(`/api/admin/libraries/${l.id}`); await refreshMe(); reload(); } catch (e) { toast(e.message, 'bad'); }
       } }, icon('trash')))))
-      : h('div.empty', h('p', 'Aucune bibliothèque.'), h('p.muted.small', 'Ajoute par exemple « Films » → /mnt/films, « Séries » → /mnt/series, « Animes » → /mnt/animes.')));
+      : h('div.empty', h('p', 'Aucune bibliothèque.'), h('p.muted.small', 'Exemple : « Films » → /mnt/films, « Séries » → /mnt/series, « Animes » → /mnt/animes.')));
   if (data.scan.running) {
     const t = setTimeout(async () => { if (ctx.isCurrent()) { await refreshMe().catch(() => {}); reload(); } }, 1500);
     ctx.setCleanup(() => clearTimeout(t));
@@ -314,7 +314,7 @@ async function shareForm(existing) {
     h('div.grid2', field('Partage', share), field('Nom local', name, 'Monté dans /mnt/seance/<nom>')),
     h('details.advanced', h('summary', 'Options avancées'),
       h('div.grid2', field('Sous-dossier du partage', subdir), field('Version SMB', version)), field('Domaine', domain)),
-    h('p.muted.small', 'Le partage est monté en lecture seule : Nexis ne peut ni modifier ni supprimer tes fichiers. Le mot de passe est stocké côté système (lisible par root uniquement), jamais dans la base de Nexis.'),
+    h('p.muted.small', 'Le partage est monté en lecture seule : Nexis ne peut ni modifier ni supprimer les fichiers. Le mot de passe est stocké par le système (lisible par root uniquement), jamais dans la base de Nexis.'),
     err);
   return modal(isNew ? 'Ajouter un partage réseau (SMB)' : `Modifier « ${e.name} »`, body, [
     { label: 'Annuler', value: null },
@@ -340,21 +340,21 @@ async function sharesTab(body, ctx) {
     reload();
   };
   if (!data.available) {
-    clear(body, h('section.panel', h('h2', 'Partages réseau'), h('div.plex-status.bad', data.error),
-      h('p.muted.small', 'Relance le script d’installation pour (ré)installer le service seance-mountd, puis : systemctl status seance-mountd')));
+    clear(body, h('section.panel', h('h2', 'Partages réseau'), h('div.status-box.bad', data.error),
+      h('p.muted.small', 'Le service seance-mountd est absent ou arrêté. Relancer l’installation le réinstalle ; son état s’affiche avec systemctl status seance-mountd.')));
     return;
   }
   const env = data.env;
   const warning = env.unprivileged ? h('section.panel.warn',
     h('h2', 'Ce conteneur ne peut pas monter de partages'),
-    h('p', 'Linux interdit le montage SMB dans un conteneur LXC non privilégié, quelle que soit l’application. Tu peux quand même lister les partages de ton NAS ici, mais le montage échouera. Deux solutions :'),
+    h('p', 'Linux interdit le montage SMB dans un conteneur LXC non privilégié. Les partages du NAS peuvent être listés, mais leur montage échouera. Deux solutions :'),
     h('ol',
-      h('li', h('strong', 'Conteneur privilégié'), ' (le plus simple pour gérer les partages depuis Nexis) : sauvegarde le conteneur puis restaure-le en « privilégié » (Proxmox : Sauvegarde → Restaurer, décocher « Non privilégié »), et active l’option ', h('code', 'pct set <ID> -features mount=cifs,nesting=1'), '.'),
-      h('li', h('strong', 'Garder le conteneur non privilégié'), ' : monter les partages sur l’hôte Proxmox et les prêter au conteneur (méthode détaillée dans le README). Ils apparaîtront alors directement dans l’explorateur de dossiers des bibliothèques.'))) : null;
+      h('li', h('strong', 'Conteneur privilégié'), ' (gestion des partages depuis Nexis) : sauvegarder le conteneur, le restaurer en mode privilégié (Proxmox : Sauvegarde → Restaurer, décocher « Non privilégié »), puis activer l’option ', h('code', 'pct set <ID> -features mount=cifs,nesting=1'), '.'),
+      h('li', h('strong', 'Garder le conteneur non privilégié'), ' : monter les partages sur l’hôte Proxmox et les transmettre au conteneur (procédure dans le README). Ils apparaissent alors dans l’explorateur de dossiers des bibliothèques.'))) : null;
   const tools = env.tools && (!env.tools['mount.cifs'] || !env.tools.smbclient)
-    ? h('div.plex-status.bad', 'cifs-utils ou smbclient manquant : relance le script d’installation.') : null;
+    ? h('div.status-box.bad', 'cifs-utils ou smbclient est manquant. Relancer l’installation de Nexis les installe.') : null;
   clear(body,
-    h('div.toolbar', h('p.muted', 'Monte les dossiers partagés de ton NAS (SMB/CIFS) directement depuis Nexis, puis crée tes bibliothèques dessus.'),
+    h('div.toolbar', h('p.muted', 'Dossiers partagés d’un NAS (SMB/CIFS), montés depuis Nexis pour y créer des bibliothèques.'),
       h('button.btn.primary', { onclick: async () => {
         const path = await shareForm(null);
         if (path) {
@@ -383,7 +383,7 @@ async function sharesTab(body, ctx) {
       h('button.btn.small', { onclick: async () => { if (await shareForm(sh)) { toast('Partage mis à jour', 'ok'); reload(); } } }, 'Modifier'),
       h('button.icon-btn', { title: 'Démonter et retirer', onclick: async () => {
         const used = sh.libraries.length ? ` Les bibliothèques ${sh.libraries.join(', ')} ne trouveront plus leurs fichiers (leur contenu est conservé tant qu’elles ne sont pas rescannées avec le partage monté).` : '';
-        if (!await confirmDialog('Retirer ce partage ?', `Le partage sera démonté et oublié. Tes fichiers sur le NAS ne sont pas touchés.${used}`, 'Retirer')) return;
+        if (!await confirmDialog('Retirer ce partage ?', `Le partage sera démonté et retiré de Nexis. Les fichiers du NAS ne sont pas modifiés.${used}`, 'Retirer')) return;
         try { await del(`/api/admin/shares/${sh.name}`); toast('Partage retiré', 'ok'); reload(); } catch (e) { toast(e.message, 'bad'); }
       } }, icon('trash')))))
       : h('div.empty', 'Aucun partage réseau géré par Nexis.'));
@@ -407,14 +407,14 @@ const metadataPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
     ['es-ES', 'Espagnol'], ['it-IT', 'Italien']], s.language);
   return [
     h('section.panel', h('h2', 'Clé TMDB et langue'),
-      h('p.muted.small', 'Affiches, résumés, distribution et titres d’épisodes viennent de The Movie Database. Crée un compte gratuit sur themoviedb.org, puis Paramètres → API → « Clé d’API ». Sans clé, Nexis utilise les noms de fichiers, les .nfo et les images présents dans tes dossiers.'),
-      h('div.plex-status', { class: s.tmdb_set ? 'plex-status ok' : 'plex-status' }, s.tmdb_set ? 'Clé TMDB configurée.' : 'Aucune clé TMDB.'),
+      h('p.muted.small', 'Affiches, résumés, distribution et titres d’épisodes proviennent de The Movie Database. Une clé gratuite s’obtient sur themoviedb.org (Paramètres → API). Sans clé, Nexis utilise les noms de fichiers, les fichiers .nfo et les images présentes dans les dossiers.'),
+      h('div.status-box', { class: s.tmdb_set ? 'status-box ok' : 'status-box' }, s.tmdb_set ? 'Clé TMDB configurée.' : 'Aucune clé TMDB.'),
       h('div.grid2', field('Clé TMDB', key), field('Langue des métadonnées', lang)),
       h('div.actions-row',
         h('button.btn.primary', { onclick: () => save({ ...(key.value.trim() ? { tmdb_key: key.value.trim() } : {}), language: lang.value }, 'Métadonnées enregistrées') }, 'Enregistrer'),
         s.tmdb_set ? h('button.btn', { onclick: () => save({ tmdb_key: '' }, 'Clé supprimée') }, 'Supprimer la clé') : null)),
     h('section.panel', h('h2', 'Actualisation'),
-      h('p.muted.small', 'Nexis complète tout seul les fiches incomplètes (tâche « Actualiser les métadonnées »). Tu peux aussi tout recharger maintenant, par exemple après avoir changé de langue.'),
+      h('p.muted.small', 'Les fiches incomplètes sont complétées automatiquement (tâche « Actualiser les métadonnées »). Un rechargement complet est utile après un changement de langue.'),
       h('div.actions-row',
         h('button.btn', { onclick: async () => {
           try { await post('/api/admin/scan', { refresh_metadata: true }); toast('Actualisation de toutes les métadonnées lancée', 'ok'); }
@@ -430,13 +430,13 @@ const detectionPage = (body, ctx) => withSettings(body, ctx, (s, save, reload) =
   const hookInput = h('input', { readonly: true, value: `${location.origin}${s.webhook_path}`, onfocus: (e) => e.target.select() });
   return [
     h('section.panel', h('h2', 'Surveillance des dossiers'),
-      h('p.muted.small', 'Sur un partage réseau, le système n’est pas prévenu des fichiers ajoutés depuis une autre machine. Nexis surveille donc les dossiers (très léger) et rescanne la bibliothèque concernée dès qu’une copie est terminée.'),
-      h('div.grid2', field('Surveiller les dossiers', watch, 'Le scan complet de sécurité se règle dans « Tâches planifiées ».')),
+      h('p.muted.small', 'Sur un partage réseau, les ajouts faits depuis une autre machine ne sont pas signalés au système. Nexis vérifie donc régulièrement les dossiers et analyse la bibliothèque concernée une fois la copie terminée.'),
+      h('div.grid2', field('Surveiller les dossiers', watch, 'Le scan complet quotidien se règle dans « Tâches planifiées ».')),
       h('button.btn.primary', { onclick: () => save({ watch_interval: Number(watch.value) }, 'Enregistré') }, 'Enregistrer'),
       s.watch_events.length ? h('details', h('summary.small', 'Derniers déclenchements'),
         h('ul.small', s.watch_events.map((e) => h('li', `${new Date(e.t * 1000).toLocaleString('fr-FR')} — ${e.text}`)))) : null),
     h('section.panel', h('h2', 'Webhook Radarr / Sonarr'),
-      h('p.muted.small', 'Pour un ajout instantané : Radarr et Sonarr préviennent Nexis dès qu’un fichier est importé.'),
+      h('p.muted.small', 'Radarr et Sonarr signalent chaque import à Nexis : les nouveaux titres apparaissent immédiatement.'),
       h('div.copy-row', hookInput,
         h('button.btn.small', { onclick: async () => {
           try { await navigator.clipboard.writeText(hookInput.value); toast('Adresse copiée', 'ok'); }
@@ -446,24 +446,24 @@ const detectionPage = (body, ctx) => withSettings(body, ctx, (s, save, reload) =
           if (!await confirmDialog('Nouvelle adresse ?', 'L’ancienne adresse cessera de fonctionner : il faudra la remplacer dans Radarr et Sonarr.', 'Régénérer')) return;
           await post('/api/admin/webhook/regenerate'); reload();
         } }, 'Régénérer')),
-      h('p.muted.small', 'Dans Radarr et Sonarr : Paramètres → Connect → + → Webhook. Colle cette adresse dans « URL », méthode POST, et coche « On Import », « On Upgrade », « On Rename » et « On Delete ». Si Radarr est sur une autre machine, remplace l’adresse par celle du serveur Nexis vue depuis Radarr.')),
+      h('p.muted.small', 'Dans Radarr et Sonarr : Settings → Connect → + → Webhook. Renseigner cette adresse dans « URL » (méthode POST) et cocher « On Import », « On Upgrade », « On Rename » et « On Delete ». Si Radarr tourne sur une autre machine, utiliser l’adresse du serveur Nexis telle qu’elle est vue depuis Radarr.')),
   ];
 });
 
 const subtitlesPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   const prefetch = toggle('Préparer les sous-titres des nouveaux fichiers à l’avance', s.subs_prefetch);
   prefetch.querySelector('input').addEventListener('change', (e) => save({ subs_prefetch: e.target.checked }, 'Enregistré'));
-  const algo = select([['none', 'ffmpeg (Jellyfin par défaut)'], ['dave750', 'Dave750'], ['nightmode', 'Dialogues (nuit)'],
+  const algo = select([['none', 'ffmpeg (par défaut)'], ['dave750', 'Dave750'], ['nightmode', 'Dialogues (nuit)'],
     ['rfc7845', 'RFC 7845'], ['ac4', 'AC-4']], s.downmix_algo);
-  const boost = select([['1', '× 1 (aucun)'], ['1.5', '× 1,5'], ['2', '× 2 (Jellyfin par défaut)'], ['2.5', '× 2,5'], ['3', '× 3']], String(s.downmix_boost));
+  const boost = select([['1', '× 1 (aucun)'], ['1.5', '× 1,5'], ['2', '× 2 (par défaut)'], ['2.5', '× 2,5'], ['3', '× 3']], String(s.downmix_boost));
   return [
     h('section.panel', h('h2', 'Sous-titres intégrés'),
-      h('p.muted.small', 'Les sous-titres intégrés aux fichiers (MKV) ne peuvent être lus qu’en parcourant tout le fichier. Nexis les prépare à l’avance (toutes les pistes en une seule lecture), quand aucune lecture n’est en cours, pour qu’ils soient là dès la première seconde. Au lancement, le lecteur attend qu’ils soient prêts.'),
+      h('p.muted.small', 'Les sous-titres intégrés aux fichiers (MKV) ne peuvent être extraits qu’en lisant le fichier en entier. Nexis les prépare à l’avance, en dehors des lectures, pour qu’ils soient disponibles dès le début de la vidéo.'),
       prefetch,
       h('p.muted.small', s.subs_queue ? `${s.subs_queue} fichier(s) en attente de préparation.` : 'Aucun fichier en attente.'),
       h('button.btn', { onclick: () => save({ subs_prefetch: true }, 'Préparation lancée pour toute la médiathèque') }, 'Tout préparer maintenant')),
     h('section.panel', h('h2', 'Son 5.1 / 7.1 sur des enceintes stéréo'),
-      h('p.muted.small', 'Mêmes réglages que Jellyfin. « ffmpeg » garde un équilibre neutre ; « Dave750 » met un peu plus en avant les dialogues ; « Dialogues (nuit) » réduit fortement les effets et la musique ; « RFC 7845 » et « AC-4 » sont les mixages normalisés. Le gain remonte le volume après le mixage ; Nexis ajoute toujours un limiteur pour qu’il ne puisse pas saturer.'),
+      h('p.muted.small', '« ffmpeg » : équilibre neutre. « Dave750 » : dialogues légèrement renforcés. « Dialogues (nuit) » : effets et musique fortement atténués. « RFC 7845 » et « AC-4 » : mixages normalisés. Le gain s’applique après le mixage ; un limiteur empêche toute saturation.'),
       h('div.grid2', field('Mixage', algo), field('Gain après mixage', boost)),
       h('button.btn.primary', { onclick: () => save({ downmix_algo: algo.value, downmix_boost: Number(boost.value) }, 'Mixage enregistré (prochaines lectures)') }, 'Enregistrer')),
   ];
@@ -475,8 +475,8 @@ const transcodingPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   // transcodage matériel : moteurs proposés selon ce que le conteneur voit
   const dev = s.hw_devices || { nvidia: false, dri: [] };
   const engines = [['none', 'Aucune (processeur)'],
-    ['nvenc', `NVIDIA NVENC${dev.nvidia ? '' : ' — carte non détectée'}`],
-    ['vaapi', `Intel / AMD (VAAPI)${dev.dri.length ? '' : ' — aucun /dev/dri détecté'}`]];
+    ['nvenc', `NVIDIA NVENC${dev.nvidia ? '' : ' (carte non détectée)'}`],
+    ['vaapi', `Intel / AMD (VAAPI)${dev.dri.length ? '' : ' (aucun /dev/dri détecté)'}`]];
   const hwEngine = select(engines, s.hw_engine);
   const devices = [...new Set([...dev.dri, s.hw_device])];
   const hwDevice = select(devices.map((d) => [d, d]), s.hw_device);
@@ -494,58 +494,82 @@ const transcodingPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   } }, 'Tester et enregistrer');
   return [
     h('section.panel', h('h2', 'Lectures simultanées'),
-      h('p.muted.small', `Ce serveur a ${s.cpus} cœur(s)${s.hw_engine === 'none' ? ' et transcode avec le processeur' : ', le transcodage passe par la carte graphique'}. Une lecture directe ou un remux ne coûtent presque rien ; un transcodage (HEVC, 10 bits, sous-titres image, qualité réduite) occupe 1 à 2 cœurs par lecture en 1080p sans carte graphique.`),
-      s.ffmpeg ? null : h('div.plex-status.bad', 'ffmpeg est introuvable : installe-le (apt install ffmpeg).'),
+      h('p.muted.small', `Processeur : ${s.cpus} cœur(s). Transcodage : ${s.hw_engine === 'none' ? 'processeur' : 'carte graphique'}. La lecture directe et le remux sont peu coûteux ; sans carte graphique, un transcodage 1080p (HEVC, 10 bits, sous-titres image, qualité réduite) occupe 1 à 2 cœurs.`),
+      s.ffmpeg ? null : h('div.status-box.bad', 'ffmpeg est introuvable sur le serveur (apt install ffmpeg).'),
       h('div.grid2', field('Lectures simultanées (max.)', maxStreams), field('Transcodages simultanés (max.)', maxTranscodes,
-        '0 = interdire le transcodage (seules les lectures directes et remux passent).')),
+        '0 : transcodage désactivé (lecture directe et remux uniquement).')),
       h('button.btn.primary', { onclick: () => save({ max_streams: Number(maxStreams.value), max_transcodes: Number(maxTranscodes.value) }, 'Enregistré') }, 'Enregistrer')),
     h('section.panel', h('h2', 'Carte graphique'),
-      h('p.muted.small', 'Une carte graphique décode et encode la vidéo à la place du processeur : bien plus de transcodages en même temps, presque sans charge. Nexis fait un essai réel avant d’enregistrer, et repasse tout seul sur le processeur si la carte refuse un fichier. Voir le README pour donner la carte au conteneur LXC.'),
+      h('p.muted.small', 'La carte graphique décode et encode la vidéo à la place du processeur, ce qui permet beaucoup plus de transcodages simultanés. Un essai est effectué avant l’enregistrement ; si la carte refuse un fichier, le processeur prend le relais. L’accès d’un conteneur LXC à la carte est décrit dans le README.'),
       h('div.grid2', field('Accélération matérielle', hwEngine), hwDeviceField),
       hwSave),
   ];
 });
 
 const downloadsPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
-  const downloadsToggle = toggle('Autoriser les téléchargements pour regarder hors ligne', s.downloads);
+  const downloadsToggle = toggle('Autoriser les téléchargements', s.downloads);
   downloadsToggle.querySelector('input').addEventListener('change', (e) => save({ downloads: e.target.checked }, 'Enregistré'));
   return h('section.panel', h('h2', 'Visionnage hors ligne'),
-    h('p.muted.small', 'Chacun peut télécharger films et épisodes dans l’application pour les regarder sans connexion, comme sur Netflix. Nexis prépare une copie à la qualité choisie (une conversion occupe le processeur ou la carte graphique, en priorité basse, une à la fois), puis l’efface dès qu’elle est récupérée.'),
+    h('p.muted.small', 'Les utilisateurs peuvent télécharger films et épisodes dans l’application pour les regarder sans connexion. Le serveur prépare une copie à la qualité choisie (conversions une à la fois, en priorité basse), puis la supprime une fois récupérée.'),
     downloadsToggle);
 });
 
 // --------------------------------------------------------------- mise à jour
-// Panneau rempli après coup : la vérification interroge GitHub (quelques secondes au pire).
+// La vérification interroge GitHub (résultat gardé 30 min côté serveur) ; le bouton force une nouvelle vérification.
 function updatePage(body) {
   const version = state.status.version;
-  const box = h('div', h('p.muted.small', 'Recherche d’une nouvelle version…'));
-  const panel = h('section.panel#update', h('h2', `Nexis ${version}`), h('p.muted.small', 'Version installée sur ce serveur.'), box);
-  clear(body, panel);
-  get('/api/admin/update').then((u) => {
-    const manual = h('p.muted.small', 'À la main : relance la commande d’installation sur le serveur (README → Installation).');
+  const box = h('div');
+  const checkBtn = h('button.btn', { onclick: () => load(true) }, 'Rechercher une mise à jour');
+  const checked = h('span.muted.small');
+  clear(body, h('section.panel#update', h('h2', `Nexis ${version}`), h('p.muted.small', 'Version installée sur ce serveur.'), box,
+    h('div.actions-row.update-check', checkBtn, checked)));
+  const load = async (refresh = false) => {
+    checkBtn.disabled = true;
+    checkBtn.textContent = 'Recherche en cours…';
+    if (!box.childElementCount) box.replaceChildren(h('p.muted.small', 'Recherche d’une nouvelle version…'));
+    try {
+      const u = await get(`/api/admin/update${refresh ? '?refresh=1' : ''}`);
+      paint(u);
+      checked.textContent = `Dernière vérification : ${new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
+      if (refresh) {
+        toast(u.available ? `Nexis ${u.latest} est disponible` : (u.check_error ? u.check_error : 'Aucune mise à jour disponible'),
+          u.check_error ? 'bad' : 'ok');
+        await refreshMe().catch(() => {}); // indicateur de la barre du haut
+      }
+    } catch (e) {
+      box.replaceChildren(h('p.form-error.small', e.message));
+    } finally {
+      checkBtn.disabled = false;
+      checkBtn.textContent = 'Rechercher une mise à jour';
+    }
+  };
+  const paint = (u) => {
     const parts = [];
-    if (u.check_error) parts.push(h('div.plex-status.bad', `Vérification impossible : ${u.check_error}`));
-    else if (u.available) parts.push(h('div.plex-status.ok', `Nouvelle version disponible : Nexis ${u.latest}`));
-    else parts.push(h('div.plex-status.ok', `Nexis est à jour (${u.source}).`));
+    if (u.check_error) parts.push(h('div.status-box.bad', `Vérification impossible : ${u.check_error}`));
+    else if (u.available) parts.push(h('div.status-box.ok', `Nouvelle version disponible : Nexis ${u.latest}`));
+    else parts.push(h('div.status-box.ok', `Nexis est à jour (source : ${u.source}).`));
     if (u.available && u.changes && u.changes.length) {
       parts.push(h('details', h('summary.small', 'Derniers changements'),
         h('ul.small', u.changes.map((c) => h('li', c.title)))));
     }
     if (u.running) {
-      parts.push(h('p.small', `Une mise à jour est en cours : ${u.step || 'installation'} (${u.percent || 0} %).`),
-        h('button.btn.primary', { onclick: () => followUpdate(version) }, 'Suivre la progression'));
+      parts.push(h('p.small', `Mise à jour en cours : ${u.step || 'installation'} (${u.percent || 0} %).`),
+        h('button.btn.primary', { onclick: () => followUpdate(version) }, 'Afficher la progression'));
     }
-    if (!u.can_update) parts.push(h('p.form-error.small', u.update_error || 'Mise à jour automatique indisponible ici.'), manual);
-    else if (!u.running) {
+    if (!u.can_update) {
+      parts.push(h('p.form-error.small', u.update_error || 'Mise à jour automatique indisponible sur cette installation.'),
+        h('p.muted.small', 'Mise à jour manuelle : relancer la commande d’installation sur le serveur (voir le README).'));
+    } else if (!u.running) {
       parts.push(h('button.btn', { class: u.available ? 'btn primary' : 'btn', onclick: () => runUpdate(version) },
-        u.available ? `Mettre à jour vers ${u.latest}` : 'Réinstaller la dernière version'));
+        u.available ? `Installer Nexis ${u.latest}` : 'Réinstaller la version actuelle'));
     }
     box.replaceChildren(...parts);
-  }).catch((e) => box.replaceChildren(h('p.form-error.small', e.message)));
+  };
+  load();
 }
 
 async function runUpdate(version) {
-  if (!await confirmDialog('Mettre à jour Nexis ?', 'Nexis télécharge la dernière version puis redémarre (une à deux minutes) : les lectures en cours seront coupées.', 'Mettre à jour', false)) return;
+  if (!await confirmDialog('Mettre à jour Nexis ?', 'Le serveur télécharge la nouvelle version puis redémarre (une à deux minutes). Les lectures en cours seront interrompues.', 'Mettre à jour', false)) return;
   try { await post('/api/admin/update'); } catch (e) { toast(e.message, 'bad'); return; }
   followUpdate(version);
 }
@@ -562,11 +586,11 @@ async function requestsTab(body, ctx) {
   auto.querySelector('input').addEventListener('change', async (e) => {
     try { await put('/api/admin/requests', { auto_request: e.target.checked }); toast('Enregistré', 'ok'); } catch (err) { toast(err.message, 'bad'); }
   });
-  const status = h('div.plex-status', { class: cfg.enabled ? 'plex-status ok' : 'plex-status' },
+  const status = h('div.status-box', { class: cfg.enabled ? 'status-box ok' : 'status-box' },
     cfg.enabled ? 'Seerr est configuré : les utilisateurs peuvent demander des films et des séries.' : 'Seerr n’est pas encore configuré.');
   clear(body,
     h('section.panel', h('h2', 'Seerr'),
-      h('p.muted.small', 'Seerr (le successeur d’Overseerr et de Jellyseerr) reçoit les demandes du bouton « Demander » de l’onglet Découvrir et les envoie à Radarr / Sonarr. Si un compte Seerr porte le même nom qu’un compte Nexis, la demande est faite à son nom ; sinon, au nom du propriétaire de la clé d’API.'),
+      h('p.muted.small', 'Seerr reçoit les demandes faites depuis l’onglet Découvrir et les transmet à Radarr / Sonarr. Une demande est faite au nom du compte Seerr portant le même nom que le compte Nexis, sinon au nom du propriétaire de la clé d’API.'),
       status,
       h('div.grid2', field('Adresse de Seerr', url), field('Clé d’API de Seerr', key)),
       h('div.actions-row',
@@ -707,7 +731,7 @@ async function tasksTab(body, ctx) {
         h('button.btn.small', { onclick: async () => { if (await taskSettings(t, data.libraries)) { toast('Réglages enregistrés', 'ok'); reload(); } } }, 'Réglages')));
   };
   clear(body,
-    h('p.muted', 'Les travaux de fond du serveur. Les tâches lourdes (lecture des fichiers sur le partage) se mettent en pause pendant qu’on regarde quelque chose. Une seule tâche tourne à la fois.'),
+    h('p.muted', 'Travaux de fond du serveur. Une seule tâche s’exécute à la fois ; les tâches lourdes se mettent en pause pendant les lectures.'),
     CATEGORIES.map((cat) => {
       const list = data.tasks.filter((t) => t.category === cat);
       return list.length ? h('section.task-group', h('h3', cat), list.map(row)) : null;
@@ -721,7 +745,7 @@ async function tasksTab(body, ctx) {
 async function liveSourceForm(src) {
   const isNew = !src;
   src = src || { name: '', m3u_url: '', epg_url: '', user_agent: '', enabled: true };
-  const name = h('input', { value: src.name, maxlength: 60, placeholder: 'Mon fournisseur IPTV, Freebox TV…' });
+  const name = h('input', { value: src.name, maxlength: 60, placeholder: 'Fournisseur IPTV, box TV…' });
   const m3u = h('input', { value: src.m3u_url, placeholder: 'http://…/playlist.m3u ou /srv/iptv/chaines.m3u' });
   const epg = h('input', { value: src.epg_url, placeholder: 'facultatif : http://…/guide.xml(.gz)' });
   const ua = h('input', { value: src.user_agent, placeholder: 'facultatif : VLC/3.0.20 LibVLC/3.0.20…' });
@@ -729,8 +753,8 @@ async function liveSourceForm(src) {
   const err = h('p.form-error');
   return modal(isNew ? 'Ajouter une source de chaînes' : `Modifier « ${src.name} »`, h('div.form',
     field('Nom', name),
-    field('Liste des chaînes (M3U / M3U8)', m3u, 'Adresse fournie par ton fournisseur IPTV ou ta box, ou chemin d’un fichier .m3u sur le serveur.'),
-    field('Guide des programmes (XMLTV)', epg, 'Laisse vide si la liste indique déjà son guide (« url-tvg » dans l’en-tête). Les fichiers .gz sont acceptés.'),
+    field('Liste des chaînes (M3U / M3U8)', m3u, 'Adresse fournie par le fournisseur IPTV ou la box, ou chemin d’un fichier .m3u sur le serveur.'),
+    field('Guide des programmes (XMLTV)', epg, 'Facultatif si la liste indique déjà son guide (« url-tvg » dans l’en-tête). Fichiers .gz acceptés.'),
     h('details.advanced', h('summary', 'Options avancées'),
       field('User-Agent', ua, 'Certains fournisseurs n’acceptent qu’un lecteur précis (VLC, Kodi…).')),
     isNew ? null : enabled, err), [
@@ -775,7 +799,7 @@ async function liveTab(body, ctx) {
   const hide = toggle('Masquer la TV en direct pour les profils avec une restriction d’âge', st.hide_restricted);
   clear(body,
     h('section.panel', h('div.toolbar', h('div', h('h2', 'Sources de chaînes'),
-      h('p.muted.small', 'Listes M3U (IPTV, box opérateur, TNT via un tuner réseau…) et leur guide XMLTV. Les chaînes sont proposées à tous les utilisateurs dans l’onglet « TV en direct ». L’actualisation automatique se règle dans « Tâches planifiées ».')),
+      h('p.muted.small', 'Listes M3U (IPTV, box opérateur, tuner TNT réseau) et guides XMLTV. Les chaînes sont proposées à tous les utilisateurs dans l’onglet « TV en direct ». L’actualisation automatique se règle dans « Tâches planifiées ».')),
     h('button.btn.primary', { onclick: async () => { if (await liveSourceForm(null)) { toast('Source ajoutée', 'ok'); reload(); } } }, '+ Ajouter')),
     data.sources.length ? h('div.user-list', data.sources.map((s) => h('div.user-row', { class: s.enabled ? 'user-row' : 'user-row off' },
       h('div.lib-icon', '📡'),
@@ -796,9 +820,9 @@ async function liveTab(body, ctx) {
         if (!await confirmDialog('Supprimer cette source ?', `Les chaînes de « ${s.name} » et les favoris associés disparaîtront.`, 'Supprimer')) return;
         await del(`/api/admin/live/sources/${s.id}`); reload();
       } }, icon('trash')))))
-      : h('div.empty', 'Aucune source. Ajoute l’adresse de ta liste M3U.')),
+      : h('div.empty', 'Aucune source configurée.')),
     h('section.panel', h('h2', 'Lecture'),
-      h('p.muted.small', 'Le navigateur ne lit pas directement les flux TV (MPEG-TS) : Nexis les reçoit et les redécoupe pour lui. Une chaîne regardée par plusieurs personnes n’est reçue qu’une fois. Beaucoup de fournisseurs limitent le nombre de connexions simultanées.'),
+      h('p.muted.small', 'Les navigateurs ne lisent pas directement les flux TV (MPEG-TS) : Nexis les reçoit et les convertit. Une chaîne regardée par plusieurs personnes n’est reçue qu’une fois. La plupart des fournisseurs limitent le nombre de connexions simultanées.'),
       h('div.grid2', field('Chaînes regardées en même temps (max.)', maxS), field('Vidéo', vmode)),
       hide,
       h('button.btn.primary', { onclick: async () => {
@@ -819,7 +843,7 @@ async function dashboardPage(body, ctx) {
   const latest = state.me.update;
   const versionCard = h('div.panel.scan', h('strong', `Nexis ${version}`), latest
     ? h('div.small', h('span.tag.accent', 'Mise à jour'), ` Nexis ${latest} est disponible · `, h('a', { href: '#/admin/update' }, 'Mettre à jour'))
-    : h('div.muted.small', 'À jour (vérifié automatiquement toutes les 6 heures) · ', h('a', { href: '#/admin/update' }, 'Détails')));
+    : h('div.muted.small', 'À jour (vérification automatique toutes les 6 heures) · ', h('a', { href: '#/admin/update' }, 'Détails')));
   const load = async () => {
     const [list, sys] = await Promise.all([get('/api/admin/streams'), get('/api/admin/system').catch(() => null)]);
     if (!ctx.isCurrent()) return;
@@ -828,7 +852,7 @@ async function dashboardPage(body, ctx) {
     const server = sys && sys.mem_total ? h('div.panel.scan', h('strong', 'Serveur'), h('div.muted.small',
       `Mémoire libre ${gb(sys.mem_available)} sur ${gb(sys.mem_total)} · swap utilisé ${gb(sys.swap_used)} sur ${gb(sys.swap_total || 0)} · `,
       `${sys.ffmpeg} ffmpeg (${gb(sys.ffmpeg_mb)}) · charge ${String(sys.load).replace('.', ',')} pour ${sys.cpus} cœur(s)`),
-      swapHigh ? h('div.form-error.small', 'Le serveur utilise beaucoup de swap : les lectures peuvent saccader. Réduis le nombre de transcodages simultanés ou ajoute de la mémoire.') : null) : null;
+      swapHigh ? h('div.form-error.small', 'Utilisation élevée du swap : les lectures peuvent saccader. Réduire le nombre de transcodages simultanés ou ajouter de la mémoire.') : null) : null;
     clear(body, versionCard, server, h('h3.sub', 'Lectures en cours'), list.length ? h('div.user-list', list.map((s) => h('div.user-row',
       h('div.grow', h('strong', s.title), h('div.muted.small',
         `${s.user} · ${s.state === 'paused' ? 'en pause' : 'en lecture'} à ${fmtTime(s.position_ms)} · ${MODES[s.mode] || s.mode}`,

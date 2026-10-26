@@ -1,5 +1,5 @@
 """Détection des intros (opening) et génériques de fin par empreinte audio, pour les fichiers sans
-chapitres exploitables — la méthode du plugin « Intro Skipper » de Jellyfin.
+chapitres exploitables (empreintes audio comparées d'un épisode à l'autre).
 
 Les épisodes d'une même saison partagent la même chanson d'ouverture et le même générique. On calcule
 l'empreinte Chromaprint (fournie par ffmpeg) du début et de la fin de chaque épisode, puis on cherche,

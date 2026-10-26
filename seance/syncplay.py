@@ -1,4 +1,4 @@
-"""« Regarder ensemble » : lecture synchronisée à plusieurs (comme SyncPlay dans Jellyfin).
+"""« Regarder ensemble » : lecture synchronisée à plusieurs.
 
 Un groupe partage UNE position de lecture : « en lecture depuis tel instant à telle position », ou « en
 pause à telle position ». Chaque membre a son propre flux (sa qualité, ses sous-titres) et cale sa vidéo
@@ -39,6 +39,8 @@ class Member:
         self.uid = user["id"]
         self.name = user["display_name"]
         self.color = user["avatar_color"]
+        ver = user.get("avatar_ver") if hasattr(user, "get") else None
+        self.avatar = f"/api/users/{user['id']}/avatar?v={ver}" if ver else None
         self.joined = time.time()
         self.connections = 0
         self.seen = time.time()
@@ -80,7 +82,7 @@ class Group:
 
     def members_event(self):
         return {"type": "members", "server_now": now_ms(), "host_only": self.host_only, "name": self.name,
-                "members": [{"id": m.uid, "name": m.name, "color": m.color, "ready": m.ready, "host": m.uid == self.owner,
+                "members": [{"id": m.uid, "name": m.name, "color": m.color, "avatar": m.avatar, "ready": m.ready, "host": m.uid == self.owner,
                              "online": m.connections > 0 or m.uid in self.present()} for m in self.members.values()]}
 
 
@@ -99,7 +101,7 @@ class Groups:
         q = queue.Queue(maxsize=1)
         with self.lock:
             if sum(1 for uid in self.watchers.values() if uid == user["id"]) >= MAX_FEEDS_PER_USER:
-                raise OverflowError("Trop de connexions ouvertes : ferme d'autres onglets de Nexis")
+                raise OverflowError("Trop de connexions ouvertes : fermez d'autres onglets de Nexis")
             self.watchers[q] = user["id"]
         return q
 
@@ -137,7 +139,7 @@ class Groups:
     def create(self, user, name=None, item_id=None, position=0, host_only=False):
         with self.lock:
             if len([g for g in self.groups.values() if g.owner == user["id"]]) >= 3:
-                raise ValueError("Tu animes déjà 3 groupes : quittes-en un d'abord")
+                raise ValueError("Limite atteinte : 3 groupes animés à la fois au maximum")
             gid = secrets.token_urlsafe(6)
             g = Group(gid, user, (name or f"Chez {user['display_name']}")[:60], host_only, self.present)
             if item_id:
@@ -248,7 +250,7 @@ class Groups:
                 raise LookupError("Ce groupe n'existe plus")
             m = g.members.get(user["id"])
             if not m:
-                raise PermissionError("Tu ne fais pas partie de ce groupe")
+                raise PermissionError("Vous ne faites pas partie de ce groupe")
             m.seen = time.time()
             control = action in ("play", "pause", "seek", "item")
             if control and g.host_only and g.owner != user["id"]:
@@ -319,11 +321,11 @@ class Groups:
         with self.lock:
             m = g.members.get(user["id"])
             if not m:
-                raise PermissionError("Rejoins d'abord le groupe")
+                raise PermissionError("Rejoignez d'abord le groupe")
             opened = sum(mm.connections for gg in self.groups.values() for uid, mm in gg.members.items()
                          if uid == user["id"])
             if opened >= MAX_STREAMS_PER_USER:
-                raise OverflowError("Trop de connexions ouvertes : ferme d'autres onglets du lecteur")
+                raise OverflowError("Trop de connexions ouvertes : fermez d'autres onglets du lecteur")
             m.seen = time.time()
             m.connections += 1
             g.subscribers.append(q)
@@ -472,7 +474,7 @@ def register(app, ctx, x):
         if item_id is not None:
             r = x.require_item(req.user, str(item_id))
             if r["type"] not in ("movie", "episode", "extra"):
-                raise HTTPError(400, "Choisis un film ou un épisode")
+                raise HTTPError(400, "Sélectionnez un film ou un épisode")
         name = str(b.get("name") or "").strip()
         try:
             g = groups.create(req.user, name, item_id, b.get("position") or 0, bool(b.get("host_only")))

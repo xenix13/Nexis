@@ -55,7 +55,7 @@ def make_media(root, long_seconds=90):
     ff(*src, "-t", str(long_seconds), *x264, "-c:a", "aac", "-movflags", "+faststart",
        os.path.join(d, "Le Grand Voyage (2019).mp4"))
     ff("-f", "lavfi", "-i", "color=c=0x335577:s=400x600", "-frames:v", "1", os.path.join(d, "poster.jpg"))
-    # bonus locaux (conventions Plex) : dossier Trailers/ et suffixe -featurette
+    # bonus locaux (conventions courantes) : dossier Trailers/ et suffixe -featurette
     os.makedirs(os.path.join(d, "Trailers"), exist_ok=True)
     ff(*src, "-t", "8", *x264, "-c:a", "aac", os.path.join(d, "Trailers", "Bande annonce officielle.mp4"))
     ff(*src, "-t", "8", *x264, "-c:a", "aac", os.path.join(d, "Le Grand Voyage (2019)-featurette.mkv"))

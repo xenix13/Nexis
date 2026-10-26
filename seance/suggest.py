@@ -173,7 +173,7 @@ def register(app, ctx, x):
         return {"suggestions": suggestions, "because": because}
 
     def suggestions(user):
-        """Rangées « Suggestions pour toi » et « Parce que tu as regardé … » de l'accueil."""
+        """Rangées « Suggestions » et « Parce que vous avez regardé… » de l'accueil."""
         stamp = (db.scalar("SELECT MAX(id) FROM history WHERE user_id=?", (user["id"],)),
                  db.scalar("SELECT MAX(updated_at) FROM progress WHERE user_id=? AND position_ms>=?", (user["id"], MIN_RESUME_MS)),
                  db.scalar("SELECT COUNT(*) FROM items WHERE type IN ('movie','show')"),

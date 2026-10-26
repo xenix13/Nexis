@@ -1,4 +1,4 @@
-// Profil du navigateur, comme browserDeviceProfile de Jellyfin : ce que cet appareil sait décoder, pour ne
+// Profil du navigateur : ce que cet appareil sait décoder, pour ne
 // convertir que le nécessaire (lecture et téléchargements).
 let capsCache = null;
 export function browserCaps() {

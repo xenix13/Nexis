@@ -212,7 +212,7 @@ MIGRATIONS = [
     ALTER TABLE items ADD COLUMN trailer TEXT;
     ALTER TABLE items ADD COLUMN extra_kind TEXT;
     """,
-    # 6 : compatibilité Jellyfin (Seerr), identifiants externes, envies hors bibliothèque
+    # 6 : identifiants externes, envies hors bibliothèque (et une ancienne compatibilité retirée en 10)
     """
     ALTER TABLE items ADD COLUMN imdb_id TEXT;
     ALTER TABLE items ADD COLUMN tvdb_id INTEGER;
@@ -220,7 +220,7 @@ MIGRATIONS = [
     CREATE TABLE jf_tokens(
         token_hash TEXT PRIMARY KEY,
         kind TEXT NOT NULL,              -- session | apikey
-        secret TEXT,                     -- clé d'API (Jellyfin les ré-affiche : Seerr la relit)
+        secret TEXT,                     -- clé d'API (ancienne compatibilité, retirée en 10)
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         app TEXT NOT NULL DEFAULT '',
         device TEXT NOT NULL DEFAULT '',
@@ -309,7 +309,7 @@ MIGRATIONS = [
     CREATE INDEX live_programmes_time ON live_programmes(stop, start);
     CREATE INDEX progress_watched ON progress(user_id, watched, last_watched_at);
     """,
-    # 9 : clients Jellyfin (appareils connectés, préférences d'affichage propres à chaque application)
+    # 9 : anciens clients externes (retirés en 10)
     """
     DELETE FROM jf_tokens;
     ALTER TABLE jf_tokens ADD COLUMN device_id TEXT NOT NULL DEFAULT '';
@@ -323,7 +323,7 @@ MIGRATIONS = [
         PRIMARY KEY(user_id, client, pref_id)
     );
     """,
-    # 10 : compatibilité Jellyfin retirée (remplacée par les applications Nexis)
+    # 10 : ancienne compatibilité avec des clients externes retirée (remplacée par les applications Nexis)
     """
     DROP TABLE IF EXISTS jf_prefs;
     DROP TABLE IF EXISTS jf_tokens;
@@ -334,6 +334,10 @@ MIGRATIONS = [
     ALTER TABLE live_channels ADD COLUMN ok INTEGER;
     ALTER TABLE live_channels ADD COLUMN fails INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE live_channels ADD COLUMN checked_at INTEGER;
+    """,
+    # 12 : avatar en image (numéro de version de l'image, NULL = initiale sur fond de couleur)
+    """
+    ALTER TABLE users ADD COLUMN avatar_ver INTEGER;
     """,
 ]
 

@@ -29,7 +29,7 @@ export async function renderTogether(main, gid, ctx) {
   clear(main,
     h('div.page-head', h('h1', 'Regarder ensemble'),
       h('button.btn.primary', { onclick: () => createGroupDialog(state.me) }, icon('group'), 'Créer un groupe')),
-    h('p.muted', 'Chacun regarde depuis son écran, en même temps : lecture, pauses, sauts et épisode suivant sont partagés par tout le groupe. Crée un groupe à l’avance et envoie le lien, ou ouvre un film ou un épisode et clique sur ', icon('group'), '.'),
+    h('p.muted', 'Chaque membre regarde sur son propre appareil ; lecture, pauses, sauts et épisode suivant sont synchronisés. Un groupe peut être créé à l’avance, ou depuis la fiche d’un film ou d’un épisode avec le bouton ', icon('group'), '.'),
     listBox);
   // liste tenue à jour en direct : un groupe créé ou fermé apparaît / disparaît sans recharger
   ctx.setCleanup(onGroups((list) => {
@@ -56,15 +56,15 @@ async function renderLobby(main, gid, ctx) {
   const link = `${location.origin}/#/together/${gid}`;
   const members = h('div.lobby-members');
   const paintMembers = (list) => members.replaceChildren(...list.map((m) => h('div.lobby-member', { class: m.online ? 'lobby-member' : 'lobby-member away' },
-    avatar({ display_name: m.name, avatar_color: m.color }, 44), h('span', m.name), m.host ? h('span.chip.small', 'hôte') : null)));
+    avatar({ display_name: m.name, avatar_color: m.color, avatar: m.avatar }, 44), h('span', m.name), m.host ? h('span.chip.small', 'hôte') : null)));
   paintMembers(g.members);
   const canLaunch = g.is_host || !g.host_only;
   clear(main, h('section.lobby',
     h('div.lobby-kicker', icon('group'), 'Salon'),
     h('h1.lobby-title', g.name),
     h('p.muted', canLaunch
-      ? 'Choisis un film ou un épisode, puis clique sur le bouton « Regarder ensemble » de sa fiche : il démarrera en même temps pour tout le monde ici.'
-      : 'L’hôte choisit quoi regarder : la lecture démarrera toute seule pour tout le monde.'),
+      ? 'Ouvrez la fiche d’un film ou d’un épisode et utilisez « Regarder ensemble » : la lecture démarrera en même temps pour tous les membres.'
+      : 'En attente du choix de l’hôte. La lecture démarrera automatiquement.'),
     members,
     h('div.lobby-actions',
       h('button.btn.primary', { onclick: async () => {

@@ -1,6 +1,6 @@
 """Lecture réelle avec hls.js dans Chromium (VP9 + Opus, que Chromium décode sans codecs propriétaires).
 
-Vérifie le flux « à la Jellyfin » de bout en bout : playlist VOD complète, segments fMP4 à la demande,
+Vérifie le flux HLS de bout en bout : playlist VOD complète, segments fMP4 à la demande,
 reprise au milieu, saut loin devant (relance de ffmpeg), retour en arrière.
 
 python3 tests/hls_real.py <chemin vers hls.min.js> [dossier_captures]

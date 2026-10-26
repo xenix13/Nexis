@@ -154,7 +154,7 @@ class SubtitleCache:
         ass = ass_tracks(probe)
         need = [i for i in text_tracks(probe) if not os.path.isfile(self.path(item, i))
                 or (i in ass and not os.path.isfile(self.ass_path(item, i)) and not self._failed(item, i))]
-        # PGS (Blu-ray) : flux .sup d'origine, rendu dans le navigateur (comme Jellyfin) plutôt qu'incrusté
+        # PGS (Blu-ray) : flux .sup d'origine, rendu dans le navigateur plutôt qu'incrusté
         need += [i for i in pgs_tracks(probe) if not os.path.isfile(self.sup_path(item, i))
                  and not os.path.isfile(self.path(item, i))]
         if ass and self.fonts_index(item) is None:

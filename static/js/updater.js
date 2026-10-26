@@ -45,7 +45,7 @@ export function followUpdate(from) {
   const actions = h('div.modal-actions');
   overlay = h('div.update-overlay', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Mise à jour de Nexis' },
     h('div.update-box', h('h2', 'Mise à jour de Nexis'),
-      h('p.muted.small', 'Ne ferme pas cette page : elle se recharge toute seule à la fin.'),
+      h('p.muted.small', 'Cette page se rechargera automatiquement à la fin de l’installation.'),
       h('div.update-bar', bar), h('div.update-row', step, pct), details, actions));
   document.body.append(overlay);
 
@@ -94,7 +94,7 @@ export function followUpdate(from) {
       show(85, 'Redémarrage de Nexis…');
     }
     if (Date.now() - st.at > LIMIT) {
-      fail('Toujours pas terminé après 15 minutes : regarde /var/log/seance-update.log sur le serveur.');
+      fail('Mise à jour non terminée après 15 minutes. Le journal se trouve dans /var/log/seance-update.log sur le serveur.');
       return;
     }
     setTimeout(tick, 2000);

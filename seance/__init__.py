@@ -1,2 +1,2 @@
 """Nexis — serveur multimédia auto-hébergé."""
-__version__ = "3.14.2"
+__version__ = "3.15.0"

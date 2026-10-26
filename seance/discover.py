@@ -119,7 +119,7 @@ def register(app, ctx, x):
     def tmdb():
         t = ctx.metadata.tmdb()
         if not t.enabled:
-            raise HTTPError(409, "Ajoute une clé TMDB (Administration → Réglages) pour découvrir les catalogues")
+            raise HTTPError(409, "Une clé TMDB est nécessaire pour les catalogues (Paramètres → Métadonnées)")
         return t
 
     def region():
@@ -306,8 +306,9 @@ def register(app, ctx, x):
 
     # ------------------------------------------------------------ demandes
     def seerr_user(user):
-        """Compte Seerr de cet utilisateur, retrouvé par son identifiant ou son nom (comptes locaux, Plex,
-        Jellyfin…). Sans correspondance, la demande est faite au nom du propriétaire de la clé d'API."""
+        """Compte Seerr de cet utilisateur, retrouvé par son identifiant, son nom ou celui de son compte de
+        serveur multimédia (champs de l'API de Seerr). Sans correspondance, la demande est faite au nom du
+        propriétaire de la clé d'API."""
         s = seerr()
         users = users_cache.get("users")
         if users is None:
@@ -330,7 +331,7 @@ def register(app, ctx, x):
     def send_request(user, kind, tid, seasons=None):
         s = seerr()
         if not s.enabled:
-            raise HTTPError(409, "Les demandes ne sont pas configurées (Administration → Demandes)")
+            raise HTTPError(409, "Les demandes ne sont pas configurées (Paramètres → Demandes)")
         body = {"mediaType": kind, "mediaId": int(tid)}
         if kind == "tv":
             body["seasons"] = seasons if seasons else "all"

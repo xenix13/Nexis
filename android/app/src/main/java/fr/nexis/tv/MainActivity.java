@@ -81,10 +81,10 @@ public class MainActivity extends Activity {
         logo.setImageResource(R.mipmap.ic_launcher);
         box.addView(logo, new LinearLayout.LayoutParams(dp(96), dp(96)));
 
-        TextView title = text("Adresse de ton serveur Nexis", 26, Color.WHITE);
+        TextView title = text("Adresse du serveur Nexis", 26, Color.WHITE);
         title.setPadding(0, dp(16), 0, dp(6));
         box.addView(title);
-        TextView hint = text("Par exemple https://nexis.mondomaine.fr ou 192.168.1.20:8420", 15, Color.rgb(170, 170, 180));
+        TextView hint = text("Exemple : https://nexis.mondomaine.fr ou 192.168.1.20:8420", 15, Color.rgb(170, 170, 180));
         hint.setPadding(0, 0, 0, dp(18));
         box.addView(hint);
 
@@ -131,7 +131,7 @@ public class MainActivity extends Activity {
     private void connect(String raw, TextView status, Button go) {
         final String url = normalize(raw);
         if (url == null) {
-            status.setText("Saisis l'adresse du serveur.");
+            status.setText("Saisissez l'adresse du serveur.");
             return;
         }
         status.setTextColor(Color.rgb(170, 170, 180));
@@ -169,7 +169,7 @@ public class MainActivity extends Activity {
             c = (HttpURLConnection) new URL(url + "/api/status").openConnection();
             c.setConnectTimeout(8000);
             c.setReadTimeout(8000);
-            if (c.getResponseCode() != 200) return "Ce serveur a répondu " + c.getResponseCode() + " : est-ce bien Nexis ?";
+            if (c.getResponseCode() != 200) return "Ce serveur a répondu " + c.getResponseCode() + " : s'agit-il bien d'un serveur Nexis ?";
             try (InputStream in = c.getInputStream()) {
                 byte[] buf = new byte[4096];
                 int n = in.read(buf);
@@ -178,7 +178,7 @@ public class MainActivity extends Activity {
             }
             return null;
         } catch (Exception e) {
-            return "Impossible de joindre le serveur (" + e.getClass().getSimpleName() + "). Vérifie l'adresse et le réseau.";
+            return "Impossible de joindre le serveur (" + e.getClass().getSimpleName() + "). Vérifiez l'adresse et la connexion réseau.";
         } finally {
             if (c != null) c.disconnect();
         }
@@ -214,7 +214,7 @@ public class MainActivity extends Activity {
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                 if (request.isForMainFrame()) {
-                    showSetup("Le serveur " + server + " ne répond pas. Vérifie le réseau, ou change d'adresse.");
+                    showSetup("Le serveur " + server + " ne répond pas. Vérifiez la connexion réseau ou modifiez l'adresse.");
                 }
             }
         });

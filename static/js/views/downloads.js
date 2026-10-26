@@ -8,7 +8,7 @@ const size = (b) => (b >= GB ? `${(b / GB).toFixed(1).replace('.', ',')} Go` : `
 
 function status(d) {
   if (d.state === 'done') return d.item.watched ? 'Vu' : (d.item.position ? `Commencé · ${fmtDuration(d.item.duration - d.item.position)} restantes` : 'Prêt à regarder');
-  if (d.state === 'preparing' && d.waiting) return 'Préparation en pause : quelqu’un regarde sur le serveur, elle reprendra ensuite';
+  if (d.state === 'preparing' && d.waiting) return 'En pause pendant une lecture sur le serveur';
   if (d.state === 'preparing') return `${d.convert ? 'Conversion' : 'Préparation'} sur le serveur… ${Math.round((d.prep || 0) * 100)} %`;
   if (d.state === 'downloading') return `Téléchargement… ${d.chunks ? Math.round((d.got / d.chunks) * 100) : 0} %`;
   if (d.state === 'paused') return 'En pause : reprendra avec la connexion';
@@ -45,16 +45,16 @@ export async function renderDownloads(main, ctx, { offline = false } = {}) {
     // à garder ses données (jusqu'à la moitié de l'appareil ensuite) ; Chrome, Edge et Safari vont jusqu'à ~60 %.
     room.replaceChildren(...(u && !u.persisted ? [
       h('p.small', firefox
-        ? 'Firefox limite chaque site à 10 Go tant que tu ne l’autorises pas à garder ses données. Une fois autorisé, Nexis peut utiliser jusqu’à la moitié du stockage de l’appareil, et tes téléchargements ne seront jamais effacés pour faire de la place.'
-        : 'Le navigateur peut effacer ces téléchargements s’il manque de place. Autorise-le à les garder (sur iPhone et Android, installer Nexis sur l’écran d’accueil aide aussi).'),
+        ? 'Firefox limite chaque site à 10 Go tant que le stockage persistant n’est pas autorisé. Une fois autorisé, Nexis peut utiliser jusqu’à la moitié du stockage de l’appareil, et les téléchargements ne sont plus effacés automatiquement.'
+        : 'Le navigateur peut effacer ces téléchargements s’il manque de place. Autoriser le stockage persistant les protège ; installer l’application sur l’écran d’accueil aide également.'),
       h('button.btn.small', { onclick: async () => {
         const ok = await askPersist();
-        toast(ok ? 'Stockage autorisé : les téléchargements sont gardés' : 'Le navigateur a refusé (ou l’a déjà décidé) : vérifie les autorisations du site', ok ? 'ok' : 'bad');
+        toast(ok ? 'Stockage autorisé : les téléchargements sont gardés' : 'Autorisation refusée par le navigateur. Vérifiez les autorisations du site.', ok ? 'ok' : 'bad');
         paint();
-      } }, 'Autoriser plus de place')] : []));
+      } }, 'Autoriser plus d’espace')] : []));
     if (!items.length) {
       box.replaceChildren(h('div.empty', offline ? 'Rien n’est téléchargé sur cet appareil.'
-        : 'Rien de téléchargé pour l’instant. Sur la fiche d’un film ou d’un épisode, touche « Télécharger » pour le regarder plus tard sans connexion.'));
+        : 'Aucun téléchargement. Le bouton « Télécharger » d’un film ou d’un épisode permet de le regarder plus tard sans connexion.'));
       return;
     }
     const rows = [];
@@ -85,7 +85,7 @@ export async function renderDownloads(main, ctx, { offline = false } = {}) {
   };
   clear(main,
     h('div.page-head', h('h1', 'Téléchargements')),
-    offline ? h('div.offline-banner', icon('cloud-off'), 'Hors ligne : tu peux regarder ce qui est téléchargé sur cet appareil.') : null,
+    offline ? h('div.offline-banner', icon('cloud-off'), 'Hors ligne : seuls les titres téléchargés sur cet appareil sont disponibles.') : null,
     meter, room, box);
   await paint();
   const stop = onDownloads(() => paint());

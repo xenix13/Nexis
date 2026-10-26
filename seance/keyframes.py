@@ -1,6 +1,6 @@
 """Images clés d'un MKV lues dans son index (« Cues »), sans parcourir le fichier.
 
-Comme l'extracteur Matroska de Jellyfin : en remux (vidéo copiée), les segments HLS ne peuvent être
+En remux (vidéo copiée), les segments HLS ne peuvent être
 coupés que sur des images clés. Connaître leurs instants permet d'annoncer au lecteur une playlist
 exacte, où chaque segment correspond vraiment à ce que ffmpeg produira.
 Seuls l'en-tête et l'index sont lus (quelques Ko), même sur un partage réseau.
@@ -181,7 +181,7 @@ def _video_track(buf, start, end):
 
 
 def segments_from_keyframes(keyframes, duration, target=6.0):
-    """Découpage de Jellyfin : on coupe sur la première image clé qui dépasse chaque multiple de `target`.
+    """Découpage : on coupe sur la première image clé qui dépasse chaque multiple de `target`.
     -> liste de (début, durée)."""
     out, last, cut = [], 0.0, target
     for k in keyframes:

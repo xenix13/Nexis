@@ -1,6 +1,6 @@
-import { put } from '../api.js';
+import { del, put } from '../api.js';
 import { ADMIN_ALIASES, ADMIN_GROUPS, renderAdminSection } from './admin.js';
-import { applyPrefs, navItems, refreshMe, repaintNav, state } from '../app.js';
+import { applyPrefs, navItems, refreshMe, repaintNav, repaintUser, state } from '../app.js';
 import { arrange, avatar, clear, field, h, icon, select, toast, toggle } from '../ui.js';
 
 const LANGS = [['fra', 'Français'], ['eng', 'Anglais'], ['jpn', 'Japonais'], ['spa', 'Espagnol'], ['deu', 'Allemand'],
@@ -56,15 +56,34 @@ function layoutList(items, isOn, onOrder, onShow) {
   return list;
 }
 
+// Image choisie -> carré centré de `size` px, en JPEG (data URL)
+function squareImage(fileObj, size) {
+  return new Promise((resolve, reject) => {
+    if (fileObj.size > 30 * 1024 * 1024) { reject(new Error('Image trop lourde')); return; }
+    const url = URL.createObjectURL(fileObj);
+    const img = new Image();
+    img.onload = () => {
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = size;
+      canvas.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', 0.9));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image illisible')); };
+    img.src = url;
+  });
+}
+
 // ---------------------------------------------------------------- Mon compte
 export const ACCOUNT_GROUP = { title: 'Mon compte', items: [
-  { id: 'profile', label: 'Profil', icon: 'user', lead: 'Ton nom, ton avatar, ton code PIN et ton mot de passe.',
+  { id: 'profile', label: 'Profil', icon: 'user', lead: 'Nom, photo, code PIN et mot de passe.',
     keys: 'nom avatar couleur pin code mot de passe sécurité' },
   { id: 'playback', label: 'Lecture', icon: 'play', lead: 'Qualité, langues, sous-titres et enchaînement des épisodes.',
     keys: 'qualité langue audio sous-titres taille épisode suivant générique intro automatique' },
   { id: 'appearance', label: 'Apparence', icon: 'palette', lead: 'Thème, couleur d’accent et taille des affiches.',
     keys: 'thème sombre clair oled couleur accent affiches taille' },
-  { id: 'layout', label: 'Accueil et menu', icon: 'home', lead: 'Les rangées de l’accueil et les liens de la barre du haut : ordre et affichage.',
+  { id: 'layout', label: 'Accueil et menu', icon: 'home', lead: 'Ordre et affichage des rangées de l’accueil et des liens de la barre du haut.',
     keys: 'accueil rangées ordre barre du haut menu liens masquer réorganiser' },
 ] };
 
@@ -102,12 +121,32 @@ function accountPage(id, body, rerender) {
     const paintPreview = () => preview.replaceChildren(avatar({ ...me.user, display_name: name.value, avatar_color: color }, 56));
     paintPreview();
     name.addEventListener('input', paintPreview);
+    // image : recadrée au centre en carré de 256 px dans le navigateur, réencodée par le serveur
+    const file = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', hidden: true });
+    file.addEventListener('change', async () => {
+      const f = file.files[0];
+      file.value = '';
+      if (!f) return;
+      try {
+        const image = await squareImage(f, 256);
+        await put('/api/me/avatar', { image });
+        await refreshMe(); repaintUser();
+        toast('Photo de profil enregistrée', 'ok');
+        rerender();
+      } catch (e) { toast(e.message || 'Image illisible', 'bad'); }
+    });
+    const pictureActions = h('div.avatar-actions',
+      h('button.btn.small', { type: 'button', onclick: () => file.click() }, me.user.avatar ? 'Changer la photo' : 'Choisir une photo'),
+      me.user.avatar ? h('button.btn.small.ghost', { type: 'button', onclick: async () => {
+        try { await del('/api/me/avatar'); await refreshMe(); repaintUser(); toast('Photo retirée', 'ok'); rerender(); }
+        catch (e) { toast(e.message, 'bad'); }
+      } }, 'Retirer la photo') : null, file);
     const profile = h('section.panel', h('h2', 'Nom et avatar'),
-      h('div.profile-row', preview, h('div.grow',
+      h('div.profile-row', h('div', preview, pictureActions), h('div.grow',
         field('Nom affiché', name),
-        field('Couleur de l’avatar', swatches(color, (c) => { color = c; paintPreview(); })),
+        field(me.user.avatar ? 'Couleur (sans photo)' : 'Couleur de l’avatar', swatches(color, (c) => { color = c; paintPreview(); })),
         h('button.btn.primary', { onclick: async () => {
-          try { await put('/api/me/profile', { display_name: name.value.trim(), avatar_color: color }); await refreshMe(); toast('Profil mis à jour', 'ok'); }
+          try { await put('/api/me/profile', { display_name: name.value.trim(), avatar_color: color }); await refreshMe(); repaintUser(); toast('Profil mis à jour', 'ok'); }
           catch (e) { toast(e.message, 'bad'); }
         } }, 'Enregistrer le profil'))));
 
@@ -115,16 +154,16 @@ function accountPage(id, body, rerender) {
     const pinPass = h('input', { type: 'password', autocomplete: 'current-password' });
     const pinPanel = me.user.home ? h('section.panel', h('h2', 'Code PIN du profil'),
       h('p.muted.small', me.user.has_pin
-        ? 'Ton profil est protégé : le code est demandé quand quelqu’un passe sur ton profil depuis « Changer de profil ».'
-        : 'Sans code, n’importe quel membre du foyer peut passer sur ton profil depuis « Changer de profil » (ton mot de passe est alors demandé).'),
+        ? 'Profil protégé : le code est demandé pour y accéder depuis « Changer de profil ».'
+        : 'Sans code, l’accès à ce profil depuis « Changer de profil » demande le mot de passe du compte.'),
       h('div.grid2', field('Nouveau code PIN', pin), me.user.managed ? null : field('Mot de passe actuel', pinPass)),
       h('div.actions-row',
         h('button.btn.primary', { onclick: async () => {
-          try { await put('/api/me/pin', { pin: pin.value, password: pinPass.value }); await refreshMe(); toast('Code PIN enregistré', 'ok'); rerender(); }
+          try { await put('/api/me/pin', { pin: pin.value, password: pinPass.value }); await refreshMe(); repaintUser(); toast('Code PIN enregistré', 'ok'); rerender(); }
           catch (e) { toast(e.message, 'bad'); }
         } }, 'Enregistrer le code'),
         me.user.has_pin ? h('button.btn', { onclick: async () => {
-          try { await put('/api/me/pin', { pin: '', password: pinPass.value }); await refreshMe(); toast('Code PIN retiré', 'ok'); rerender(); }
+          try { await put('/api/me/pin', { pin: '', password: pinPass.value }); await refreshMe(); repaintUser(); toast('Code PIN retiré', 'ok'); rerender(); }
           catch (e) { toast(e.message, 'bad'); }
         } }, 'Retirer le code') : null)) : null;
 
@@ -138,7 +177,7 @@ function accountPage(id, body, rerender) {
         try {
           await put('/api/me/password', { current: cur.value, new: nw.value });
           cur.value = nw.value = nw2.value = '';
-          toast('Mot de passe changé. Tes autres sessions ont été déconnectées.', 'ok');
+          toast('Mot de passe modifié. Les autres sessions ont été déconnectées.', 'ok');
         } catch (e) { toast(e.message, 'bad'); }
       } }, 'Changer le mot de passe'));
     clear(body, profile, pinPanel, security);
@@ -155,7 +194,7 @@ function accountPage(id, body, rerender) {
         h('div.grid2',
           field('Qualité par défaut', bindSelect('quality', [['original', 'Originale (le moins de transcodage)'],
             ['1080p', '1080p · 10 Mb/s'], ['720p', '720p · 4 Mb/s'], ['480p', '480p · 1,5 Mb/s']]),
-          '« Originale » évite au maximum de faire travailler le processeur du serveur (lecture directe ou remux quand c’est possible).'),
+          '« Originale » limite la charge du serveur : lecture directe ou remux lorsque c’est possible.'),
           field('Langue audio préférée', bindSelect('audio_lang', LANGS)))),
       h('section.panel', h('h2', 'Sous-titres'),
         h('div.grid2',
@@ -166,7 +205,7 @@ function accountPage(id, body, rerender) {
       h('section.panel', h('h2', 'Séries'),
         bindToggle('autoplay_next', 'Enchaîner automatiquement l’épisode suivant'),
         field('Délai avant l’épisode suivant', bindSelect('next_delay', [0, 3, 5, 10, 15, 20, 30].map((n) => [String(n), n ? `${n} secondes` : 'Immédiatement']), Number),
-          'À la fin de l’épisode, un compte à rebours laisse le choix : lire tout de suite ou annuler. Pendant le générique, l’épisode suivant est seulement proposé.'),
+          'Un compte à rebours s’affiche à la fin de l’épisode, avec « Lire maintenant » et « Annuler ». Pendant le générique, l’épisode suivant est seulement proposé.'),
         bindToggle('auto_skip_intro', 'Passer les génériques d’ouverture automatiquement')));
     return;
   }
@@ -187,8 +226,8 @@ function accountPage(id, body, rerender) {
     { key: 'together', label: 'Regarder ensemble', hint: 'quand un groupe est ouvert' },
     { key: 'continue', label: 'Reprendre et à suivre' },
     { key: 'watchlist', label: 'À regarder' },
-    { key: 'suggest', label: 'Suggestions pour toi', hint: 'd’après ce que tu as regardé récemment' },
-    { key: 'because', label: 'Parce que tu as regardé…', hint: 'titres proches de tes derniers visionnages' },
+    { key: 'suggest', label: 'Suggestions', hint: 'selon vos visionnages récents' },
+    { key: 'because', label: 'Parce que vous avez regardé…', hint: 'titres proches de vos derniers visionnages' },
     ...me.libraries.map((l) => ({ key: `lib:${l.id}`, label: l.title, hint: l.type === 'show' ? 'nouveaux épisodes' : 'ajoutés récemment' })),
   ];
   const homeById = new Map(homeItems.map((i) => [i.key, i]));
@@ -207,11 +246,11 @@ function accountPage(id, body, rerender) {
   const layoutPanel = (title, lead, list, resetPatch) => h('section.panel', h('h2', title), h('p.muted.small', lead), list(),
     h('button.btn.ghost', { type: 'button', onclick: async () => { await save(resetPatch, 'Ordre par défaut rétabli'); rerender(); } },
       'Rétablir l’ordre par défaut'));
-  const homePanel = layoutPanel('Accueil', 'Glisse les rangées ou utilise les flèches pour choisir leur ordre ; l’interrupteur les affiche ou les masque.',
+  const homePanel = layoutPanel('Accueil', 'Faites glisser les rangées ou utilisez les flèches pour les réordonner. L’interrupteur affiche ou masque chaque rangée.',
     () => layoutList(arrange(homeItems.map((i) => i.key), p.home_order).map((k) => homeById.get(k)), homeOn,
       (keys) => save({ home_order: keys }, 'Ordre de l’accueil enregistré'), homeShow),
     { home_order: [] });
-  const navPanel = layoutPanel('Barre du haut', 'Ordre des liens en haut de l’écran. Les liens masqués restent accessibles depuis l’accueil.',
+  const navPanel = layoutPanel('Barre du haut', 'Ordre des liens de la barre du haut. Les liens masqués restent accessibles depuis l’accueil.',
     () => layoutList(navItems(me), (k) => !navHidden.has(k),
       async (keys) => { await save({ nav_order: keys }, 'Barre du haut enregistrée'); repaintNav(); },
       async (k, on) => { if (on) navHidden.delete(k); else navHidden.add(k); await save({ nav_hidden: [...navHidden] }, 'Barre du haut enregistrée'); repaintNav(); }),

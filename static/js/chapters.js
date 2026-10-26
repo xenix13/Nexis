@@ -1,4 +1,4 @@
-// Sélection de chapitre en vignettes (lecteur et fiche), comme Jellyfin : image, titre, heure de début.
+// Sélection de chapitre en vignettes (lecteur et fiche) : image, titre, heure de début.
 import { fmtTime, h } from './ui.js';
 
 export const chapterTitle = (c, n) => c.title || `Chapitre ${n + 1}`;

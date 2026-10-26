@@ -76,7 +76,7 @@ class Downloads:
         with self.lock:
             mine = [j for j in self.jobs.values() if j.uid == uid and j.state in ("queued", "preparing")]
             if len(mine) >= MAX_PER_USER:
-                raise DownloadError(f"Déjà {MAX_PER_USER} téléchargements en préparation : attends qu'ils avancent")
+                raise DownloadError(f"Déjà {MAX_PER_USER} téléchargements en préparation : réessayez une fois ceux-ci prêts")
             job = Job(uid, row["id"], plan, row["key"], duration)
             self.jobs[job.id] = job
             if job.state == "queued":

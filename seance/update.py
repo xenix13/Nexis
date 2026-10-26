@@ -55,6 +55,10 @@ def newer(latest, current):
 _cache = {}
 
 
+def forget():
+    _cache.clear()
+
+
 def check_latest(timeout=8):
     """Dernière version publiée sur la branche suivie, et ses derniers changements (gardé 30 min)."""
     owner, repo, branch = read_source()
@@ -108,7 +112,7 @@ def start():
     try:
         p = subprocess.run(cmd, capture_output=True, timeout=30, stdin=subprocess.DEVNULL)
     except FileNotFoundError:
-        raise UpdateError("systemd est introuvable : mise à jour automatique impossible ici (Docker : mets à jour l'image)")
+        raise UpdateError("systemd est introuvable : mise à jour automatique impossible sur cette installation (Docker : mettre à jour l'image)")
     if p.returncode != 0:
         raise UpdateError("Lancement impossible : " + (p.stderr.decode("utf-8", "replace").strip()[-300:] or "erreur"))
     return {"started": True}

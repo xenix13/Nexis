@@ -38,8 +38,8 @@ export async function install() {
   modal('Installer Nexis', h('div.install-steps',
     h('p', 'Sur iPhone et iPad, l’installation se fait depuis Safari :'),
     h('ol',
-      h('li', 'Touche le bouton ', h('strong', 'Partager'), ' ', icon('share'), ' en bas de l’écran (en haut sur iPad).'),
-      h('li', 'Choisis ', h('strong', 'Sur l’écran d’accueil'), '.'),
-      h('li', 'Touche ', h('strong', 'Ajouter'), ' : Nexis s’ouvre ensuite en plein écran, comme une application.'))),
+      h('li', 'Appuyer sur ', h('strong', 'Partager'), ' ', icon('share'), ' en bas de l’écran (en haut sur iPad).'),
+      h('li', 'Choisir ', h('strong', 'Sur l’écran d’accueil'), '.'),
+      h('li', 'Appuyer sur ', h('strong', 'Ajouter'), '. Nexis s’ouvre ensuite en plein écran.'))),
   [{ label: 'Compris', primary: true, value: true }]);
 }

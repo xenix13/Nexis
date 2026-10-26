@@ -152,7 +152,7 @@ def probe(path):
                 "index": s["index"], "codec": s.get("codec_name"), "profile": s.get("profile") or "",
                 "pix_fmt": s.get("pix_fmt") or "", "width": s.get("width") or 0, "height": s.get("height") or 0,
                 "bitrate": int(s.get("bit_rate") or 0), "fps": _fps(s.get("avg_frame_rate") or s.get("r_frame_rate")),
-                # pour les clients Jellyfin (profil de l'appareil : niveau, HDR, images de référence)
+                # profil de l'appareil : niveau, HDR, images de référence
                 "level": s.get("level") if isinstance(s.get("level"), int) and s.get("level") > 0 else None,
                 "transfer": s.get("color_transfer") or "", "refs": s.get("refs") or None,
                 "interlaced": (s.get("field_order") or "progressive") not in ("progressive", "unknown"),

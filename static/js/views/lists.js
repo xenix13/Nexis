@@ -43,9 +43,9 @@ export async function renderWatchlist(main, ctx) {
   clear(main, h('div.page-head', h('h1', 'À regarder'), h('span.muted', `${total} élément(s)`)),
     items.length ? h('div.grid', items.map((x) => posterCard(x))) : null,
     wishes.length ? h('section.block', h('h2', 'Pas encore dans la médiathèque'),
-      h('p.muted.small', 'Ces titres rejoindront ta liste dès leur arrivée sur le serveur.'),
+      h('p.muted.small', 'Ces titres apparaîtront dans la liste dès leur arrivée sur le serveur.'),
       h('div.grid', wishes.map(discoverCard))) : null,
-    total ? null : h('div.empty', 'Ta liste est vide. Utilise le bouton ', icon('bookmark'), ' sur un film ou une série pour l’y ajouter',
+    total ? null : h('div.empty', 'La liste est vide. Le bouton ', icon('bookmark'), ' sur un film ou une série pour l’y ajouter',
       discover ? h('span', ', même s’il n’est pas encore sur le serveur (onglet ', h('a', { href: '#/discover' }, 'Découvrir'), ').') : '.'));
 }
 
@@ -56,7 +56,7 @@ export async function renderPlaylists(main, ctx) {
     lists.length ? h('div.grid.wide', lists.map((p) => h('a.card.wide.playlist-card', { href: `#/playlist/${p.id}` },
       h('div.card-img.mosaic', p.thumbs.length ? p.thumbs.map((t) => h('img', { src: img(t, 200, 300), alt: '' })) : h('div.noimg', p.title)),
       h('div.card-title', p.title), h('div.card-sub', `${p.count} élément(s) · ${fmtDuration(p.duration)}`))))
-      : h('div.empty', 'Aucune playlist. Ajoute un film ou un épisode depuis son menu ⋯ → « Ajouter à une playlist… ».'));
+      : h('div.empty', 'Aucune playlist. Pour en créer une : menu ⋯ d’un film ou d’un épisode, puis « Ajouter à une playlist… ».'));
 }
 
 export async function renderPlaylist(main, pid, ctx) {
