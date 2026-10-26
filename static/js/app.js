@@ -1,5 +1,5 @@
 import { get, post, setUnauthorizedHandler } from './api.js';
-import { arrange, avatar, clear, errorBox, h, icon, spinner, toast } from './ui.js';
+import { arrange, avatar, clear, episodeCode, errorBox, h, icon, img, spinner, toast } from './ui.js';
 import { renderLogin, renderSetup } from './views/auth.js';
 import { renderProfiles } from './views/profiles.js';
 import { renderCollection, renderPlaylist, renderPlaylists, renderWatchlist } from './views/lists.js';
@@ -13,6 +13,7 @@ import { renderSettingsArea } from './views/settings.js';
 import { renderPlayer } from './player.js';
 import { renderTogether } from './views/together.js';
 import './remote.js'; // télécommande, clavier et manette
+import { applyDevice } from './device.js';
 import { createGroupDialog, currentGroups, isFreshFeed, onGroups, startGroupsFeed, stopGroupsFeed } from './groups.js';
 import { canInstall, install, onInstallChange, setupInstall } from './install.js';
 import { forgetMe, list as listDownloads, pump, rememberMe, rememberedMe, supported as offlineSupported, syncProgress } from './offline.js';
@@ -51,7 +52,10 @@ export function applyPrefs(prefs) {
   const r = document.documentElement;
   r.style.setProperty('--accent', prefs.accent);
   r.dataset.theme = prefs.theme;
-  r.dataset.poster = prefs.poster_size;
+  const kids = !!(state.me && state.me.user && state.me.user.kids);
+  r.classList.toggle('kids', kids); // interface enfant : grandes vignettes, menu simplifié
+  r.dataset.poster = kids ? 'l' : prefs.poster_size;
+  r.classList.toggle('no-spoilers', !!prefs.hide_spoilers);
   // barre d'état du téléphone / de la fenêtre installée à la couleur du thème
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = getComputedStyle(r).getPropertyValue('--bg').trim() || '#0b0b0e';
@@ -92,6 +96,11 @@ async function offlineMode(e, page, parts, token) {
   await renderDownloads(main, ctx, { offline: true });
   return true;
 }
+// anti-spoiler : un clic sur un résumé masqué l'affiche
+document.addEventListener('click', (e) => {
+  const sp = e.target.closest && e.target.closest('.no-spoilers .spoiler:not(.revealed)');
+  if (sp) { sp.classList.add('revealed'); e.preventDefault(); }
+});
 window.addEventListener('online', () => {
   if (!state.offline) return;
   state.status = null;
@@ -123,11 +132,15 @@ function navLink(href, label, active) {
 }
 
 // Liens de la barre du haut, dans l'ordre choisi par l'utilisateur (Paramètres → Accueil et menu)
+let startPending = true;
+applyDevice(); // réglages propres à cet appareil (animations, télécommande)
+
 export function navItems(me) {
   const items = [{ key: 'home', href: '#/', label: 'Accueil', fixed: true }, { key: 'watchlist', href: '#/watchlist', label: 'À regarder' }];
-  if (me.features && me.features.discover) items.push({ key: 'discover', href: '#/discover', label: 'Découvrir' });
+  const kids = me.user && me.user.kids;
+  if (me.features && me.features.discover && !kids) items.push({ key: 'discover', href: '#/discover', label: 'Découvrir' });
   for (const l of me.libraries) items.push({ key: `lib:${l.id}`, href: `#/library/${l.id}`, label: l.title });
-  if (me.features && me.features.live) items.push({ key: 'live', href: '#/live', label: 'TV en direct' });
+  if (me.features && me.features.live && !kids) items.push({ key: 'live', href: '#/live', label: 'TV en direct' });
   const byKey = new Map(items.map((i) => [i.key, i]));
   return arrange(items.map((i) => i.key), me.prefs.nav_order).map((k) => byKey.get(k));
 }
@@ -138,6 +151,36 @@ function navLinks(me, active) {
 }
 
 // après un changement dans Réglages : on redessine les liens sans recharger la page
+// Nouveaux épisodes des séries suivies : cloche avec le nombre de non-lus, liste au clic (marquée lue à l'ouverture)
+function notifBell(me) {
+  const badge = h('span.notif-badge', { hidden: !me.notifications }, String(me.notifications || ''));
+  const list = h('div.notif-menu.user-menu', { hidden: true, role: 'menu' });
+  const btn = h('button.icon-btn.notif-btn', { type: 'button', 'aria-label': 'Notifications', title: 'Nouveaux épisodes',
+    'aria-haspopup': 'true', onclick: async (e) => {
+      e.stopPropagation();
+      document.querySelectorAll('.user-menu').forEach((m) => { if (m !== list) m.hidden = true; });
+      list.hidden = !list.hidden;
+      if (list.hidden) return;
+      list.replaceChildren(h('div.notif-head', 'Nouveaux épisodes'), spinner());
+      try {
+        const r = await get('/api/notifications');
+        list.replaceChildren(h('div.notif-head', 'Nouveaux épisodes'),
+          ...(r.items.length ? r.items.map((n) => h('a.notif-item', { href: `#/item/${n.show.id}`, class: n.unread ? 'notif-item unread' : 'notif-item' },
+            n.show.thumb ? h('img', { src: img(n.show.thumb, 80, 120), alt: '', loading: 'lazy' }) : h('span.noimg'),
+            h('span.notif-text', h('strong', n.show.title),
+              h('span.muted', n.count > 1 ? `${n.count} nouveaux épisodes` : `Nouvel épisode : ${episodeCode(n.episode)} · ${n.episode.title}`))))
+            : [h('p.muted.small.notif-empty', 'Aucun nouvel épisode pour les séries suivies.')]),
+          h('p.muted.small.notif-foot', 'Séries suivies : celles dont un épisode a été regardé, ou ajoutées à « À regarder ».'));
+        if (r.unread) {
+          await post('/api/notifications/seen');
+          me.notifications = 0;
+          badge.hidden = true;
+        }
+      } catch (err) { list.replaceChildren(h('p.form-error.small', err.message)); }
+    } }, icon('bell'), badge);
+  return h('div.user-wrap.notif-wrap', btn, list);
+}
+
 // Nom ou photo du profil modifiés : la barre du haut suit sans recharger la page
 export function repaintUser() {
   const me = state.me;
@@ -195,7 +238,7 @@ function shell(active) {
         onclick: () => createGroupDialog(me) }, icon('group'), h('span.plus', '+')),
       me.update ? h('a.icon-btn.update-btn', { href: '#/admin/update', title: `Nexis ${me.update} est disponible`,
         'aria-label': `Mise à jour disponible : Nexis ${me.update}` }, icon('upgrade')) : null,
-      h('label.search', icon('search'), search), h('div.user-wrap', userBtn, menu)));
+      h('label.search', icon('search'), search), notifBell(me), h('div.user-wrap', userBtn, menu)));
   paintTogetherSlot(header.querySelector('.together-slot'));
   const main = h('main.content');
   const banner = me.warning ? h('div.banner-error', me.warning) : null;
@@ -279,7 +322,7 @@ async function route() {
       try { await refreshMe(); } catch { location.hash = '#/login'; return; }
     }
     document.body.classList.remove('playing');
-    return renderProfiles(root, async () => { await refreshMe(); location.replace('#/'); });
+    return renderProfiles(root, async () => { await refreshMe(); startPending = true; location.replace('#/'); });
   }
   if (!state.me) {
     try { await refreshMe(); } catch (e) {
@@ -290,6 +333,12 @@ async function route() {
     }
   }
   if (token !== renderToken) return;
+  // page d'ouverture choisie par l'utilisateur (Paramètres → Accueil et menu), seulement à l'ouverture de l'appli
+  if (startPending) {
+    startPending = false;
+    const target = page === '' ? navItems(state.me).find((i) => i.key === state.me.prefs.start_page && i.key !== 'home') : null;
+    if (target) { location.replace(target.href); return; }
+  }
   startGroupsFeed({ paused: page === 'play' || page === 'tv' });
 
   const ctx = { query, parts, isCurrent: () => token === renderToken, setCleanup: (fn) => { cleanup = fn; },
@@ -357,7 +406,7 @@ document.addEventListener('error', (e) => {
   if (e.target && e.target.tagName === 'IMG') e.target.classList.add('broken');
 }, true);
 document.addEventListener('click', () => {
-  document.querySelectorAll('.user-menu').forEach((m) => { m.hidden = true; });
+  document.querySelectorAll('.user-menu, .notif-menu').forEach((m) => { m.hidden = true; });
 });
 // Images des pages : fondu quand elles sont chargées (celles déjà en cache s'affichent tout de suite).
 function fadeImage(im) {

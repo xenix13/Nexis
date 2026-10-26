@@ -56,7 +56,7 @@ def register(app, ctx, x):
         if b.get("password"):
             validate_password(b["password"])
             fields["password_hash"] = hash_password(b["password"])
-        for k in ("managed", "home", "allow_unrated"):
+        for k in ("managed", "home", "allow_unrated", "kids"):
             if k in b:
                 fields[k] = 1 if b[k] else 0
         if "max_age" in b:

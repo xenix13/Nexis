@@ -386,11 +386,12 @@ body.playing { overflow: hidden; background: #000; }
 .player.paused::after { content: ""; position: absolute; left: 50%; top: 50%; width: 84px; height: 84px; margin: -42px 0 0 -42px;
   border-radius: 50%; background: rgba(0, 0, 0, 0.45) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='white' d='M8 5v14l11-7z'/%3E%3C/svg%3E") center/42px no-repeat;
   pointer-events: none; z-index: 2; }
-.sub-layer { position: absolute; left: 6%; right: 6%; bottom: 9%; text-align: center; z-index: 4; pointer-events: none;
+.sub-layer { position: absolute; left: 6%; right: 6%; bottom: var(--sub-bottom, 9%); text-align: center; z-index: 4; pointer-events: none;
   transition: bottom 0.3s; }
-.player:not(.idle) .sub-layer { bottom: 19%; }
-.sub-line { display: inline; white-space: pre-line; line-height: 1.35; padding: 0.1em 0.4em; background: rgba(0, 0, 0, 0.55);
-  border-radius: 4px; text-shadow: 0 1px 2px #000; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.player:not(.idle) .sub-layer { bottom: max(19%, var(--sub-bottom, 9%)); }
+.sub-line { display: inline; white-space: pre-line; line-height: 1.35; padding: 0.1em 0.4em; background: var(--sub-bg, rgba(0, 0, 0, 0.55));
+  color: var(--sub-color, #fff); font-family: var(--sub-font, inherit);
+  border-radius: 4px; text-shadow: var(--sub-shadow, 0 1px 2px #000); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 .skip-btn { position: absolute; right: clamp(16px, 3vw, 36px); bottom: 130px; z-index: 6; display: flex; align-items: center; gap: 10px;
   padding: 12px 22px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.6); background: rgba(15, 15, 18, 0.75);
   color: #fff; font-weight: 700; font-size: 16px; cursor: pointer; backdrop-filter: blur(8px); animation: slide-in 0.35s ease-out; }
@@ -422,8 +423,9 @@ body.playing { overflow: hidden; background: #000; }
 @media (max-width: 760px) {
   .topbar { flex-wrap: wrap; gap: 10px; }
   .nav { order: 3; flex-basis: 100%; }
-  .topbar-right { margin-left: auto; }
-  .search input.search-input { width: 110px; }
+  .topbar-right { margin-left: auto; gap: 8px; min-width: 0; max-width: 100%; }
+  .topbar-right .search { flex: 1 1 auto; min-width: 0; }
+  .search input.search-input { width: 100%; min-width: 60px; }
   .detail-inner { flex-direction: column; }
   .detail-poster { width: 150px; }
   .episode { flex-direction: column; gap: 10px; }
@@ -1012,3 +1014,55 @@ html.remote .player .ctl:focus { background: rgba(255, 255, 255, 0.2); outline-o
 .sec-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
 .sec-list .sec-ok strong { color: var(--ok); }
 .sec-list .sec-warn strong { color: var(--accent); }
+
+/* aperçu du style des sous-titres (Paramètres → Lecture) */
+.sub-preview { position: relative; height: 150px; border-radius: 10px; overflow: hidden; margin-bottom: 16px;
+  background: linear-gradient(160deg, #2c3e50 0%, #7f8c8d 45%, #d7c49e 100%); }
+.sub-preview .sub-layer { bottom: var(--sub-bottom, 9%); font-size: 18px; }
+
+/* anti-spoiler : vignettes floutées et résumés masqués pour les épisodes non vus (clic pour afficher) */
+.no-spoilers .spoiler-img { overflow: hidden; }
+.no-spoilers .spoiler-img img { filter: blur(16px) brightness(0.75); transform: scale(1.12); }
+.no-spoilers .spoiler:not(.revealed) { filter: blur(6px); cursor: pointer; user-select: none; transition: filter 0.2s; }
+.no-spoilers .spoiler:not(.revealed):hover { filter: blur(5px); }
+.preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 12px; }
+.preset { padding: 0; border: 2px solid transparent; border-radius: 50%; overflow: hidden; aspect-ratio: 1; cursor: pointer; background: none; }
+.preset canvas { width: 100%; height: 100%; display: block; }
+.preset:hover, .preset:focus-visible { border-color: var(--accent); outline: none; }
+/* réglage de l'appareil : animations réduites */
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation: none !important; transition: none !important; }
+
+/* interface enfant : grandes vignettes, textes plus gros, barre du haut simplifiée */
+html.kids .group-new, html.kids .together-slot { display: none; }
+html.kids .card-title { font-size: 16px; }
+html.kids .row-title { font-size: 24px; }
+html.kids .nav-link { font-size: 17px; }
+html.kids .card, html.kids .card-img { border-radius: 16px; }
+html.kids .card:focus-visible, html.kids .card:hover { transform: scale(1.04); }
+
+/* notifications de nouveaux épisodes */
+.notif-btn { position: relative; color: var(--text); }
+.notif-btn .icon { width: 24px; height: 24px; fill: currentColor; }
+.notif-badge { position: absolute; top: 2px; right: 0; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px;
+  background: var(--accent); color: var(--ink-on-accent, #1c0f00); font-size: 11px; font-weight: 800; display: grid; place-items: center; }
+.notif-badge[hidden] { display: none; }
+.notif-menu { width: min(360px, calc(100vw - 32px)); max-height: 70vh; overflow-y: auto; }
+.notif-head { padding: 12px 16px 8px; font-weight: 700; }
+.notif-menu .notif-item { display: flex; gap: 12px; align-items: center; padding: 8px 16px; }
+.notif-item img, .notif-item .noimg { width: 40px; height: 60px; border-radius: 6px; object-fit: cover; flex: none; background: var(--surface-2); }
+.notif-item.unread strong::after { content: ''; display: inline-block; width: 8px; height: 8px; margin-left: 8px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
+.notif-text { display: grid; gap: 2px; min-width: 0; }
+.notif-text .muted { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notif-empty, .notif-foot { padding: 8px 16px 12px; margin: 0; }
+
+/* bilan de visionnage (Historique) */
+.recap { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px; margin-bottom: 24px; }
+.recap-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.recap-head h2 { margin: 0 auto 0 0; font-size: 20px; }
+.recap-head select { width: auto; }
+.recap-months { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; height: 120px; align-items: end; margin: 18px 0 8px; }
+.recap-month { display: grid; grid-template-rows: 1fr auto; height: 100%; text-align: center; gap: 4px; }
+.recap-month span { font-size: 11px; color: var(--muted); }
+.recap-bar { align-self: end; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 2px; }
+.recap-genres { align-items: center; margin: 12px 0; }
+.recap-top { margin-top: 8px; }

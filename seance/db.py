@@ -339,6 +339,21 @@ MIGRATIONS = [
     """
     ALTER TABLE users ADD COLUMN avatar_ver INTEGER;
     """,
+    # 13 : avis par utilisateur sur un film ou une série (1 = j'aime, -1 = je n'aime pas, 0 = ne plus suggérer)
+    """
+    CREATE TABLE ratings(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        value INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, item_id)
+    );
+    """,
+    # 14 : interface enfant (choisie par l'administrateur) ; date de la dernière lecture des notifications
+    """
+    ALTER TABLE users ADD COLUMN kids INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN notif_seen INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 

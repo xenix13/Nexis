@@ -58,7 +58,7 @@ const AGE_LIMITS = [['', 'Aucune restriction'], ['7', 'Jeunes enfants (7 ans max
 async function userForm(user, libraries) {
   const isNew = !user;
   user = user || { username: '', display_name: '', is_admin: false, all_libraries: true, libraries: [], disabled: false,
-    managed: false, home: true, max_age: null, allow_unrated: true, has_pin: false };
+    managed: false, home: true, max_age: null, allow_unrated: true, has_pin: false, kids: false };
   const username = h('input', { value: user.username, disabled: !isNew, autocomplete: 'off' });
   const display = h('input', { value: user.display_name, maxlength: 50 });
   const pass = h('input', { type: 'password', autocomplete: 'new-password',
@@ -70,6 +70,7 @@ async function userForm(user, libraries) {
   const clearPin = user.has_pin ? toggle('Retirer le code PIN', false) : null;
   const age = select(AGE_LIMITS, user.max_age == null ? '' : String(user.max_age));
   const unrated = toggle('Autoriser les contenus sans classification', user.allow_unrated);
+  const kids = toggle('Interface enfant : grandes vignettes, menu simplifié', user.kids);
   const admin = toggle('Administrateur', user.is_admin);
   const disabled = toggle('Compte désactivé', user.disabled);
   const all = toggle('Accès à toutes les bibliothèques (y compris les futures)', user.all_libraries);
@@ -97,7 +98,7 @@ async function userForm(user, libraries) {
     h('h4.form-sub', 'Profil et contrôle parental'),
     home,
     h('div.grid2', field('Code PIN du profil', pin), field('Restriction d’âge', age, 'D’après la classification (TMDB ou .nfo).')),
-    clearPin, unrated,
+    clearPin, unrated, kids,
     h('h4.form-sub', 'Droits et bibliothèques'),
     admin, isNew ? null : disabled, all, libBox, err);
   return modal(isNew ? 'Nouvel utilisateur' : `Modifier ${user.display_name}`, body, [
@@ -113,6 +114,7 @@ async function userForm(user, libraries) {
         home: home.querySelector('input').checked,
         max_age: age.value ? Number(age.value) : null,
         allow_unrated: unrated.querySelector('input').checked,
+        kids: kids.querySelector('input').checked,
       };
       if (pass.value && !isManaged) payload.password = pass.value;
       if (pin.value) payload.pin = pin.value;
@@ -144,6 +146,7 @@ async function usersTab(body, ctx) {
           u.disabled ? h('span.tag', 'Désactivé') : null,
           u.managed ? h('span.tag', 'Profil géré') : null,
           u.max_age != null ? h('span.tag', `≤ ${u.max_age} ans`) : null,
+          u.kids ? h('span.tag', 'Interface enfant') : null,
           u.has_pin ? h('span.tag', 'PIN') : null,
           u.all_libraries ? 'Toutes les bibliothèques' : (u.libraries.map(libName).join(', ') || 'Aucune bibliothèque'),
           ` · vu ${since(u.last_seen)}`)),

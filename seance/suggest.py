@@ -6,9 +6,12 @@ import threading
 import time
 
 from .catalog import CARD_SQL, MIN_RESUME_MS, RK
+from .web import HTTPError
 
 RECENT_DAYS = 90         # fenêtre de « ce que j'ai regardé récemment »
 HALF_LIFE_DAYS = 21      # un visionnage d'il y a 3 semaines compte moitié moins
+LIKE_WEIGHT = 1.5        # un « j'aime » compte comme un visionnage récent appuyé
+DISLIKE_WEIGHT = 0.8     # un « je n'aime pas » éloigne les titres qui lui ressemblent
 CACHE_SECONDS = 300
 ROW_SIZE = 24
 MIN_ROW = 4              # en dessous, la rangée n'est pas affichée
@@ -103,6 +106,10 @@ def register(app, ctx, x):
         weight = {k: min(v, 2.5) for k, v in weight.items()}
         return weight, last
 
+    def opinions(uid):
+        """{titre: avis} ; avis 1 = j'aime, -1 = je n'aime pas, 0 = ne plus suggérer."""
+        return {r["item_id"]: r["value"] for r in db.all("SELECT item_id, value FROM ratings WHERE user_id=?", (uid,))}
+
     def candidates(user, exclude):
         allowed = sorted(int(i) for i in allowed_set(user))
         if not allowed:
@@ -126,6 +133,11 @@ def register(app, ctx, x):
     def compute(user):
         uid = user["id"]
         weight, last = seeds(uid)
+        ops = opinions(uid)
+        for tid, v in ops.items():
+            if v == 1:
+                weight[tid] = max(weight.get(tid, 0), LIKE_WEIGHT)
+        dislikes = [tid for tid, v in ops.items() if v == -1]
         if not weight:
             return {"suggestions": [], "because": []}
         seed_ids = sorted(weight)
@@ -142,8 +154,20 @@ def register(app, ctx, x):
                 dir_w[name] = dir_w.get(name, 0) + w
             for name in c:
                 cast_w[name] = cast_w.get(name, 0) + w
+        if dislikes:  # ce qui ressemble à un titre non aimé recule
+            marks_d = ",".join("?" * len(dislikes))
+            for r in db.all(f"SELECT id, genres, people FROM items WHERE id IN ({marks_d})", dislikes):
+                g, d, c = features(r)
+                for name in g:
+                    genre_w[name] = genre_w.get(name, 0) - DISLIKE_WEIGHT / math.sqrt(len(g))
+                for name in d:
+                    dir_w[name] = dir_w.get(name, 0) - DISLIKE_WEIGHT
+                for name in c:
+                    cast_w[name] = cast_w.get(name, 0) - DISLIKE_WEIGHT / 2
         top = max(genre_w.values(), default=1) or 1
-        pool = candidates(user, seen_titles(uid) | set(weight))
+        if top <= 0:
+            top = 1
+        pool = candidates(user, seen_titles(uid) | set(weight) | set(ops))
         feats = {r["id"]: features(r) for r in pool}
         scored = []
         for r in pool:
@@ -177,7 +201,8 @@ def register(app, ctx, x):
         stamp = (db.scalar("SELECT MAX(id) FROM history WHERE user_id=?", (user["id"],)),
                  db.scalar("SELECT MAX(updated_at) FROM progress WHERE user_id=? AND position_ms>=?", (user["id"], MIN_RESUME_MS)),
                  db.scalar("SELECT COUNT(*) FROM items WHERE type IN ('movie','show')"),
-                 tuple(sorted(allowed_set(user))), user.get("max_age"))
+                 tuple(sorted(allowed_set(user))), user.get("max_age"),
+                 db.scalar("SELECT MAX(updated_at) FROM ratings WHERE user_id=?", (user["id"],)))
         key = user["id"]
         with lock:
             hit = cache.get(key)
@@ -202,12 +227,43 @@ def register(app, ctx, x):
         if not row or row["type"] not in ("movie", "show"):
             return []
         base = features(row)
-        pool = candidates(user, {row["id"]})
+        hidden = {i for i, v in opinions(user["id"]).items() if v <= 0}
+        pool = candidates(user, {row["id"]} | hidden)
         near = sorted(((similarity(base, features(r)), r["rating"] or 0, r["id"]) for r in pool), reverse=True)
         return cards(user, [i for s, _, i in near if s >= 1.2][:ROW_SIZE])
 
     x.suggestions = suggestions
     x.similar_to = similar_to
+
+    def title_of(row):
+        """Les avis portent sur un film ou une série (un épisode renvoie à sa série)."""
+        if row["type"] in ("episode", "season") and row["show_id"]:
+            return row["show_id"]
+        return row["id"] if row["type"] in ("movie", "show") else None
+
+    def my_opinion(user, row):
+        tid = title_of(row)
+        return db.scalar("SELECT value FROM ratings WHERE user_id=? AND item_id=?", (user["id"], tid)) if tid else None
+    x.my_opinion = my_opinion
+
+    @app.route("PUT", f"/api/items/{RK}/opinion")
+    def item_opinion(req):
+        row = x.require_item(req.user, req.params["rk"])
+        tid = title_of(row)
+        if not tid:
+            raise HTTPError(400, "Avis possible sur un film ou une série uniquement")
+        v = req.json().get("value")
+        if v is None:
+            db.run("DELETE FROM ratings WHERE user_id=? AND item_id=?", (req.user["id"], tid))
+        elif v in (1, -1, 0) and not isinstance(v, bool):
+            db.run("INSERT INTO ratings(user_id,item_id,value,updated_at) VALUES(?,?,?,?) "
+                   "ON CONFLICT(user_id,item_id) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                   (req.user["id"], tid, v, int(time.time())))
+        else:
+            raise HTTPError(400, "Avis invalide")
+        with lock:
+            cache.pop(req.user["id"], None)  # suggestions recalculées avec ce nouvel avis
+        return {"value": v}
 
     @app.route("GET", f"/api/items/{RK}/similar")
     def item_similar(req):

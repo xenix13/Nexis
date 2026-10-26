@@ -8,7 +8,9 @@ const KEYS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 
 
 // Télécommande de TV ou manette : on adapte quelques comportements (lecteur : haut / bas montrent les commandes)
 export const remoteMode = () => document.documentElement.classList.contains('remote');
-const markRemote = () => document.documentElement.classList.add('remote');
+import { device } from './device.js';
+
+const markRemote = () => { if (device().remote !== 'off') document.documentElement.classList.add('remote'); };
 if (/android tv|googletv|smart-?tv|aft[a-z]|bravia|crkey|tizen|web0s|nexisapp/i.test(navigator.userAgent)) markRemote();
 
 const visible = (el) => {

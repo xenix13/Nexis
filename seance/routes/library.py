@@ -177,6 +177,7 @@ def register(app, ctx, x):
             d["genres"] = json.loads(show["genres"] or "[]") if show else []
         attach_state(uid, [d])
         d["in_watchlist"] = x.in_watchlist(req.user, r)
+        d["opinion"] = x.my_opinion(req.user, r)
         d["trailer"] = r["trailer"]
         if d["type"] in ("movie", "show"):
             extras = db.all(CARD_SQL + "WHERE i.parent_id=? AND i.type='extra' ORDER BY i.extra_kind!='trailer', i.sort_title",

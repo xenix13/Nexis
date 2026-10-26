@@ -3,6 +3,7 @@ import { state } from '../app.js';
 import { arrange, clear, h, icon, img, posterCard, row, toast, wideCard } from '../ui.js';
 import { groupCard } from './together.js';
 import { onGroups } from '../groups.js';
+import { pinRow, pins } from '../pins.js';
 
 export async function renderHome(main, ctx) {
   const data = await get('/api/home');
@@ -23,7 +24,7 @@ export async function renderHome(main, ctx) {
         hero.type === 'episode'
           ? h('p.hero-sub', `Saison ${hero.season} · Épisode ${hero.episode} — ${hero.title}`)
           : (hero.year ? h('p.hero-sub', [hero.year, hero.content_rating].filter(Boolean).join(' · ')) : null),
-        hero.summary ? h('p.hero-summary', hero.summary) : null,
+        hero.summary ? h('p.hero-summary', { class: hero.type === 'episode' && !hero.position ? 'hero-summary spoiler' : 'hero-summary' }, hero.summary) : null,
         h('div.hero-actions',
           hero.type === 'show' ? null : h('a.btn.light.lg', { href: playHref }, icon('play'), resume && hero.position ? 'Reprendre' : 'Lecture'),
           h('a.btn.ghost.lg', { href: infoHref }, 'Plus d’infos')))));
@@ -75,6 +76,11 @@ export async function renderHome(main, ctx) {
     const title = r.library.type === 'show' ? `Nouveaux épisodes · ${r.library.title}` : `Ajoutés récemment · ${r.library.title}`;
     sections.set(`lib:${r.library.id}`, row(title, r.items, (c) => posterCard(c), { href: `#/library/${r.library.id}` }));
   }
+  // rangées épinglées (collections, playlists, genres), chargées en parallèle
+  const myPins = pins();
+  const pinRows = await Promise.all(myPins.map(pinRow));
+  if (!ctx.isCurrent()) return;
+  myPins.forEach((p, i) => sections.set(`pin:${p.id}`, pinRows[i]));
   const { home_order: order = [], home_hidden: hiddenKeys = [] } = state.me.prefs;
   for (const k of arrange([...sections.keys()], order)) {
     if (!hiddenKeys.includes(k)) parts.push(sections.get(k));

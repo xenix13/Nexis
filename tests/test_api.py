@@ -561,6 +561,90 @@ class SeanceTest(unittest.TestCase):
         st, home = c.call("GET", "/api/home")
         self.assertEqual(home["suggestions"], [])
 
+    def test_personalisation_prefs(self):
+        """Style des sous-titres, anti-spoiler, page d'ouverture, rangées épinglées : validés côté serveur."""
+        c = self.lea
+        st, p = c.call("PUT", "/api/me/prefs", {"sub_font": "serif", "sub_color": "#ffd23f", "sub_bg": "none",
+                                                 "sub_edge": "outline", "sub_position": "high", "hide_spoilers": True,
+                                                 "start_page": "lib:3"})
+        self.assertEqual(st, 200, p)
+        self.assertEqual((p["sub_font"], p["sub_edge"], p["hide_spoilers"], p["start_page"]), ("serif", "outline", True, "lib:3"))
+        pins = [{"id": 0, "type": "collection", "ref": "12", "title": "Saga"},
+                {"id": 1, "type": "genre", "ref": "Science-Fiction", "lib": "3", "title": "Science-Fiction · Films"}]
+        st, p = c.call("PUT", "/api/me/prefs", {"home_pins": pins, "home_order": ["pin:1", "continue"]})
+        self.assertEqual((st, p["home_pins"], p["home_order"]), (200, pins, ["pin:1", "continue"]))
+        for bad in ({"sub_font": "comic"}, {"sub_color": "red"}, {"start_page": "admin"}, {"hide_spoilers": "oui"},
+                    {"home_pins": [{"id": 0, "type": "collection", "ref": "x1", "title": "a"}]},
+                    {"home_pins": [{"id": 0, "type": "user", "ref": "1", "title": "a"}]},
+                    {"home_pins": [{"id": 0, "type": "playlist", "ref": "1", "title": "a", "extra": 1}]},
+                    {"home_pins": [dict(pins[0], id=i) for i in range(21)]}):
+            self.assertEqual(c.call("PUT", "/api/me/prefs", bad)[0], 400, bad)
+        c.call("PUT", "/api/me/prefs", {"home_pins": [], "home_order": [], "hide_spoilers": False, "start_page": "home",
+                                        "sub_font": "sans", "sub_color": "#ffffff", "sub_bg": "box", "sub_edge": "shadow",
+                                        "sub_position": "bottom"})
+
+    def test_opinions_steer_suggestions(self):
+        """J'aime / je n'aime pas / ne plus suggérer : retenus par titre, exclus ou pris en compte des suggestions."""
+        from seance import suggest
+        self.admin.call("POST", "/api/admin/users", {"username": "avis", "password": "motdepasse9", "display_name": "Avis"})
+        c = Client(self.base)
+        c.call("POST", "/api/login", {"username": "avis", "password": "motdepasse9"})
+        show, d, eps = self.episodes("Les Veilleurs", "Séries")
+        # avis sur un épisode : enregistré pour la série
+        st, r = c.call("PUT", f"/api/items/{eps[0]['id']}/opinion", {"value": 1})
+        self.assertEqual((st, r["value"]), (200, 1))
+        self.assertEqual(c.call("GET", f"/api/items/{show['id']}")[1]["opinion"], 1)
+        self.assertEqual(c.call("PUT", f"/api/items/{show['id']}/opinion", {"value": 5})[0], 400)
+        self.assertEqual(c.call("PUT", f"/api/items/{show['id']}/opinion", {"value": True})[0], 400)
+        old = suggest.MIN_ROW
+        suggest.MIN_ROW = 1
+        try:
+            sugg = c.call("GET", "/api/home")[1]["suggestions"]
+            titles = [i["title"] for i in sugg]
+            self.assertIn("Nuit polaire", titles)  # un « j'aime » suffit à amorcer les suggestions
+            polar = next(i for i in sugg if i["title"] == "Nuit polaire")
+            c.call("PUT", f"/api/items/{polar['id']}/opinion", {"value": 0})  # ne plus suggérer
+            titles = [i["title"] for i in c.call("GET", "/api/home")[1]["suggestions"]]
+            self.assertNotIn("Nuit polaire", titles)
+            similar = [i["title"] for i in c.call("GET", f"/api/items/{show['id']}/similar")[1]["items"]]
+            self.assertNotIn("Nuit polaire", similar)
+            c.call("PUT", f"/api/items/{polar['id']}/opinion", {"value": None})
+            self.assertIsNone(c.call("GET", f"/api/items/{polar['id']}")[1]["opinion"])
+        finally:
+            suggest.MIN_ROW = old
+
+    def test_new_episode_notifications_and_recap(self):
+        """Série suivie : ses nouveaux épisodes non vus sont signalés ; bilan de visionnage."""
+        self.admin.call("POST", "/api/admin/users", {"username": "notif", "password": "motdepasse9", "display_name": "Notif"})
+        c = Client(self.base)
+        c.call("POST", "/api/login", {"username": "notif", "password": "motdepasse9"})
+        self.assertEqual(c.call("GET", "/api/notifications")[1], {"items": [], "unread": 0})
+        show, d, eps = self.episodes("Les Veilleurs", "Séries")
+        c.call("POST", f"/api/items/{eps[0]['id']}/watched", {"watched": True})  # la série devient suivie
+        st, r = c.call("GET", "/api/notifications")
+        self.assertEqual(st, 200)
+        mine = [n for n in r["items"] if n["show"]["id"] == show["id"]]
+        self.assertTrue(mine and mine[0]["unread"] and mine[0]["count"] == len(eps) - 1, r)
+        self.assertNotEqual(mine[0]["episode"]["id"], eps[0]["id"])  # l'épisode vu n'est pas signalé
+        self.assertEqual(c.call("GET", "/api/me")[1]["notifications"], r["unread"])
+        c.call("POST", "/api/notifications/seen")
+        self.assertEqual(c.call("GET", "/api/me")[1]["notifications"], 0)
+        self.assertFalse(c.call("GET", "/api/notifications")[1]["items"][0]["unread"])
+        # bilan
+        years = c.call("GET", "/api/history/years")[1]
+        self.assertEqual(len(years), 1)
+        st, rc = c.call("GET", f"/api/history/recap?year={years[0]}")
+        self.assertEqual((st, rc["empty"], rc["episodes"], len(rc["months"])), (200, False, 1, 12), rc)
+        self.assertEqual(rc["top"][0]["title"], "Les Veilleurs")
+        self.assertTrue(c.call("GET", "/api/history/recap?year=2001")[1]["empty"])
+
+    def test_kids_interface_flag(self):
+        st, u = self.admin.call("POST", "/api/admin/users", {"username": "petit", "display_name": "Petit", "managed": True,
+                                                              "kids": True, "max_age": 7})
+        self.assertEqual((st, u["kids"]), (200, True), u)
+        st, u = self.admin.call("PUT", f"/api/admin/users/{u['id']}", {"kids": False})
+        self.assertFalse(u["kids"])
+
     def test_identify(self):
         m = self.movie("Brume")
         st, r = self.admin.call("GET", f"/api/admin/identify/{m['id']}?q=voyage")

@@ -2,6 +2,7 @@
 import { del, get, put } from '../api.js';
 import { state } from '../app.js';
 import { discoverCard } from './discover.js';
+import { pinButton } from '../pins.js';
 import { clear, confirmDialog, episodeCode, fmtDuration, h, icon, img, modal, field, posterCard, progressBar, toast } from '../ui.js';
 
 export async function renderCollection(main, cid, ctx) {
@@ -31,6 +32,7 @@ export async function renderCollection(main, cid, ctx) {
           h('h1.detail-title', c.title),
           h('div.meta-line', h('span', `${c.items.length} élément(s)`)),
           c.summary ? h('p.summary', c.summary) : null,
+          h('div.actions-row', pinButton({ type: 'collection', ref: c.id, title: c.title })),
           adminTools))),
     h('section.block', h('div.grid', c.items.map((x) => posterCard(x)))));
 }
@@ -77,6 +79,7 @@ export async function renderPlaylist(main, pid, ctx) {
     h('div.page-head', h('h1', p.title), h('span.muted', `${p.count} élément(s) · ${fmtDuration(p.duration)}`),
       h('div.filters',
         first ? h('a.btn.primary', { href: `#/play/${first.id}?playlist=${p.id}` }, icon('play'), 'Tout lire') : null,
+        pinButton({ type: 'playlist', ref: p.id, title: p.title }),
         h('button.btn.ghost', { onclick: async () => {
           const t = h('input', { value: p.title, maxlength: 100 });
           const ok = await modal('Renommer', field('Titre', t), [{ label: 'Annuler', value: null },

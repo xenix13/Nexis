@@ -22,7 +22,7 @@ EXTERNAL_BASE = 1000  # identifiants des sous-titres externes
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 LANG = re.compile(r"^[a-z]{2,3}$")
 # rangées de l'accueil et liens de la barre du haut : ordre et masquage propres à chaque utilisateur
-LAYOUT_KEY = re.compile(r"^(together|continue|watchlist|suggest|because|home|discover|live|lib:\d{1,9})$")
+LAYOUT_KEY = re.compile(r"^(together|continue|watchlist|suggest|because|home|discover|live|lib:\d{1,9}|pin:\d{1,6})$")
 IMG_PATH = re.compile(r"^/library/metadata/(\d{1,12})/(thumb|art)/\d{1,14}$")
 LANG_NAMES = {"fra": "Français", "eng": "Anglais", "jpn": "Japonais", "deu": "Allemand", "spa": "Espagnol",
               "ita": "Italien", "por": "Portugais", "kor": "Coréen", "zho": "Chinois", "rus": "Russe",
@@ -39,6 +39,11 @@ DEFAULT_PREFS = {
     "sub_mode": "foreign",
     "sub_lang": "fra",
     "sub_size": 100,
+    "sub_font": "sans",
+    "sub_color": "#ffffff",
+    "sub_bg": "box",
+    "sub_edge": "shadow",
+    "sub_position": "bottom",
     "autoplay_next": True,
     "auto_skip_intro": False,
     "next_delay": 5,
@@ -47,11 +52,39 @@ DEFAULT_PREFS = {
     "poster_size": "m",
     "hidden_libraries": [],
     "show_continue": True,
+    "hide_spoilers": False,
+    "home_pins": [],
+    "start_page": "home",
     "home_order": [],
     "home_hidden": [],
     "nav_order": [],
     "nav_hidden": [],
 }
+
+
+PIN_TYPES = ("collection", "playlist", "genre")
+
+
+def valid_pins(v):
+    """Rangées épinglées sur l'accueil : [{id, type, ref, lib?, title}] (20 au plus)."""
+    if not isinstance(v, list) or len(v) > 20:
+        return False
+    ids = set()
+    for p in v:
+        if not isinstance(p, dict) or set(p) - {"id", "type", "ref", "lib", "title"}:
+            return False
+        if not (isinstance(p.get("id"), int) and 0 <= p["id"] < 1_000_000) or p["id"] in ids:
+            return False
+        ids.add(p["id"])
+        if p.get("type") not in PIN_TYPES or not (isinstance(p.get("title"), str) and 1 <= len(p["title"]) <= 100):
+            return False
+        ref = p.get("ref")
+        if p["type"] == "genre":
+            if not (isinstance(ref, str) and 1 <= len(ref) <= 80 and isinstance(p.get("lib"), str) and p["lib"].isdigit()):
+                return False
+        elif not (isinstance(ref, str) and ref.isdigit() and len(ref) <= 10):
+            return False
+    return True
 
 
 def validate_prefs(data):
@@ -68,9 +101,19 @@ def validate_prefs(data):
             ok = v in ("never", "always", "foreign")
         elif k == "sub_size":
             ok = isinstance(v, int) and 60 <= v <= 200
+        elif k == "sub_font":
+            ok = v in ("sans", "display", "serif", "mono")
+        elif k == "sub_color":
+            ok = isinstance(v, str) and bool(HEX.match(v))
+        elif k == "sub_bg":
+            ok = v in ("box", "solid", "none")
+        elif k == "sub_edge":
+            ok = v in ("shadow", "outline", "none")
+        elif k == "sub_position":
+            ok = v in ("bottom", "high")
         elif k == "next_delay":
             ok = v in (0, 3, 5, 10, 15, 20, 30)
-        elif k in ("autoplay_next", "auto_skip_intro", "show_continue"):
+        elif k in ("autoplay_next", "auto_skip_intro", "show_continue", "hide_spoilers"):
             ok = isinstance(v, bool)
         elif k == "accent":
             ok = isinstance(v, str) and HEX.match(v)
@@ -83,6 +126,10 @@ def validate_prefs(data):
         elif k in ("home_order", "home_hidden", "nav_order", "nav_hidden"):
             ok = (isinstance(v, list) and len(v) <= 120 and len(set(v)) == len(v)
                   and all(isinstance(x, str) and LAYOUT_KEY.match(x) for x in v))
+        elif k == "start_page":
+            ok = isinstance(v, str) and bool(re.match(r"^(home|watchlist|discover|live|lib:\d{1,9})$", v))
+        elif k == "home_pins":
+            ok = valid_pins(v)
         if not ok:
             raise HTTPError(400, f"Préférence invalide : {k}")
         out[k] = v
