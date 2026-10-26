@@ -8,7 +8,7 @@ import secrets
 import threading
 import time
 
-from .. import __version__ as VERSION, media, mountd, transcoder, update
+from .. import __version__ as VERSION, media, mountd, transcoder, twofa, update
 from ..auth import USERNAME, USERNAME_RULE, find_user, hash_password, normalize_username, validate_password
 from ..catalog import HEX, RK, SID
 from ..metadata import MetaError
@@ -71,6 +71,8 @@ def register(app, ctx, x):
             raise HTTPError(400, "Un profil géré (sans mot de passe) ne peut pas être administrateur")
         if managed and fields.get("managed") and "password_hash" not in fields:
             fields["password_hash"] = "!"  # plus de connexion par mot de passe : uniquement via « Changer de profil »
+        if managed and fields.get("managed"):
+            twofa.disable(db, uid)  # un profil géré ne se connecte pas : pas de double authentification
         if not managed and cur["password_hash"] == "!" and "password_hash" not in fields:
             raise HTTPError(400, "Un mot de passe est requis pour ce compte")
         if fields:
@@ -122,6 +124,17 @@ def register(app, ctx, x):
                 raise HTTPError(400, "Il doit rester au moins un administrateur actif")
         with db.tx():
             apply_user_fields(uid, b)
+        return admin_user_view(db.one("SELECT * FROM users WHERE id=?", (uid,)))
+
+    @app.route("POST", r"/api/admin/users/(?P<uid>\d{1,10})/2fa/reset", auth="admin")
+    def admin_reset_2fa(req):
+        """Téléphone perdu, plus de codes de secours : l'administrateur désactive la double authentification."""
+        uid = int(req.params["uid"])
+        u = db.one("SELECT username, totp_enabled FROM users WHERE id=?", (uid,))
+        if not u:
+            raise HTTPError(404, "Utilisateur introuvable")
+        twofa.disable(db, uid)
+        log.warning("Double authentification de %s réinitialisée par %s", u["username"], req.user["username"])
         return admin_user_view(db.one("SELECT * FROM users WHERE id=?", (uid,)))
 
     @app.route("DELETE", r"/api/admin/users/(?P<uid>\d{1,10})", auth="admin")
@@ -417,7 +430,9 @@ def register(app, ctx, x):
         # sécurité de l'accès : réglages actifs et ce que le serveur voit de cette requête
         security = {"cookie_secure": bool(ctx.cookie_secure), "trust_proxy": bool(ctx.trust_proxy),
                     "client_ip": req.client_ip, "https": (req.headers.get("X-Forwarded-Proto") or "").lower() == "https",
-                    "via_proxy": bool(req.headers.get("X-Forwarded-For"))}
+                    "via_proxy": bool(req.headers.get("X-Forwarded-For")),
+                    "admins": db.scalar("SELECT COUNT(*) FROM users WHERE is_admin=1 AND disabled=0"),
+                    "admins_2fa": db.scalar("SELECT COUNT(*) FROM users WHERE is_admin=1 AND disabled=0 AND totp_enabled=1")}
         return {**system_memory(), **ctx.transcoder.processes(), "cpus": os.cpu_count(), "load": round(load[0], 2),
                 "security": security}
 

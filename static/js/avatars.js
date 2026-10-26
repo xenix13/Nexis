@@ -1,6 +1,5 @@
-// Avatars prédéfinis : un motif simple sur un dégradé, dessiné dans le navigateur puis envoyé comme une photo
-// (même chemin que l'envoi d'une image : réencodage et stockage par le serveur).
-const MOTIFS = {
+// Motifs simples des avatars (tracés 24 × 24), repris par la galerie (avatar-art.js).
+export const MOTIFS = {
   etoile: 'M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z',
   coeur: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
   lune: 'M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.39 5.39 0 0 1-4.4 2.26 5.4 5.4 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z',
@@ -10,34 +9,7 @@ const MOTIFS = {
   montagne: 'M14 6l-3.75 5 2.85 3.8-1.6 1.2C9.81 13.75 7 10 7 10l-6 8h22L14 6z',
   feuille: 'M17 8C8 10 5.9 16.17 3.82 21.34l1.89.66.95-2.3c.48.17.98.3 1.34.3C19 20 22 3 22 3c-1 2-8 2.25-13 3.25S2 11.5 2 13.5s1.75 3.75 1.75 3.75C7 8 17 8 17 8z',
   flamme: 'M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8C20 8.61 17.41 3.8 13.5.67zM11.71 19c-1.78 0-3.22-1.4-3.22-3.14 0-1.62 1.05-2.76 2.81-3.12 1.77-.36 3.6-1.21 4.62-2.58.39 1.29.59 2.65.59 4.04 0 2.65-2.15 4.8-4.8 4.8z',
-  manette: 'M21 6H3a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2zm-10 7H8v3H6v-3H3v-2h3V8h2v3h3v2zm4.5 2a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm4-3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z',
+  pellicule: 'M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V4h-4z',
   couronne: 'M5 16 3 5l5.5 5L12 4l3.5 6L21 5l-2 11H5zm14 3c0 .6-.4 1-1 1H6c-.6 0-1-.4-1-1v-1h14v1z',
   patte: 'M4.5 9.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zm4.5-4a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zm6 0a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zm4.5 4a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zm-2.83 4.36c-.87-1.02-1.6-1.89-2.48-2.91-.46-.54-1.05-1.08-1.75-1.32-.11-.04-.22-.07-.33-.09-.25-.04-.52-.04-.78-.04s-.53 0-.79.05c-.11.02-.22.05-.33.09-.7.24-1.28.78-1.75 1.32-.87 1.02-1.6 1.89-2.48 2.91-1.31 1.31-2.92 2.76-2.62 4.79.29 1.02 1.02 2.03 2.33 2.32.73.15 3.06-.44 5.54-.44h.18c2.48 0 4.81.58 5.54.44 1.31-.29 2.04-1.31 2.33-2.32.31-2.04-1.3-3.49-2.61-4.8z',
 };
-const GRADIENTS = [['#ff9a3d', '#e2513a'], ['#5b8def', '#2f3fbf'], ['#3dd68c', '#138a72'], ['#b07cf7', '#6435c9'],
-  ['#ff6f91', '#c2185b'], ['#2dd4bf', '#0e7490'], ['#ffd23f', '#f08a24'], ['#8e9aaf', '#3d4a5c'],
-  ['#f472b6', '#7c3aed'], ['#60a5fa', '#10b981'], ['#fb7185', '#f59e0b'], ['#94a3b8', '#1e293b']];
-
-export const PRESETS = Object.keys(MOTIFS).map((motif, i) => ({ id: motif, motif, colors: GRADIENTS[i % GRADIENTS.length] }));
-
-export function drawPreset(preset, size = 256) {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const g = canvas.getContext('2d');
-  const grad = g.createLinearGradient(0, 0, size, size);
-  grad.addColorStop(0, preset.colors[0]);
-  grad.addColorStop(1, preset.colors[1]);
-  g.fillStyle = grad;
-  g.fillRect(0, 0, size, size);
-  const scale = (size * 0.56) / 24;
-  g.translate((size - 24 * scale) / 2, (size - 24 * scale) / 2);
-  g.scale(scale, scale);
-  g.shadowColor = 'rgba(0, 0, 0, 0.25)';
-  g.shadowBlur = 2;
-  g.shadowOffsetY = 0.6;
-  g.fillStyle = 'rgba(255, 255, 255, 0.95)';
-  g.fill(new Path2D(MOTIFS[preset.motif]));
-  return canvas;
-}
-
-export const presetDataUrl = (preset) => drawPreset(preset, 256).toDataURL('image/jpeg', 0.92);

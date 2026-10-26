@@ -115,8 +115,8 @@ def load_user(db, req):
     if now - row["s_last_seen"] > 300:
         db.run("UPDATE sessions SET last_seen=? WHERE token_hash=?", (now, h))
     req.session_hash = h
-    row.pop("password_hash", None)
-    row.pop("s_last_seen", None)
+    for k in ("password_hash", "s_last_seen", "totp_secret", "totp_pending", "totp_recovery"):
+        row.pop(k, None)  # secrets : jamais gardés dans la requête
     return row
 
 

@@ -1025,10 +1025,22 @@ html.remote .player .ctl:focus { background: rgba(255, 255, 255, 0.2); outline-o
 .no-spoilers .spoiler-img img { filter: blur(16px) brightness(0.75); transform: scale(1.12); }
 .no-spoilers .spoiler:not(.revealed) { filter: blur(6px); cursor: pointer; user-select: none; transition: filter 0.2s; }
 .no-spoilers .spoiler:not(.revealed):hover { filter: blur(5px); }
-.preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 12px; }
-.preset { padding: 0; border: 2px solid transparent; border-radius: 50%; overflow: hidden; aspect-ratio: 1; cursor: pointer; background: none; }
-.preset canvas { width: 100%; height: 100%; display: block; }
-.preset:hover, .preset:focus-visible { border-color: var(--accent); outline: none; }
+.preset-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); gap: 10px; }
+.preset { padding: 0; border: 3px solid transparent; border-radius: 50%; overflow: hidden; aspect-ratio: 1; cursor: pointer; background: none;
+  transition: transform 0.15s; }
+.preset svg { width: 100%; height: 100%; display: block; }
+.preset:hover { transform: scale(1.06); }
+.preset.on, .preset:focus-visible { border-color: var(--accent); outline: none; }
+.modal:has(.avatar-picker) { max-width: 760px; }
+.avatar-picker { display: grid; grid-template-columns: 190px 1fr; gap: 20px; align-items: start; }
+.avatar-side { display: grid; justify-items: center; gap: 8px; }
+.avatar-side .swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.avatar-preview { width: 160px; height: 160px; border-radius: 50%; overflow: hidden; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); }
+.avatar-preview svg { display: block; }
+.avatar-preview-label { font-weight: 700; }
+.avatar-tabs { margin-bottom: 12px; flex-wrap: wrap; }
+.avatar-main { min-width: 0; }
+@media (max-width: 640px) { .avatar-picker { grid-template-columns: 1fr; } .avatar-preview { width: 120px; height: 120px; } .avatar-preview svg { width: 120px; height: 120px; } }
 /* réglage de l'appareil : animations réduites */
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation: none !important; transition: none !important; }
 
@@ -1066,3 +1078,12 @@ html.kids .card:focus-visible, html.kids .card:hover { transform: scale(1.04); }
 .recap-bar { align-self: end; background: var(--accent); border-radius: 4px 4px 0 0; min-height: 2px; }
 .recap-genres { align-items: center; margin: 12px 0; }
 .recap-top { margin-top: 8px; }
+
+/* double authentification */
+.qr-box { display: grid; place-items: center; padding: 8px 0; }
+.qr-box .qr { border-radius: 8px; background: #fff; }
+.secret-key { font-size: 15px; letter-spacing: 0.08em; user-select: all; }
+.recovery-codes { columns: 2; padding-left: 1.4em; margin: 10px 0; font-size: 15px; }
+.recovery-codes code { user-select: all; letter-spacing: 0.05em; }
+.twofa-admin { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px;
+  border-radius: 8px; background: color-mix(in srgb, var(--ok) 12%, transparent); }

@@ -3,6 +3,7 @@
 python3 -m unittest discover -s tests -t .
 """
 import http.cookiejar
+import base64
 import json
 import os
 import re
@@ -1399,6 +1400,76 @@ class SeanceTest(unittest.TestCase):
         self.assertIsNone(self.lea.call("GET", "/api/me")[1]["user"]["avatar"])
         self.assertEqual(self.admin.call("GET", r["avatar"], raw=True)[0], 404)
 
+    def test_two_factor(self):
+        """Double authentification : activation, connexion en deux étapes, codes de secours, changement de profil,
+        profils gérés exclus, réinitialisation par l'administrateur et en console."""
+        import time as _t
+        from seance import twofa
+        from seance.__main__ import admin_command
+        self.admin.call("POST", "/api/admin/users", {"username": "secu", "password": "motdepasse9", "display_name": "Sécu"})
+        c = Client(self.base)
+        c.call("POST", "/api/login", {"username": "secu", "password": "motdepasse9"})
+        self.assertEqual(c.call("GET", "/api/me/2fa")[1], {"available": True, "enabled": False, "recovery_left": 0})
+        self.assertEqual(c.call("POST", "/api/me/2fa/setup", {"password": "faux"})[0], 400)
+        st, setup = c.call("POST", "/api/me/2fa/setup", {"password": "motdepasse9"})
+        self.assertEqual(st, 200)
+        self.assertTrue(setup["uri"].startswith("otpauth://totp/Nexis:secu?secret=" + setup["secret"]))
+        self.assertEqual(c.call("POST", "/api/me/2fa/enable", {"code": "000000"})[0], 400)
+        now_step = int(_t.time() // 30)
+        st, en = c.call("POST", "/api/me/2fa/enable", {"code": twofa.code_at(setup["secret"], now_step)})
+        self.assertEqual((st, len(en["recovery_codes"])), (200, 10))
+        self.assertTrue(c.call("GET", "/api/me")[1]["user"]["two_factor"])
+        # le secret n'apparaît nulle part dans les réponses
+        self.assertNotIn(setup["secret"], json.dumps(self.admin.call("GET", "/api/admin/users")[1]))
+        # connexion : mot de passe, puis code
+        d = Client(self.base)
+        st, r = d.call("POST", "/api/login", {"username": "secu", "password": "motdepasse9"})
+        self.assertTrue(r["two_factor"] and r["ticket"])
+        self.assertEqual(d.call("GET", "/api/me")[0], 401)  # pas encore de session
+        self.assertEqual(d.call("POST", "/api/login/2fa", {"ticket": r["ticket"], "code": "123456"})[0], 401)
+        self.assertEqual(d.call("POST", "/api/login/2fa", {"ticket": "inventé", "code": "123456"})[0], 401)
+        # le code déjà utilisé à l'activation est refusé (rejeu) ; le suivant passe
+        self.assertEqual(d.call("POST", "/api/login/2fa", {"ticket": r["ticket"], "code": twofa.code_at(setup["secret"], now_step)})[0], 401)
+        st, ok = d.call("POST", "/api/login/2fa", {"ticket": r["ticket"], "code": twofa.code_at(setup["secret"], now_step + 1)})
+        self.assertEqual((st, ok["recovery_used"]), (200, False))
+        self.assertEqual(d.call("GET", "/api/me")[1]["user"]["username"], "secu")
+        # code de secours : une seule fois
+        e = Client(self.base)
+        t = e.call("POST", "/api/login", {"username": "secu", "password": "motdepasse9"})[1]["ticket"]
+        st, ok = e.call("POST", "/api/login/2fa", {"ticket": t, "code": en["recovery_codes"][0].upper()})
+        self.assertEqual((st, ok["recovery_used"], ok["recovery_left"]), (200, True, 9))
+        t = e.call("POST", "/api/login", {"username": "secu", "password": "motdepasse9"})[1]["ticket"]
+        self.assertEqual(e.call("POST", "/api/login/2fa", {"ticket": t, "code": en["recovery_codes"][0]})[0], 401)
+        # changement de profil vers ce compte : le code est demandé en plus du mot de passe
+        prof = [p for p in self.lea.call("GET", "/api/profiles")[1] if p["username"] == "secu"]
+        if prof:
+            self.assertTrue(prof[0]["needs_code"])
+            lea2 = Client(self.base)
+            lea2.call("POST", "/api/login", {"username": "lea", "password": "motdepasse2"})
+            self.assertEqual(lea2.call("POST", f"/api/profiles/{prof[0]['id']}/switch", {"password": "motdepasse9"})[0], 400)
+        # profil géré : pas de double authentification
+        st, kid = self.admin.call("POST", "/api/admin/users", {"username": "geré", "display_name": "Géré", "managed": True})
+        self.assertFalse(kid["two_factor"])
+        # réinitialisation par un administrateur
+        uid = c.call("GET", "/api/me")[1]["user"]["id"]
+        self.assertEqual(self.lea.call("POST", f"/api/admin/users/{uid}/2fa/reset")[0], 403)
+        st, u = self.admin.call("POST", f"/api/admin/users/{uid}/2fa/reset")
+        self.assertEqual((st, u["two_factor"]), (200, False))
+        self.assertTrue(Client(self.base).call("POST", "/api/login", {"username": "secu", "password": "motdepasse9"})[1]["ok"])
+        # réactivation puis désactivation par l'utilisateur (mot de passe + code)
+        sec2 = c.call("POST", "/api/me/2fa/setup", {"password": "motdepasse9"})[1]["secret"]
+        c.call("POST", "/api/me/2fa/enable", {"code": twofa.code_at(sec2, int(_t.time() // 30))})
+        self.assertEqual(c.call("POST", "/api/me/2fa/disable", {"password": "motdepasse9", "code": "000000"})[0], 400)
+        st, r = c.call("POST", "/api/me/2fa/disable", {"password": "motdepasse9", "code": twofa.code_at(sec2, int(_t.time() // 30) + 1)})
+        self.assertEqual((st, r["enabled"]), (200, False))
+        # porte de sortie en console : nexis reset-2fa <identifiant>
+        sec3 = c.call("POST", "/api/me/2fa/setup", {"password": "motdepasse9"})[1]["secret"]
+        c.call("POST", "/api/me/2fa/enable", {"code": twofa.code_at(sec3, int(_t.time() // 30))})
+        self.assertTrue(c.call("GET", "/api/me")[1]["user"]["two_factor"])
+        self.assertEqual(admin_command(["--data", os.path.dirname(self.ctx.db.path), "reset-2fa", "SECU"]), 0)
+        self.assertFalse(c.call("GET", "/api/me")[1]["user"]["two_factor"])
+        self.assertEqual(admin_command(["--data", os.path.dirname(self.ctx.db.path), "reset-2fa", "personne"]), 1)
+
     def test_tv_app_short_link(self):
         """Adresse courte pour l'appli Downloader de la TV : renvoie vers le dernier APK, sans connexion."""
         import urllib.request
@@ -1431,6 +1502,19 @@ class SeanceTest(unittest.TestCase):
 
 
 class UnitTests(unittest.TestCase):
+    def test_totp_rfc6238_vectors(self):
+        from seance import twofa
+        secret = base64.b32encode(b"12345678901234567890").decode()
+        for t, expected in ((59, "287082"), (1111111109, "081804"), (1234567890, "005924"), (2000000000, "279037")):
+            self.assertEqual(twofa.code_at(secret, t // 30), expected, t)
+        self.assertEqual(twofa.check_code(secret, "287 082", 0, now=59), 1)
+        self.assertEqual(twofa.check_code(secret, "287082", 1, now=59), None)  # déjà utilisé
+        self.assertIsNone(twofa.check_code(secret, "287082", 0, now=59 + 120))  # trop vieux
+        codes, stored = twofa.new_recovery_codes()
+        left = twofa.use_recovery_code(stored, codes[3].upper())
+        self.assertEqual(twofa.recovery_left(left), 9)
+        self.assertIsNone(twofa.use_recovery_code(left, codes[3]))
+
     def test_download_prep_yields_to_viewers(self):
         """La préparation d'un téléchargement se met en pause tant que quelqu'un regarde."""
         from seance import downloads as dl

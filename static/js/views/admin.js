@@ -92,9 +92,22 @@ async function userForm(user, libraries) {
   age.addEventListener('change', sync);
   sync();
   const err = h('p.form-error');
+  // téléphone perdu : l'administrateur désactive la double authentification du compte
+  const twoFactor = !isNew && user.two_factor ? h('div.twofa-admin',
+    h('span.small', 'Double authentification activée.'),
+    h('button.btn.small', { type: 'button', onclick: async (e) => {
+      if (!await confirmDialog('Réinitialiser la double authentification ?',
+        `${user.display_name} pourra se connecter avec son seul mot de passe, puis la réactiver dans Paramètres → Profil.`, 'Réinitialiser')) return;
+      try {
+        await post(`/api/admin/users/${user.id}/2fa/reset`);
+        user.two_factor = false;
+        e.target.closest('.twofa-admin').replaceChildren(h('span.small', 'Double authentification désactivée.'));
+        toast('Double authentification réinitialisée', 'ok');
+      } catch (ex) { toast(ex.message, 'bad'); }
+    } }, 'Réinitialiser')) : null;
   const body = h('div.form',
     h('div.grid2', field('Identifiant', username), field('Nom affiché', display)),
-    managed, passField,
+    managed, passField, twoFactor,
     h('h4.form-sub', 'Profil et contrôle parental'),
     home,
     h('div.grid2', field('Code PIN du profil', pin), field('Restriction d’âge', age, 'D’après la classification (TMDB ou .nfo).')),
@@ -148,6 +161,7 @@ async function usersTab(body, ctx) {
           u.max_age != null ? h('span.tag', `≤ ${u.max_age} ans`) : null,
           u.kids ? h('span.tag', 'Interface enfant') : null,
           u.has_pin ? h('span.tag', 'PIN') : null,
+          u.two_factor ? h('span.tag.ok', 'Double authentification') : null,
           u.all_libraries ? 'Toutes les bibliothèques' : (u.libraries.map(libName).join(', ') || 'Aucune bibliothèque'),
           ` · vu ${since(u.last_seen)}`)),
       h('button.btn.small', { onclick: async () => { if (await userForm(u, libraries)) { toast('Modifications enregistrées', 'ok'); reload(); } } }, 'Modifier'),
@@ -878,6 +892,8 @@ async function dashboardPage(body, ctx) {
       secLine(!sec.via_proxy || sec.trust_proxy, sec.trust_proxy ? 'Adresse des visiteurs lue depuis le proxy' : (sec.via_proxy ? 'Proxy détecté mais non déclaré' : 'Accès direct (sans proxy)'),
         sec.via_proxy && !sec.trust_proxy ? 'SEANCE_TRUST_PROXY=1 pour distinguer les visiteurs' : null),
       secLine(sec.https || !sec.via_proxy, sec.https ? 'Connexion chiffrée (HTTPS)' : (sec.via_proxy ? 'Proxy sans HTTPS' : 'Connexion locale en HTTP')),
+      secLine(sec.admins_2fa === sec.admins, `Double authentification : ${sec.admins_2fa} administrateur(s) sur ${sec.admins}`,
+        sec.admins_2fa === sec.admins ? null : 'à activer dans Paramètres → Profil par chaque administrateur'),
       h('li.muted', `Adresse vue par le serveur pour cette session : ${sec.client_ip}`))) : null;
     clear(body, versionCard, server, security, h('h3.sub', 'Lectures en cours'), list.length ? h('div.user-list', list.map((s) => h('div.user-row',
       h('div.grow', h('strong', s.title), h('div.muted.small',

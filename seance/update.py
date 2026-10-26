@@ -139,7 +139,7 @@ def start():
 STEPS = [("Paquets système", 10, "Mise à jour des paquets système"),
          ("Récupération du code", 25, "Téléchargement de la nouvelle version"),
          ("Copie de l'application", 45, "Installation des fichiers"),
-         ("Vérification du lecteur", 55, "Vérification des fichiers"),
+         ("Vérification des bibliothèques", 55, "Vérification des fichiers"),
          ("Utilisateur système", 65, "Configuration du système"),
          ("Service systemd", 80, "Redémarrage de Nexis")]
 END = re.compile(r"^\[terminé, code (\d+)\]")

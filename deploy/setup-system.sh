@@ -24,14 +24,26 @@ if [ ! -f "$CONF_DIR/seance.env" ]; then
 # Port d'écoute de Nexis
 SEANCE_PORT=8420
 SEANCE_HOST=0.0.0.0
-# Passe à 1 si Nexis est derrière un reverse proxy HTTPS (Caddy, nginx, NPM…)
+# 1 si Nexis est servi en HTTPS derrière un reverse proxy (Caddy, nginx, Nginx Proxy Manager…)
 SEANCE_COOKIE_SECURE=0
-# Passe à 1 pour lire l'IP réelle dans X-Forwarded-For (uniquement derrière TON proxy)
+# 1 pour lire l'adresse réelle des visiteurs dans X-Forwarded-For
+# (uniquement si Nexis n'est joignable qu'à travers ce proxy)
 SEANCE_TRUST_PROXY=0
 # Journaux détaillés
 SEANCE_DEBUG=0
 ENVFILE
 fi
+
+echo "==> Commande d'administration « nexis »"
+cat > /usr/local/bin/nexis <<CMD
+#!/bin/sh
+# Commandes de secours de Nexis, en root :
+#   nexis list-users                 comptes et état de leur double authentification
+#   nexis reset-2fa <identifiant>    désactive la double authentification d'un compte
+if [ "\$(id -u)" -ne 0 ]; then echo "À lancer en root : sudo nexis …" >&2; exit 1; fi
+cd "$APP_DIR" && exec runuser -u seance -- /usr/bin/python3 -m seance --data "$DATA_DIR" "\$@"
+CMD
+chmod 755 /usr/local/bin/nexis
 
 echo "==> Service systemd"
 cp "$UNITS/seance.service" /etc/systemd/system/seance.service

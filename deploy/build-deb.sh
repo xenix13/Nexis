@@ -13,6 +13,7 @@ mkdir -p "$PKG/DEBIAN" "$PKG/opt/seance" "$OUT"
 cp -r seance static deploy "$PKG/opt/seance/"
 find "$PKG" -name __pycache__ -type d -prune -exec rm -rf {} +
 ( cd "$PKG/opt/seance/static/vendor" && sha256sum -c --quiet hls.min.js.sha256 )
+( cd "$PKG/opt/seance/static/vendor/qrcode" && sha256sum -c --quiet qrcode.mjs.sha256 )
 
 cat > "$PKG/DEBIAN/control" <<CONTROL
 Package: nexis
@@ -52,6 +53,7 @@ set -e
 if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
   rm -f /etc/systemd/system/seance.service /etc/systemd/system/seance-mountd.service
   rm -rf /etc/systemd/system/seance.service.d
+  rm -f /usr/local/bin/nexis
   command -v systemctl >/dev/null && systemctl daemon-reload || true
 fi
 if [ "$1" = "purge" ]; then
