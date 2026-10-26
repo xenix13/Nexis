@@ -1407,6 +1407,14 @@ class UnitTests(unittest.TestCase):
             self.assertIn("https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh", run[-1])
             self.assertIn("SEANCE_BRANCH=main", run[-1])
             self.assertIn("--no-block", run)  # sinon la requête attend la fin de l'installation et expire
+        # canal de mise à jour : seules les branches connues, même dépôt
+        with mock.patch.object(update, "SOURCE", src):
+            self.assertEqual(update.set_channel("test"), {"branch": "test"})
+            self.assertEqual(update.read_source(), ("xenix13", "Nexis", "test"))
+            with self.assertRaises(update.UpdateError):
+                update.set_channel("main; rm -rf /")
+            update.set_channel("main")
+            self.assertEqual(update.read_source()[2], "main")
         # progression lue dans le journal de l'installation
         self.assertEqual(update.progress(["lun.", "==> Paquets système"])[:3], (10, "Mise à jour des paquets système", False))
         log = ["==> Paquets système", "==> Récupération du code (x)", "==> Copie de l'application dans /opt/seance",

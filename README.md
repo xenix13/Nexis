@@ -95,7 +95,7 @@ La mise à jour exécute la même installation que la commande manuelle, depuis 
 
 Mise à jour manuelle : relancer la commande d'installation. Les données (`/var/lib/seance`) et la configuration (`/etc/seance/seance.env`) sont conservées.
 
-Pour suivre une autre branche, par exemple `test` : `curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/test/deploy/install.sh | SEANCE_BRANCH=test bash`. Les mises à jour depuis l'interface suivront ensuite cette branche.
+**Canal de mise à jour** : *Stable* (branche `main`, versions validées) ou *Test* (branche `test`, nouveautés en cours de validation), au choix sur la même page. Les nouveautés sont publiées d'abord sur *Test*, puis sur *Stable* une fois validées. Repasser sur *Stable* puis réinstaller ramène le serveur à la dernière version stable. À l'installation : `curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/test/deploy/install.sh | SEANCE_BRANCH=test bash`.
 
 ### Conteneur LXC en une commande (Proxmox)
 
@@ -479,8 +479,6 @@ L'interface (`static/`) est en JavaScript, sans étape de compilation.
 ## Feuille de route
 
 ### À faire
-- [ ] « Regarder ensemble » à deux : saturation du swap et lignes vertes dans la vidéo (en cours d'analyse)
-- [ ] « Regarder ensemble » : décalage des sous-titres par rapport à l'audio
 - [ ] « Regarder ensemble » : seconde passe d'optimisation après les tests réels
 - [ ] Lecteur natif optionnel dans l'application Android TV, pour transmettre le son multicanal (DTS, TrueHD, Atmos) à un amplificateur
 

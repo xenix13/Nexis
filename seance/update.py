@@ -44,6 +44,23 @@ def read_source():
     return m.group(1), m.group(2), branch
 
 
+CHANNELS = {"main": "Stable", "test": "Test"}
+
+
+def set_channel(branch):
+    """Côté root : change la branche suivie (même dépôt). Seules les branches connues sont acceptées."""
+    if branch not in CHANNELS:
+        raise UpdateError("Canal inconnu")
+    owner, repo, _ = read_source()
+    tmp = SOURCE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(f"SEANCE_REPO=https://github.com/{owner}/{repo}.git\nSEANCE_BRANCH={branch}\n")
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, SOURCE)
+    forget()
+    return {"branch": branch}
+
+
 def _version_key(v):
     return [int(x) if x.isdigit() else 0 for x in re.split(r"[.+-]", v)]
 
@@ -85,7 +102,7 @@ def check_latest(timeout=8):
                                 "date": ((c.get("commit") or {}).get("committer") or {}).get("date")})
     except (OSError, ValueError):
         pass
-    out = {"latest": m.group(1), "changes": changes, "source": f"{owner}/{repo} ({branch})"}
+    out = {"latest": m.group(1), "changes": changes, "source": f"{owner}/{repo} ({branch})", "branch": branch}
     _cache[key] = (time.time(), out)
     return out
 

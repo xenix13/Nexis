@@ -545,8 +545,22 @@ function updatePage(body) {
   };
   const paint = (u) => {
     const parts = [];
+    if (u.channels && u.can_update) {
+      const channel = select(Object.entries(u.channels).map(([k, label]) => [k, `${label} (${k})`]), u.branch || 'main');
+      channel.addEventListener('change', async () => {
+        const to = channel.value;
+        const msg = to === 'main'
+          ? 'Le serveur suivra les versions stables. La version stable actuelle pourra être plus ancienne que celle installée : la réinstaller ramène le serveur sur le canal stable.'
+          : 'Le serveur suivra les versions de test, publiées avant validation. Elles peuvent contenir des défauts.';
+        if (!await confirmDialog('Changer de canal ?', msg, 'Changer de canal', false)) { channel.value = u.branch || 'main'; return; }
+        try { await put('/api/admin/update/channel', { branch: to }); toast('Canal enregistré', 'ok'); load(true); }
+        catch (e) { toast(e.message, 'bad'); channel.value = u.branch || 'main'; }
+      });
+      parts.push(field('Canal de mise à jour', channel, 'Stable : versions validées. Test : nouveautés en cours de validation.'));
+    }
     if (u.check_error) parts.push(h('div.status-box.bad', `Vérification impossible : ${u.check_error}`));
     else if (u.available) parts.push(h('div.status-box.ok', `Nouvelle version disponible : Nexis ${u.latest}`));
+    else if (u.latest && u.latest !== version) parts.push(h('div.status-box', `Version publiée sur ce canal : Nexis ${u.latest} (source : ${u.source}).`));
     else parts.push(h('div.status-box.ok', `Nexis est à jour (source : ${u.source}).`));
     if (u.available && u.changes && u.changes.length) {
       parts.push(h('details', h('summary.small', 'Derniers changements'),
@@ -561,7 +575,7 @@ function updatePage(body) {
         h('p.muted.small', 'Mise à jour manuelle : relancer la commande d’installation sur le serveur (voir le README).'));
     } else if (!u.running) {
       parts.push(h('button.btn', { class: u.available ? 'btn primary' : 'btn', onclick: () => runUpdate(version) },
-        u.available ? `Installer Nexis ${u.latest}` : 'Réinstaller la version actuelle'));
+        u.latest && u.latest !== version ? `Installer Nexis ${u.latest}` : 'Réinstaller la version actuelle'));
     }
     box.replaceChildren(...parts);
   };
@@ -853,7 +867,16 @@ async function dashboardPage(body, ctx) {
       `Mémoire libre ${gb(sys.mem_available)} sur ${gb(sys.mem_total)} · swap utilisé ${gb(sys.swap_used)} sur ${gb(sys.swap_total || 0)} · `,
       `${sys.ffmpeg} ffmpeg (${gb(sys.ffmpeg_mb)}) · charge ${String(sys.load).replace('.', ',')} pour ${sys.cpus} cœur(s)`),
       swapHigh ? h('div.form-error.small', 'Utilisation élevée du swap : les lectures peuvent saccader. Réduire le nombre de transcodages simultanés ou ajouter de la mémoire.') : null) : null;
-    clear(body, versionCard, server, h('h3.sub', 'Lectures en cours'), list.length ? h('div.user-list', list.map((s) => h('div.user-row',
+    const sec = sys && sys.security;
+    const secLine = (ok, label, hint) => h('li', { class: ok ? 'sec-ok' : 'sec-warn' }, h('strong', ok ? '✓ ' : '! '), label, hint ? h('span.muted', ` · ${hint}`) : null);
+    const security = sec ? h('div.panel.scan', h('strong', 'Sécurité de l’accès'), h('ul.sec-list.small',
+      secLine(sec.cookie_secure, sec.cookie_secure ? 'Cookies réservés au HTTPS' : 'Cookies envoyés aussi en HTTP',
+        sec.cookie_secure ? null : 'SEANCE_COOKIE_SECURE=1 si Nexis est exposé sur Internet'),
+      secLine(!sec.via_proxy || sec.trust_proxy, sec.trust_proxy ? 'Adresse des visiteurs lue depuis le proxy' : (sec.via_proxy ? 'Proxy détecté mais non déclaré' : 'Accès direct (sans proxy)'),
+        sec.via_proxy && !sec.trust_proxy ? 'SEANCE_TRUST_PROXY=1 pour distinguer les visiteurs' : null),
+      secLine(sec.https || !sec.via_proxy, sec.https ? 'Connexion chiffrée (HTTPS)' : (sec.via_proxy ? 'Proxy sans HTTPS' : 'Connexion locale en HTTP')),
+      h('li.muted', `Adresse vue par le serveur pour cette session : ${sec.client_ip}`))) : null;
+    clear(body, versionCard, server, security, h('h3.sub', 'Lectures en cours'), list.length ? h('div.user-list', list.map((s) => h('div.user-row',
       h('div.grow', h('strong', s.title), h('div.muted.small',
         `${s.user} · ${s.state === 'paused' ? 'en pause' : 'en lecture'} à ${fmtTime(s.position_ms)} · ${MODES[s.mode] || s.mode}`,
         s.hw ? ` · carte graphique (${s.hw === 'nvenc' ? 'NVIDIA' : 'VAAPI'})` : '',

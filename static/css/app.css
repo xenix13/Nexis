@@ -1009,3 +1009,6 @@ html.remote .player .ctl:focus { background: rgba(255, 255, 255, 0.2); outline-o
   background: var(--accent); color: var(--ink-on-accent, #1c0f00); }
 @media (max-width: 860px) { .settings-badge + * { margin-left: 8px; } .settings-link:has(.settings-badge)::after { margin-left: 8px; } }
 .menu-version { padding: 8px 14px 4px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); margin-top: 4px; }
+.sec-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+.sec-list .sec-ok strong { color: var(--ok); }
+.sec-list .sec-warn strong { color: var(--accent); }

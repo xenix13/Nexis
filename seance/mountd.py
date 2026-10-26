@@ -505,8 +505,10 @@ class Mounts:
 
     def dispatch(self, req):
         cmd = req.get("cmd")
-        if cmd in ("update", "update_status"):
+        if cmd in ("update", "update_status", "update_channel"):
             try:
+                if cmd == "update_channel":
+                    return update.set_channel(str((req.get("args") or {}).get("branch") or ""))
                 return update.start() if cmd == "update" else update.status()
             except update.UpdateError as e:
                 raise MountError(str(e))
