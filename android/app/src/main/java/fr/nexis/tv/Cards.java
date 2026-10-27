@@ -35,12 +35,20 @@ final class Cards {
 
     private Cards() {}
 
+    /**
+     * Grands formats, lisibles à trois mètres : environ 5 affiches (ou 3 vignettes) visibles à la fois quelle que
+     * soit la définition de la TV, la suivante dépassant pour montrer que la rangée défile.
+     */
     static int width(Context c, int style) {
-        return Ui.dp(c, style == WIDE ? 248 : 132);
+        int usable = c.getResources().getDisplayMetrics().widthPixels - Ui.dp(c, 96);
+        int w = style == WIDE ? (int) (usable / 3.6f) : (int) (usable / 5.6f);
+        int min = Ui.dp(c, style == WIDE ? 220 : 140), max = Ui.dp(c, style == WIDE ? 420 : 280);
+        return Math.max(min, Math.min(w, max));
     }
 
     static int imageHeight(Context c, int style) {
-        return style == WIDE ? Ui.dp(c, 140) : Ui.dp(c, 198);
+        int w = width(c, style);
+        return style == WIDE ? w * 9 / 16 : w * 3 / 2;
     }
 
     static final class Adapter extends RecyclerView.Adapter<Holder> {
@@ -114,7 +122,7 @@ final class Cards {
             frame.setBackground(Ui.rounded(c, Ui.SURFACE, 8));
             frame.setClipToOutline(true);
             frame.setForeground(Ui.focusRing(c, 8));
-            placeholder = Ui.text(c, "", 15, Ui.MUTED);
+            placeholder = Ui.text(c, "", 17, Ui.MUTED);
             placeholder.setGravity(Gravity.CENTER);
             placeholder.setPadding(Ui.dp(c, 8), 0, Ui.dp(c, 8), 0);
             frame.addView(placeholder, new FrameLayout.LayoutParams(-1, -1));
@@ -141,10 +149,10 @@ final class Cards {
             frame.addView(badge, bp);
             root.addView(frame, new LinearLayout.LayoutParams(w, ih));
 
-            title = Ui.oneLine(Ui.text(c, "", 15, Ui.TEXT));
+            title = Ui.oneLine(Ui.text(c, "", 18, Ui.TEXT));
             title.setPadding(0, Ui.dp(c, 8), 0, 0);
             root.addView(title);
-            sub = Ui.oneLine(Ui.text(c, "", 13, Ui.MUTED));
+            sub = Ui.oneLine(Ui.text(c, "", 15, Ui.MUTED));
             root.addView(sub);
 
             root.setOnFocusChangeListener((v, has) -> {
@@ -179,10 +187,10 @@ final class Cards {
             if (style == WIDE) {
                 String src = episode ? it.optString("thumb") : it.optString("art", "");
                 if (src.isEmpty() || "null".equals(src)) src = it.optString(episode ? "show_art" : "thumb");
-                img = Images.library(src, 496, 280);
+                img = Images.library(src, 640, 360);
             } else {
                 String src = episode ? it.optString("show_thumb", it.optString("thumb")) : it.optString("thumb");
-                img = Images.library(src, 264, 396);
+                img = Images.library(src, 400, 600);
             }
             Images.load(image, img);
 

@@ -36,6 +36,7 @@ import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.ui.AspectRatioFrameLayout;
 import androidx.media3.ui.PlayerView;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -52,13 +53,17 @@ import java.util.List;
 public class PlayerActivity extends Activity {
     private static final String SIDECAR = "nexis-subtitles";
     private static final long REPORT_EVERY = 10000;
+    // lecture directe qui ne démarre pas : on passe par un flux préparé par le serveur
+    private static final long DIRECT_PATIENCE = 20000;
+    // plus rien à l'écran qu'une roue : on dit ce qui se passe et on propose de réessayer
+    private static final long STALL_AFTER = 60000;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private ExoPlayer player;
     private PlayerView video;
     private FrameLayout root;
     private LinearLayout panel, floating, errorBox;
-    private TextView title, subtitle, timeCur, timeEnd, errorText;
+    private TextView title, subtitle, timeCur, timeEnd, errorText, status;
     private TimeBar bar;
     private ImageView playButton;
     private Icons playIcon;
@@ -70,14 +75,17 @@ public class PlayerActivity extends Activity {
     private List<JSONObject> audios = new ArrayList<>(), subs = new ArrayList<>();
     private JSONObject audioSel, subSel;
     private boolean burning, forceHls, tracksApplied, introSkipped, upNextDismissed, ended, leaving;
+    private boolean everReady, stallShown;
     private int startSeq, retries, countdown;
     private long lastReport, lastPosition;
+    private long waitSince = SystemClock.elapsedRealtime(), preparedAt;
 
     private final Runnable hidePanel = this::hidePanel;
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
             update();
+            watch();
             handler.postDelayed(this, 500);
         }
     };
@@ -107,7 +115,15 @@ public class PlayerActivity extends Activity {
             @Override
             public void onPlaybackStateChanged(int s) {
                 loader.setVisibility(s == androidx.media3.common.Player.STATE_BUFFERING ? View.VISIBLE : View.GONE);
-                if (s == androidx.media3.common.Player.STATE_READY) retries = 0;
+                if (s == androidx.media3.common.Player.STATE_READY) {
+                    retries = 0;
+                    everReady = true;
+                    // le message « ne démarre pas » ne doit pas rester si la lecture a fini par démarrer
+                    if (stallShown && errorBox.getVisibility() == View.VISIBLE) {
+                        errorBox.setVisibility(View.GONE);
+                        root.requestFocus();
+                    }
+                }
                 if (s == androidx.media3.common.Player.STATE_ENDED) onEnded();
             }
 
@@ -155,6 +171,15 @@ public class PlayerActivity extends Activity {
 
         loader = new ProgressBar(this);
         root.addView(loader, new FrameLayout.LayoutParams(Ui.dp(this, 64), Ui.dp(this, 64), Gravity.CENTER));
+
+        // ce que fait le serveur pendant l'attente (lecture directe, remux, conversion) et depuis combien de temps
+        status = Ui.text(this, "", 18, Ui.MUTED);
+        status.setGravity(Gravity.CENTER);
+        status.setVisibility(View.GONE);
+        FrameLayout.LayoutParams stp = new FrameLayout.LayoutParams(Ui.dp(this, 640),
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
+        stp.topMargin = Ui.dp(this, 96);
+        root.addView(status, stp);
 
         // commandes (bas de l'écran)
         panel = Ui.column(this);
@@ -294,6 +319,10 @@ public class PlayerActivity extends Activity {
     private void loadItem(long offset) {
         loader.setVisibility(View.VISIBLE);
         errorBox.setVisibility(View.GONE);
+        everReady = false;
+        stallShown = false;
+        preparedAt = 0;
+        waitSince = SystemClock.elapsedRealtime();
         Api.obj("/api/items/" + itemId, d -> {
             if (leaving) return;
             item = d;
@@ -320,6 +349,10 @@ public class PlayerActivity extends Activity {
         int seq = ++startSeq;
         loader.setVisibility(View.VISIBLE);
         errorBox.setVisibility(View.GONE);
+        everReady = false;
+        stallShown = false;
+        preparedAt = 0;
+        waitSince = SystemClock.elapsedRealtime();
         lastPosition = offset;
         JSONObject body = Api.json("id", itemId, "offset", offset, "caps", Players.caps(this),
                 "audio", audioSel == null ? null : audioSel.optInt("id"),
@@ -354,6 +387,7 @@ public class PlayerActivity extends Activity {
     /** Charge le flux dans ExoPlayer, avec les sous-titres texte du serveur (WebVTT) si besoin. */
     private void prepare(long startMs) {
         tracksApplied = false;
+        preparedAt = SystemClock.elapsedRealtime();
         MediaItem.Builder mb = new MediaItem.Builder().setUri(Api.url(session.optString("url")));
         if (!direct()) mb.setMimeType(MimeTypes.APPLICATION_M3U8);
         if (subSel != null && subSel.optBoolean("overlay")) {
@@ -482,6 +516,65 @@ public class PlayerActivity extends Activity {
                 if (had) root.requestFocus();
             }
         }
+    }
+
+    // ------------------------------------------------------------------ attente du premier affichage
+    /** Pourquoi le serveur ne lit pas le fichier tel quel (« vidéo HEVC illisible par cet appareil »…). */
+    private String reasons() {
+        JSONArray r = session == null ? null : session.optJSONArray("reasons");
+        if (r == null || r.length() == 0) return "";
+        List<String> out = new ArrayList<>();
+        for (int i = 0; i < r.length(); i++) out.add(r.optString(i));
+        return android.text.TextUtils.join(", ", out);
+    }
+
+    private String modeLabel() {
+        if (session == null) return "connexion au serveur";
+        if (direct()) return "lecture directe du fichier";
+        if ("copy".equals(session.optString("mode"))) return "flux préparé par le serveur (remux)";
+        return "conversion de la vidéo par le serveur";
+    }
+
+    /**
+     * Tant que rien ne s'affiche : indique ce qui est en cours, bascule une lecture directe qui n'aboutit pas sur
+     * un flux préparé par le serveur, et finit par afficher un message avec « Réessayer » au lieu d'une roue sans fin.
+     */
+    private void watch() {
+        boolean waiting = !everReady && !leaving && !ended && errorBox.getVisibility() != View.VISIBLE;
+        if (!waiting) {
+            status.setVisibility(View.GONE);
+            return;
+        }
+        long now = SystemClock.elapsedRealtime();
+        long seconds = (now - waitSince) / 1000;
+        String why = reasons();
+        String label = modeLabel();
+        StringBuilder text = new StringBuilder(label.substring(0, 1).toUpperCase(java.util.Locale.FRANCE))
+                .append(label.substring(1)).append("…");
+        if (!why.isEmpty()) text.append('\n').append(why);
+        if (seconds >= 5) text.append('\n').append(seconds).append(" s");
+        status.setText(text);
+        status.setVisibility(View.VISIBLE);
+        if (session != null && direct() && !forceHls && preparedAt > 0 && now - preparedAt > DIRECT_PATIENCE) {
+            forceHls = true;
+            Ui.toast(this, "Lecture directe trop lente : passage par le serveur");
+            startStream(lastPosition, burning);
+            return;
+        }
+        if (!stallShown && now - waitSince > STALL_AFTER) {
+            stallShown = true;
+            String detail = why.isEmpty() ? "" : " : " + why;
+            showError("La lecture ne démarre pas (" + modeLabel() + detail + ").\n"
+                    + "Le serveur ou le partage réseau est peut-être lent. Réessayez, ou attendez encore un peu.");
+        }
+    }
+
+    /** Cause technique d'une erreur ExoPlayer (ex. « Response code: 404 »), pour savoir quoi corriger. */
+    private static String cause(Throwable e) {
+        Throwable c = e == null ? null : e.getCause();
+        if (c == null) return "";
+        String m = c.getMessage();
+        return "\n" + c.getClass().getSimpleName() + (m == null || m.isEmpty() ? "" : " : " + m);
     }
 
     private void report(String state, boolean force, boolean finished) {
@@ -640,7 +733,7 @@ public class PlayerActivity extends Activity {
             startStream(pos, burning);
             return;
         }
-        showError("La lecture s'est interrompue (" + e.getErrorCodeName() + ").");
+        showError("La lecture s'est interrompue (" + e.getErrorCodeName() + ")." + cause(e));
     }
 
     private void showError(String message) {

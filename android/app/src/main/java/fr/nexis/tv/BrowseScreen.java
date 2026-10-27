@@ -19,8 +19,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Navigation principale : barre du haut (Accueil, une entrée par bibliothèque, TV en direct, Recherche,
- * Paramètres) et la page choisie en dessous. Une entrée sélectionnée à la télécommande s'ouvre d'elle-même.
+ * Navigation principale : barre du haut (Accueil, une entrée par bibliothèque, Plus) et la page choisie en
+ * dessous. Une entrée sélectionnée à la télécommande s'ouvre d'elle-même. « Plus » regroupe la recherche, la TV en
+ * direct et les paramètres.
  */
 final class BrowseScreen extends Screen {
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -83,24 +84,23 @@ final class BrowseScreen extends Screen {
         page.setOrientation(LinearLayout.VERTICAL);
         root.addView(page, new FrameLayout.LayoutParams(-1, -1));
 
+        // barre réduite à l'essentiel : Accueil, une entrée par bibliothèque, et « Plus » (recherche, TV, paramètres)
         bar = Ui.row(act);
         bar.setPadding(dp(40), dp(18), dp(40), dp(6));
         ImageView logo = new ImageView(act);
         logo.setImageResource(R.mipmap.ic_launcher);
-        bar.addView(logo, new LinearLayout.LayoutParams(dp(34), dp(34)));
+        bar.addView(logo, new LinearLayout.LayoutParams(dp(40), dp(40)));
         View gap = new View(act);
-        bar.addView(gap, new LinearLayout.LayoutParams(dp(18), 1));
+        bar.addView(gap, new LinearLayout.LayoutParams(dp(22), 1));
 
         addTab("Accueil", new HomeTab(this));
         for (int i = 0; i < Session.libraries.length(); i++) {
             JSONObject lib = Session.libraries.optJSONObject(i);
             if (lib != null) addTab(lib.optString("title"), new LibraryTab(this, lib));
         }
-        if (Session.live()) addTab("TV en direct", new LiveTab(this));
         View spacer = new View(act);
         bar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
-        addIcon(Icons.SEARCH, "Rechercher", new SearchTab(this));
-        addIcon(Icons.SETTINGS, "Paramètres", new SettingsTab(this));
+        addTab("Plus", new MoreTab(this));
         page.addView(bar, new LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         content = new FrameLayout(act);
@@ -113,24 +113,12 @@ final class BrowseScreen extends Screen {
     }
 
     private void addTab(String label, Tab tab) {
-        TextView t = Ui.oneLine(Ui.text(act, label, 18, Ui.MUTED));
-        t.setPadding(dp(16), dp(8), dp(16), dp(8));
+        TextView t = Ui.oneLine(Ui.text(act, label, 23, Ui.MUTED));
+        t.setPadding(dp(22), dp(10), dp(22), dp(10));
         t.setGravity(Gravity.CENTER);
-        t.setMaxWidth(dp(260));
+        t.setMaxWidth(dp(300));
         register(t, tab);
-        bar.addView(t, Ui.margins(act, 0, 0, 6, 0));
-    }
-
-    private void addIcon(int kind, String label, Tab tab) {
-        ImageView v = new ImageView(act);
-        Icons icon = new Icons(kind, Ui.MUTED);
-        v.setImageDrawable(icon);
-        v.setPadding(dp(9), dp(9), dp(9), dp(9));
-        v.setContentDescription(label);
-        v.setTag(icon);
-        register(v, tab);
-        bar.addView(v, new LinearLayout.LayoutParams(dp(44), dp(44)));
-        ((LinearLayout.LayoutParams) v.getLayoutParams()).leftMargin = dp(8);
+        bar.addView(t, Ui.margins(act, 0, 0, 8, 0));
     }
 
     private void register(View v, Tab tab) {
@@ -164,8 +152,6 @@ final class BrowseScreen extends Screen {
         if (v instanceof TextView) {
             ((TextView) v).setTextColor(fg);
             ((TextView) v).setTypeface(open || focus ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-        } else if (v.getTag() instanceof Icons) {
-            ((Icons) v.getTag()).setColor(fg);
         }
     }
 

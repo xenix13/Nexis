@@ -16,7 +16,7 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Accueil : « Reprendre », les ajouts récents de chaque bibliothèque et « Ma liste ». */
+/** Accueil : « Reprendre », une rangée par bibliothèque (derniers ajouts) et « Ma liste » si elle n'est pas vide. */
 final class HomeTab extends BrowseScreen.Tab {
     private ScrollView scroll;
     private LinearLayout list;
@@ -87,7 +87,7 @@ final class HomeTab extends BrowseScreen.Tab {
                 if (r == null) continue;
                 JSONObject lib = r.optJSONObject("library");
                 String name = lib == null ? "" : lib.optString("title");
-                addRow("lib:" + (lib == null ? i : lib.optString("id")), "Ajoutés récemment · " + name,
+                addRow("lib:" + (lib == null ? i : lib.optString("id")), name,
                         r.optJSONArray("items"), Cards.POSTER, false);
             }
         }
@@ -115,7 +115,7 @@ final class HomeTab extends BrowseScreen.Tab {
         LinearLayout box = Ui.column(act);
         box.setClipChildren(false);
         box.setClipToPadding(false);
-        TextView t = Ui.title(act, title, 21);
+        TextView t = Ui.title(act, title, 26);
         t.setPadding(dp(48), dp(14), dp(48), 0);
         box.addView(t);
         Cards.Adapter adapter = new Cards.Adapter(style, item -> {

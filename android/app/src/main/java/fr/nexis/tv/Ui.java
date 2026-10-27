@@ -94,14 +94,14 @@ final class Ui {
         Button b = new Button(c);
         b.setText(label);
         b.setAllCaps(false);
-        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
+        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
         b.setTypeface(Typeface.DEFAULT_BOLD);
         b.setMinWidth(0);
         b.setMinimumWidth(0);
         b.setMinHeight(0);
         b.setMinimumHeight(0);
         b.setStateListAnimator(null);
-        b.setPadding(dp(c, 22), dp(c, 11), dp(c, 22), dp(c, 11));
+        b.setPadding(dp(c, 26), dp(c, 13), dp(c, 26), dp(c, 13));
         if (primary) {
             b.setTextColor(Color.BLACK);
             b.setBackground(focusable(c, ACCENT, Color.rgb(255, 196, 120), 10));

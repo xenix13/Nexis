@@ -128,31 +128,24 @@ final class Detail extends Screen {
             info.addView(showName);
         }
         TextView title = Ui.title(act, episode ? "S" + item.optInt("season") + " · É" + item.optInt("episode") + "  "
-                + item.optString("title") : item.optString("title"), 34);
+                + item.optString("title") : item.optString("title"), 40);
         title.setMaxLines(2);
         title.setEllipsize(TextUtils.TruncateAt.END);
         info.addView(title);
-        TextView meta = Ui.text(act, metaLine(), 16, Ui.MUTED);
+        TextView meta = Ui.text(act, metaLine(), 19, Ui.MUTED);
         meta.setPadding(0, dp(8), 0, 0);
         info.addView(meta);
-        String tagline = item.optString("tagline", "");
-        if (!tagline.isEmpty() && !"null".equals(tagline)) {
-            TextView tl = Ui.text(act, tagline, 17, Ui.TEXT);
-            tl.setPadding(0, dp(14), 0, 0);
-            tl.setTypeface(null, android.graphics.Typeface.ITALIC);
-            info.addView(tl);
-        }
         String summary = item.optString("summary", "");
         if (!summary.isEmpty() && !"null".equals(summary)) {
-            TextView s = Ui.text(act, summary, 16, Color.rgb(215, 215, 222));
-            s.setMaxLines(5);
+            TextView s = Ui.text(act, summary, 19, Color.rgb(215, 215, 222));
+            s.setMaxLines(4);
             s.setEllipsize(TextUtils.TruncateAt.END);
             s.setLineSpacing(0, 1.15f);
-            s.setPadding(0, dp(12), 0, 0);
-            info.addView(s, new LinearLayout.LayoutParams(dp(760), ViewGroup.LayoutParams.WRAP_CONTENT));
+            s.setPadding(0, dp(14), 0, 0);
+            info.addView(s, new LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT));
         }
         LinearLayout buttons = Ui.row(act);
-        buttons.setPadding(0, dp(22), 0, 0);
+        buttons.setPadding(0, dp(26), 0, 0);
         View primary = addButtons(buttons);
         info.addView(buttons);
         top.addView(info, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -182,18 +175,8 @@ final class Detail extends Screen {
             String d = Ui.duration(item.optLong("duration", 0));
             if (!d.isEmpty()) parts.add(d);
         }
-        String cr = item.optString("content_rating", "");
-        if (!cr.isEmpty() && !"null".equals(cr)) parts.add(cr);
         double rating = item.optDouble("rating", 0);
         if (rating > 0) parts.add(String.format(java.util.Locale.FRANCE, "★ %.1f", rating));
-        JSONArray genres = item.optJSONArray("genres");
-        if (genres != null && genres.length() > 0) {
-            List<String> g = new ArrayList<>();
-            for (int i = 0; i < Math.min(3, genres.length()); i++) g.add(genres.optString(i));
-            parts.add(TextUtils.join(", ", g));
-        }
-        JSONObject media = item.optJSONObject("media");
-        if (media != null && !media.isNull("resolution")) parts.add(media.optString("resolution") + "p");
         return TextUtils.join("   ·   ", parts);
     }
 
@@ -209,10 +192,6 @@ final class Detail extends Screen {
             play.setTag("play");
             play.setOnClickListener(v -> Player.play(act, target, pos));
             row.addView(play, Ui.margins(act, 0, 0, 12, 0));
-            Button watched = Ui.button(act, item.optBoolean("watched") ? "Marquer comme non vue" : "Marquer comme vue", false);
-            watched.setTag("watched");
-            watched.setOnClickListener(v -> markWatched(!item.optBoolean("watched")));
-            row.addView(watched);
             return play;
         }
         long pos = item.optLong("position", 0);
@@ -227,16 +206,7 @@ final class Detail extends Screen {
             restart.setOnClickListener(v -> Player.play(act, item, 0));
             row.addView(restart, Ui.margins(act, 0, 0, 12, 0));
         }
-        Button watched = Ui.button(act, item.optBoolean("watched") ? "Marquer comme non vu" : "Marquer comme vu", false);
-        watched.setTag("watched");
-        watched.setOnClickListener(v -> markWatched(!item.optBoolean("watched")));
-        row.addView(watched);
         return play;
-    }
-
-    private void markWatched(boolean watched) {
-        Api.send("POST", "/api/items/" + id + "/watched", Api.json("watched", watched), r -> load(false),
-                e -> Ui.toast(act, e.getMessage()));
     }
 
     // ------------------------------------------------------------------ séries : saisons et épisodes
@@ -256,8 +226,8 @@ final class Detail extends Screen {
             JSONObject s = list.optJSONObject(i);
             if (s == null) continue;
             String sid = s.optString("id");
-            TextView t = Ui.text(act, s.optString("title"), 17, Ui.MUTED);
-            t.setPadding(dp(18), dp(8), dp(18), dp(8));
+            TextView t = Ui.text(act, s.optString("title"), 20, Ui.MUTED);
+            t.setPadding(dp(22), dp(10), dp(22), dp(10));
             t.setFocusable(true);
             t.setTag("season:" + sid);
             t.setOnFocusChangeListener((v, has) -> {
@@ -325,7 +295,7 @@ final class Detail extends Screen {
         if (pos > 0 && dur > 0 && !watched) {
             View bar = new View(c);
             bar.setBackgroundColor(Ui.ACCENT);
-            thumbBox.addView(bar, new FrameLayout.LayoutParams((int) (dp(200) * Math.min(1, pos / (double) dur)), dp(4),
+            thumbBox.addView(bar, new FrameLayout.LayoutParams((int) (dp(240) * Math.min(1, pos / (double) dur)), dp(4),
                     Gravity.BOTTOM | Gravity.START));
         }
         if (watched) {
@@ -339,19 +309,19 @@ final class Detail extends Screen {
             cp.setMargins(0, dp(6), dp(6), 0);
             thumbBox.addView(check, cp);
         }
-        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(dp(200), dp(112));
+        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(dp(240), dp(135));
         tp.rightMargin = dp(20);
         row.addView(thumbBox, tp);
         LinearLayout text = Ui.column(c);
-        TextView t = Ui.oneLine(Ui.title(c, ep.optInt("episode") + ". " + ep.optString("title"), 18));
+        TextView t = Ui.oneLine(Ui.title(c, ep.optInt("episode") + ". " + ep.optString("title"), 21));
         text.addView(t);
         String d = Ui.duration(dur);
-        TextView meta = Ui.text(c, d + (pos > 0 && !watched ? "   ·   reprise à " + Ui.clock(pos) : ""), 14, Ui.MUTED);
+        TextView meta = Ui.text(c, d + (pos > 0 && !watched ? "   ·   reprise à " + Ui.clock(pos) : ""), 16, Ui.MUTED);
         meta.setPadding(0, dp(4), 0, dp(6));
         text.addView(meta);
         String summary = ep.optString("summary", "");
         if (!summary.isEmpty() && !"null".equals(summary)) {
-            TextView s = Ui.text(c, summary, 15, Color.rgb(200, 200, 208));
+            TextView s = Ui.text(c, summary, 17, Color.rgb(200, 200, 208));
             s.setMaxLines(2);
             s.setEllipsize(TextUtils.TruncateAt.END);
             text.addView(s);
@@ -359,8 +329,9 @@ final class Detail extends Screen {
         row.addView(text, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         row.setOnFocusChangeListener((v, has) -> t.setTextColor(has ? Ui.ACCENT : Ui.TEXT));
         row.setOnClickListener(v -> Player.play(act, ep, watched ? 0 : pos));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(1000), ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.bottomMargin = dp(4);
+        // pleine largeur de la page : une largeur fixe dépasserait de l'écran sur une TV 1080p à 960 dp de large
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(6);
         row.setLayoutParams(lp);
         return row;
     }
