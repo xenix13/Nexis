@@ -2,6 +2,7 @@
 import { get, put } from './api.js';
 import { applyPrefs, state } from './app.js';
 import { h, icon, posterCard, row, toast, wideCard } from './ui.js';
+import { tr } from './i18n.js';
 
 const same = (a, b) => a.type === b.type && String(a.ref) === String(b.ref) && String(a.lib || '') === String(b.lib || '');
 
@@ -18,7 +19,7 @@ export async function removePin(id) {
   const order = (state.me.prefs.home_order || []).filter((k) => k !== `pin:${id}`);
   await put('/api/me/prefs', { home_order: order });
   state.me.prefs.home_order = order;
-  await savePins(pins().filter((p) => p.id !== id), 'Rangée retirée de l’accueil');
+  await savePins(pins().filter((p) => p.id !== id), tr('Rangée retirée de l’accueil'));
 }
 
 // Bouton « Épingler à l'accueil » / « Retirer de l'accueil » ; pin = { type, ref, lib?, title }
@@ -26,7 +27,7 @@ export function pinButton(pin) {
   const btn = h('button.btn.ghost.small.pin-btn', { type: 'button' });
   const paint = () => {
     const on = pins().some((p) => same(p, pin));
-    btn.replaceChildren(icon(on ? 'bookmarked' : 'bookmark'), on ? 'Retirer de l’accueil' : 'Épingler à l’accueil');
+    btn.replaceChildren(icon(on ? 'bookmarked' : 'bookmark'), on ? tr('Retirer de l’accueil') : tr('Épingler à l’accueil'));
     btn.setAttribute('aria-pressed', String(on));
   };
   btn.addEventListener('click', async () => {
@@ -34,10 +35,10 @@ export function pinButton(pin) {
       const existing = pins().find((p) => same(p, pin));
       if (existing) await removePin(existing.id);
       else {
-        if (pins().length >= 20) { toast('20 rangées épinglées au maximum', 'bad'); return; }
+        if (pins().length >= 20) { toast(tr('20 rangées épinglées au maximum'), 'bad'); return; }
         const id = Math.max(0, ...pins().map((p) => p.id + 1));
         await savePins([...pins(), { id, ...pin, ref: String(pin.ref), ...(pin.lib ? { lib: String(pin.lib) } : {}) }],
-          'Rangée ajoutée à l’accueil');
+          tr('Rangée ajoutée à l’accueil'));
       }
       paint();
     } catch (e) { toast(e.message, 'bad'); }

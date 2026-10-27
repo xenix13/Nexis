@@ -119,10 +119,10 @@ final class SetupScreen extends Screen {
         FrameLayout[] root = new FrameLayout[1];
         LinearLayout box = StartScreens.centered(this, root);
         StartScreens.logo(this, box);
-        TextView title = Ui.title(act, "Adresse du serveur Nexis", 26);
+        TextView title = Ui.title(act, Tr.t("Adresse du serveur Nexis"), 26);
         title.setPadding(0, dp(16), 0, dp(6));
         box.addView(title);
-        TextView hint = Ui.text(act, "Exemple : https://nexis.mondomaine.fr ou 192.168.1.20:8420", 15, Ui.MUTED);
+        TextView hint = Ui.text(act, Tr.t("Exemple : https://nexis.mondomaine.fr ou 192.168.1.20:8420"), 15, Ui.MUTED);
         hint.setPadding(0, 0, 0, dp(18));
         box.addView(hint);
 
@@ -137,16 +137,16 @@ final class SetupScreen extends Screen {
         status.setPadding(0, dp(12), 0, dp(12));
         box.addView(status, new LinearLayout.LayoutParams(dp(560), ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        Button go = Ui.button(act, "Continuer", true);
+        Button go = Ui.button(act, Tr.t("Continuer"), true);
         box.addView(go);
         Runnable submit = () -> {
             String url = Api.normalize(input.getText().toString());
             if (url == null) {
-                status.setText("Saisissez l'adresse du serveur.");
+                status.setText(Tr.t("Saisissez l'adresse du serveur."));
                 return;
             }
             status.setTextColor(Ui.MUTED);
-            status.setText("Connexion à " + url + "…");
+            status.setText(Tr.t("Connexion à ") + url + "…");
             go.setEnabled(false);
             Api.run(() -> Api.probe(url), err -> {
                 go.setEnabled(true);
@@ -206,9 +206,9 @@ final class LoginScreen extends Screen {
     }
 
     private void credentials() {
-        header("Connexion", Api.server());
-        EditText user = Ui.input(act, "Identifiant", false);
-        EditText pass = Ui.input(act, "Mot de passe", true);
+        header(Tr.t("Connexion"), Api.server());
+        EditText user = Ui.input(act, Tr.t("Identifiant"), false);
+        EditText pass = Ui.input(act, Tr.t("Mot de passe"), true);
         pass.setImeOptions(EditorInfo.IME_ACTION_GO);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(460), ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.bottomMargin = dp(12);
@@ -216,8 +216,8 @@ final class LoginScreen extends Screen {
         box.addView(pass, new LinearLayout.LayoutParams(dp(460), ViewGroup.LayoutParams.WRAP_CONTENT));
         box.addView(status(), new LinearLayout.LayoutParams(dp(460), ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout buttons = Ui.row(act);
-        Button go = Ui.button(act, "Se connecter", true);
-        Button server = Ui.button(act, "Changer de serveur", false);
+        Button go = Ui.button(act, Tr.t("Se connecter"), true);
+        Button server = Ui.button(act, Tr.t("Changer de serveur"), false);
         buttons.addView(go, Ui.margins(act, 0, 0, 12, 0));
         buttons.addView(server);
         box.addView(buttons);
@@ -244,17 +244,17 @@ final class LoginScreen extends Screen {
     }
 
     private void secondFactor(String ticket) {
-        header("Double authentification", "Saisissez le code à 6 chiffres de votre application d'authentification,\n"
-                + "ou l'un de vos codes de secours.");
-        EditText code = Ui.input(act, "Code", false);
+        header(Tr.t("Double authentification"), Tr.t("Saisissez le code à 6 chiffres de votre application d'authentification,\n")
+                + Tr.t("ou l'un de vos codes de secours."));
+        EditText code = Ui.input(act, Tr.t("Code"), false);
         code.setImeOptions(EditorInfo.IME_ACTION_GO);
         code.setGravity(Gravity.CENTER);
         code.setTextSize(24);
         box.addView(code, new LinearLayout.LayoutParams(dp(320), ViewGroup.LayoutParams.WRAP_CONTENT));
         box.addView(status(), new LinearLayout.LayoutParams(dp(460), ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout buttons = Ui.row(act);
-        Button go = Ui.button(act, "Valider", true);
-        Button back = Ui.button(act, "Retour", false);
+        Button go = Ui.button(act, Tr.t("Valider"), true);
+        Button back = Ui.button(act, Tr.t("Retour"), false);
         buttons.addView(go, Ui.margins(act, 0, 0, 12, 0));
         buttons.addView(back);
         box.addView(buttons);
@@ -263,13 +263,13 @@ final class LoginScreen extends Screen {
             Api.send("POST", "/api/login/2fa", Api.json("ticket", ticket, "code", code.getText().toString().replace(" ", "")), r -> {
                 go.setEnabled(true);
                 if (r.optBoolean("recovery_used")) {
-                    Ui.toast(act, "Code de secours utilisé. Il en reste " + r.optInt("recovery_left") + ".");
+                    Ui.toast(act, Tr.t("Code de secours utilisé. Il en reste ") + r.optInt("recovery_left") + ".");
                 }
                 act.afterLogin(true);
             }, e -> {
                 go.setEnabled(true);
                 status.setText(e.getMessage());
-                if (e.code == 401 && e.getMessage().startsWith("Délai")) credentials();
+                if (e.code == 401 && (e.getMessage().startsWith("Délai") || e.getMessage().startsWith("Timed out"))) credentials();
             });
         };
         go.setOnClickListener(v -> submit.run());
@@ -297,7 +297,7 @@ final class ProfilesScreen extends Screen {
         root.setBackgroundColor(Ui.BG);
         LinearLayout box = Ui.column(act);
         box.setGravity(Gravity.CENTER_HORIZONTAL);
-        TextView t = Ui.title(act, "Qui regarde ?", 34);
+        TextView t = Ui.title(act, Tr.t("Qui regarde ?"), 34);
         t.setPadding(0, 0, 0, dp(36));
         box.addView(t);
         HorizontalScrollView scroll = new HorizontalScrollView(act);
@@ -360,7 +360,7 @@ final class ProfilesScreen extends Screen {
         form.setPadding(dp(24), dp(12), dp(24), 0);
         EditText secret = null;
         if (!"none".equals(needs)) {
-            secret = Ui.input(act, "pin".equals(needs) ? "Code PIN" : "Mot de passe", true);
+            secret = Ui.input(act, "pin".equals(needs) ? Tr.t("Code PIN") : Tr.t("Mot de passe"), true);
             if ("pin".equals(needs)) {
                 secret.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
             }
@@ -368,12 +368,12 @@ final class ProfilesScreen extends Screen {
         }
         EditText otp = null;
         if (code) {
-            otp = Ui.input(act, "Code de double authentification", false);
+            otp = Ui.input(act, Tr.t("Code de double authentification"), false);
             form.addView(otp);
         }
         final EditText s = secret, o = otp;
         AlertDialog d = Ui.dialog(act).setTitle(p.optString("display_name")).setView(form)
-                .setPositiveButton("Valider", (dlg, w) -> {
+                .setPositiveButton(Tr.t("Valider"), (dlg, w) -> {
                     JSONObject body = Api.json();
                     try {
                         if (s != null) body.put("pin".equals(needs) ? "pin" : "password", s.getText().toString());
@@ -383,7 +383,7 @@ final class ProfilesScreen extends Screen {
                     }
                     switchTo(p, body);
                 })
-                .setNegativeButton("Annuler", null).create();
+                .setNegativeButton(Tr.t("Annuler"), null).create();
         d.show();
         View focus = s != null ? s : o;
         if (focus != null) focus.requestFocus();

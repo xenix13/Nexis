@@ -2,6 +2,7 @@
 // et création d'un groupe à l'avance (salon d'attente).
 import { post } from './api.js';
 import { field, h, modal, toggle } from './ui.js';
+import { tr } from './i18n.js';
 
 let source = null;
 let groups = [];
@@ -86,14 +87,14 @@ export function launchableGroups() {
 }
 
 export async function createGroupDialog(me) {
-  const name = h('input', { placeholder: `Chez ${me.user.display_name}`, maxlength: 60 });
-  const hostOnly = toggle('Seul l’hôte contrôle la lecture (pause, avance, épisode suivant)', false);
+  const name = h('input', { placeholder: tr('Chez {display_name}', { display_name: me.user.display_name }), maxlength: 60 });
+  const hostOnly = toggle(tr('Seul l’hôte contrôle la lecture (pause, avance, épisode suivant)'), false);
   const err = h('p.form-error');
-  const g = await modal('Créer un groupe', h('div.form',
-    h('p.muted.small', 'Le groupe est créé tout de suite et son lien peut être partagé. Les membres attendent dans le salon ; le titre lancé ensuite démarre en même temps pour tous.'),
-    field('Nom du groupe', name), hostOnly, err), [
-    { label: 'Annuler', value: null },
-    { label: 'Créer le groupe', primary: true, handler: async () => {
+  const g = await modal(tr('Créer un groupe'), h('div.form',
+    h('p.muted.small', tr('Le groupe est créé tout de suite et son lien peut être partagé. Les membres attendent dans le salon ; le titre lancé ensuite démarre en même temps pour tous.')),
+    field(tr('Nom du groupe'), name), hostOnly, err), [
+    { label: tr('Annuler'), value: null },
+    { label: tr('Créer le groupe'), primary: true, handler: async () => {
       try {
         return await post('/api/together', { name: name.value.trim() || undefined, host_only: hostOnly.querySelector('input').checked });
       } catch (e) { err.textContent = e.message; return false; }

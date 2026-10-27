@@ -13,6 +13,7 @@ import threading
 import time
 
 from . import introdetect
+from .i18n import tr
 from .chapters import chapter_list
 from .markers import from_chapters
 
@@ -60,6 +61,17 @@ PAUSE = opt_bool("pause_playback", "Se mettre en pause pendant les lectures", Tr
                  "Libère le partage réseau et le processeur pendant les lectures.")
 AFTER_SCAN = opt_bool("after_scan", "Lancer aussi après chaque ajout de fichiers", True,
                       "Les nouveaux épisodes et films sont traités dès qu'ils sont scannés.")
+
+
+def _option_view(o):
+    """Option d'une tâche dans la langue de la requête (libellés, aides, unités, choix)."""
+    o = dict(o)
+    for k in ("label", "hint", "unit"):
+        if o.get(k):
+            o[k] = tr(o[k])
+    if o.get("choices"):
+        o["choices"] = [[v, tr(label)] for v, label in o["choices"]]
+    return o
 
 
 class Task:
@@ -546,16 +558,19 @@ class TaskManager:
         nxt = next_run(c["schedule"], last and last.get("start"), self.anchor) if ok else None
         job = self.job if self.job and self.job.task.id == tid else None
         return {
-            "id": tid, "name": task.name, "description": task.description, "category": task.category,
-            "heavy": task.heavy, "schedule": c["schedule"], "options": c["options"], "option_defs": task.options,
-            "available": ok, "note": note, "last": last, "next": int(nxt) if nxt else None,
+            "id": tid, "name": tr(task.name), "description": tr(task.description), "category": task.category,
+            "heavy": task.heavy, "schedule": c["schedule"], "options": c["options"],
+            "option_defs": [_option_view(o) for o in task.options],
+            "available": ok, "note": tr(note), "next": int(nxt) if nxt else None,
+            "last": dict(last, summary=tr(last.get("summary")), reason=tr(last.get("reason"))) if last else None,
             "queued": any(q[0] == tid for q in self.queue),
-            "running": {"progress": round(job.progress, 3), "message": job.message, "started": int(job.started),
-                        "paused": job.paused, "reason": job.reason} if job else None,
+            "running": {"progress": round(job.progress, 3), "message": tr(job.message), "started": int(job.started),
+                        "paused": job.paused, "reason": tr(job.reason)} if job else None,
         }
 
     def views(self):
         return [self.view(t) for t in self.tasks]
+
 
     # ------------------------------------------------------------ exécution
     def run_now(self, tid, reason="manuel"):

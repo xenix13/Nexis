@@ -1,6 +1,7 @@
 // Installation de Nexis comme application (web app) : invite native de Chrome / Edge / Android,
 // instructions pour iPhone et iPad (Safari n'a pas d'invite), rien quand c'est déjà installé.
 import { h, icon, modal } from './ui.js';
+import { tr } from './i18n.js';
 
 let prompt = null;
 const listeners = new Set();
@@ -35,11 +36,11 @@ export async function install() {
     return;
   }
   // Safari (iPhone, iPad) : pas d'invite, on montre le chemin
-  modal('Installer Nexis', h('div.install-steps',
-    h('p', 'Sur iPhone et iPad, l’installation se fait depuis Safari :'),
+  modal(tr('Installer Nexis'), h('div.install-steps',
+    h('p', tr('Sur iPhone et iPad, l’installation se fait depuis Safari :')),
     h('ol',
-      h('li', 'Appuyer sur ', h('strong', 'Partager'), ' ', icon('share'), ' en bas de l’écran (en haut sur iPad).'),
-      h('li', 'Choisir ', h('strong', 'Sur l’écran d’accueil'), '.'),
-      h('li', 'Appuyer sur ', h('strong', 'Ajouter'), '. Nexis s’ouvre ensuite en plein écran.'))),
-  [{ label: 'Compris', primary: true, value: true }]);
+      h('li', tr('Appuyer sur '), h('strong', tr('Partager')), ' ', icon('share'), tr(' en bas de l’écran (en haut sur iPad).')),
+      h('li', tr('Choisir '), h('strong', tr('Sur l’écran d’accueil')), '.'),
+      h('li', tr('Appuyer sur '), h('strong', tr('Ajouter')), tr('. Nexis s’ouvre ensuite en plein écran.')))),
+  [{ label: tr('Compris'), primary: true, value: true }]);
 }

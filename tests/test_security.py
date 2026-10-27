@@ -244,6 +244,35 @@ class SecurityTest(unittest.TestCase):
         self.assertNotIn("cdn.jsdelivr", script)
         self.assertIn("sha256sum -c", script)
 
+    def test_vendored_libraries_checksums(self):
+        """Audit 2026-10 : toutes les bibliothèques JavaScript fournies sont vérifiées à l'installation."""
+        vendor = os.path.join(ROOT, "static", "vendor")
+        for sums in ("jassub/jassub.sha256", "libpgs/libpgs.sha256", "qrcode/qrcode.mjs.sha256"):
+            folder = os.path.dirname(os.path.join(vendor, sums))
+            with open(os.path.join(vendor, sums)) as f:
+                for line in f:
+                    want, name = line.split()
+                    with open(os.path.join(folder, name), "rb") as g:
+                        self.assertEqual(hashlib.sha256(g.read()).hexdigest(), want, name)
+        for script in ("install.sh", "build-deb.sh"):
+            with open(os.path.join(ROOT, "deploy", script)) as f:
+                text = f.read()
+            self.assertIn("jassub.sha256", text)
+            self.assertIn("libpgs.sha256", text)
+
+    def test_writable_library_is_flagged(self):
+        """Audit 2026-10 : un dossier de bibliothèque modifiable par le service est signalé à l'administrateur."""
+        st, data = self.admin.call("GET", "/api/admin/libraries")
+        lib = next(l for l in data["libraries"] if l["id"] == self.lib["id"])
+        self.assertEqual(lib["paths_writable"], [True])  # dossier temporaire du test : modifiable
+        os.chmod(self.lib_dir, 0o555)
+        try:
+            st, data = self.admin.call("GET", "/api/admin/libraries")
+            lib = next(l for l in data["libraries"] if l["id"] == self.lib["id"])
+            self.assertEqual(lib["paths_writable"], [os.geteuid() == 0])  # root écrit partout
+        finally:
+            os.chmod(self.lib_dir, 0o755)
+
     def test_existing_mounts_are_hardened(self):
         fstab = os.path.join(self.work, "fstab")
         with open(fstab, "w") as f:

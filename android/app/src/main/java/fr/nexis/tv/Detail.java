@@ -71,7 +71,7 @@ final class Detail extends Screen {
         page.setPadding(dp(56), dp(40), dp(56), dp(56));
         scroll.addView(page);
         root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
-        TextView wait = Ui.text(act, "Chargement…", 18, Ui.MUTED);
+        TextView wait = Ui.text(act, Tr.t("Chargement…"), 18, Ui.MUTED);
         page.addView(wait);
         load(true);
         return root;
@@ -187,7 +187,7 @@ final class Detail extends Screen {
             JSONObject target = item.optJSONObject("play_target");
             if (target == null) return null;
             long pos = target.optLong("position", 0);
-            String label = (pos > 0 ? "Reprendre" : "Lecture") + "  S" + target.optInt("season") + " · É" + target.optInt("episode");
+            String label = (pos > 0 ? Tr.t("Reprendre") : Tr.t("Lecture")) + "  S" + target.optInt("season") + Tr.t(" · É") + target.optInt("episode");
             Button play = Ui.button(act, label, true);
             play.setTag("play");
             play.setOnClickListener(v -> Player.play(act, target, pos));
@@ -196,12 +196,12 @@ final class Detail extends Screen {
         }
         long pos = item.optLong("position", 0);
         boolean resume = pos > 0 && !item.optBoolean("watched");
-        Button play = Ui.button(act, resume ? "Reprendre à " + Ui.clock(pos) : "Lecture", true);
+        Button play = Ui.button(act, resume ? Tr.t("Reprendre à ") + Ui.clock(pos) : Tr.t("Lecture"), true);
         play.setTag("play");
         play.setOnClickListener(v -> Player.play(act, item, resume ? pos : 0));
         row.addView(play, Ui.margins(act, 0, 0, 12, 0));
         if (resume) {
-            Button restart = Ui.button(act, "Depuis le début", false);
+            Button restart = Ui.button(act, Tr.t("Depuis le début"), false);
             restart.setTag("restart");
             restart.setOnClickListener(v -> Player.play(act, item, 0));
             row.addView(restart, Ui.margins(act, 0, 0, 12, 0));
@@ -316,7 +316,7 @@ final class Detail extends Screen {
         TextView t = Ui.oneLine(Ui.title(c, ep.optInt("episode") + ". " + ep.optString("title"), 21));
         text.addView(t);
         String d = Ui.duration(dur);
-        TextView meta = Ui.text(c, d + (pos > 0 && !watched ? "   ·   reprise à " + Ui.clock(pos) : ""), 16, Ui.MUTED);
+        TextView meta = Ui.text(c, d + (pos > 0 && !watched ? Tr.t("   ·   reprise à ") + Ui.clock(pos) : ""), 16, Ui.MUTED);
         meta.setPadding(0, dp(4), 0, dp(6));
         text.addView(meta);
         String summary = ep.optString("summary", "");

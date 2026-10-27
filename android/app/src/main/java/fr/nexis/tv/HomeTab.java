@@ -41,7 +41,7 @@ final class HomeTab extends BrowseScreen.Tab {
         list.setPadding(0, dp(4), 0, dp(48));
         scroll.addView(list);
         root.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
-        message = Ui.text(act, "Chargement…", 18, Ui.MUTED);
+        message = Ui.text(act, Tr.t("Chargement…"), 18, Ui.MUTED);
         message.setGravity(Gravity.CENTER);
         root.addView(message, new FrameLayout.LayoutParams(-1, -1));
         return root;
@@ -79,7 +79,7 @@ final class HomeTab extends BrowseScreen.Tab {
         list.removeAllViews();
         rows.clear();
         keys.clear();
-        addRow("continue", "Reprendre", h.optJSONArray("continue"), Cards.WIDE, true);
+        addRow("continue", Tr.t("Reprendre"), h.optJSONArray("continue"), Cards.WIDE, true);
         JSONArray libs = h.optJSONArray("rows");
         if (libs != null) {
             for (int i = 0; i < libs.length(); i++) {
@@ -91,9 +91,9 @@ final class HomeTab extends BrowseScreen.Tab {
                         r.optJSONArray("items"), Cards.POSTER, false);
             }
         }
-        addRow("watchlist", "Ma liste", h.optJSONArray("watchlist"), Cards.POSTER, false);
+        addRow("watchlist", Tr.t("Ma liste"), h.optJSONArray("watchlist"), Cards.POSTER, false);
         message.setVisibility(rows.isEmpty() ? View.VISIBLE : View.GONE);
-        message.setText("Rien à afficher pour l'instant : les bibliothèques sont peut-être vides.");
+        message.setText(Tr.t("Rien à afficher pour l'instant : les bibliothèques sont peut-être vides."));
         if (focusKey != null) {
             int idx = keys.indexOf(focusKey);
             if (idx < 0) idx = 0;

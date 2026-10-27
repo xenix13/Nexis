@@ -128,7 +128,7 @@ public class LiveActivity extends Activity {
                     handler.postDelayed(tune, 1500);
                     return;
                 }
-                showError("La chaîne ne répond pas (" + e.getErrorCodeName() + ").");
+                showError(Tr.t("La chaîne ne répond pas (") + e.getErrorCodeName() + ").");
             }
         });
         index = Math.max(0, Math.min(Session.channels.length() - 1, getIntent().getIntExtra("index", 0)));
@@ -149,7 +149,7 @@ public class LiveActivity extends Activity {
         Images.load(logo, c.isNull("logo") ? null : c.optString("logo", null), Ui.dp(this, 160));
         JSONObject n = c.optJSONObject("now"), x = c.optJSONObject("next");
         now.setText(n == null ? "" : LiveTab.hour(n.optLong("start")) + " – " + LiveTab.hour(n.optLong("stop")) + "   " + n.optString("title"));
-        next.setText(x == null ? "" : "Ensuite : " + LiveTab.hour(x.optLong("start")) + "   " + x.optString("title"));
+        next.setText(x == null ? "" : Tr.t("Ensuite : ") + LiveTab.hour(x.optLong("start")) + "   " + x.optString("title"));
         info.setVisibility(View.VISIBLE);
         handler.removeCallbacks(hideInfo);
         handler.postDelayed(hideInfo, 5000);
@@ -157,7 +157,7 @@ public class LiveActivity extends Activity {
 
     private void showError(String message) {
         loader.setVisibility(View.GONE);
-        error.setText(message + "\nHaut / bas pour changer de chaîne, Retour pour quitter.");
+        error.setText(message + Tr.t("\nHaut / bas pour changer de chaîne, Retour pour quitter."));
         error.setVisibility(View.VISIBLE);
     }
 

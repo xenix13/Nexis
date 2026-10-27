@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 // QR code dessiné en SVG (bibliothèque qrcode-generator, MIT, fournie dans static/vendor/qrcode)
 export async function qrSvg(text, size = 200) {
   const { default: qrcode } = await import('/vendor/qrcode/qrcode.mjs');
@@ -11,7 +12,7 @@ export async function qrSvg(text, size = 200) {
   svg.setAttribute('width', size);
   svg.setAttribute('height', size);
   svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'QR code à scanner avec l’application d’authentification');
+  svg.setAttribute('aria-label', tr('QR code à scanner avec l’application d’authentification'));
   svg.classList.add('qr');
   const bg = document.createElementNS(ns, 'rect');
   Object.entries({ x: -2, y: -2, width: n + 4, height: n + 4, fill: '#fff' }).forEach(([k, v]) => bg.setAttribute(k, v));

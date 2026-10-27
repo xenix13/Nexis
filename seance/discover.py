@@ -21,6 +21,7 @@ import urllib.parse
 import urllib.request
 from datetime import date
 
+from . import i18n
 from .metadata import TMDB_IMG, MetaError
 from .web import HTTPError, Response
 
@@ -398,7 +399,7 @@ def register(app, ctx, x):
                 db.run("UPDATE wishlist SET requested_at=? WHERE user_id=? AND media_type=? AND tmdb_id=?",
                        (int(time.time()), uid, kind, tid))
             except HTTPError as e:
-                out["request_error"] = e.message
+                out["request_error"] = i18n.tr(e.message)
         return out
 
     # ------------------------------------------------------------ images TMDB (relais + cache)

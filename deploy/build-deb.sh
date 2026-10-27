@@ -14,6 +14,8 @@ cp -r seance static deploy "$PKG/opt/seance/"
 find "$PKG" -name __pycache__ -type d -prune -exec rm -rf {} +
 ( cd "$PKG/opt/seance/static/vendor" && sha256sum -c --quiet hls.min.js.sha256 )
 ( cd "$PKG/opt/seance/static/vendor/qrcode" && sha256sum -c --quiet qrcode.mjs.sha256 )
+( cd "$PKG/opt/seance/static/vendor/jassub" && sha256sum -c --quiet jassub.sha256 )
+( cd "$PKG/opt/seance/static/vendor/libpgs" && sha256sum -c --quiet libpgs.sha256 )
 
 cat > "$PKG/DEBIAN/control" <<CONTROL
 Package: nexis

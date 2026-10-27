@@ -1,3 +1,4 @@
+import { lang, tr } from './i18n.js';
 // Thin wrapper around fetch for the Nexis API.
 export class ApiError extends Error {
   constructor(status, message, data) {
@@ -11,7 +12,8 @@ let onUnauthorized = () => {};
 export function setUnauthorizedHandler(fn) { onUnauthorized = fn; }
 
 export async function api(method, path, body, { headers = {}, keepalive = false, quiet401 = false } = {}) {
-  const opts = { method, headers: { 'X-Seance': '1', ...headers }, credentials: 'same-origin', keepalive };
+  // X-Lang : messages d'erreur du serveur dans la langue de l'interface
+  const opts = { method, headers: { 'X-Seance': '1', 'X-Lang': lang, ...headers }, credentials: 'same-origin', keepalive };
   if (body !== undefined) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
@@ -20,7 +22,7 @@ export async function api(method, path, body, { headers = {}, keepalive = false,
   try {
     res = await fetch(path, opts);
   } catch (e) {
-    throw new ApiError(0, 'Serveur injoignable');
+    throw new ApiError(0, tr('Serveur injoignable'));
   }
   let data = null;
   const text = await res.text();
@@ -29,7 +31,7 @@ export async function api(method, path, body, { headers = {}, keepalive = false,
   }
   if (!res.ok) {
     if (res.status === 401 && !quiet401) onUnauthorized();
-    throw new ApiError(res.status, (data && data.error) || `Erreur ${res.status}`, data);
+    throw new ApiError(res.status, (data && data.error) || tr('Erreur {status}', { status: res.status }), data);
   }
   return data;
 }

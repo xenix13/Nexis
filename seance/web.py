@@ -118,6 +118,9 @@ class App:
         self.before = []  # callables(req, route_opts)
         self.static_dir = None
         self.teardown = []
+        self.begin = None        # callable(req) au début de chaque requête (langue des messages)
+        self.translate = None    # callable(message) -> message dans la langue de la requête
+        self.default_lang = lambda: "fr"  # langue de l'interface avant la connexion (page d'accueil)
 
     def route(self, method, pattern, **opts):
         regex = re.compile("^" + pattern + "$")
@@ -169,7 +172,7 @@ class App:
                 raise HTTPError(404, "Fichier introuvable")
             full = os.path.join(root, "index.html")  # SPA fallback
         if full == os.path.join(root, "index.html"):
-            return self.index_page(root, full, req)
+            return self.index_page(root, full, req, self.default_lang())
         ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
             ctype += "; charset=utf-8"
@@ -205,13 +208,13 @@ class App:
 
 
     @staticmethod
-    def index_page(root, full, req):
+    def index_page(root, full, req, lang="fr"):
         """index.html qui charge le code et le style de l'interface à des adresses propres à cette version.
         Sans cela, un proxy (Nginx Proxy Manager « Cache Assets » : expires 30d) ou un cache trop zélé garde
         l'ancien code après une mise à jour, jusqu'à un Ctrl+F5."""
         version = ui_version(root)
         st = os.stat(full)
-        etag = f'W/"ix-{version}-{st.st_mtime_ns:x}"'
+        etag = f'W/"ix-{version}-{lang}-{st.st_mtime_ns:x}"'
         headers = {"Cache-Control": "no-cache", "ETag": etag, "Vary": "Accept-Encoding"}
         ctype = "text/html; charset=utf-8"
         if req and req.headers.get("If-None-Match") == etag:
@@ -219,6 +222,11 @@ class App:
         with open(full, encoding="utf-8") as f:
             html = f.read()
         html = html.replace('href="/css/', f'href="/v/{version}/css/').replace('src="/js/', f'src="/v/{version}/js/')
+        # langue par défaut du serveur : celle de l'interface tant que personne n'est connecté sur cet appareil
+        html = html.replace('<html lang="fr"', f'<html lang="{lang}" data-default-lang="{lang}"', 1)
+        if lang == "en":
+            html = html.replace("Nexis : tes films, séries et animes, partout.", "Nexis: your movies, shows and anime, everywhere.")
+            html = html.replace("Nexis a besoin de JavaScript.", "Nexis needs JavaScript.")
         data = html.encode()
         if req and "gzip" in (req.headers.get("Accept-Encoding") or ""):
             data = gzip.compress(data, 6)
@@ -343,15 +351,18 @@ def make_handler(app, trust_proxy=False, hsts=False):
             req = Request(self, method if method != "HEAD" else "GET", parsed.path,
                           urllib.parse.parse_qs(parsed.query), self.headers, self._client_ip())
             try:
+                if app.begin:
+                    app.begin(req)
                 resp = app.dispatch(req)
             except HTTPError as e:
-                payload = {"error": e.message}
+                payload = {"error": app.translate(e.message) if app.translate else e.message}
                 if e.data:
                     payload.update(e.data)
                 resp = json_response(payload, e.status)
             except Exception:
                 log.error("Erreur sur %s %s\n%s", method, parsed.path, traceback.format_exc())
-                resp = json_response({"error": "Erreur interne du serveur"}, 500)
+                msg = "Erreur interne du serveur"
+                resp = json_response({"error": app.translate(msg) if app.translate else msg}, 500)
             finally:
                 for fn in app.teardown:
                     try:

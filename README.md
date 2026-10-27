@@ -25,6 +25,7 @@ Serveur multimédia auto-hébergé pour films, séries et animes. Nexis analyse 
 | **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou externes : `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. ASS rendus par libass (positionnement, karaoké, polices jointes), PGS rendus par le navigateur, VobSub incrustés |
 | **Applications** | Web app installable (Windows, macOS, Linux, Android, iPhone, iPad), téléchargements hors ligne, application Android TV native |
 | **Paramètres** | Un seul espace, organisé en Mon compte, Serveur, Médiathèque et Lecture, avec recherche |
+| **Langues** | Interface en **français** ou en **anglais**, au choix de chaque utilisateur ; langue par défaut des nouveaux comptes choisie par l'administrateur. Messages du serveur et appli TV dans la même langue |
 
 ### Choix du mode de lecture
 
@@ -383,7 +384,7 @@ Configuration : *Paramètres → Serveur → Utilisateurs*.
 
 Chaque utilisateur règle son interface dans *Paramètres → Mon compte* :
 
-- **Profil** : nom, photo (image envoyée ou avatar prédéfini), code PIN, mot de passe.
+- **Profil** : nom, photo (image envoyée ou avatar prédéfini), **langue de l'interface** (français ou anglais), code PIN, mot de passe.
 - **Lecture** : qualité, langues, enchaînement des épisodes, **apparence des sous-titres** (taille, police, couleur, fond, bordure, position, avec aperçu ; ne s'applique pas aux sous-titres ASS stylés ni aux PGS) et **anti-spoiler** (vignettes floutées et résumés masqués pour les épisodes non vus ; un clic affiche le résumé).
 - **Apparence** : thème, couleur d'accent, taille des affiches.
 - **Cet appareil** : qualité et taille des sous-titres propres à ce navigateur ou à cette TV, animations réduites, navigation à la télécommande forcée ou désactivée. Ces réglages restent sur l'appareil et priment sur ceux du profil.
@@ -394,6 +395,8 @@ Chaque utilisateur règle son interface dans *Paramètres → Mon compte* :
 **Notifications** : la cloche de la barre du haut signale les épisodes ajoutés depuis moins de 30 jours, et pas encore vus, des séries suivies (dont un épisode a été regardé, ou présentes dans « À regarder »).
 
 **Bilan** : la page *Historique* présente, par année ou par mois, le temps de visionnage, le nombre de films et d'épisodes, les jours actifs, la plus longue série de jours consécutifs, le jour préféré, la répartition par mois, les genres et les titres les plus regardés.
+
+**Langue** : chaque utilisateur choisit sa langue dans *Paramètres → Profil* ; elle le suit sur tous ses appareils, appli Android TV comprise. L'administrateur choisit la langue des nouveaux comptes et de la page de connexion dans *Paramètres → Utilisateurs* (à l'installation, c'est la langue choisie sur la page d'installation), et peut régler la langue de chaque compte. La langue des résumés et titres venant de TMDB reste un réglage du serveur (*Paramètres → Métadonnées*).
 
 **Interface enfant** : option du compte (*Paramètres → Utilisateurs*), à combiner avec une restriction d'âge. Grandes vignettes, textes plus gros, menu limité à l'accueil, « À regarder » et aux bibliothèques ; Découvrir, la TV en direct et la création de groupes sont masqués.
 
@@ -462,7 +465,7 @@ Les pistes 5.1 / 7.1 (AC3, E-AC3, DTS, TrueHD, AAC 5.1…) sont mixées en stér
 
 ## Sécurité
 
-L'audit, les correctifs et les risques acceptés sont décrits dans [docs/AUDIT-SECURITE.md](docs/AUDIT-SECURITE.md). Recommandations principales : n'exposer Nexis sur Internet que derrière un reverse proxy HTTPS (`SEANCE_COOKIE_SECURE=1`, `SEANCE_TRUST_PROXY=1`), et n'ajouter que des listes IPTV de fournisseurs de confiance.
+L'audit, les correctifs et les risques acceptés sont décrits dans [docs/AUDIT-SECURITE.md](docs/AUDIT-SECURITE.md) (version 3.1.0) et [docs/AUDIT-SECURITE-2026-10.md](docs/AUDIT-SECURITE-2026-10.md) (version 3.19.0 : mise à jour, bibliothèques en lecture seule, composants tiers). Les questions juridiques (licences, marque, TMDB, droit d'auteur, RGPD) sont traitées dans [docs/AUDIT-JURIDIQUE.md](docs/AUDIT-JURIDIQUE.md). Monter les dossiers de médias **en lecture seule** : Nexis n'a besoin que de les lire, et signale dans *Paramètres → Bibliothèques* un dossier où il pourrait écrire. Recommandations principales : n'exposer Nexis sur Internet que derrière un reverse proxy HTTPS (`SEANCE_COOKIE_SECURE=1`, `SEANCE_TRUST_PROXY=1`), et n'ajouter que des listes IPTV de fournisseurs de confiance.
 
 ## Dépannage
 
@@ -514,8 +517,11 @@ Organisation de `seance/` :
 - `update.py` : mise à jour depuis l'interface ; `downloads.py` : téléchargements hors ligne ; `suggest.py` : suggestions et avis ; `notify.py` : notifications et bilan
 - `api.py` : assemblage du serveur ; `catalog.py` : outils partagés par les routes ; `routes/` : routes HTTP par thème
 - `twofa.py` : double authentification ; `auth.py`, `db.py`, `web.py` : socle
+- `i18n.py`, `lang_en.py` : langue des messages du serveur
 
 L'interface (`static/`) est en JavaScript, sans étape de compilation.
+
+**Traductions.** Le texte français du code sert de clé : `tr('Paramètres')` dans l'interface (`static/js/i18n.js`, traductions dans `static/js/i18n/en.js`), `tr("Introuvable")` côté serveur (`seance/i18n.py`, traductions dans `seance/lang_en.py`, où `{}` remplace une partie variable), `Tr.t("…")` dans l'appli TV (`Tr.java`). `plural(n, '{n} film', '{n} films')` choisit la forme selon la langue ; un même mot à traduire de deux façons prend un contexte : `tr('bouton|Lecture')`. `tests/test_i18n.py` vérifie que chaque texte de l'interface et chaque message d'erreur du serveur a sa traduction. Ajouter une langue : un fichier `static/js/i18n/<code>.js`, un `seance/lang_<code>.py`, et le code dans `LANGUAGES` (`i18n.js`, `i18n.py`).
 
 ## Feuille de route
 
@@ -533,4 +539,5 @@ L'interface (`static/`) est en JavaScript, sans étape de compilation.
 - Fichiers `.strm`
 - Paquet `.deb`, image Docker, conteneur Proxmox en une commande, mise à jour depuis l'interface
 - Paramètres regroupés en un seul espace avec recherche
+- Interface en français et en anglais (langue par utilisateur, langue par défaut choisie par l'administrateur)
 - Web app installable, téléchargements hors ligne, navigation à la télécommande et à la manette, application Android TV native (lecture directe des MKV, son multicanal transmis à l'ampli)

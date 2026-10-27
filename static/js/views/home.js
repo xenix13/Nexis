@@ -4,6 +4,7 @@ import { arrange, clear, h, icon, img, posterCard, row, toast, wideCard } from '
 import { groupCard } from './together.js';
 import { onGroups } from '../groups.js';
 import { pinRow, pins } from '../pins.js';
+import { tr } from '../i18n.js';
 
 export async function renderHome(main, ctx) {
   const data = await get('/api/home');
@@ -19,26 +20,26 @@ export async function renderHome(main, ctx) {
     parts.push(h('section.hero', art ? { style: { backgroundImage: `url("${img(art, 1600, 900)}")` } } : null,
       h('div.hero-shade'),
       h('div.hero-body',
-        h('div.hero-kicker', resume ? (hero.next_up ? 'À suivre' : 'Reprendre') : 'Ajouté récemment'),
+        h('div.hero-kicker', resume ? (hero.next_up ? tr('À suivre') : tr('Reprendre')) : tr('Ajouté récemment')),
         h('h1.hero-title', hero.type === 'episode' ? hero.show : hero.title),
         hero.type === 'episode'
-          ? h('p.hero-sub', `Saison ${hero.season} · Épisode ${hero.episode} — ${hero.title}`)
+          ? h('p.hero-sub', tr('Saison {season} · Épisode {episode} — {title}', { season: hero.season, episode: hero.episode, title: hero.title }))
           : (hero.year ? h('p.hero-sub', [hero.year, hero.content_rating].filter(Boolean).join(' · ')) : null),
         hero.summary ? h('p.hero-summary', { class: hero.type === 'episode' && !hero.position ? 'hero-summary spoiler' : 'hero-summary' }, hero.summary) : null,
         h('div.hero-actions',
-          hero.type === 'show' ? null : h('a.btn.light.lg', { href: playHref }, icon('play'), resume && hero.position ? 'Reprendre' : 'Lecture'),
-          h('a.btn.ghost.lg', { href: infoHref }, 'Plus d’infos')))));
+          hero.type === 'show' ? null : h('a.btn.light.lg', { href: playHref }, icon('play'), resume && hero.position ? tr('Reprendre') : tr('bouton|Lecture')),
+          h('a.btn.ghost.lg', { href: infoHref }, tr('Plus d’infos'))))));
   }
   // groupes en cours : rangée tenue à jour en direct (vide et invisible quand il n'y en a pas)
   const togetherBox = h('div.together-row');
   sections.set('together', togetherBox);
   const stopGroups = onGroups((groups) => {
     const shown = groups.filter((g) => !g.item || !g.item.hidden);
-    togetherBox.replaceChildren(...(shown.length ? [h('section.row', h('div.row-head', h('a.row-title', { href: '#/together' }, 'Regarder ensemble')),
+    togetherBox.replaceChildren(...(shown.length ? [h('section.row', h('div.row-head', h('a.row-title', { href: '#/together' }, tr('Regarder ensemble'))),
       h('div.group-list', shown.map(groupCard)))] : []));
   });
   ctx.setCleanup(stopGroups);
-  const continueRow = (items) => row('Reprendre et à suivre', items, (c) => wideCard(c, { onWatched }), { wide: true });
+  const continueRow = (items) => row(tr('Reprendre et à suivre'), items, (c) => wideCard(c, { onWatched }), { wide: true });
   let current = continueRow(data.continue);
   // « marquer comme vu » : la carte s'efface, l'épisode suivant prend sa place ; annulable
   async function refreshRow(c) {
@@ -57,8 +58,8 @@ export async function renderHome(main, ctx) {
     slot.classList.add('leaving');
     try {
       await setWatched(c, true);
-      toast(c.type === 'episode' ? `${c.show} · ${c.title} : marqué comme vu` : `${c.title} : marqué comme vu`, 'ok',
-        { label: 'Annuler', onClick: () => setWatched(c, false).catch((x) => toast(x.message, 'bad')) });
+      toast(c.type === 'episode' ? tr('{show} · {title} : marqué comme vu', { show: c.show, title: c.title }) : tr('{title} : marqué comme vu', { title: c.title }), 'ok',
+        { label: tr('Annuler'), onClick: () => setWatched(c, false).catch((x) => toast(x.message, 'bad')) });
     } catch (x) {
       slot.classList.remove('leaving');
       slot.querySelector('.card-watch').disabled = false;
@@ -66,14 +67,14 @@ export async function renderHome(main, ctx) {
     }
   }
   sections.set('continue', current);
-  sections.set('watchlist', row('À regarder', data.watchlist, (c) => posterCard(c), { href: '#/watchlist' }));
+  sections.set('watchlist', row(tr('À regarder'), data.watchlist, (c) => posterCard(c), { href: '#/watchlist' }));
   // suggestions calculées à partir de ce qui a été regardé récemment (genres, réalisateurs, acteurs)
-  sections.set('suggest', row('Suggestions', data.suggestions, (c) => posterCard(c)));
-  const because = (data.because || []).map((b) => row(`Parce que vous avez regardé ${b.seed.type === 'show' ? 'la série ' : ''}${b.seed.title}`,
+  sections.set('suggest', row(tr('Suggestions'), data.suggestions, (c) => posterCard(c)));
+  const because = (data.because || []).map((b) => row(tr(b.seed.type === 'show' ? 'Parce que vous avez regardé la série {title}' : 'Parce que vous avez regardé {title}', { title: b.seed.title }),
     b.items, (c) => posterCard(c)));
   sections.set('because', because.length ? h('div.row-group', because) : null);
   for (const r of data.rows) {
-    const title = r.library.type === 'show' ? `Nouveaux épisodes · ${r.library.title}` : `Ajoutés récemment · ${r.library.title}`;
+    const title = r.library.type === 'show' ? tr('Nouveaux épisodes · {title}', { title: r.library.title }) : tr('Ajoutés récemment · {title}', { title: r.library.title });
     sections.set(`lib:${r.library.id}`, row(title, r.items, (c) => posterCard(c), { href: `#/library/${r.library.id}` }));
   }
   // rangées épinglées (collections, playlists, genres), chargées en parallèle
@@ -87,9 +88,9 @@ export async function renderHome(main, ctx) {
   }
   if (!data.rows.length && !data.continue.length && !(data.watchlist || []).length) {
     parts.push(state.me.user.is_admin
-      ? h('div.empty', h('p', 'Aucun média pour l’instant.'),
-        h('a.btn.primary', { href: '#/admin/libraries' }, 'Ajouter une bibliothèque'))
-      : h('div.empty', 'Aucune bibliothèque n’est accessible avec ce compte. Contactez l’administrateur.'));
+      ? h('div.empty', h('p', tr('Aucun média pour l’instant.')),
+        h('a.btn.primary', { href: '#/admin/libraries' }, tr('Ajouter une bibliothèque')))
+      : h('div.empty', tr('Aucune bibliothèque n’est accessible avec ce compte. Contactez l’administrateur.')));
   }
   clear(main, parts);
 }

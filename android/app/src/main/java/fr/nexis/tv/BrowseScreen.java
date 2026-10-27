@@ -93,14 +93,14 @@ final class BrowseScreen extends Screen {
         View gap = new View(act);
         bar.addView(gap, new LinearLayout.LayoutParams(dp(22), 1));
 
-        addTab("Accueil", new HomeTab(this));
+        addTab(Tr.t("Accueil"), new HomeTab(this));
         for (int i = 0; i < Session.libraries.length(); i++) {
             JSONObject lib = Session.libraries.optJSONObject(i);
             if (lib != null) addTab(lib.optString("title"), new LibraryTab(this, lib));
         }
         View spacer = new View(act);
         bar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
-        addTab("Plus", new MoreTab(this));
+        addTab(Tr.t("Plus"), new MoreTab(this));
         page.addView(bar, new LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         content = new FrameLayout(act);
@@ -190,9 +190,9 @@ final class BrowseScreen extends Screen {
             tabViews.get(0).requestFocus();
             return true;
         }
-        Ui.dialog(act).setTitle("Quitter Nexis ?")
-                .setPositiveButton("Quitter", (d, w) -> act.finish())
-                .setNegativeButton("Rester", null)
+        Ui.dialog(act).setTitle(Tr.t("Quitter Nexis ?"))
+                .setPositiveButton(Tr.t("Quitter"), (d, w) -> act.finish())
+                .setNegativeButton(Tr.t("Rester"), null)
                 .show();
         return true;
     }

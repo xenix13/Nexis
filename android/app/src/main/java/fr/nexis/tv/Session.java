@@ -19,6 +19,7 @@ final class Session {
         prefs = me.optJSONObject("prefs") != null ? me.optJSONObject("prefs") : new JSONObject();
         libraries = me.optJSONArray("libraries") != null ? me.optJSONArray("libraries") : new JSONArray();
         features = me.optJSONObject("features") != null ? me.optJSONObject("features") : new JSONObject();
+        Tr.use(user.optString("language", Tr.lang));
     }
 
     static String pref(String key, String def) {

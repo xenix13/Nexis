@@ -3,6 +3,7 @@
 // L'état est gardé dans sessionStorage : si la page est rechargée pendant l'installation, le suivi reprend.
 import { get } from './api.js';
 import { h, toast } from './ui.js';
+import { tr } from './i18n.js';
 
 const KEY = 'nexis-update';
 const LIMIT = 15 * 60 * 1000;
@@ -39,13 +40,13 @@ export function followUpdate(from) {
   if (overlay) return;
   const bar = h('div.update-bar-fill');
   const pct = h('span.update-pct', '0 %');
-  const step = h('p.update-step', 'Démarrage…');
+  const step = h('p.update-step', tr('Démarrage…'));
   const log = h('pre.log');
-  const details = h('details.update-log', h('summary.small', 'Journal de l’installation'), log);
+  const details = h('details.update-log', h('summary.small', tr('Journal de l’installation')), log);
   const actions = h('div.modal-actions');
-  overlay = h('div.update-overlay', { role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Mise à jour de Nexis' },
-    h('div.update-box', h('h2', 'Mise à jour de Nexis'),
-      h('p.muted.small', 'Cette page se rechargera automatiquement à la fin de l’installation.'),
+  overlay = h('div.update-overlay', { role: 'dialog', 'aria-modal': 'true', 'aria-label': tr('Mise à jour de Nexis') },
+    h('div.update-box', h('h2', tr('Mise à jour de Nexis')),
+      h('p.muted.small', tr('Cette page se rechargera automatiquement à la fin de l’installation.')),
       h('div.update-bar', bar), h('div.update-row', step, pct), details, actions));
   document.body.append(overlay);
 
@@ -68,14 +69,14 @@ export function followUpdate(from) {
     step.textContent = text;
     overlay.classList.add('failed');
     details.open = true;
-    actions.replaceChildren(h('button.btn', { onclick: () => { overlay.remove(); overlay = null; } }, 'Fermer'));
+    actions.replaceChildren(h('button.btn', { onclick: () => { overlay.remove(); overlay = null; } }, tr('Fermer')));
   };
-  show(2, 'Démarrage…');
+  show(2, tr('Démarrage…'));
 
   const tick = async () => {
     let up = null;
     try { up = await get('/api/status'); } catch { /* redémarrage en cours */ }
-    if (up && up.version !== st.from) { finish(`Nexis ${up.version} est installé. Rechargement…`); return; }
+    if (up && up.version !== st.from) { finish(tr('Nexis {version} est installé. Rechargement…', { version: up.version })); return; }
     if (up) {
       try {
         const u = await get('/api/admin/update');
@@ -83,18 +84,18 @@ export function followUpdate(from) {
         if (u.running) seenRunning = true;
         // (un journal « terminé » vu avant que l'installation n'ait démarré est celui de la fois précédente)
         if (u.done && !u.running && seenRunning) {
-          if (u.ok) { finish('Mise à jour terminée. Rechargement…'); return; }
-          fail('La mise à jour a échoué : le détail est dans le journal ci-dessous.');
+          if (u.ok) { finish(tr('Mise à jour terminée. Rechargement…')); return; }
+          fail(tr('La mise à jour a échoué : le détail est dans le journal ci-dessous.'));
           return;
         }
-        if (u.running) show(u.percent || 3, `${u.step || 'Installation'}…`);
+        if (u.running) show(u.percent || 3, `${u.step || tr('Installation')}…`);
       } catch { /* l'assistant système redémarre lui aussi */ }
     } else {
       seenRunning = true; // serveur coupé : c'est bien l'installation en cours qui le redémarre
-      show(85, 'Redémarrage de Nexis…');
+      show(85, tr('Redémarrage de Nexis…'));
     }
     if (Date.now() - st.at > LIMIT) {
-      fail('Mise à jour non terminée après 15 minutes. Le journal se trouve dans /var/log/seance-update.log sur le serveur.');
+      fail(tr('Mise à jour non terminée après 15 minutes. Le journal se trouve dans /var/log/seance-update.log sur le serveur.'));
       return;
     }
     setTimeout(tick, 2000);
@@ -108,7 +109,7 @@ export async function resumeUpdate(status) {
   if (!st) return false;
   if (status && status.version !== st.from) {
     save(null);
-    toast(`Nexis ${status.version} est installé`, 'ok');
+    toast(tr('Nexis {version} est installé', { version: status.version }), 'ok');
     return false;
   }
   followUpdate(st.from);

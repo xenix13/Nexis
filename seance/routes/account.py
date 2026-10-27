@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import time
 
-from .. import __version__ as VERSION, media, twofa, update
+from .. import __version__ as VERSION, i18n, media, twofa, update
 from ..auth import (USERNAME, USERNAME_RULE, check_credentials, clear_session, create_session, hash_password,
                     normalize_username, validate_password, verify_password)
 from ..catalog import HEX, validate_prefs
@@ -34,7 +34,8 @@ def register(app, ctx, x):
     def status(req):
         return {"setup": db.scalar("SELECT COUNT(*) FROM users") == 0,
                 "libraries": db.scalar("SELECT COUNT(*) FROM libraries"),
-                "ffmpeg": media.available(), "version": VERSION}
+                "ffmpeg": media.available(), "version": VERSION,
+                "language": i18n.default_language(db), "languages": i18n.LANGUAGES}
 
     @app.route("GET", "/tv", auth=None)
     def tv_app(req):
@@ -56,9 +57,13 @@ def register(app, ctx, x):
         if not USERNAME.match(username):
             raise HTTPError(400, USERNAME_RULE)
         validate_password(b.get("password"))
+        lang = i18n.valid(b.get("language"))
         with db.tx():
             if db.scalar("SELECT COUNT(*) FROM users"):
                 raise HTTPError(409, "Déjà configuré")
+            if lang:  # langue choisie à l'installation : celle du serveur, donc des comptes à venir
+                db.set_setting("default_language", lang)
+                i18n.set_server_default(lang)
             uid = db.run("INSERT INTO users(username,display_name,password_hash,is_admin,created_at) "
                          "VALUES(?,?,?,1,?)", (username, (b.get("display_name") or username)[:50],
                                                hash_password(b["password"]), int(time.time()))).lastrowid
@@ -122,12 +127,13 @@ def register(app, ctx, x):
                 "is_admin": bool(u["is_admin"]), "avatar_color": u["avatar_color"],
                 "managed": bool(u.get("managed")), "has_pin": bool(u.get("pin_hash")),
                 "max_age": u.get("max_age"), "home": bool(u.get("home", 1)), "kids": bool(u.get("kids")),
-                "avatar": avatar_url(u), "two_factor": bool(u.get("totp_enabled"))}
+                "avatar": avatar_url(u), "two_factor": bool(u.get("totp_enabled")),
+                "language": i18n.valid(u.get("language")) or i18n.default_language(db)}
 
     @app.route("GET", "/api/me")
     def me(req):
         allowed = allowed_set(req.user)
-        warning = None if media.available() else "ffmpeg n'est pas installé sur le serveur : la lecture est impossible."
+        warning = None if media.available() else i18n.tr("ffmpeg n'est pas installé sur le serveur : la lecture est impossible.")
         return {"user": user_view(req.user), "prefs": get_prefs(req.user["id"]),
                 "libraries": [l for l in libraries_all() if l["id"] in allowed], "warning": warning,
                 "features": {"discover": bool(db.setting("tmdb_key")),
@@ -144,6 +150,15 @@ def register(app, ctx, x):
         db.run("INSERT INTO prefs(user_id,data) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data",
                (req.user["id"], json.dumps(p)))
         return p
+
+    @app.route("PUT", "/api/me/language")
+    def me_language(req):
+        lang = i18n.valid(req.json().get("language"))
+        if not lang:
+            raise HTTPError(400, "Langue invalide")
+        db.run("UPDATE users SET language=? WHERE id=?", (lang, req.user["id"]))
+        i18n.set_lang(lang)
+        return {"language": lang}
 
     @app.route("PUT", "/api/me/profile")
     def me_profile(req):

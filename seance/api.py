@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from . import __version__, catalog, collections_api, discover, livetv, media, notify, suggest, syncplay, tasks, update
+from . import __version__, catalog, collections_api, discover, i18n, livetv, media, notify, suggest, syncplay, tasks, update
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
@@ -58,6 +58,7 @@ class Ctx:
             age = age_of(r["content_rating"])
             if age is not None:
                 self.db.run("UPDATE items SET age=? WHERE id=?", (age, r["id"]))
+        i18n.set_server_default(i18n.default_language(self.db))
         if not self.db.setting("webhook_token"):
             self.db.set_setting("webhook_token", secrets.token_urlsafe(24))
         self.sub_locks = {}
@@ -143,6 +144,10 @@ def build_app(ctx):
     app.static_dir = ctx.static_dir
     db = ctx.db
     app.teardown.append(db.release)
+    # langue des messages : d'abord celle de l'interface (en-tête), précisée par le compte une fois connu
+    app.begin = lambda req: i18n.set_lang((req.headers.get("X-Lang") or "").strip())
+    app.translate = i18n.tr
+    app.default_lang = lambda: i18n.default_language(db)
 
     def setup_allowed(req):
         if req.user and req.user["is_admin"]:
@@ -160,6 +165,7 @@ def build_app(ctx):
         if req.method != "GET" and req.headers.get("X-Seance") != "1":
             raise HTTPError(403, "En-tête de requête manquant")
         req.user = load_user(db, req)
+        i18n.set_lang(i18n.request_language(req, db))
         auth = opts.get("auth", "user")
         if auth == "user" and not req.user:
             raise HTTPError(401, "Connexion requise")

@@ -97,7 +97,7 @@ public class PlayerActivity extends Activity {
                 playNext();
                 return;
             }
-            upNextButton.setText("Épisode suivant dans " + countdown + " s");
+            upNextButton.setText(Tr.t("Épisode suivant dans ") + countdown + " s");
             handler.postDelayed(this, 1000);
         }
     };
@@ -225,10 +225,10 @@ public class PlayerActivity extends Activity {
         playButton.setBackground(Ui.focusable(this, Ui.ACCENT, Color.WHITE, 26));
         playButton.setOnClickListener(v -> togglePlay());
         buttons.addView(playButton, new LinearLayout.LayoutParams(dp(52), dp(52)));
-        tracksButton = Ui.button(this, "Audio et sous-titres", false);
+        tracksButton = Ui.button(this, Tr.t("Audio et sous-titres"), false);
         tracksButton.setOnClickListener(v -> tracksMenu());
         buttons.addView(tracksButton, Ui.margins(this, 14, 0, 0, 0));
-        nextButton = Ui.button(this, "Épisode suivant", false);
+        nextButton = Ui.button(this, Tr.t("Épisode suivant"), false);
         nextButton.setOnClickListener(v -> playNext());
         buttons.addView(nextButton, Ui.margins(this, 12, 0, 0, 0));
         panel.addView(buttons);
@@ -237,11 +237,11 @@ public class PlayerActivity extends Activity {
 
         // « Passer le générique », « Épisode suivant » : en bas à droite, hors des commandes
         floating = Ui.row(this);
-        skipButton = Ui.button(this, "Passer le générique", true);
+        skipButton = Ui.button(this, Tr.t("Passer le générique"), true);
         skipButton.setOnClickListener(v -> skipIntro());
         skipButton.setVisibility(View.GONE);
         floating.addView(skipButton);
-        upNextButton = Ui.button(this, "Épisode suivant", true);
+        upNextButton = Ui.button(this, Tr.t("Épisode suivant"), true);
         upNextButton.setOnClickListener(v -> playNext());
         upNextButton.setVisibility(View.GONE);
         floating.addView(upNextButton, Ui.margins(this, 12, 0, 0, 0));
@@ -260,10 +260,10 @@ public class PlayerActivity extends Activity {
         errorBox.addView(errorText, new LinearLayout.LayoutParams(dp(560), ViewGroup.LayoutParams.WRAP_CONTENT));
         LinearLayout eb = Ui.row(this);
         eb.setPadding(0, dp(20), 0, 0);
-        retryButton = Ui.button(this, "Réessayer", true);
+        retryButton = Ui.button(this, Tr.t("Réessayer"), true);
         retryButton.setOnClickListener(v -> retry());
         eb.addView(retryButton, Ui.margins(this, 0, 0, 12, 0));
-        Button back = Ui.button(this, "Retour", false);
+        Button back = Ui.button(this, Tr.t("Retour"), false);
         back.setOnClickListener(v -> leave());
         eb.addView(back);
         errorBox.addView(eb);
@@ -333,7 +333,7 @@ public class PlayerActivity extends Activity {
             subSel = Player.pickSubtitle(subs, audioSel, tp);
             if ("episode".equals(d.optString("type"))) {
                 title.setText(d.optString("show"));
-                subtitle.setText("Saison " + d.optInt("season") + " · Épisode " + d.optInt("episode") + " — " + d.optString("title"));
+                subtitle.setText(Tr.t("Saison ") + d.optInt("season") + Tr.t(" · Épisode ") + d.optInt("episode") + " — " + d.optString("title"));
             } else {
                 title.setText(d.optString("title"));
                 int y = d.optInt("year", 0);
@@ -507,7 +507,7 @@ public class PlayerActivity extends Activity {
             long creditsAt = credits != null ? credits.optLong("start") : dur > 300000 ? dur - 30000 : Long.MAX_VALUE;
             boolean show = pos >= creditsAt && !upNextDismissed;
             if (show && upNextButton.getVisibility() != View.VISIBLE) {
-                upNextButton.setText("Épisode suivant");
+                upNextButton.setText(Tr.t("Épisode suivant"));
                 upNextButton.setVisibility(View.VISIBLE);
                 if (panel.getVisibility() != View.VISIBLE && skipButton.getVisibility() != View.VISIBLE) upNextButton.requestFocus();
             } else if (!show && upNextButton.getVisibility() == View.VISIBLE) {
@@ -529,10 +529,10 @@ public class PlayerActivity extends Activity {
     }
 
     private String modeLabel() {
-        if (session == null) return "connexion au serveur";
-        if (direct()) return "lecture directe du fichier";
-        if ("copy".equals(session.optString("mode"))) return "flux préparé par le serveur (remux)";
-        return "conversion de la vidéo par le serveur";
+        if (session == null) return Tr.t("connexion au serveur");
+        if (direct()) return Tr.t("lecture directe du fichier");
+        if ("copy".equals(session.optString("mode"))) return Tr.t("flux préparé par le serveur (remux)");
+        return Tr.t("conversion de la vidéo par le serveur");
     }
 
     /**
@@ -557,15 +557,15 @@ public class PlayerActivity extends Activity {
         status.setVisibility(View.VISIBLE);
         if (session != null && direct() && !forceHls && preparedAt > 0 && now - preparedAt > DIRECT_PATIENCE) {
             forceHls = true;
-            Ui.toast(this, "Lecture directe trop lente : passage par le serveur");
+            Ui.toast(this, Tr.t("Lecture directe trop lente : passage par le serveur"));
             startStream(lastPosition, burning);
             return;
         }
         if (!stallShown && now - waitSince > STALL_AFTER) {
             stallShown = true;
             String detail = why.isEmpty() ? "" : " : " + why;
-            showError("La lecture ne démarre pas (" + modeLabel() + detail + ").\n"
-                    + "Le serveur ou le partage réseau est peut-être lent. Réessayez, ou attendez encore un peu.");
+            showError(Tr.t("La lecture ne démarre pas (") + modeLabel() + detail + ").\n"
+                    + Tr.t("Le serveur ou le partage réseau est peut-être lent. Réessayez, ou attendez encore un peu."));
         }
     }
 
@@ -627,7 +627,7 @@ public class PlayerActivity extends Activity {
         JSONObject next = session == null ? null : session.optJSONObject("next");
         if (next != null && Session.flag("autoplay_next", true)) {
             countdown = Math.max(1, Session.prefs.optInt("next_delay", 5));
-            upNextButton.setText("Épisode suivant dans " + countdown + " s");
+            upNextButton.setText(Tr.t("Épisode suivant dans ") + countdown + " s");
             upNextButton.setVisibility(View.VISIBLE);
             upNextButton.requestFocus();
             handler.postDelayed(countdownTick, 1000);
@@ -659,9 +659,9 @@ public class PlayerActivity extends Activity {
     private void tracksMenu() {
         handler.removeCallbacks(hidePanel);
         String audioLabel = audioSel == null ? "—" : audioSel.optString("title");
-        String subLabel = subSel == null ? "Aucun" : subSel.optString("title");
-        String[] rows = {"Audio : " + audioLabel, "Sous-titres : " + subLabel};
-        Ui.dialog(this).setTitle("Audio et sous-titres").setItems(rows, (d, which) -> {
+        String subLabel = subSel == null ? Tr.t("Aucun") : subSel.optString("title");
+        String[] rows = {Tr.t("Audio : ") + audioLabel, Tr.t("Sous-titres : ") + subLabel};
+        Ui.dialog(this).setTitle(Tr.t("Audio et sous-titres")).setItems(rows, (d, which) -> {
             if (which == 0) audioMenu();
             else subtitleMenu();
         }).setOnDismissListener(d -> scheduleHide()).show();
@@ -675,7 +675,7 @@ public class PlayerActivity extends Activity {
             labels[i] = audios.get(i).optString("title");
             if (audios.get(i) == audioSel) sel = i;
         }
-        Ui.dialog(this).setTitle("Audio").setSingleChoiceItems(labels, sel, (d, which) -> {
+        Ui.dialog(this).setTitle(Tr.t("Audio")).setSingleChoiceItems(labels, sel, (d, which) -> {
             d.dismiss();
             JSONObject a = audios.get(which);
             if (a == audioSel) return;
@@ -689,13 +689,13 @@ public class PlayerActivity extends Activity {
     private void subtitleMenu() {
         List<JSONObject> menu = Player.menuSubs(subs, audioSel);
         String[] labels = new String[menu.size() + 1];
-        labels[0] = "Aucun";
+        labels[0] = Tr.t("Aucun");
         int sel = 0;
         for (int i = 0; i < menu.size(); i++) {
             labels[i + 1] = menu.get(i).optString("title");
             if (menu.get(i) == subSel) sel = i + 1;
         }
-        Ui.dialog(this).setTitle("Sous-titres").setSingleChoiceItems(labels, sel, (d, which) -> {
+        Ui.dialog(this).setTitle(Tr.t("Sous-titres")).setSingleChoiceItems(labels, sel, (d, which) -> {
             d.dismiss();
             JSONObject s = which == 0 ? null : menu.get(which - 1);
             if (s == subSel) return;
@@ -729,11 +729,11 @@ public class PlayerActivity extends Activity {
         }
         if (retries < 2) {
             retries++;
-            Ui.toast(this, "Flux interrompu, reconnexion…");
+            Ui.toast(this, Tr.t("Flux interrompu, reconnexion…"));
             startStream(pos, burning);
             return;
         }
-        showError("La lecture s'est interrompue (" + e.getErrorCodeName() + ")." + cause(e));
+        showError(Tr.t("La lecture s'est interrompue (") + e.getErrorCodeName() + ")." + cause(e));
     }
 
     private void showError(String message) {
