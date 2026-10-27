@@ -61,12 +61,14 @@ final class Images {
     private static Bitmap fetch(String path, int maxSide) {
         HttpURLConnection c = null;
         try {
-            c = (HttpURLConnection) new URL(Api.url(path)).openConnection();
+            String url = Api.url(path);
+            c = (HttpURLConnection) new URL(url).openConnection();
             c.setConnectTimeout(10000);
             c.setReadTimeout(30000);
             c.setRequestProperty("User-Agent", Api.VERSION_HEADER);
             String ck = Api.cookieHeader();
-            if (!ck.isEmpty()) c.setRequestProperty("Cookie", ck);
+            // cookie de session : uniquement vers le serveur Nexis, jamais vers une adresse d'image extérieure
+            if (!ck.isEmpty() && url.startsWith(Api.server() + "/")) c.setRequestProperty("Cookie", ck);
             if (c.getResponseCode() != 200) return null;
             byte[] data;
             try (InputStream in = c.getInputStream()) {

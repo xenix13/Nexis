@@ -1,7 +1,8 @@
 // Sélection de chapitre en vignettes (lecteur et fiche) : image, titre, heure de début.
 import { fmtTime, h } from './ui.js';
+import { tr } from './i18n.js';
 
-export const chapterTitle = (c, n) => c.title || `Chapitre ${n + 1}`;
+export const chapterTitle = (c, n) => c.title || tr('Chapitre {p1}', { p1: n + 1 });
 
 export function chapterCards(chapters, { current = -1, onPick, href } = {}) {
   return chapters.map((c, n) => {

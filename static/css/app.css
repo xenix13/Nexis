@@ -81,6 +81,7 @@ input:focus, select:focus { border-color: var(--accent); }
 input:disabled { opacity: 0.6; }
 input[type="range"] { accent-color: var(--accent); }
 .form-error { color: var(--danger); min-height: 1em; margin: 4px 0 12px; font-size: 14px; }
+.warn-text { color: var(--accent); margin-top: 4px; }
 .toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; margin: 10px 0; }
 .toggle input { position: absolute; opacity: 0; pointer-events: none; }
 .toggle-ui { width: 38px; height: 22px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--line);
@@ -120,6 +121,8 @@ input[type="range"] { accent-color: var(--accent); }
 .auth-side { flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; justify-content: center;
   padding: clamp(28px, 5vw, 64px); background: var(--surface); border-left: 1px solid var(--line); }
 .auth-card { width: 100%; max-width: 400px; }
+.auth-lang { align-self: flex-end; margin: -8px 0 16px; }
+.auth-lang select { width: auto; padding: 6px 10px; font-size: 14px; }
 .auth-card.wide { max-width: 560px; }
 .auth-brand { display: flex; flex-direction: column; align-items: flex-start; gap: 18px; margin-bottom: 8px; }
 .auth-brand .logo-mark { width: 76px; height: 76px; filter: drop-shadow(0 0 22px rgba(255, 138, 31, 0.35)); }
@@ -1090,3 +1093,7 @@ html.kids .card:focus-visible, html.kids .card:hover { transform: scale(1.04); }
 .recovery-codes code { user-select: all; letter-spacing: 0.05em; }
 .twofa-admin { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px;
   border-radius: 8px; background: color-mix(in srgb, var(--ok) 12%, transparent); }
+/* À propos, attribution des données (TMDB, JustWatch) */
+.data-credit { margin-top: 32px; }
+.about ul { margin: 6px 0 12px; padding-left: 20px; line-height: 1.7; }
+.about .sub { margin-top: 18px; }

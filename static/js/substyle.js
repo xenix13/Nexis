@@ -1,19 +1,20 @@
+import { tr } from './i18n.js';
 // Apparence des sous-titres texte (préférences de chaque utilisateur), appliquée par variables CSS
 // au lecteur et à l'aperçu des Paramètres. Les sous-titres ASS rendus par libass gardent leur propre style.
 export const SUB_FONTS = {
-  sans: ['Standard', 'Inter, system-ui, sans-serif'],
-  display: ['Arrondie', 'Outfit, Inter, sans-serif'],
-  serif: ['À empattements', 'Georgia, "Times New Roman", serif'],
-  mono: ['Machine à écrire', '"SFMono-Regular", Consolas, "Liberation Mono", monospace'],
+  sans: [tr('Standard'), 'Inter, system-ui, sans-serif'],
+  display: [tr('Arrondie'), 'Outfit, Inter, sans-serif'],
+  serif: [tr('À empattements'), 'Georgia, "Times New Roman", serif'],
+  mono: [tr('Machine à écrire'), '"SFMono-Regular", Consolas, "Liberation Mono", monospace'],
 };
-export const SUB_BGS = { box: ['Bandeau semi-transparent', 'rgba(0, 0, 0, 0.55)'], solid: ['Bandeau opaque', 'rgba(0, 0, 0, 0.92)'],
-  none: ['Aucun', 'transparent'] };
+export const SUB_BGS = { box: [tr('Bandeau semi-transparent'), 'rgba(0, 0, 0, 0.55)'], solid: [tr('Bandeau opaque'), 'rgba(0, 0, 0, 0.92)'],
+  none: [tr('Aucun'), 'transparent'] };
 export const SUB_EDGES = {
-  shadow: ['Ombre', '0 1px 2px #000, 0 0 6px rgba(0, 0, 0, 0.7)'],
-  outline: ['Contour', '-1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 1.5px 0 #000, 0 0 4px #000'],
-  none: ['Aucun', 'none'],
+  shadow: [tr('Ombre'), '0 1px 2px #000, 0 0 6px rgba(0, 0, 0, 0.7)'],
+  outline: [tr('Contour'), '-1.5px -1.5px 0 #000, 1.5px -1.5px 0 #000, -1.5px 1.5px 0 #000, 1.5px 1.5px 0 #000, 0 0 4px #000'],
+  none: [tr('Aucun'), 'none'],
 };
-export const SUB_POSITIONS = { bottom: ['En bas', '9%'], high: ['Un peu plus haut', '16%'] };
+export const SUB_POSITIONS = { bottom: [tr('En bas'), '9%'], high: [tr('Un peu plus haut'), '16%'] };
 export const SUB_COLORS = ['#ffffff', '#fff4b0', '#ffd23f', '#9be7ff', '#b6f5c0'];
 
 export function applySubStyle(el, prefs) {

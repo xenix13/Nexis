@@ -37,7 +37,7 @@ final class LiveTab extends BrowseScreen.Tab {
     @Override
     View create() {
         LinearLayout root = Ui.column(act);
-        TextView title = Ui.title(act, "TV en direct", 24);
+        TextView title = Ui.title(act, Tr.t("TV en direct"), 24);
         title.setPadding(dp(48), dp(10), dp(48), dp(8));
         root.addView(title);
         FrameLayout body = new FrameLayout(act);
@@ -48,7 +48,7 @@ final class LiveTab extends BrowseScreen.Tab {
         list.setClipToPadding(false);
         list.setPadding(dp(40), dp(4), dp(40), dp(40));
         body.addView(list, new FrameLayout.LayoutParams(-1, -1));
-        message = Ui.text(act, "Chargement…", 18, Ui.MUTED);
+        message = Ui.text(act, Tr.t("Chargement…"), 18, Ui.MUTED);
         message.setGravity(Gravity.CENTER);
         body.addView(message, new FrameLayout.LayoutParams(-1, -1));
         root.addView(body, new LinearLayout.LayoutParams(-1, 0, 1f));
@@ -63,7 +63,7 @@ final class LiveTab extends BrowseScreen.Tab {
             Session.channels = channels;
             adapter.notifyDataSetChanged();
             message.setVisibility(channels.length() == 0 ? View.VISIBLE : View.GONE);
-            message.setText("Aucune chaîne disponible.");
+            message.setText(Tr.t("Aucune chaîne disponible."));
         }, e -> {
             if (channels.length() == 0) message.setText(e.getMessage());
         });
@@ -163,7 +163,7 @@ final class LiveTab extends BrowseScreen.Tab {
                 bar.setVisibility(View.INVISIBLE);
             }
             JSONObject nx = ch.optJSONObject("next");
-            next.setText(nx != null ? "Ensuite : " + hour(nx.optLong("start")) + "  " + nx.optString("title") : "");
+            next.setText(nx != null ? Tr.t("Ensuite : ") + hour(nx.optLong("start")) + "  " + nx.optString("title") : "");
         }
     }
 }

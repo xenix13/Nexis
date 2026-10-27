@@ -23,6 +23,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle state) {
         super.onCreate(state);
         Api.init(this);
+        Tr.init();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         root = new FrameLayout(this);
         root.setBackgroundColor(Ui.BG);
@@ -37,14 +38,14 @@ public class MainActivity extends Activity {
             reset(new SetupScreen(this, null));
             return;
         }
-        reset(new LoadingScreen(this, "Connexion à " + Api.server() + "…"));
+        reset(new LoadingScreen(this, Tr.t("Connexion à ") + Api.server() + "…"));
         Api.obj("/api/me", me -> {
             Session.load(me);
             afterLogin(true);
         }, e -> {
             if (e.code == 401) reset(new LoginScreen(this));
-            else reset(new SetupScreen(this, e.code == 0 ? "Le serveur " + Api.server() + " ne répond pas. "
-                    + "Vérifiez la connexion réseau ou modifiez l'adresse." : e.getMessage()));
+            else reset(new SetupScreen(this, e.code == 0 ? Tr.t("Le serveur ") + Api.server() + Tr.t(" ne répond pas. ")
+                    + Tr.t("Vérifiez la connexion réseau ou modifiez l'adresse.") : e.getMessage()));
         });
     }
 

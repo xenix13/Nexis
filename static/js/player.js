@@ -10,6 +10,7 @@ import { moveFocus, remoteMode } from './remote.js';
 import { nextDownloaded, playable, saveProgress } from './offline.js';
 import { chapterStrip, chapterTitle } from './chapters.js';
 import { avatar, clear, episodeCode, errorBox, fmtTime, h, icon, img, loadHls, spinner, store, toast } from './ui.js';
+import { tr } from './i18n.js';
 
 const REPORT_EVERY = 10000;
 const HIDE_AFTER = 3000;
@@ -31,7 +32,7 @@ export async function renderPlayer(root, rk, ctx) {
   const video = h('video.video', { playsinline: true, preload: 'auto' });
   const subLayer = h('div.sub-layer', { style: { fontSize: `${(prefs.sub_size / 100) * 2.4}vmin` } });
   const subTop = h('div.sub-layer.sub-top', { style: { fontSize: `${(prefs.sub_size / 100) * 2.4}vmin` } });
-  const subsPending = h('div.subs-pending', { hidden: true }, 'Sous-titres en préparation…');
+  const subsPending = h('div.subs-pending', { hidden: true }, tr('Sous-titres en préparation…'));
   const loader = h('div.player-loader', spinner());
   const errorLayer = h('div.player-error', { hidden: true });
   const titleEl = h('div.player-title');
@@ -44,37 +45,37 @@ export async function renderPlayer(root, rk, ctx) {
   const previewTime = h('div.tl-preview-time');
   const hoverTip = h('div.tl-tip', { hidden: true }, previewImg, previewChapter, previewTime);
   const chapterMarks = h('div.tl-chapters');
-  const timeline = h('div.timeline', { role: 'slider', 'aria-label': 'Position', tabindex: 0 },
+  const timeline = h('div.timeline', { role: 'slider', 'aria-label': tr('Position'), tabindex: 0 },
     h('div.tl-track', buffered, introMark, chapterMarks, played, h('div.tl-thumb')), hoverTip);
-  const playBtn = h('button.ctl', { 'aria-label': 'Lecture/Pause' }, icon('play'));
-  const muteBtn = h('button.ctl', { 'aria-label': 'Couper le son' }, icon('volume'));
-  const volume = h('input.volume', { type: 'range', min: 0, max: 1, step: 0.05, 'aria-label': 'Volume' });
-  const nextBtn = h('button.ctl', { 'aria-label': 'Épisode suivant', hidden: true }, icon('next'));
-  const subsBtn = h('button.ctl', { 'aria-label': 'Audio et sous-titres' }, icon('subs'));
-  const chaptersBtn = h('button.ctl', { 'aria-label': 'Chapitres', title: 'Chapitres (C)', hidden: true }, icon('chapters'));
+  const playBtn = h('button.ctl', { 'aria-label': tr('Lecture/Pause') }, icon('play'));
+  const muteBtn = h('button.ctl', { 'aria-label': tr('Couper le son') }, icon('volume'));
+  const volume = h('input.volume', { type: 'range', min: 0, max: 1, step: 0.05, 'aria-label': tr('Volume') });
+  const nextBtn = h('button.ctl', { 'aria-label': tr('Épisode suivant'), hidden: true }, icon('next'));
+  const subsBtn = h('button.ctl', { 'aria-label': tr('Audio et sous-titres') }, icon('subs'));
+  const chaptersBtn = h('button.ctl', { 'aria-label': tr('Chapitres'), title: tr('Chapitres (C)'), hidden: true }, icon('chapters'));
   const groupCount = h('span.ctl-badge', { hidden: true });
-  const groupBtn = h('button.ctl', { 'aria-label': 'Regarder ensemble', title: 'Regarder ensemble' }, icon('group'), groupCount);
-  const cogBtn = h('button.ctl', { 'aria-label': 'Qualité' }, icon('cog'));
-  const fullBtn = h('button.ctl', { 'aria-label': 'Plein écran' }, icon('full'));
+  const groupBtn = h('button.ctl', { 'aria-label': tr('Regarder ensemble'), title: tr('Regarder ensemble') }, icon('group'), groupCount);
+  const cogBtn = h('button.ctl', { 'aria-label': tr('Qualité') }, icon('cog'));
+  const fullBtn = h('button.ctl', { 'aria-label': tr('Plein écran') }, icon('full'));
   const menu = h('div.player-menu', { hidden: true });
   const chapterPanel = h('div.chapter-panel', { hidden: true });
   const groupBanner = h('div.group-banner', { hidden: true });
-  const skipBtn = h('button.skip-btn', { hidden: true }, icon('skip'), 'Passer l’intro');
+  const skipBtn = h('button.skip-btn', { hidden: true }, icon('skip'), tr('Passer l’intro'));
   const nextCard = h('div.next-card', { hidden: true });
-  const backBtn = h('button.ctl.back', { 'aria-label': 'Retour' }, icon('back'));
-  const miniBtn = h('button.ctl', { 'aria-label': 'Réduire le lecteur', title: 'Réduire (i) : continuer à naviguer' }, icon('pip'));
+  const backBtn = h('button.ctl.back', { 'aria-label': tr('Retour') }, icon('back'));
+  const miniBtn = h('button.ctl', { 'aria-label': tr('Réduire le lecteur'), title: tr('Réduire (i) : continuer à naviguer') }, icon('pip'));
   // commandes du lecteur réduit (coin de l'écran)
-  const miniPlay = h('button.ctl', { 'aria-label': 'Lecture/Pause' }, icon('pause'));
+  const miniPlay = h('button.ctl', { 'aria-label': tr('Lecture/Pause') }, icon('pause'));
   const miniBar = h('div.mini-bar',
-    h('button.ctl', { 'aria-label': 'Agrandir le lecteur', title: 'Agrandir' }, icon('full')), miniPlay,
-    h('button.ctl', { 'aria-label': 'Fermer le lecteur', title: 'Arrêter la lecture' }, icon('close')));
+    h('button.ctl', { 'aria-label': tr('Agrandir le lecteur'), title: tr('Agrandir') }, icon('full')), miniPlay,
+    h('button.ctl', { 'aria-label': tr('Fermer le lecteur'), title: tr('Arrêter la lecture') }, icon('close')));
 
   const controls = h('div.controls',
     timeline,
     h('div.ctl-row',
       playBtn,
-      h('button.ctl', { 'aria-label': 'Reculer de 10 secondes', onclick: () => seekBy(-10000) }, icon('rewind')),
-      h('button.ctl', { 'aria-label': 'Avancer de 30 secondes', onclick: () => seekBy(30000) }, icon('forward')),
+      h('button.ctl', { 'aria-label': tr('Reculer de 10 secondes'), onclick: () => seekBy(-10000) }, icon('rewind')),
+      h('button.ctl', { 'aria-label': tr('Avancer de 30 secondes'), onclick: () => seekBy(30000) }, icon('forward')),
       h('div.vol', muteBtn, volume), timeEl, h('div.grow'), nextBtn, groupBtn, chaptersBtn, subsBtn, cogBtn, fullBtn));
   const top = h('div.player-top', backBtn, titleEl, h('div.grow'), miniBtn);
   const player = h('div.player', video, subLayer, subTop, subsPending, loader, errorLayer, top, groupBanner, skipBtn, nextCard,
@@ -111,7 +112,7 @@ export async function renderPlayer(root, rk, ctx) {
   try {
     if (offline) {
       local = await playable(state.me.user.id, rk);
-      if (!local) throw new Error('Ce téléchargement n’est plus sur cet appareil.');
+      if (!local) throw new Error(tr('Ce téléchargement n’est plus sur cet appareil.'));
       item = local.item;
     } else {
       item = await get(`/api/items/${rk}`);
@@ -274,12 +275,12 @@ export async function renderPlayer(root, rk, ctx) {
         const at = pos() || session.offset;
         if (autoRetries < 2) {
           autoRetries += 1;
-          toast('Flux interrompu, reconnexion…');
+          toast(tr('Flux interrompu, reconnexion…'));
           start(at);
           return;
         }
         const code = data.response && data.response.code ? ` ${data.response.code}` : '';
-        showError(`Le flux a été interrompu (${data.details}${code}).`, true, at);
+        showError(tr('Le flux a été interrompu ({details}{code}).', { details: data.details, code }), true, at);
       });
       hls.on(window.Hls.Events.MANIFEST_PARSED, autoplay);
       hls.on(window.Hls.Events.FRAG_BUFFERED, () => { autoRetries = 0; });
@@ -292,7 +293,7 @@ export async function renderPlayer(root, rk, ctx) {
         autoplay();
       }, { once: true });
     } else {
-      showError('Ce navigateur ne lit pas le HLS et le lecteur hls.js est absent du serveur. Réinstaller Nexis corrige le problème.');
+      showError(tr('Ce navigateur ne lit pas le HLS et le lecteur hls.js est absent du serveur. Réinstaller Nexis corrige le problème.'));
       return;
     }
     startedAt = Date.now();
@@ -367,10 +368,10 @@ export async function renderPlayer(root, rk, ctx) {
 
   function suggestLowerQuality(cpu) {
     const box = h('div.player-hint',
-      h('span', cpu ? 'Le serveur ne convertit pas cette vidéo assez vite.'
-        : 'La connexion est trop lente pour le débit de ce fichier.'),
-      h('button.btn.primary.small', { onclick: () => { box.remove(); quality = '720p'; start(pos()); } }, 'Passer en 720p'),
-      h('button.icon-btn', { 'aria-label': 'Fermer', onclick: () => box.remove() }, icon('close')));
+      h('span', cpu ? tr('Le serveur ne convertit pas cette vidéo assez vite.')
+        : tr('La connexion est trop lente pour le débit de ce fichier.')),
+      h('button.btn.primary.small', { onclick: () => { box.remove(); quality = '720p'; start(pos()); } }, tr('Passer en 720p')),
+      h('button.icon-btn', { 'aria-label': tr('Fermer'), onclick: () => box.remove() }, icon('close')));
     player.append(box);
     setTimeout(() => box.remove(), 20000);
   }
@@ -389,7 +390,7 @@ export async function renderPlayer(root, rk, ctx) {
         break;
       }
       if (r.ready) break;
-      if (!hint && Date.now() - t0 > 4000) { hint = h('div.loader-hint', 'Préparation de la lecture…'); loader.append(hint); }
+      if (!hint && Date.now() - t0 > 4000) { hint = h('div.loader-hint', tr('Préparation de la lecture…')); loader.append(hint); }
       if (Date.now() - t0 > PREPARE_MAX) break;
     }
     if (hint) hint.remove();
@@ -400,7 +401,7 @@ export async function renderPlayer(root, rk, ctx) {
   async function jassubClass() {
     if (JassubClass === undefined) {
       try {
-        if (typeof WebAssembly !== 'object' || typeof Worker !== 'function') throw new Error('WebAssembly indisponible');
+        if (typeof WebAssembly !== 'object' || typeof Worker !== 'function') throw new Error(tr('WebAssembly indisponible'));
         JassubClass = (await import('/vendor/jassub/jassub.es.js')).default;
       } catch (e) {
         console.warn('[seance] moteur ASS indisponible, sous-titres simplifiés', e.message);
@@ -572,8 +573,8 @@ export async function renderPlayer(root, rk, ctx) {
     errorLayer.hidden = false;
     clear(errorLayer, h('div.error-box', h('p', msg),
       h('div.actions-row',
-        retry ? h('button.btn.primary', { onclick: () => { autoRetries = 0; start(at ?? pos()); } }, 'Réessayer') : null,
-        h('button.btn', { onclick: goBack }, 'Retour'))));
+        retry ? h('button.btn.primary', { onclick: () => { autoRetries = 0; start(at ?? pos()); } }, tr('Réessayer')) : null,
+        h('button.btn', { onclick: goBack }, tr('Retour')))));
   }
 
   function seekTo(ms, remote = false) {
@@ -656,7 +657,7 @@ export async function renderPlayer(root, rk, ctx) {
     const inIntro = intro && p >= intro.start && p < intro.end - 1000;
     if (inIntro && prefs.auto_skip_intro && !introSkipped) {
       introSkipped = true;
-      toast('Intro passée');
+      toast(tr('Intro passée'));
       seekTo(intro.end);
       return;
     }
@@ -675,19 +676,19 @@ export async function renderPlayer(root, rk, ctx) {
   function showNextCard(next, countdown) {
     let left = countdown ? Math.max(0, Number(prefs.next_delay ?? 5)) : null;
     const counter = h('span.next-count');
-    const paint = () => { counter.textContent = left === null ? '' : `dans ${left} s`; };
+    const paint = () => { counter.textContent = left === null ? '' : tr('dans {left} s', { left }); };
     paint();
     const cancel = h('button.btn.ghost.small', { onclick: () => {
-      if (left !== null) { left = null; clearInterval(nextTimer); paint(); cancel.textContent = 'Fermer'; return; }
+      if (left !== null) { left = null; clearInterval(nextTimer); paint(); cancel.textContent = tr('Fermer'); return; }
       nextDismissed = !nextAtEnd;
       hideNextCard();
-    } }, countdown ? 'Annuler' : 'Masquer');
+    } }, countdown ? tr('Annuler') : tr('Masquer'));
     clear(nextCard,
       next.thumb ? h('img', { src: img(next.type === 'episode' ? next.thumb : next.art, 320, 180), alt: '' }) : null,
-      h('div.next-body', h('div.muted.small', next.type === 'episode' ? 'Épisode suivant ' : 'À suivre ', counter),
+      h('div.next-body', h('div.muted.small', next.type === 'episode' ? tr('Épisode suivant ') : tr('À suivre '), counter),
         h('strong', next.type === 'episode' ? `${episodeCode(next)} · ${next.title}` : next.title),
         h('div.actions-row',
-          h('button.btn.primary.small', { onclick: playNext }, icon('play'), 'Lire maintenant'), cancel)));
+          h('button.btn.primary.small', { onclick: playNext }, icon('play'), tr('Lire maintenant')), cancel)));
     nextCard.classList.toggle('end', !!countdown);
     nextCard.hidden = false;
     clearInterval(nextTimer);
@@ -774,38 +775,38 @@ export async function renderPlayer(root, rk, ctx) {
       const audio = session ? session.audio : item.audio;
       const subs = session ? session.subtitles : item.subtitles;
       clear(menu,
-        h('div.menu-col', h('h4', 'Audio'), audio.length ? audio.map((a) => opt(a.title, audioSel && a.id === audioSel.id,
-          () => { audioSel = a; subSel = fixForced(subSel, a, subs); rememberTracks(); restart(); })) : h('p.muted.small', 'Piste unique')),
-        h('div.menu-col', h('h4', 'Sous-titres'),
-          opt('Aucun', !subSel, () => pickSub(null)),
+        h('div.menu-col', h('h4', tr('Audio')), audio.length ? audio.map((a) => opt(a.title, audioSel && a.id === audioSel.id,
+          () => { audioSel = a; subSel = fixForced(subSel, a, subs); rememberTracks(); restart(); })) : h('p.muted.small', tr('Piste unique'))),
+        h('div.menu-col', h('h4', tr('Sous-titres')),
+          opt(tr('Aucun'), !subSel, () => pickSub(null)),
           menuSubs(subs, audioSel).map((s) => opt(s.title, subSel && s.id === subSel.id, () => pickSub(s),
-            s.forced ? SIGNS_HINT : (s.overlay || s.pgs ? null : 'incrusté')))));
+            s.forced ? SIGNS_HINT : (s.overlay || s.pgs ? null : tr('incrusté'))))));
     } else {
-      const q = [['original', 'Originale'], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p']];
-      const modeLabel = { direct: 'Lecture directe', copy: 'Remux (vidéo copiée)', transcode: 'Transcodage' }[session.mode] || '';
-      const cols = [h('div.menu-col', h('h4', 'Qualité'), q.map(([v, l]) => opt(l, quality === v, () => { quality = v; restart(); })),
+      const q = [['original', tr('Originale')], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p']];
+      const modeLabel = { direct: tr('Lecture directe'), copy: tr('Remux (vidéo copiée)'), transcode: tr('Transcodage') }[session.mode] || '';
+      const cols = [h('div.menu-col', h('h4', tr('Qualité')), q.map(([v, l]) => opt(l, quality === v, () => { quality = v; restart(); })),
         h('p.menu-info', h('strong', modeLabel), session.reasons && session.reasons.length ? ` — ${session.reasons.join(', ')}` : '',
-          session.mode === 'transcode' ? h('br') : null, session.mode === 'transcode' ? 'Le processeur du serveur travaille pour cette lecture.' : null))];
+          session.mode === 'transcode' ? h('br') : null, session.mode === 'transcode' ? tr('Le processeur du serveur travaille pour cette lecture.') : null))];
       if (isAdmin && item.type === 'episode') {
         const setMarker = async (which) => {
           const cur = (session.markers && session.markers.intro) || {};
           const draft = { start: cur.start ?? 0, end: cur.end ?? 0, [which]: pos() };
           if (draft.end <= draft.start) {
             session.markers = { ...session.markers, intro: { ...draft, end: draft.start + 1 } };
-            toast(which === 'start' ? 'Début enregistré. Placez la lecture à la fin de l’intro.' : 'La fin doit être après le début', which === 'start' ? 'info' : 'bad');
+            toast(which === 'start' ? tr('Début enregistré. Placez la lecture à la fin de l’intro.') : tr('La fin doit être après le début'), which === 'start' ? 'info' : 'bad');
             return;
           }
           try {
             await put(`/api/admin/markers/${item.id}`, { kind: 'intro', start: draft.start, end: draft.end });
             session.markers = { ...session.markers, intro: { ...draft, source: 'manual' } };
             updateIntroMark();
-            toast(`Intro : ${fmtTime(draft.start)} → ${fmtTime(draft.end)}`, 'ok');
+            toast(tr('Intro : {p1} → {p2}', { p1: fmtTime(draft.start), p2: fmtTime(draft.end) }), 'ok');
           } catch (e) { toast(e.message, 'bad'); }
         };
-        cols.push(h('div.menu-col', h('h4', 'Intro (admin)'),
-          opt('Début de l’intro ici', false, () => setMarker('start')),
-          opt('Fin de l’intro ici', false, () => setMarker('end')),
-          opt('Effacer le marqueur', false, async () => {
+        cols.push(h('div.menu-col', h('h4', tr('Intro (admin)')),
+          opt(tr('Début de l’intro ici'), false, () => setMarker('start')),
+          opt(tr('Fin de l’intro ici'), false, () => setMarker('end')),
+          opt(tr('Effacer le marqueur'), false, async () => {
             await put(`/api/admin/markers/${item.id}`, { kind: 'intro', clear: true });
             session.markers = { ...session.markers, intro: undefined };
             updateIntroMark();
@@ -824,10 +825,10 @@ export async function renderPlayer(root, rk, ctx) {
     const cur = chapters.findIndex((c) => p >= c.start && p < c.end);
     const strip = chapterStrip(chapters, { current: cur, onPick: (c) => { chapterPanel.hidden = true; seekTo(c.start + 1); } });
     clear(chapterPanel,
-      h('div.chapter-panel-head', h('h3', 'Sélection du chapitre'),
-        cur >= 0 ? h('span.muted.small', `En cours : ${chapterTitle(chapters[cur], cur)}`) : null,
+      h('div.chapter-panel-head', h('h3', tr('Sélection du chapitre')),
+        cur >= 0 ? h('span.muted.small', tr('En cours : {p1}', { p1: chapterTitle(chapters[cur], cur) })) : null,
         h('div.grow'),
-        h('button.icon-btn', { 'aria-label': 'Fermer', onclick: () => { chapterPanel.hidden = true; } }, icon('close'))),
+        h('button.icon-btn', { 'aria-label': tr('Fermer'), onclick: () => { chapterPanel.hidden = true; } }, icon('close'))),
       strip);
     chapterPanel.hidden = false;
     const on = strip.querySelector('.chapter-card.on') || strip.firstElementChild;
@@ -864,7 +865,7 @@ export async function renderPlayer(root, rk, ctx) {
       if (e.status === 403 && ['play', 'pause', 'seek'].includes(action)) {
         toast(e.message, 'bad');
         applyGroup(group.state); // on revient à la position du groupe
-      } else if (e.status === 404) leaveGroupMode('Le groupe est terminé');
+      } else if (e.status === 404) leaveGroupMode(tr('Le groupe est terminé'));
     });
   }
   function openGroupEvents() {
@@ -891,10 +892,10 @@ export async function renderPlayer(root, rk, ctx) {
       } else if (m.type === 'notice') {
         toast(m.text);
       } else if (m.type === 'closed') {
-        leaveGroupMode('Le groupe est terminé');
+        leaveGroupMode(tr('Le groupe est terminé'));
       }
     };
-    es.onerror = () => { if (es.readyState === EventSource.CLOSED && group) leaveGroupMode('Connexion au groupe perdue'); };
+    es.onerror = () => { if (es.readyState === EventSource.CLOSED && group) leaveGroupMode(tr('Connexion au groupe perdue')); };
   }
   function leaveGroupMode(msg) {
     if (!group) return;
@@ -907,10 +908,10 @@ export async function renderPlayer(root, rk, ctx) {
   }
   function remoteNotice(m, prev) {
     if (!m.by || m.by === state.me.user.display_name) return;
-    if (m.action === 'pause') toast(`${m.by} a mis en pause`);
-    else if (m.action === 'play') toast(`${m.by} a repris la lecture`);
-    else if (m.action === 'seek') toast(`${m.by} a ${prev && m.position < groupTarget(prev) ? 'reculé' : 'avancé'} jusqu’à ${fmtTime(m.position)}`);
-    else if (m.action === 'item' && prev && prev.item_id !== m.item_id) toast(`${m.by} lance une autre vidéo`);
+    if (m.action === 'pause') toast(tr('{by} a mis en pause', { by: m.by }));
+    else if (m.action === 'play') toast(tr('{by} a repris la lecture', { by: m.by }));
+    else if (m.action === 'seek') toast(tr(prev && m.position < groupTarget(prev) ? '{by} a reculé jusqu’à {time}' : '{by} a avancé jusqu’à {time}', { by: m.by, time: fmtTime(m.position) }));
+    else if (m.action === 'item' && prev && prev.item_id !== m.item_id) toast(tr('{by} lance une autre vidéo', { by: m.by }));
     if (m.notice) toast(m.notice);
   }
   let groupReadyPending = false;
@@ -926,7 +927,7 @@ export async function renderPlayer(root, rk, ctx) {
     const target = groupTarget(st);
     const meWaited = st.waiting && (st.waiting_ids || []).includes(state.me.user.id);
     groupBanner.hidden = !st.waiting;
-    if (st.waiting) groupBanner.textContent = st.waiting_for.length ? `En attente de ${st.waiting_for.join(', ')}…` : 'Synchronisation…';
+    if (st.waiting) groupBanner.textContent = st.waiting_for.length ? tr('En attente de {p1}…', { p1: st.waiting_for.join(', ') }) : tr('Synchronisation…');
     if (!st.playing || st.waiting) {
       if (!video.paused) video.pause();
       video.playbackRate = 1;
@@ -968,9 +969,9 @@ export async function renderPlayer(root, rk, ctx) {
   }
   function groupMenu(opt) {
     if (!group) {
-      return h('div.menu-col.group-col', h('h4', 'Regarder ensemble'),
-        h('p.menu-info', 'Chaque membre suit la même lecture sur son appareil ; pauses et sauts sont synchronisés.'),
-        opt('Créer un groupe avec cette vidéo', false, async () => {
+      return h('div.menu-col.group-col', h('h4', tr('Regarder ensemble')),
+        h('p.menu-info', tr('Chaque membre suit la même lecture sur son appareil ; pauses et sauts sont synchronisés.')),
+        opt(tr('Créer un groupe avec cette vidéo'), false, async () => {
           try {
             const g = await post('/api/together', { item_id: item.id, position: pos() });
             finished = true;
@@ -978,22 +979,22 @@ export async function renderPlayer(root, rk, ctx) {
             location.replace(`#/play/${item.id}?group=${g.id}`);
           } catch (e) { toast(e.message, 'bad'); }
         }),
-        opt('Voir les groupes en cours', false, () => { location.hash = '#/together'; }));
+        opt(tr('Voir les groupes en cours'), false, () => { location.hash = '#/together'; }));
     }
-    const status = (m) => (m.online === false ? 'hors ligne' : (m.ready ? 'prêt' : 'chargement…'));
+    const status = (m) => (m.online === false ? tr('hors ligne') : (m.ready ? tr('prêt') : tr('chargement…')));
     return h('div.menu-col.group-col', h('h4', group.name),
       h('div.group-members', (group.members || []).map((m) => h('div.group-member', avatar({ display_name: m.name, avatar_color: m.color, avatar: m.avatar }, 26),
-        h('span.grow', m.name, m.host ? h('span.tag.accent', 'Hôte') : null), h('span.muted.small', status(m))))),
-      group.hostOnly ? h('p.menu-info', 'Seul l’hôte contrôle la lecture.') : null,
-      opt('Copier le lien d’invitation', false, async () => {
+        h('span.grow', m.name, m.host ? h('span.tag.accent', tr('Hôte')) : null), h('span.muted.small', status(m))))),
+      group.hostOnly ? h('p.menu-info', tr('Seul l’hôte contrôle la lecture.')) : null,
+      opt(tr('Copier le lien d’invitation'), false, async () => {
         const link = `${location.origin}/#/together/${group.id}`;
-        try { await navigator.clipboard.writeText(link); toast('Lien d’invitation copié', 'ok'); }
+        try { await navigator.clipboard.writeText(link); toast(tr('Lien d’invitation copié'), 'ok'); }
         catch { toast(link); }
       }),
-      group.isHost ? opt(group.hostOnly ? 'Tout le monde peut contrôler' : 'Seul l’hôte contrôle la lecture', false, async () => {
+      group.isHost ? opt(group.hostOnly ? tr('Tout le monde peut contrôler') : tr('Seul l’hôte contrôle la lecture'), false, async () => {
         try { await put(`/api/together/${group.id}`, { host_only: !group.hostOnly }); } catch (e) { toast(e.message, 'bad'); }
       }) : null,
-      opt('Quitter le groupe', false, async () => {
+      opt(tr('Quitter le groupe'), false, async () => {
         const id = group.id;
         leaveGroupMode();
         await post(`/api/together/${id}/leave`).catch(() => {});
@@ -1107,7 +1108,7 @@ export async function renderPlayer(root, rk, ctx) {
     hoverTip.hidden = false;
     previewTime.textContent = fmtTime(t);
     const ch = chapters.find((c) => t >= c.start && t < c.end);
-    previewChapter.textContent = ch && (ch.title || chapters.length > 1) ? (ch.title || `Chapitre ${chapters.indexOf(ch) + 1}`) : '';
+    previewChapter.textContent = ch && (ch.title || chapters.length > 1) ? (ch.title || tr('Chapitre {p1}', { p1: chapters.indexOf(ch) + 1 })) : '';
     if (trick) {
       // vignette tirée de la planche d'aperçus (grille cols x rows)
       const n = Math.min(trick.count - 1, Math.floor(t / 1000 / trick.interval));

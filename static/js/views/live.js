@@ -1,10 +1,11 @@
 // TV en direct : grille des chaînes (programme en cours / à suivre), guide des programmes et lecteur.
 import { get, post } from '../api.js';
 import { clear, errorBox, h, icon, loadHls, modal, spinner, store, toast } from '../ui.js';
+import { tr, locale } from '../i18n.js';
 
 const PX_PER_HOUR = 320;
-const hhmm = (t) => new Date(t * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-const dayLabel = (t) => new Date(t * 1000).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+const hhmm = (t) => new Date(t * 1000).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
+const dayLabel = (t) => new Date(t * 1000).toLocaleDateString(locale(), { weekday: 'long', day: 'numeric', month: 'long' });
 
 
 function logo(c, size = 'm') {
@@ -25,13 +26,13 @@ async function toggleFavorite(c, btn) {
     c.favorite = !c.favorite;
     btn.replaceChildren(icon(c.favorite ? 'starred' : 'star'));
     btn.classList.toggle('on', c.favorite);
-    btn.setAttribute('aria-label', c.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris');
+    btn.setAttribute('aria-label', c.favorite ? tr('Retirer des favoris') : tr('Ajouter aux favoris'));
   } catch (e) { toast(e.message, 'bad'); }
 }
 
 function favButton(c) {
   const btn = h('button.icon-btn.fav', { class: c.favorite ? 'icon-btn fav on' : 'icon-btn fav',
-    'aria-label': c.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris',
+    'aria-label': c.favorite ? tr('Retirer des favoris') : tr('Ajouter aux favoris'),
     onclick: (e) => { e.preventDefault(); e.stopPropagation(); toggleFavorite(c, btn); } }, icon(c.favorite ? 'starred' : 'star'));
   return btn;
 }
@@ -39,7 +40,7 @@ function favButton(c) {
 function channelCard(c, now) {
   return h('a.ch-card', { href: `#/tv/${c.id}`, title: c.name },
     h('div.ch-head', logo(c), h('div.grow', h('div.ch-name', c.number ? h('span.ch-num', String(c.number)) : null, c.name),
-      c.now ? h('div.ch-now', c.now.title) : h('div.ch-now.muted', 'Pas de programme')), favButton(c)),
+      c.now ? h('div.ch-now', c.now.title) : h('div.ch-now.muted', tr('Pas de programme'))), favButton(c)),
     progress(c.now, now),
     c.next ? h('div.ch-next.muted.small', `${hhmm(c.next.start)} · ${c.next.title}`) : null);
 }
@@ -50,10 +51,10 @@ function programmeDetails(c, p) {
   return modal(p.title, h('div',
     h('p.muted.small', `${c.name} · ${dayLabel(p.start)} · ${hhmm(p.start)} – ${hhmm(p.stop)}`, p.category ? ` · ${p.category}` : ''),
     p.subtitle ? h('p', h('strong', p.subtitle)) : null,
-    p.desc ? h('p.summary', p.desc) : h('p.muted', 'Pas de résumé.')), live ? [
-    { label: 'Fermer', value: null },
-    { label: 'Regarder', primary: true, handler: () => { location.hash = `#/tv/${c.id}`; return true; } },
-  ] : [{ label: 'Fermer', value: null }]);
+    p.desc ? h('p.summary', p.desc) : h('p.muted', tr('Pas de résumé.'))), live ? [
+    { label: tr('Fermer'), value: null },
+    { label: tr('Regarder'), primary: true, handler: () => { location.hash = `#/tv/${c.id}`; return true; } },
+  ] : [{ label: tr('Fermer'), value: null }]);
 }
 
 async function renderGuide(box, filter, ctx) {
@@ -71,7 +72,7 @@ async function renderGuide(box, filter, ctx) {
     Array.from({ length: hours * 2 }, (_, i) => h('span.guide-tick', { style: { left: `${i * PX_PER_HOUR / 2}px` } },
       hhmm(start + i * 1800))));
   const nowLine = h('div.guide-now', { style: { left: `${x(now)}px` } });
-  const more = h('button.btn.small', { hidden: true }, 'Afficher plus de chaînes');
+  const more = h('button.btn.small', { hidden: true }, tr('Afficher plus de chaînes'));
   const load = async () => {
     q.set('offset', offset);
     const g = await get(`/api/live/guide?${q}`);
@@ -88,15 +89,15 @@ async function renderGuide(box, filter, ctx) {
             onclick: () => programmeDetails(c, p) },
           h('span.guide-title', p.title), h('span.guide-time', `${hhmm(p.start)} – ${hhmm(p.stop)}`));
         }),
-        c.programmes.length ? null : h('span.guide-empty.muted.small', 'Pas de guide pour cette chaîne'));
+        c.programmes.length ? null : h('span.guide-empty.muted.small', tr('Pas de guide pour cette chaîne')));
       rows.append(h('div.guide-row',
-        h('a.guide-ch', { href: `#/tv/${c.id}`, title: `Regarder ${c.name}` }, logo(c, 's'),
+        h('a.guide-ch', { href: `#/tv/${c.id}`, title: tr('Regarder {name}', { name: c.name }) }, logo(c, 's'),
           h('span.guide-ch-name', c.number ? h('span.ch-num', String(c.number)) : null, c.name)),
         track));
     }
     offset += g.channels.length;
     more.hidden = offset >= g.total;
-    if (!g.total) rows.append(h('div.empty', 'Aucune chaîne.'));
+    if (!g.total) rows.append(h('div.empty', tr('Aucune chaîne.')));
   };
   more.addEventListener('click', load);
   const scroller = h('div.guide-scroll', h('div.guide-grid', { style: { '--guide-w': `${width}px` } },
@@ -117,10 +118,10 @@ export async function renderLive(main, ctx) {
   if (saved === '__fav__') filter.group = '__fav__';
   else if (saved && saved.startsWith('g:') && data.groups.includes(saved.slice(2))) filter.group = saved.slice(2);
   const body = h('div.live-body');
-  const search = h('input.search-input.live-search', { type: 'search', placeholder: 'Chercher une chaîne…', 'aria-label': 'Chercher une chaîne' });
+  const search = h('input.search-input.live-search', { type: 'search', placeholder: tr('Chercher une chaîne…'), 'aria-label': tr('Chercher une chaîne') });
   const current = filter.group === null ? '__all__' : (filter.group === '__fav__' ? '__fav__' : `g:${filter.group}`);
-  const groupOptions = [['__all__', 'Toutes les chaînes'], ['__fav__', '★ Favoris'], ...data.groups.map((g) => [`g:${g}`, g || 'Sans groupe'])];
-  const groupSel = h('select', { 'aria-label': 'Groupe' }, groupOptions.map(([v, l]) => h('option', { value: v, selected: v === current }, l)));
+  const groupOptions = [['__all__', tr('Toutes les chaînes')], ['__fav__', tr('★ Favoris')], ...data.groups.map((g) => [`g:${g}`, g || tr('Sans groupe')])];
+  const groupSel = h('select', { 'aria-label': tr('Groupe') }, groupOptions.map(([v, l]) => h('option', { value: v, selected: v === current }, l)));
   const paint = () => {
     if (view === 'guide') { renderGuide(body, filter, ctx); return; }
     const now = Math.floor(Date.now() / 1000);
@@ -128,7 +129,7 @@ export async function renderLive(main, ctx) {
     const list = data.channels.filter((c) => (filter.group === null || (filter.group === '__fav__' ? c.favorite : c.group === filter.group))
       && (!q || c.name.toLowerCase().includes(q)));
     clear(body, list.length ? h('div.ch-grid', list.map((c) => channelCard(c, now)))
-      : h('div.empty', filter.group === '__fav__' ? 'Aucune chaîne favorite. Utilisez ☆ pour en ajouter.' : 'Aucune chaîne.'));
+      : h('div.empty', filter.group === '__fav__' ? tr('Aucune chaîne favorite. Utilisez ☆ pour en ajouter.') : tr('Aucune chaîne.')));
   };
   groupSel.addEventListener('change', () => {
     const v = groupSel.value;
@@ -140,8 +141,8 @@ export async function renderLive(main, ctx) {
   search.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { filter.q = search.value.trim(); paint(); }, 250); });
   const tab = (id, label, ic) => h('a.tab', { href: id === 'guide' ? '#/live?view=guide' : '#/live', class: view === id ? 'tab active' : 'tab' }, icon(ic), label);
   clear(main,
-    h('div.page-head', h('h1', 'TV en direct'), h('span.muted', `${data.channels.length} chaîne(s)`)),
-    h('div.filters-row', h('div.tabs.live-tabs', tab('channels', 'Chaînes', 'tv'), tab('guide', 'Guide des programmes', 'guide')),
+    h('div.page-head', h('h1', tr('TV en direct')), h('span.muted', tr('{length} chaîne(s)', { length: data.channels.length }))),
+    h('div.filters-row', h('div.tabs.live-tabs', tab('channels', tr('Chaînes'), 'tv'), tab('guide', tr('Guide des programmes'), 'guide')),
       h('div.filters', search, groupSel)),
     body);
   paint();
@@ -167,16 +168,16 @@ export async function renderLivePlayer(root, cid, ctx) {
   const errorLayer = h('div.player-error', { hidden: true });
   const titleEl = h('div.player-title');
   const nowBar = h('div.live-now');
-  const playBtn = h('button.ctl', { 'aria-label': 'Lecture/Pause' }, icon('pause'));
-  const muteBtn = h('button.ctl', { 'aria-label': 'Couper le son' }, icon('volume'));
-  const volume = h('input.volume', { type: 'range', min: 0, max: 1, step: 0.05, 'aria-label': 'Volume' });
-  const prevBtn = h('button.ctl', { 'aria-label': 'Chaîne précédente', title: 'Chaîne précédente (↓)' }, icon('down'));
-  const nextBtn = h('button.ctl', { 'aria-label': 'Chaîne suivante', title: 'Chaîne suivante (↑)' }, icon('up'));
-  const listBtn = h('button.ctl', { 'aria-label': 'Liste des chaînes', title: 'Chaînes (L)' }, icon('list'));
-  const fullBtn = h('button.ctl', { 'aria-label': 'Plein écran' }, icon('full'));
+  const playBtn = h('button.ctl', { 'aria-label': tr('Lecture/Pause') }, icon('pause'));
+  const muteBtn = h('button.ctl', { 'aria-label': tr('Couper le son') }, icon('volume'));
+  const volume = h('input.volume', { type: 'range', min: 0, max: 1, step: 0.05, 'aria-label': tr('Volume') });
+  const prevBtn = h('button.ctl', { 'aria-label': tr('Chaîne précédente'), title: tr('Chaîne précédente (↓)') }, icon('down'));
+  const nextBtn = h('button.ctl', { 'aria-label': tr('Chaîne suivante'), title: tr('Chaîne suivante (↑)') }, icon('up'));
+  const listBtn = h('button.ctl', { 'aria-label': tr('Liste des chaînes'), title: tr('Chaînes (L)') }, icon('list'));
+  const fullBtn = h('button.ctl', { 'aria-label': tr('Plein écran') }, icon('full'));
   const liveTag = h('span.live-tag', 'DIRECT');
   const side = h('div.live-side', { hidden: true });
-  const backBtn = h('button.ctl.back', { 'aria-label': 'Retour' }, icon('back'));
+  const backBtn = h('button.ctl.back', { 'aria-label': tr('Retour') }, icon('back'));
   const controls = h('div.controls', nowBar,
     h('div.ctl-row', playBtn, h('div.vol', muteBtn, volume), liveTag, h('div.grow'), prevBtn, nextBtn, listBtn, fullBtn));
   const player = h('div.player.live-player', video, loader, errorLayer, h('div.player-top', backBtn, titleEl), side, controls);
@@ -192,8 +193,8 @@ export async function renderLivePlayer(root, cid, ctx) {
     loader.hidden = true;
     errorLayer.hidden = false;
     clear(errorLayer, h('div.error-box', h('p', msg), h('div.actions-row',
-      h('button.btn.primary', { onclick: () => start() }, 'Réessayer'),
-      h('button.btn', { onclick: goBack }, 'Retour'))));
+      h('button.btn.primary', { onclick: () => start() }, tr('Réessayer')),
+      h('button.btn', { onclick: goBack }, tr('Retour')))));
   };
   const goBack = () => { if (history.length > 1) history.back(); else location.hash = '#/live'; };
 
@@ -207,7 +208,7 @@ export async function renderLivePlayer(root, cid, ctx) {
       cur ? h('span', `${cur.title}${cur.subtitle ? ` — ${cur.subtitle}` : ''}`) : null);
     clear(nowBar, cur ? h('div.live-prog',
       h('span.small', `${hhmm(cur.start)} – ${hhmm(cur.stop)}`), progress(cur, now),
-      nxt ? h('span.small.muted', `Ensuite : ${hhmm(nxt.start)} ${nxt.title}`) : null) : null);
+      nxt ? h('span.small.muted', tr('Ensuite : {p1} {title}', { p1: hhmm(nxt.start), title: nxt.title })) : null) : null);
   };
 
   async function start() {
@@ -218,7 +219,7 @@ export async function renderLivePlayer(root, cid, ctx) {
       [info, session] = await Promise.all([get(`/api/live/${cid}`), post(`/api/live/${cid}/play`), loadHls()]);
     } catch (e) { if (!destroyed) showError(e.message); return; }
     if (destroyed) { post(`/api/live/s/${session.session}/stop`).catch(() => {}); return; }
-    document.title = `${info.name} · TV en direct · Nexis`;
+    document.title = tr('{name} · TV en direct · Nexis', { name: info.name });
     paintInfo();
     if (window.Hls && window.Hls.isSupported()) {
       hls = new window.Hls({
@@ -230,7 +231,7 @@ export async function renderLivePlayer(root, cid, ctx) {
       hls.on(window.Hls.Events.ERROR, (_, d) => {
         if (!d.fatal) return;
         if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
-        let msg = 'La chaîne ne répond pas.';
+        let msg = tr('La chaîne ne répond pas.');
         if (d.response && d.response.code) msg += ` (${d.response.code})`;
         if (d.networkDetails && d.networkDetails.responseText) {
           try { msg = JSON.parse(d.networkDetails.responseText).error || msg; } catch { /* */ }
@@ -242,7 +243,7 @@ export async function renderLivePlayer(root, cid, ctx) {
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = session.url;
     } else {
-      showError('Ce navigateur ne lit pas le HLS.');
+      showError(tr('Ce navigateur ne lit pas le HLS.'));
       return;
     }
     video.play().catch(() => { loader.hidden = true; paint(); });
@@ -271,8 +272,8 @@ export async function renderLivePlayer(root, cid, ctx) {
   const openList = async () => {
     if (!side.hidden) { side.hidden = true; return; }
     channelCache = (await get('/api/live').catch(() => ({ channels: channelCache || [] }))).channels;
-    clear(side, h('div.live-side-head', h('strong', 'Chaînes'),
-      h('button.icon-btn', { 'aria-label': 'Fermer', onclick: () => { side.hidden = true; } }, icon('close'))),
+    clear(side, h('div.live-side-head', h('strong', tr('Chaînes')),
+      h('button.icon-btn', { 'aria-label': tr('Fermer'), onclick: () => { side.hidden = true; } }, icon('close'))),
     h('div.live-side-list', channelCache.map((c) => h('a.live-side-item', { href: `#/tv/${c.id}`, class: c.id === String(cid) ? 'live-side-item on' : 'live-side-item',
       onclick: (e) => { e.preventDefault(); location.replace(`#/tv/${c.id}`); } },
     logo(c, 's'), h('span.grow', h('strong', c.name), c.now ? h('span.muted.small', c.now.title) : null)))));

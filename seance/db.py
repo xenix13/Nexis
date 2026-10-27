@@ -362,6 +362,10 @@ MIGRATIONS = [
     ALTER TABLE users ADD COLUMN totp_last_step INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN totp_recovery TEXT;
     """,
+    # 16 : langue de l'interface choisie par chaque utilisateur (NULL : langue par défaut du serveur)
+    """
+    ALTER TABLE users ADD COLUMN language TEXT;
+    """,
 ]
 
 

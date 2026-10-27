@@ -6,7 +6,7 @@ import secrets
 import threading
 import time
 
-from .. import media
+from .. import i18n, media
 from ..catalog import EXTERNAL_BASE, PREPARE_WINDOW_MS, RK, SID, WATCHED_RATIO, stream_lists
 from ..keyframes import mkv_keyframes
 from ..subtitles import parse_subtitles
@@ -316,7 +316,7 @@ def register(app, ctx, x):
             ctx.subtitles.enqueue(nxt["id"], urgent=True)  # débit plafonné pour ne pas gêner ce flux
         url = f"/api/stream/{sid}/file" if p["mode"] == "direct" else f"/api/stream/{sid}/main.m3u8"
         return {
-            "stream": sid, "mode": p["mode"], "reasons": p["reasons"], "url": url, "offset": actual,
+            "stream": sid, "mode": p["mode"], "reasons": [i18n.tr(r) for r in p["reasons"]], "url": url, "offset": actual,
             "duration": duration, "quality": quality, "item": c, "audio": audio, "subtitles": subs,
             "audio_selected": p["audio_index"], "subtitle_selected": sub["id"] if sub else 0,
             "subtitle_overlay": f"/api/items/{rk}/subtitles/{sub['id']}" if sub and sub["overlay"] else None,
@@ -557,7 +557,8 @@ def register(app, ctx, x):
         for q in DL_QUALITIES:
             r, p, _, size = download_plan(req, b, q)
             out.append({"quality": q, "convert": p["mode"] == "transcode", "size": size,
-                        "height": p["height"] if p["mode"] == "transcode" else p["src_height"], "reasons": p["reasons"]})
+                        "height": p["height"] if p["mode"] == "transcode" else p["src_height"],
+                        "reasons": [i18n.tr(r) for r in p["reasons"]]})
         return {"options": out}
 
     @app.route("POST", "/api/downloads")

@@ -138,6 +138,7 @@ final class Api {
             c.setRequestProperty("Accept", "application/json");
             c.setRequestProperty("User-Agent", VERSION_HEADER);
             c.setRequestProperty("X-Seance", "1");  // exigé par le serveur pour toute requête qui modifie
+            c.setRequestProperty("X-Lang", Tr.lang);  // messages d'erreur du serveur dans la langue de l'appli
             String ck = cookieHeader();
             if (!ck.isEmpty()) c.setRequestProperty("Cookie", ck);
             if (body != null || !"GET".equals(method)) {
@@ -156,12 +157,12 @@ final class Api {
             Object json = text.isEmpty() ? null : parse(text);
             if (status >= 400) {
                 String msg = json instanceof JSONObject ? ((JSONObject) json).optString("error", "") : "";
-                if (msg.isEmpty()) msg = status == 401 ? "Session expirée : reconnectez-vous" : "Erreur du serveur (" + status + ")";
+                if (msg.isEmpty()) msg = status == 401 ? Tr.t("Session expirée : reconnectez-vous") : Tr.t("Erreur du serveur (") + status + ")";
                 throw new Error(status, msg);
             }
             return json;
         } catch (IOException e) {
-            throw new Error(0, "Le serveur ne répond pas. Vérifiez la connexion réseau.");
+            throw new Error(0, Tr.t("Le serveur ne répond pas. Vérifiez la connexion réseau."));
         } finally {
             if (c != null) c.disconnect();
         }
@@ -193,7 +194,7 @@ final class Api {
             } catch (Error e) {
                 if (fail != null) MAIN.post(() -> fail.run(e));
             } catch (Exception e) {
-                if (fail != null) MAIN.post(() -> fail.run(new Error(0, "Réponse inattendue du serveur")));
+                if (fail != null) MAIN.post(() -> fail.run(new Error(0, Tr.t("Réponse inattendue du serveur"))));
             }
         });
     }
@@ -250,12 +251,12 @@ final class Api {
             c = (HttpURLConnection) new URL(url + "/api/status").openConnection();
             c.setConnectTimeout(8000);
             c.setReadTimeout(8000);
-            if (c.getResponseCode() != 200) return "Ce serveur a répondu " + c.getResponseCode() + " : s'agit-il bien d'un serveur Nexis ?";
+            if (c.getResponseCode() != 200) return Tr.t("Ce serveur a répondu ") + c.getResponseCode() + Tr.t(" : s'agit-il bien d'un serveur Nexis ?");
             String body = read(c.getInputStream());
-            if (!body.contains("\"version\"")) return "Ce n'est pas un serveur Nexis.";
+            if (!body.contains("\"version\"")) return Tr.t("Ce n'est pas un serveur Nexis.");
             return null;
         } catch (Exception e) {
-            return "Impossible de joindre le serveur. Vérifiez l'adresse et la connexion réseau.";
+            return Tr.t("Impossible de joindre le serveur. Vérifiez l'adresse et la connexion réseau.");
         } finally {
             if (c != null) c.disconnect();
         }

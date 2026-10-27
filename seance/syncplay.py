@@ -18,6 +18,8 @@ import secrets
 import threading
 import time
 
+from .i18n import tr
+
 log = logging.getLogger("seance.sync")
 
 WAIT_TIMEOUT = 12        # s : on repart sans le membre trop lent
@@ -32,6 +34,18 @@ MAX_FEEDS_PER_USER = 8    # listes de groupes en direct ouvertes en même temps 
 
 def now_ms():
     return int(time.time() * 1000)
+
+
+def _translated(data):
+    """Événement déjà prêt à envoyer, avec ses messages dans la langue de la personne qui le reçoit."""
+    try:
+        event = json.loads(data[len(b"data: "):].decode("utf-8"))
+    except ValueError:
+        return data
+    for k in ("notice", "text"):
+        if event.get(k):
+            event[k] = tr(event[k])
+    return ("data: " + json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n\n").encode()
 
 
 class Member:
@@ -557,6 +571,8 @@ def register(app, ctx, x):
                         yield b'data: {"type":"closed"}\n\n'
                         return
                     data = b": ping\n\n"
+                if b'"notice":"' in data or b'"type":"notice"' in data:
+                    data = _translated(data)
                 yield data
                 if data.startswith(b'data: {"type":"closed"'):
                     return

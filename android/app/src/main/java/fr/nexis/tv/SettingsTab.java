@@ -38,32 +38,43 @@ final class SettingsTab extends BrowseScreen.Tab {
     private void build() {
         list.removeAllViews();
         first = null;
-        section("Lecture");
+        section(Tr.t("réglages|Lecture"));
         String[] audioKeys = concat(LANG_KEYS, "");
-        String[] audioLabels = concat(LANG_LABELS, "Version originale");
-        choice("Langue audio", "audio_lang", "fra", audioKeys, audioLabels);
-        choice("Sous-titres", "sub_mode", "foreign", new String[]{"foreign", "always", "never"},
-                new String[]{"Si l'audio est dans une autre langue", "Toujours", "Jamais"});
-        choice("Langue des sous-titres", "sub_lang", "fra", LANG_KEYS, LANG_LABELS);
-        choice("Qualité", "quality", "original", new String[]{"original", "1080p", "720p", "480p"},
-                new String[]{"Originale (recommandé)", "1080p", "720p", "480p (connexion lente)"});
-        toggle("Épisode suivant automatique", "autoplay_next", true);
-        toggle("Passer les génériques de début", "auto_skip_intro", false);
+        String[] audioLabels = concat(LANG_LABELS, Tr.t("Version originale"));
+        choice(Tr.t("Langue audio"), "audio_lang", "fra", audioKeys, audioLabels);
+        choice(Tr.t("Sous-titres"), "sub_mode", "foreign", new String[]{"foreign", "always", "never"},
+                new String[]{Tr.t("Si l'audio est dans une autre langue"), Tr.t("Toujours"), Tr.t("Jamais")});
+        choice(Tr.t("Langue des sous-titres"), "sub_lang", "fra", LANG_KEYS, LANG_LABELS);
+        choice(Tr.t("Qualité"), "quality", "original", new String[]{"original", "1080p", "720p", "480p"},
+                new String[]{Tr.t("Originale (recommandé)"), "1080p", "720p", Tr.t("480p (connexion lente)")});
+        toggle(Tr.t("Épisode suivant automatique"), "autoplay_next", true);
+        toggle(Tr.t("Passer les génériques de début"), "auto_skip_intro", false);
 
-        section("Compte");
-        item("Profil", Session.user.optString("display_name"), "Changer", () ->
+        section(Tr.t("Compte"));
+        // langue de l'interface, propre au compte (la même que dans l'interface web)
+        String[] langKeys = {"fr", "en"};
+        String[] langNames = {"Français", "English"};
+        item(Tr.t("Langue"), "en".equals(Tr.lang) ? "English" : "Français", Tr.t("Changer"), () -> Ui.dialog(act)
+                .setTitle("Langue / Language").setSingleChoiceItems(langNames, "en".equals(Tr.lang) ? 1 : 0, (d, which) -> {
+                    d.dismiss();
+                    Api.send("PUT", "/api/me/language", Api.json("language", langKeys[which]), r -> {
+                        Tr.use(langKeys[which]);
+                        act.openBrowse(); // écrans reconstruits dans la nouvelle langue
+                    }, e -> Ui.toast(act, e.getMessage()));
+                }).show());
+        item(Tr.t("Profil"), Session.user.optString("display_name"), Tr.t("Changer"), () ->
                 Api.arr("/api/profiles", profiles -> act.push(new ProfilesScreen(act, profiles)),
                         e -> Ui.toast(act, e.getMessage())));
-        item("Se déconnecter", "", null, () -> Ui.dialog(act).setTitle("Se déconnecter ?")
-                .setPositiveButton("Se déconnecter", (d, w) -> act.logout())
-                .setNegativeButton("Annuler", null).show());
+        item(Tr.t("Se déconnecter"), "", null, () -> Ui.dialog(act).setTitle(Tr.t("Se déconnecter ?"))
+                .setPositiveButton(Tr.t("Se déconnecter"), (d, w) -> act.logout())
+                .setNegativeButton(Tr.t("Annuler"), null).show());
 
-        section("Serveur");
-        item("Adresse", Api.server(), "Changer", () -> Ui.dialog(act).setTitle("Changer de serveur ?")
-                .setMessage("Vous devrez vous reconnecter sur le nouveau serveur.")
-                .setPositiveButton("Changer", (d, w) -> act.reset(new SetupScreen(act, null)))
-                .setNegativeButton("Annuler", null).show());
-        TextView version = Ui.text(act, "Nexis pour Android TV, version " + BuildConfig.VERSION_NAME, 14, Ui.MUTED);
+        section(Tr.t("Serveur"));
+        item(Tr.t("Adresse"), Api.server(), Tr.t("Changer"), () -> Ui.dialog(act).setTitle(Tr.t("Changer de serveur ?"))
+                .setMessage(Tr.t("Vous devrez vous reconnecter sur le nouveau serveur."))
+                .setPositiveButton(Tr.t("Changer"), (d, w) -> act.reset(new SetupScreen(act, null)))
+                .setNegativeButton(Tr.t("Annuler"), null).show());
+        TextView version = Ui.text(act, Tr.t("Nexis pour Android TV, version ") + BuildConfig.VERSION_NAME, 14, Ui.MUTED);
         version.setPadding(0, dp(28), 0, 0);
         list.addView(version);
     }
@@ -111,8 +122,9 @@ final class SettingsTab extends BrowseScreen.Tab {
         int idx = 0;
         for (int i = 0; i < keys.length; i++) if (keys[i].equals(cur)) idx = i;
         final int selectedIndex = idx;
-        item(label, labels[idx], "", () -> Ui.dialog(act).setTitle(label)
-                .setSingleChoiceItems(labels, selectedIndex, (d, which) -> {
+        String[] shown = Tr.all(labels);
+        item(label, shown[idx], "", () -> Ui.dialog(act).setTitle(label)
+                .setSingleChoiceItems(shown, selectedIndex, (d, which) -> {
                     d.dismiss();
                     save(key, keys[which]);
                 }).show());
@@ -120,7 +132,7 @@ final class SettingsTab extends BrowseScreen.Tab {
 
     private void toggle(String label, String key, boolean def) {
         boolean on = Session.flag(key, def);
-        item(label, on ? "Activé" : "Désactivé", null, () -> save(key, !on));
+        item(label, on ? Tr.t("Activé") : Tr.t("Désactivé"), null, () -> save(key, !on));
     }
 
     private void save(String key, Object value) {

@@ -1,3 +1,4 @@
+import { tr, locale } from './i18n.js';
 // DOM helpers, formatting and shared components. Text is always set with
 // textContent, never innerHTML, so metadata cannot inject markup.
 
@@ -74,7 +75,7 @@ export function fmtDuration(ms) {
 }
 
 export function fmtDate(ts) {
-  return new Date(ts * 1000).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  return new Date(ts * 1000).toLocaleDateString(locale(), { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 export function episodeCode(c) {
@@ -167,7 +168,7 @@ export function modal(title, body, actions = []) {
     const overlay = h('div.modal-overlay', { onclick: (e) => { if (e.target === overlay) close(null); } },
       h('div.modal', { role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
         h('div.modal-head', h('h2', title),
-          h('button.icon-btn', { onclick: () => close(null), 'aria-label': 'Fermer' }, icon('close'))),
+          h('button.icon-btn', { onclick: () => close(null), 'aria-label': tr('Fermer') }, icon('close'))),
         h('div.modal-body', body),
         actions.length ? h('div.modal-actions', actions.map((a) =>
           h(`button.btn${a.primary ? '.primary' : ''}${a.danger ? '.danger' : ''}`, {
@@ -188,9 +189,9 @@ export function modal(title, body, actions = []) {
   });
 }
 
-export async function confirmDialog(title, message, label = 'Confirmer', danger = true) {
+export async function confirmDialog(title, message, label = tr('Confirmer'), danger = true) {
   const r = await modal(title, h('p', message), [
-    { label: 'Annuler', value: false },
+    { label: tr('Annuler'), value: false },
     { label, value: true, primary: !danger, danger },
   ]);
   return r === true;
@@ -229,12 +230,12 @@ export function toggle(label, checked, attrs = {}) {
 }
 
 export function spinner() {
-  return h('div.spinner', { role: 'progressbar', 'aria-label': 'Chargement' });
+  return h('div.spinner', { role: 'progressbar', 'aria-label': tr('Chargement') });
 }
 
 export function errorBox(err, retry) {
   return h('div.error-box', h('p', err.message || String(err)),
-    retry ? h('button.btn', { onclick: retry }, 'Réessayer') : null);
+    retry ? h('button.btn', { onclick: retry }, tr('Réessayer')) : null);
 }
 
 export function avatar(user, size = 32) {
@@ -270,8 +271,8 @@ export function posterCard(c, { href } = {}) {
   const link = href || (c.type === 'episode' ? `#/item/${c.id}` : `#/item/${c.id}`);
   let sub = c.year || '';
   if (c.type === 'episode') sub = `${episodeCode(c)} · ${c.title}`;
-  if (c.type === 'show' && c.latest) sub = `Nouveau : S${c.latest.season} E${c.latest.episode}`;
-  if (c.type === 'season') sub = `${c.leaves || 0} épisodes`;
+  if (c.type === 'show' && c.latest) sub = tr('Nouveau : S{season} E{episode}', { season: c.latest.season, episode: c.latest.episode });
+  if (c.type === 'season') sub = tr('{p1} épisodes', { p1: c.leaves || 0 });
   const thumb = c.type === 'episode' ? (c.show_thumb || c.thumb) : c.thumb;
   return h('a.card.poster', { href: link, title: c.title },
     h('div.card-img', thumb ? h('img', { src: img(thumb, 200, 300), alt: '', loading: 'lazy' }) : h('div.noimg', c.title),
@@ -284,8 +285,8 @@ export function wideCard(c, { onPlay, onWatched } = {}) {
   const thumb = c.type === 'episode' ? (c.thumb || c.show_art) : (c.art || c.thumb);
   const title = c.type === 'episode' ? c.show : c.title;
   let sub = c.type === 'episode' ? `${episodeCode(c)} · ${c.title}` : (c.year || '');
-  if (c.next_up) sub = `À suivre · ${sub}`;
-  const left = c.duration && c.position ? `${fmtDuration(c.duration - c.position)} restantes` : '';
+  if (c.next_up) sub = tr('À suivre · {sub}', { sub });
+  const left = c.duration && c.position ? tr('{p1} restantes', { p1: fmtDuration(c.duration - c.position) }) : '';
   const card = h('a.card.wide', { href: `#/play/${c.id}${c.position ? '?resume=1' : ''}`, title,
     onclick: onPlay ? (e) => { e.preventDefault(); onPlay(c); } : null },
     h('div.card-img', { class: c.type === 'episode' && c.next_up && c.thumb ? 'card-img spoiler-img' : 'card-img' },
@@ -295,7 +296,7 @@ export function wideCard(c, { onPlay, onWatched } = {}) {
     h('div.card-sub', String(sub), left ? h('span.muted', ` — ${left}`) : null));
   if (!onWatched) return card;
   // bouton à côté du lien (pas dedans) : « marquer comme vu » sans lancer la lecture
-  const label = c.type === 'episode' ? `Marquer « ${episodeCode(c)} » comme vu` : 'Marquer comme vu';
+  const label = c.type === 'episode' ? tr('Marquer « {p1} » comme vu', { p1: episodeCode(c) }) : tr('Marquer comme vu');
   return h('div.card-slot', card,
     h('button.card-watch', { type: 'button', title: label, 'aria-label': `${label} : ${title}`,
       onclick: (e) => { e.currentTarget.disabled = true; onWatched(c, slot()); } }, icon('check')));
@@ -309,13 +310,13 @@ export function row(title, items, render, opts = {}) {
   return h('section.row', opts.wide ? { class: 'row wide-row' } : null,
     h('div.row-head', opts.href ? h('a.row-title', { href: opts.href }, title) : h('h2.row-title', title),
       h('div.row-nav',
-        h('button.icon-btn', { onclick: () => scroll(-1), 'aria-label': 'Précédent' }, '‹'),
-        h('button.icon-btn', { onclick: () => scroll(1), 'aria-label': 'Suivant' }, '›'))),
+        h('button.icon-btn', { onclick: () => scroll(-1), 'aria-label': tr('Précédent') }, '‹'),
+        h('button.icon-btn', { onclick: () => scroll(1), 'aria-label': tr('Suivant') }, '›'))),
     track);
 }
 
 // Menu « ⋯ » : bouton + liste d'actions, fermé au clic extérieur ou avec Échap.
-export function moreMenu(items, label = 'Plus d’actions') {
+export function moreMenu(items, label = tr('Plus d’actions')) {
   const list = h('div.more-list', { role: 'menu', hidden: true });
   const close = () => {
     if (list.contains(document.activeElement)) btn.focus({ preventScroll: true }); // télécommande : on revient au bouton

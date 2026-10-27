@@ -7,6 +7,7 @@
 import { del, get, post } from './api.js';
 import { browserCaps } from './caps.js';
 import { img } from './ui.js';
+import { tr, locale } from './i18n.js';
 
 const DB_NAME = 'nexis-offline';
 const MEDIA = 'nexis-offline-media';
@@ -66,7 +67,7 @@ const mediaUrl = (key, part) => `/offline/${key.replace(':', '/')}/${part}`;
 export async function list(uid) {
   if (!supported()) return [];
   return (await all('downloads')).filter((d) => d.uid === uid)
-    .sort((a, b) => (a.item.show || a.item.title).localeCompare(b.item.show || b.item.title, 'fr')
+    .sort((a, b) => (a.item.show || a.item.title).localeCompare(b.item.show || b.item.title, locale())
       || (a.item.season || 0) - (b.item.season || 0) || (a.item.episode || 0) - (b.item.episode || 0));
 }
 export const find = (uid, rk) => (supported() ? one('downloads', keyOf(uid, rk)) : Promise.resolve(null));
@@ -177,7 +178,7 @@ async function work(rec) {
     return true;
   } catch (e) {
     if (e.name === 'QuotaExceededError') {
-      await save(rec, { state: 'error', error: 'Espace de stockage épuisé. Autorisez plus d’espace ou supprimez un téléchargement.' });
+      await save(rec, { state: 'error', error: tr('Espace de stockage épuisé. Autorisez plus d’espace ou supprimez un téléchargement.') });
       return true;
     }
     if (!navigator.onLine || e.status === 0 || e instanceof TypeError) {

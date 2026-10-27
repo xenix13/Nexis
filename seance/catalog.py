@@ -6,6 +6,7 @@ import time
 
 from . import media
 from .markers import from_chapters as chapter_markers
+from .i18n import tr
 from .names import fold
 from .scanner import EXTRA_LABELS
 from .transcoder import QUALITY
@@ -161,10 +162,10 @@ def stream_lists(probe):
     audio, subs = [], []
     for a in probe.get("audio", []):
         lang = a.get("lang") or ""
-        name = LANG_NAMES.get(lang, lang.upper() if lang else "Inconnu")
+        name = tr(LANG_NAMES.get(lang, lang.upper() if lang else "Inconnu"))
         ch = a.get("channels") or 2
-        layout = "Stéréo" if ch == 2 else "Mono" if ch == 1 else f"{ch - 1}.1"
-        label = f"{name} ({CODEC_NAMES.get(a.get('codec'), str(a.get('codec')).upper())} {layout})"
+        layout = tr("Stéréo") if ch == 2 else "Mono" if ch == 1 else f"{ch - 1}.1"
+        label = f"{name} ({tr(CODEC_NAMES.get(a.get('codec'), str(a.get('codec')).upper()))} {layout})"
         if a.get("title") and fold(a["title"]) not in fold(label):
             label += f" — {a['title']}"
         audio.append({"id": a["index"], "lang": lang, "title": label, "codec": a.get("codec"), "channels": ch,
@@ -172,10 +173,10 @@ def stream_lists(probe):
     for s in probe.get("subs", []):
         codec = s.get("codec") or ""
         lang = s.get("lang") or ""
-        label = LANG_NAMES.get(lang, lang.upper() if lang else "Inconnu")
-        extra = [CODEC_NAMES.get(codec, codec.upper())]
+        label = tr(LANG_NAMES.get(lang, lang.upper() if lang else "Inconnu"))
+        extra = [tr(CODEC_NAMES.get(codec, codec.upper()))]
         if s.get("forced"):
-            extra.append("forcés")
+            extra.append(tr("forcés"))
         label += f" ({', '.join(extra)})"
         if s.get("title") and fold(s["title"]) not in fold(label):
             label += f" — {s['title']}"
@@ -188,10 +189,10 @@ def stream_lists(probe):
                      "pgs": codec in ("hdmv_pgs_subtitle", "pgssub"), "selected": False})
     for n, e in enumerate(probe.get("external", [])):
         lang = e.get("lang") or ""
-        label = LANG_NAMES.get(lang, lang.upper() if lang else "Inconnu")
-        bits = [CODEC_NAMES.get(e["codec"], e["codec"].upper()), "externe"]
+        label = tr(LANG_NAMES.get(lang, lang.upper() if lang else "Inconnu"))
+        bits = [tr(CODEC_NAMES.get(e["codec"], e["codec"].upper())), tr("externe")]
         if e.get("forced"):
-            bits.append("forcés")
+            bits.append(tr("forcés"))
         if e.get("sdh"):
             bits.append("SDH")
         subs.append({"id": EXTERNAL_BASE + n, "lang": lang, "title": f"{label} ({', '.join(bits)})",
@@ -273,6 +274,8 @@ def install(ctx, x):
              "thumb": img(r["id"], "thumb", v), "art": img(r["id"], "art", v), "duration": r["duration_ms"],
              "section": str(r["library_id"]), "rating": r["rating"], "content_rating": r["content_rating"],
              "added": r["added_at"]}
+        if t in ("season", "episode"):
+            c["title"] = tr(r["title"])  # titres créés par le scan : « Saison 2 », « Spéciaux », « Épisode 3 »
         if t == "episode":
             s = show_of(r["show_id"]) or {"id": r["show_id"], "title": "?", "img_version": 1}
             c.update(show=s["title"], show_id=str(r["show_id"]), season_id=str(r["parent_id"]),
@@ -286,7 +289,7 @@ def install(ctx, x):
             c.update(leaves=r.get("leaves"), seasons=r.get("child_count"))
         elif t == "extra":
             c.update(extra_kind=r.get("extra_kind"), parent_id=str(r["parent_id"]),
-                     extra_label=EXTRA_LABELS.get(r.get("extra_kind") or "other", "Bonus"))
+                     extra_label=tr(EXTRA_LABELS.get(r.get("extra_kind") or "other", "Bonus")))
         return c
 
     def leaves(show_id):

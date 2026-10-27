@@ -25,9 +25,9 @@ final class MoreTab extends BrowseScreen.Tab {
     View create() {
         LinearLayout root = Ui.column(act);
         root.setPadding(dp(56), dp(40), dp(56), dp(24));
-        add(root, "Rechercher", () -> new SearchTab(browse));
-        if (Session.live()) add(root, "TV en direct", () -> new LiveTab(browse));
-        add(root, "Paramètres", () -> new SettingsTab(browse));
+        add(root, Tr.t("Rechercher"), () -> new SearchTab(browse));
+        if (Session.live()) add(root, Tr.t("TV en direct"), () -> new LiveTab(browse));
+        add(root, Tr.t("Paramètres"), () -> new SettingsTab(browse));
         return root;
     }
 

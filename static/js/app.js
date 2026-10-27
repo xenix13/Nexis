@@ -13,6 +13,7 @@ import { renderSettingsArea } from './views/settings.js';
 import { renderPlayer } from './player.js';
 import { renderTogether } from './views/together.js';
 import './remote.js'; // télécommande, clavier et manette
+import { aboutDialog } from './about.js';
 import { applyDevice } from './device.js';
 import { createGroupDialog, currentGroups, isFreshFeed, onGroups, startGroupsFeed, stopGroupsFeed } from './groups.js';
 import { canInstall, install, onInstallChange, setupInstall } from './install.js';
@@ -20,6 +21,7 @@ import { forgetMe, list as listDownloads, pump, rememberMe, rememberedMe, suppor
 import { renderDownloads } from './views/downloads.js';
 import { followUpdate, resumeUpdate, updatePending } from './updater.js';
 import { renderLive, renderLivePlayer } from './views/live.js';
+import { lang, plural, tr, useLanguage } from './i18n.js';
 
 export const state = { me: null, status: null };
 const root = document.getElementById('app');
@@ -64,6 +66,10 @@ export function applyPrefs(prefs) {
 export async function refreshMe() {
   state.me = await get('/api/me');
   state.offline = false;
+  if (state.me.user.language !== lang && /^#\/(login|profiles)/.test(location.hash)) {
+    history.replaceState(null, '', '#/'); // profil choisi : après le rechargement, on arrive sur l'accueil
+  }
+  if (useLanguage(state.me.user.language)) return new Promise(() => {}); // rechargement dans la langue du compte
   applyPrefs(state.me.prefs);
   rememberMe(state.me); // pour retrouver ses téléchargements hors ligne
   syncProgress(state.me.user.id); // positions enregistrées hors ligne
@@ -89,10 +95,10 @@ async function offlineMode(e, page, parts, token) {
     return true;
   }
   document.body.classList.remove('playing');
-  document.title = 'Téléchargements · Nexis';
+  document.title = tr('Téléchargements · Nexis');
   const main = h('main.content');
   clear(root, h('header.topbar.offline-bar', h('span.logo', h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis'),
-    h('div.grow'), h('button.btn.small', { onclick: () => location.reload() }, 'Réessayer la connexion')), main);
+    h('div.grow'), h('button.btn.small', { onclick: () => location.reload() }, tr('Réessayer la connexion'))), main);
   await renderDownloads(main, ctx, { offline: true });
   return true;
 }
@@ -105,14 +111,14 @@ window.addEventListener('online', () => {
   if (!state.offline) return;
   state.status = null;
   state.me = null;
-  toast('Connexion retrouvée', 'ok');
+  toast(tr('Connexion retrouvée'), 'ok');
   route();
 });
 
 // Le proxy (nginx…) répond « Bad Gateway » le temps que Nexis redémarre : on réessaie tout seul
 function restarting(token) {
-  clear(root, h('div.center-page', h('div.restart-box', spinner(), h('h2', 'Nexis redémarre…'),
-    h('p.muted', 'La page se rechargera automatiquement dès que le serveur répond.'))));
+  clear(root, h('div.center-page', h('div.restart-box', spinner(), h('h2', tr('Nexis redémarre…')),
+    h('p.muted', tr('La page se rechargera automatiquement dès que le serveur répond.')))));
   const retry = async () => {
     if (token !== renderToken) return;
     try { await get('/api/status'); } catch { setTimeout(retry, 3000); return; }
@@ -136,11 +142,11 @@ let startPending = true;
 applyDevice(); // réglages propres à cet appareil (animations, télécommande)
 
 export function navItems(me) {
-  const items = [{ key: 'home', href: '#/', label: 'Accueil', fixed: true }, { key: 'watchlist', href: '#/watchlist', label: 'À regarder' }];
+  const items = [{ key: 'home', href: '#/', label: tr('Accueil'), fixed: true }, { key: 'watchlist', href: '#/watchlist', label: tr('À regarder') }];
   const kids = me.user && me.user.kids;
-  if (me.features && me.features.discover && !kids) items.push({ key: 'discover', href: '#/discover', label: 'Découvrir' });
+  if (me.features && me.features.discover && !kids) items.push({ key: 'discover', href: '#/discover', label: tr('Découvrir') });
   for (const l of me.libraries) items.push({ key: `lib:${l.id}`, href: `#/library/${l.id}`, label: l.title });
-  if (me.features && me.features.live && !kids) items.push({ key: 'live', href: '#/live', label: 'TV en direct' });
+  if (me.features && me.features.live && !kids) items.push({ key: 'live', href: '#/live', label: tr('TV en direct') });
   const byKey = new Map(items.map((i) => [i.key, i]));
   return arrange(items.map((i) => i.key), me.prefs.nav_order).map((k) => byKey.get(k));
 }
@@ -155,22 +161,22 @@ function navLinks(me, active) {
 function notifBell(me) {
   const badge = h('span.notif-badge', { hidden: !me.notifications }, String(me.notifications || ''));
   const list = h('div.notif-menu.user-menu', { hidden: true, role: 'menu' });
-  const btn = h('button.icon-btn.notif-btn', { type: 'button', 'aria-label': 'Notifications', title: 'Nouveaux épisodes',
+  const btn = h('button.icon-btn.notif-btn', { type: 'button', 'aria-label': tr('Notifications'), title: tr('Nouveaux épisodes'),
     'aria-haspopup': 'true', onclick: async (e) => {
       e.stopPropagation();
       document.querySelectorAll('.user-menu').forEach((m) => { if (m !== list) m.hidden = true; });
       list.hidden = !list.hidden;
       if (list.hidden) return;
-      list.replaceChildren(h('div.notif-head', 'Nouveaux épisodes'), spinner());
+      list.replaceChildren(h('div.notif-head', tr('Nouveaux épisodes')), spinner());
       try {
         const r = await get('/api/notifications');
-        list.replaceChildren(h('div.notif-head', 'Nouveaux épisodes'),
+        list.replaceChildren(h('div.notif-head', tr('Nouveaux épisodes')),
           ...(r.items.length ? r.items.map((n) => h('a.notif-item', { href: `#/item/${n.show.id}`, class: n.unread ? 'notif-item unread' : 'notif-item' },
             n.show.thumb ? h('img', { src: img(n.show.thumb, 80, 120), alt: '', loading: 'lazy' }) : h('span.noimg'),
             h('span.notif-text', h('strong', n.show.title),
-              h('span.muted', n.count > 1 ? `${n.count} nouveaux épisodes` : `Nouvel épisode : ${episodeCode(n.episode)} · ${n.episode.title}`))))
-            : [h('p.muted.small.notif-empty', 'Aucun nouvel épisode pour les séries suivies.')]),
-          h('p.muted.small.notif-foot', 'Séries suivies : celles dont un épisode a été regardé, ou ajoutées à « À regarder ».'));
+              h('span.muted', n.count > 1 ? tr('{count} nouveaux épisodes', { count: n.count }) : tr('Nouvel épisode : {p1} · {title}', { p1: episodeCode(n.episode), title: n.episode.title })))))
+            : [h('p.muted.small.notif-empty', tr('Aucun nouvel épisode pour les séries suivies.'))]),
+          h('p.muted.small.notif-foot', tr('Séries suivies : celles dont un épisode a été regardé, ou ajoutées à « À regarder ».')));
         if (r.unread) {
           await post('/api/notifications/seen');
           me.notifications = 0;
@@ -198,7 +204,7 @@ export function repaintNav() {
 
 function shell(active) {
   const me = state.me;
-  const search = h('input.search-input', { type: 'search', placeholder: 'Rechercher…', 'aria-label': 'Rechercher',
+  const search = h('input.search-input', { type: 'search', placeholder: tr('Rechercher…'), 'aria-label': tr('Rechercher'),
     value: active === 'search' ? (parseHash().query.get('q') || '') : '' });
   let t;
   search.addEventListener('input', () => {
@@ -211,16 +217,17 @@ function shell(active) {
   const menu = h('div.user-menu', { hidden: true },
     h('div.user-menu-head', avatar(me.user, 36), h('div', h('strong', me.user.display_name),
       h('div.muted', `@${me.user.username}`))),
-    me.user.home ? h('a', { href: '#/profiles' }, 'Changer de profil') : null,
-    h('a', { href: '#/playlists' }, 'Mes playlists'),
-    h('a', { href: '#/together' }, 'Regarder ensemble'),
-    h('a', { href: '#/history' }, 'Historique'),
-    me.features && me.features.downloads && offlineSupported() ? h('a', { href: '#/downloads' }, 'Téléchargements') : null,
-    h('a', { href: '#/settings' }, 'Paramètres'),
-    h('button.install-app', { hidden: !canInstall(), onclick: () => install() }, icon('install'), 'Installer l’application'),
-    h('button', { onclick: logout }, 'Se déconnecter'),
+    me.user.home ? h('a', { href: '#/profiles' }, tr('Changer de profil')) : null,
+    h('a', { href: '#/playlists' }, tr('Mes playlists')),
+    h('a', { href: '#/together' }, tr('Regarder ensemble')),
+    h('a', { href: '#/history' }, tr('Historique')),
+    me.features && me.features.downloads && offlineSupported() ? h('a', { href: '#/downloads' }, tr('Téléchargements')) : null,
+    h('a', { href: '#/settings' }, tr('Paramètres')),
+    h('button.install-app', { hidden: !canInstall(), onclick: () => install() }, icon('install'), tr('Installer l’application')),
+    h('button', { onclick: () => aboutDialog(state.status && state.status.version) }, tr('À propos')),
+    h('button', { onclick: logout }, tr('Se déconnecter')),
     state.status ? h('div.menu-version', `Nexis ${state.status.version}`) : null);
-  const userBtn = h('button.user-btn', { 'aria-label': 'Menu utilisateur', 'aria-haspopup': 'true',
+  const userBtn = h('button.user-btn', { 'aria-label': tr('Menu utilisateur'), 'aria-haspopup': 'true',
     onclick: (e) => {
       e.stopPropagation();
       menu.hidden = !menu.hidden;
@@ -229,15 +236,15 @@ function shell(active) {
     } }, avatar(me.user, 34));
   const header = h('header.topbar',
     // application installée : plus de bouton « précédent » du navigateur, on en met un
-    h('button.icon-btn.topbar-back', { type: 'button', 'aria-label': 'Retour', title: 'Retour', hidden: active === 'home',
+    h('button.icon-btn.topbar-back', { type: 'button', 'aria-label': tr('Retour'), title: tr('Retour'), hidden: active === 'home',
       onclick: () => { if (history.length > 1) history.back(); else location.hash = '#/'; } }, icon('back')),
-    h('a.logo', { href: '#/', 'aria-label': 'Nexis — accueil' }, h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis'),
+    h('a.logo', { href: '#/', 'aria-label': tr('Nexis — accueil') }, h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis'),
     h('nav.nav', navLinks(me, active)),
     h('div.topbar-right', h('span.together-slot', { dataset: { active } }),
-      h('button.icon-btn.group-new', { type: 'button', title: 'Créer un groupe « Regarder ensemble »', 'aria-label': 'Créer un groupe',
+      h('button.icon-btn.group-new', { type: 'button', title: tr('Créer un groupe « Regarder ensemble »'), 'aria-label': tr('Créer un groupe'),
         onclick: () => createGroupDialog(me) }, icon('group'), h('span.plus', '+')),
-      me.update ? h('a.icon-btn.update-btn', { href: '#/admin/update', title: `Nexis ${me.update} est disponible`,
-        'aria-label': `Mise à jour disponible : Nexis ${me.update}` }, icon('upgrade')) : null,
+      me.update ? h('a.icon-btn.update-btn', { href: '#/admin/update', title: tr('Nexis {update} est disponible', { update: me.update }),
+        'aria-label': tr('Mise à jour disponible : Nexis {update}', { update: me.update }) }, icon('upgrade')) : null,
       h('label.search', icon('search'), search), notifBell(me), h('div.user-wrap', userBtn, menu)));
   paintTogetherSlot(header.querySelector('.together-slot'));
   const main = h('main.content');
@@ -258,11 +265,11 @@ function paintTogetherSlot(slot, list = currentGroups()) {
   const mine = list.find((g) => g.member);
   let pill = null;
   if (mine) {
-    pill = h('a.group-pill.mine', { href: `#/together/${mine.id}`, title: `Votre groupe : ${mine.name}` }, icon('group'),
-      mine.item ? mine.name : `${mine.name} · salon`, h('span.group-count', String(mine.members.length)));
+    pill = h('a.group-pill.mine', { href: `#/together/${mine.id}`, title: tr('Votre groupe : {name}', { name: mine.name }) }, icon('group'),
+      mine.item ? mine.name : tr('{name} · salon', { name: mine.name }), h('span.group-count', String(mine.members.length)));
   } else if (list.length && slot.dataset.active !== 'together') {
-    pill = h('a.group-pill', { href: '#/together', title: 'Regarder ensemble' }, icon('group'),
-      list.length === 1 ? `${list[0].owner} regarde` : `${list.length} groupes`);
+    pill = h('a.group-pill', { href: '#/together', title: tr('Regarder ensemble') }, icon('group'),
+      list.length === 1 ? tr('{owner} regarde', { owner: list[0].owner }) : plural(list.length, '{n} groupe', '{n} groupes'));
   }
   slot.replaceChildren(...(pill ? [pill] : []));
 }
@@ -276,7 +283,7 @@ onGroups((list) => {
     const now = g.member && g.item && !g.item.hidden ? g.item.id : null;
     launched.set(g.id, now);
     if (now && was === null && !fresh && !location.hash.includes(`group=${g.id}`) && !location.hash.startsWith(`#/together/${g.id}`)) {
-      toast(`${g.name} : la lecture commence`, 'ok', { label: 'Rejoindre', onClick: () => { location.hash = `#/play/${now}?group=${g.id}`; } });
+      toast(tr('{name} : la lecture commence', { name: g.name }), 'ok', { label: tr('Rejoindre'), onClick: () => { location.hash = `#/play/${now}?group=${g.id}`; } });
     }
   }
 });
@@ -308,16 +315,16 @@ async function route() {
     if (await resumeUpdate(state.status)) return;
   }
   if (state.status.setup) {
-    document.title = 'Installation · Nexis';
+    document.title = tr('Installation · Nexis');
     return renderSetup(root, () => { state.status = null; state.me = null; location.hash = '#/admin/libraries'; route(); });
   }
   if (page === 'login' || page === 'profiles') stopGroupsFeed(); // la liste suit la personne connectée
   if (page === 'login') {
-    document.title = 'Connexion · Nexis';
+    document.title = tr('Connexion · Nexis');
     return renderLogin(root, async () => { await refreshMe(); location.hash = '#/profiles'; });
   }
   if (page === 'profiles') {
-    document.title = 'Qui regarde ? · Nexis';
+    document.title = tr('Qui regarde ? · Nexis');
     if (!state.me) {
       try { await refreshMe(); } catch { location.hash = '#/login'; return; }
     }
@@ -365,7 +372,7 @@ async function route() {
   const active = page === '' ? 'home' : page === 'library' ? `lib:${parts[1]}` : page;
   const main = shell(active);
   main.append(spinner());
-  const titles = { '': 'Accueil', live: 'TV en direct', together: 'Regarder ensemble', watchlist: 'À regarder', discover: 'Découvrir', playlists: 'Mes playlists', search: 'Recherche', history: 'Historique', downloads: 'Téléchargements', settings: 'Paramètres', admin: 'Paramètres' };
+  const titles = { '': tr('Accueil'), live: tr('TV en direct'), together: tr('Regarder ensemble'), watchlist: tr('À regarder'), discover: tr('Découvrir'), playlists: tr('Mes playlists'), search: tr('Recherche'), history: tr('Historique'), downloads: tr('Téléchargements'), settings: tr('Paramètres'), admin: tr('Paramètres') };
   document.title = `${titles[page] || 'Nexis'} · Nexis`;
   try {
     switch (page) {
@@ -386,7 +393,7 @@ async function route() {
       case 'admin':
         if (!state.me.user.is_admin) { location.hash = '#/'; return; }
         await renderSettingsArea(main, 'admin', parts[1], ctx); break;
-      default: clear(main, h('div.empty', 'Page introuvable.'));
+      default: clear(main, h('div.empty', tr('Page introuvable.')));
     }
   } catch (e) {
     if (token === renderToken) clear(main, errorBox(e, route));
@@ -397,7 +404,7 @@ setUnauthorizedHandler(() => {
   state.me = null;
   stopGroupsFeed();
   if (!location.hash.startsWith('#/login')) {
-    toast('Session expirée. Veuillez vous reconnecter.');
+    toast(tr('Session expirée. Veuillez vous reconnecter.'));
     location.hash = '#/login';
   }
 });

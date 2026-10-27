@@ -8,7 +8,7 @@ import secrets
 import threading
 import time
 
-from .. import __version__ as VERSION, media, mountd, transcoder, twofa, update
+from .. import __version__ as VERSION, i18n, media, mountd, transcoder, twofa, update
 from ..auth import USERNAME, USERNAME_RULE, find_user, hash_password, normalize_username, validate_password
 from ..catalog import HEX, RK, SID
 from ..metadata import MetaError
@@ -65,6 +65,10 @@ def register(app, ctx, x):
             fields["max_age"] = b["max_age"]
         if "pin" in b:
             fields["pin_hash"] = hash_pin(b["pin"])
+        if "language" in b:
+            if b["language"] is not None and not i18n.valid(b["language"]):
+                raise HTTPError(400, "Langue invalide")
+            fields["language"] = b["language"]
         cur = db.one("SELECT is_admin, managed, password_hash FROM users WHERE id=?", (uid,))
         managed = fields.get("managed", cur["managed"])
         if managed and fields.get("is_admin", cur["is_admin"]):
@@ -102,6 +106,7 @@ def register(app, ctx, x):
             uid = db.run("INSERT INTO users(username,display_name,password_hash,created_at) VALUES(?,?,?,?)",
                          (username, username, "!", int(time.time()))).lastrowid
             b.setdefault("display_name", username)
+            b.setdefault("language", i18n.default_language(db))  # langue choisie pour les nouveaux comptes
             apply_user_fields(uid, b, creating=True)
         return admin_user_view(db.one("SELECT * FROM users WHERE id=?", (uid,)))
 
@@ -161,7 +166,9 @@ def register(app, ctx, x):
                               "AND meta_state IN ('nomatch','error')", (l["id"],))
         return {"id": str(l["id"]), "name": l["name"], "kind": l["kind"], "paths": json.loads(l["paths"]),
                 "scanned_at": l["scanned_at"], "counts": counts, "unmatched": unmatched,
-                "paths_ok": [os.path.isdir(p) for p in json.loads(l["paths"])]}
+                "paths_ok": [os.path.isdir(p) for p in json.loads(l["paths"])],
+                # Nexis n'a besoin que de lire les médias : un dossier modifiable par le service est signalé (audit)
+                "paths_writable": [os.path.isdir(p) and os.access(p, os.W_OK) for p in json.loads(l["paths"])]}
 
     def validate_library(b):
         name = str(b.get("name") or "").strip()
@@ -183,10 +190,17 @@ def register(app, ctx, x):
                 clean.append(p)
         return name, b["kind"], clean
 
+    def scan_view():
+        """État du scan, étape et erreurs dans la langue de la requête."""
+        st = dict(ctx.scanner.status())
+        st["phase"] = i18n.tr(st.get("phase"))
+        st["errors"] = [i18n.tr(e) for e in st.get("errors") or []]
+        return st
+
     @app.route("GET", "/api/admin/libraries", auth="admin")
     def admin_libraries(req):
         return {"libraries": [library_view(l) for l in db.all("SELECT * FROM libraries ORDER BY position, name")],
-                "scan": ctx.scanner.status()}
+                "scan": scan_view()}
 
     @app.route("POST", "/api/admin/libraries", auth="admin")
     def admin_library_create(req):
@@ -228,11 +242,11 @@ def register(app, ctx, x):
         db.release()
         if not ctx.scanner.start(ids, refresh_metadata=bool(b.get("refresh_metadata"))):
             raise HTTPError(409, "Un scan est déjà en cours")
-        return ctx.scanner.status()
+        return scan_view()
 
     @app.route("GET", "/api/admin/scan", auth="admin")
     def admin_scan_status(req):
-        return ctx.scanner.status()
+        return scan_view()
 
     @app.route("GET", "/api/admin/browse", auth="admin")
     def admin_browse(req):
@@ -334,11 +348,12 @@ def register(app, ctx, x):
                 "downmix_boost": float(db.setting("downmix_boost", "2") or 2),
                 "subs_queue": len(ctx.subtitles.urgent) + len(ctx.subtitles.idle),
                 "webhook_path": f"/api/hooks/scan?token={db.setting('webhook_token')}",
-                "watch_events": ctx.watcher.events[:8],"tmdb_set": bool(db.setting("tmdb_key")), "language": db.setting("meta_language", "fr-FR"),
+                "watch_events": [dict(e, text=i18n.tr(e["text"])) for e in ctx.watcher.events[:8]],"tmdb_set": bool(db.setting("tmdb_key")), "language": db.setting("meta_language", "fr-FR"),
                 "max_streams": max_streams,
                 "max_transcodes": max_transcodes, "cpus": os.cpu_count(), "ffmpeg": media.available(),
                 "hw_engine": db.setting("hw_engine", "none"), "hw_device": db.setting("hw_device", "/dev/dri/renderD128"),
-                "hw_devices": transcoder.hw_devices(), "version": VERSION}
+                "hw_devices": transcoder.hw_devices(), "version": VERSION,
+                "default_language": i18n.default_language(db), "languages": i18n.LANGUAGES}
 
     @app.route("PUT", "/api/admin/settings", auth="admin")
     def admin_settings_put(req):
@@ -359,6 +374,11 @@ def register(app, ctx, x):
                 raise HTTPError(400, "Langue invalide (ex. fr-FR)")
             db.set_setting("meta_language", b["language"])
             db.set_setting("meta_country", b["language"][-2:])
+        if "default_language" in b:
+            if not i18n.valid(b["default_language"]):
+                raise HTTPError(400, "Langue invalide")
+            db.set_setting("default_language", b["default_language"])
+            i18n.set_server_default(b["default_language"])
         if "downmix_algo" in b:
             if b["downmix_algo"] not in DOWNMIX_ALGOS:
                 raise HTTPError(400, "Algorithme de mixage inconnu")
@@ -417,7 +437,7 @@ def register(app, ctx, x):
         for r in rows:
             p = json.loads(r.pop("params") or "{}")
             r["mode"] = p.get("mode")
-            r["reasons"] = p.get("reasons", [])
+            r["reasons"] = [i18n.tr(x) for x in p.get("reasons", [])]
             r.update(ctx.transcoder.stats(r["id"]))
             if p.get("video_codec"):
                 r["source"] = f"{str(p['video_codec']).upper()} {p.get('src_height') or '?'}p"
@@ -478,15 +498,18 @@ def register(app, ctx, x):
             out["available"] = update.newer(out["latest"], VERSION)
             ctx.note_latest(out["latest"])
         except update.UpdateError as e:
-            out["check_error"] = str(e)
+            out["check_error"] = i18n.tr(str(e))
         if IN_DOCKER:
-            out.update(can_update=False, update_error="Avec Docker, la mise à jour passe par l'image : docker compose pull && docker compose up -d")
+            out.update(can_update=False, update_error=i18n.tr("Avec Docker, la mise à jour passe par l'image : docker compose pull && docker compose up -d"))
             return out
         try:
-            out.update(mountd.call("update_status", sock_path=os.environ.get("SEANCE_MOUNTD_SOCK"), timeout=10))
+            st = mountd.call("update_status", sock_path=os.environ.get("SEANCE_MOUNTD_SOCK"), timeout=10)
+            if st.get("step"):
+                st["step"] = i18n.tr(st["step"])
+            out.update(st)
             out["can_update"] = True
         except mountd.MountError as e:
-            out.update(can_update=False, update_error=str(e))
+            out.update(can_update=False, update_error=i18n.tr(str(e)))
         return out
 
     @app.route("PUT", "/api/admin/update/channel", auth="admin")
@@ -521,7 +544,7 @@ def register(app, ctx, x):
         except mountd.MountError as e:
             if IN_DOCKER:
                 e = "Avec Docker, les partages se montent sur l'hôte puis se transmettent au conteneur (volumes du docker-compose.yml)"
-            return {"available": False, "error": str(e), "shares": [], "env": None}
+            return {"available": False, "error": i18n.tr(str(e)), "shares": [], "env": None}
         libs = db.all("SELECT id, name, paths FROM libraries")
         for sh in st["shares"]:
             sh["libraries"] = [l["name"] for l in libs if any(

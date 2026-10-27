@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 // Choix des pistes audio / sous-titres : choix retenu pour le film ou la série, sinon préférences générales.
 
 export function pickAudio(audio, prefs, trackPrefs) {
@@ -42,7 +43,7 @@ export function menuSubs(subs, audio) {
   return (subs || []).filter((s) => !isSignsOnly(s, subs) || (audio && audio.lang && audio.lang === s.lang));
 }
 
-export const SIGNS_HINT = 'panneaux et chansons seulement';
+export const SIGNS_HINT = tr('panneaux et chansons seulement');
 
 // Une piste forcée choisie avec un audio d'une autre langue -> la piste complète de la même langue
 export function fixForced(sub, audio, subs) {

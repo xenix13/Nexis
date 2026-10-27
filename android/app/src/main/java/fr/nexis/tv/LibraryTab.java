@@ -49,7 +49,7 @@ final class LibraryTab extends BrowseScreen.Tab {
         count = Ui.text(act, "", 16, Ui.MUTED);
         count.setPadding(dp(14), 0, 0, 0);
         head.addView(count, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        sort = Ui.button(act, "Trier : " + SORT_LABELS[sortIndex], false);
+        sort = Ui.button(act, Tr.t("Trier : ") + Tr.t(SORT_LABELS[sortIndex]), false);
         sort.setTextSize(15);
         sort.setOnClickListener(v -> chooseSort());
         head.addView(sort);
@@ -76,7 +76,7 @@ final class LibraryTab extends BrowseScreen.Tab {
         adapter.nearEnd = () -> grid.post(this::more);
         grid.setAdapter(adapter);
         body.addView(grid, new FrameLayout.LayoutParams(-1, -1));
-        message = Ui.text(act, "Chargement…", 18, Ui.MUTED);
+        message = Ui.text(act, Tr.t("Chargement…"), 18, Ui.MUTED);
         message.setGravity(Gravity.CENTER);
         body.addView(message, new FrameLayout.LayoutParams(-1, -1));
         root.addView(body, new LinearLayout.LayoutParams(-1, 0, 1f));
@@ -95,7 +95,7 @@ final class LibraryTab extends BrowseScreen.Tab {
         loading = false;
         adapter.set(new JSONArray());
         message.setVisibility(View.VISIBLE);
-        message.setText("Chargement…");
+        message.setText(Tr.t("Chargement…"));
         more();
     }
 
@@ -111,7 +111,7 @@ final class LibraryTab extends BrowseScreen.Tab {
             count.setText(total + (total > 1 ? " titres" : " titre"));
             adapter.add(r.optJSONArray("items") != null ? r.optJSONArray("items") : new JSONArray());
             message.setVisibility(adapter.items.isEmpty() ? View.VISIBLE : View.GONE);
-            message.setText("Cette bibliothèque est vide.");
+            message.setText(Tr.t("Cette bibliothèque est vide."));
         }, e -> {
             if (gen != generation) return;
             loading = false;
@@ -139,12 +139,12 @@ final class LibraryTab extends BrowseScreen.Tab {
     }
 
     private void chooseSort() {
-        Ui.dialog(act).setTitle("Trier par").setSingleChoiceItems(SORT_LABELS, sortIndex, (d, which) -> {
+        Ui.dialog(act).setTitle(Tr.t("Trier par")).setSingleChoiceItems(Tr.all(SORT_LABELS), sortIndex, (d, which) -> {
             d.dismiss();
             if (which == sortIndex) return;
             sortIndex = which;
             Api.store().edit().putString("sort:" + lib.optString("id"), SORT_KEYS[which]).apply();
-            sort.setText("Trier : " + SORT_LABELS[which]);
+            sort.setText(Tr.t("Trier : ") + Tr.t(SORT_LABELS[which]));
             reload();
         }).show();
     }

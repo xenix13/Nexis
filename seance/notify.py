@@ -10,6 +10,7 @@ import json
 import time
 
 from .catalog import CARD_SQL, MIN_RESUME_MS
+from .i18n import tr
 
 NEW_DAYS = 30
 MAX_NOTIFS = 30
@@ -151,9 +152,9 @@ def register(app, ctx, x):
             prev = d
         busiest = max(range(7), key=lambda i: per_weekday[i])
         return {"year": year, "month": month, "empty": False,
-                "label": f"{MONTHS[month - 1]} {year}" if month else str(year),
+                "label": f"{tr(MONTHS[month - 1])} {year}" if month else str(year),
                 "hours": round(ms / 3_600_000, 1), "minutes": round(ms / 60_000), "films": films, "episodes": episodes, "days": len(days),
-                "streak": best, "weekday": WEEKDAYS[busiest] if per_weekday[busiest] else None,
+                "streak": best, "weekday": tr(WEEKDAYS[busiest]) if per_weekday[busiest] else None,
                 "months": [round(v / 3_600_000, 1) for v in per_month] if not month else None,
                 "top": top, "genres": [g for g, _ in genres.most_common(5)]}
 

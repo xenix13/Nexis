@@ -19,6 +19,7 @@ import time
 from collections import deque
 
 from . import media
+from .i18n import tr
 from .transcoder import hw_input, media_args
 
 log = logging.getLogger("seance.downloads")
@@ -56,7 +57,7 @@ class Job:
 
     def view(self):
         return {"id": self.id, "item_id": str(self.item_id), "state": self.state, "mode": self.mode,
-                "progress": round(self.progress, 3), "size": self.size, "error": self.error, "waiting": self.waiting}
+                "progress": round(self.progress, 3), "size": self.size, "error": tr(self.error), "waiting": self.waiting}
 
 
 class Downloads:

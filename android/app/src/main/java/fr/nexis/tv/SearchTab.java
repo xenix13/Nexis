@@ -36,7 +36,7 @@ final class SearchTab extends BrowseScreen.Tab {
     View create() {
         LinearLayout root = Ui.column(act);
         root.setClipChildren(false);
-        input = Ui.input(act, "Titre d'un film, d'une série, d'un épisode…", false);
+        input = Ui.input(act, Tr.t("Titre d'un film, d'une série, d'un épisode…"), false);
         input.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(dp(640), ViewGroup.LayoutParams.WRAP_CONTENT);
         ip.setMargins(dp(48), dp(12), dp(48), dp(4));
@@ -60,7 +60,7 @@ final class SearchTab extends BrowseScreen.Tab {
             search(input.getText().toString());
             return false;
         });
-        message = Ui.text(act, "Saisissez au moins deux lettres.", 17, Ui.MUTED);
+        message = Ui.text(act, Tr.t("Saisissez au moins deux lettres."), 17, Ui.MUTED);
         message.setPadding(dp(48), dp(18), dp(48), 0);
         root.addView(message);
         scroll = new ScrollView(act);
@@ -79,17 +79,17 @@ final class SearchTab extends BrowseScreen.Tab {
         if (query.length() < 2) {
             results.removeAllViews();
             message.setVisibility(View.VISIBLE);
-            message.setText("Saisissez au moins deux lettres.");
+            message.setText(Tr.t("Saisissez au moins deux lettres."));
             return;
         }
         Api.obj("/api/search?q=" + Api.enc(query), r -> {
             if (mine != seq) return;
             results.removeAllViews();
-            int n = addRow("Films", r.optJSONArray("movies"), Cards.POSTER)
-                    + addRow("Séries", r.optJSONArray("shows"), Cards.POSTER)
-                    + addRow("Épisodes", r.optJSONArray("episodes"), Cards.WIDE);
+            int n = addRow(Tr.t("Films"), r.optJSONArray("movies"), Cards.POSTER)
+                    + addRow(Tr.t("Séries"), r.optJSONArray("shows"), Cards.POSTER)
+                    + addRow(Tr.t("Épisodes"), r.optJSONArray("episodes"), Cards.WIDE);
             message.setVisibility(n == 0 ? View.VISIBLE : View.GONE);
-            message.setText("Aucun résultat pour « " + query + " ».");
+            message.setText(Tr.t("Aucun résultat pour « ") + query + Tr.t(" »."));
         }, e -> {
             if (mine == seq) message.setText(e.getMessage());
         });

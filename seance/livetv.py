@@ -24,6 +24,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 from . import media
+from .i18n import tr
 from .names import fold
 
 log = logging.getLogger("seance.live")
@@ -601,7 +602,7 @@ class LiveTV:
         with self.lock:
             return [{"sid": s.sid, "channel": s.channel["name"], "mode": s.mode, "codec": getattr(s, "vcodec", None),
                      "since": int(s.started), "viewers": [v[0] for v in s.viewers.values()], "alive": s.alive(),
-                     "error": None if s.alive() else s.error()} for s in self.sessions.values()]
+                     "error": None if s.alive() else tr(s.error())} for s in self.sessions.values()]
 
 
 def image_type(data):
@@ -801,7 +802,7 @@ def register(app, ctx, x):
         dead = db.scalar("SELECT COUNT(*) FROM live_channels WHERE source_id=? AND ok=0", (s["id"],))
         return {"id": str(s["id"]), "name": s["name"], "m3u_url": s["m3u_url"], "epg_url": s["epg_url"] or "",
                 "user_agent": s["user_agent"] or "", "enabled": bool(s["enabled"]), "refreshed_at": s["refreshed_at"],
-                "epg_at": s["epg_at"], "error": s["error"], "channels": n, "hidden": hidden, "programmes": progs,
+                "epg_at": s["epg_at"], "error": tr(s["error"]), "channels": n, "hidden": hidden, "programmes": progs,
                 "dead": dead}
 
     def validate_source(b):
@@ -872,7 +873,7 @@ def register(app, ctx, x):
         try:
             live.refresh_source(src)
         except LiveError as e:
-            return {"ok": True, "warning": str(e), **admin_overview()}
+            return {"ok": True, "warning": tr(str(e)), **admin_overview()}
         check_async(sid)
         return {"ok": True, **admin_overview()}
 
