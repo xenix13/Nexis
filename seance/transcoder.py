@@ -113,7 +113,7 @@ def _bit_depth(v):
 
 
 def video_ok(v, caps=None):
-    """La piste vidéo peut-elle être recopiée telle quelle pour ce navigateur ?"""
+    """La piste vidéo peut-elle être recopiée telle quelle pour cet appareil (navigateur ou lecteur natif) ?"""
     caps = caps or DEFAULT_CAPS
     if not v:
         return False
@@ -123,6 +123,8 @@ def video_ok(v, caps=None):
         return False
     if codec == "h264":
         return depth == 8 and "h264" in caps["video"]
+    if codec in ("mpeg2video", "vc1"):  # décodés par la plupart des TV et boîtiers, jamais par un navigateur
+        return codec in caps["video"]
     if codec == "hevc":
         return ("hevc10" if depth == 10 else "hevc") in caps["video"] and depth <= 10
     if codec == "av1":
@@ -143,13 +145,20 @@ def plan(probe, audio_index=None, burn_index=None, quality="original", caps=None
     need_scale = bool(target and src_h > target[0])
     over_rate = bool(target and rate_kbps and rate_kbps > target[1] * 1.3)
     vcopy = video_ok(v, caps) and burn_index is None and not need_scale and not over_rate
-    # multicanal : on fait nous-mêmes la réduction en stéréo (le mixage par défaut du navigateur sature)
-    acopy = bool(a and a["codec"] in caps["audio"] and (a.get("channels") or 2) <= 2)
+    native = bool(caps.get("native"))
+    channels = (a or {}).get("channels") or 2
+    # multicanal : réduit en stéréo par nous (le mixage par défaut du navigateur sature), sauf pour un lecteur
+    # natif qui le transmet à la TV ou à l'ampli. En HLS (fMP4), seuls AC3 / E-AC3 / AAC / FLAC / Opus multicanal
+    # sont recopiés ; DTS et TrueHD ne passent qu'en lecture directe.
+    multi_ok = bool(caps.get("multichannel")) and (a or {}).get("codec") in ("ac3", "eac3", "aac", "flac", "opus")
+    acopy = bool(a and a["codec"] in caps["audio"] and (channels <= 2 or multi_ok))
+    audio_direct = a is None or (a["codec"] in caps["audio"] and (channels <= 2 or caps.get("multichannel")))
     container = (probe.get("container") or "").split(",")
-    # MKV : jamais en direct (les navigateurs ne le lisent pas), c'est le remux qui s'en charge
-    direct_container = bool(set(container) & set(caps.get("containers") or ()) & {"mp4", "mov"})
+    # navigateur : MP4 seulement en direct (le MKV passe par le remux) ; lecteur natif : tout conteneur qu'il lit
+    direct_container = bool(set(container) & set(caps.get("containers") or ()) & ({"mp4", "mov", "matroska", "webm", "mpegts"} if native else {"mp4", "mov"}))
     first_audio = audios[0]["index"] if audios else None
-    if vcopy and direct_container and (a is None or (acopy and a["index"] == first_audio)):
+    # le lecteur natif choisit lui-même sa piste audio dans le fichier ; le navigateur ne lit que la première
+    if vcopy and direct_container and (audio_direct if native else (a is None or (acopy and a["index"] == first_audio))):
         mode = "direct"
     elif vcopy:
         mode = "copy"
@@ -165,7 +174,7 @@ def plan(probe, audio_index=None, burn_index=None, quality="original", caps=None
         if v and not video_ok(v, caps):
             depth = _bit_depth(v)
             reasons.append(f"vidéo {str(v.get('codec')).upper()}{' 10 bits' if depth == 10 else ''} "
-                           "illisible par ce navigateur")
+                           "illisible par cet appareil")
         if burn_index is not None:
             reasons.append("sous-titres incrustés")
         if need_scale or over_rate:

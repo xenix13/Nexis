@@ -106,6 +106,18 @@ jobs:
             echo "::notice::Certificat de l'APK (SHA-256) : $FP"
           fi
           echo "V=$V" >> "$GITHUB_ENV"
+      - name: APK de test (pré-version « tv-test »)
+        if: github.ref == 'refs/heads/test'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # à installer pour essayer la branche test avant son passage sur main ; ignorée par /tv et « latest »
+          cp "nexis-tv-$V.apk" nexis-tv-test.apk
+          if ! gh release view tv-test >/dev/null 2>&1; then
+            gh release create tv-test --prerelease --target test --title "Application TV (test)" \
+              --notes "APK construit depuis la branche test, pour essai. Ne pas utiliser au quotidien."
+          fi
+          gh release upload tv-test nexis-tv-test.apk --clobber
       - name: Ajout à la publication
         if: github.ref == 'refs/heads/main'
         env:

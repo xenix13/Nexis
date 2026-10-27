@@ -300,6 +300,18 @@ class SeanceTest(unittest.TestCase):
                "audio": [{"index": 1, "codec": "aac", "channels": 2}, {"index": 2, "codec": "aac", "channels": 2}]}
         self.assertEqual(plan(mp4)["mode"], "direct")
         self.assertEqual(plan(mp4, audio_index=2)["mode"], "copy")
+        # lecteur natif (application TV) : MKV lu tel quel, son 5.1 transmis à l'ampli
+        mkv = {"container": "matroska,webm", "bitrate": 0,
+               "video": {"index": 0, "codec": "h264", "profile": "High", "pix_fmt": "yuv420p", "height": 1080},
+               "audio": [{"index": 1, "codec": "dts", "channels": 6}, {"index": 2, "codec": "ac3", "channels": 6}]}
+        native = {"video": {"h264", "hevc"}, "audio": {"aac", "ac3", "dts"}, "containers": {"matroska", "mp4"},
+                  "native": True, "multichannel": True}
+        self.assertEqual(plan(mkv, caps=native)["mode"], "direct")
+        self.assertEqual(plan(mkv, caps=native, audio_index=2)["mode"], "direct")  # piste choisie par le lecteur
+        browser = {"video": {"h264"}, "audio": {"aac", "ac3"}, "containers": {"mp4"}}
+        self.assertEqual(plan(mkv, caps=browser)["mode"], "copy")
+        r = plan(mkv, caps=dict(native, containers={"mp4"}), audio_index=2)
+        self.assertEqual((r["mode"], r["acopy"]), ("copy", True))  # remux : AC3 5.1 conservé
 
     def test_hardware_transcoding(self):
         """Commandes NVIDIA / VAAPI, refus d'un moteur absent, repli automatique sur le processeur."""
@@ -469,6 +481,14 @@ class SeanceTest(unittest.TestCase):
         self.assertAlmostEqual(c["cues"][0]["s"], 1000, delta=50)
         st, c = self.admin.call("GET", f"/api/items/{m['id']}/subtitles/{d['subtitles'][1]['id']}")
         self.assertEqual(c["cues"][0]["t"], "Hello everyone")
+        # version WebVTT pour le lecteur natif
+        st, body, h = self.admin.call("GET", f"/api/items/{m['id']}/subtitles/{d['subtitles'][0]['id']}.vtt", raw=True)
+        self.assertEqual(st, 200)
+        self.assertTrue(h["Content-Type"].startswith("text/vtt"))
+        body = body.decode()
+        self.assertTrue(body.startswith("WEBVTT"))
+        self.assertIn("00:00:01.", body)
+        self.assertIn("Bonjour tout le monde", body)
 
     def test_progress_continue_next_up_per_user(self):
         show, d, eps = self.episodes("Kaze no Michi", "Animes")
