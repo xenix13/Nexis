@@ -207,7 +207,10 @@ input[type="range"] { accent-color: var(--accent); }
 a.row-title:hover { color: var(--accent); }
 .row-nav { display: flex; gap: 4px; }
 .row-track { display: grid; grid-auto-flow: column; grid-auto-columns: var(--poster-w); gap: 14px; overflow-x: auto;
-  scroll-snap-type: x mandatory; scrollbar-width: none; padding: 4px 2px 8px; margin: -4px -2px 0; }
+  scroll-snap-type: x mandatory; scrollbar-width: none;
+  /* une rangée qui défile coupe tout ce qui dépasse : marge pour l'affiche sélectionnée (soulevée, agrandie,
+     cadre de 3 px à 3 px), compensée par une marge négative pour ne rien décaler */
+  padding: 16px 16px 12px; margin: -16px -16px -4px; scroll-padding-inline: 16px; }
 .row-track::-webkit-scrollbar { display: none; }
 .wide-row .row-track { grid-auto-columns: calc(var(--poster-w) * 1.75); }
 .card { display: block; scroll-snap-align: start; min-width: 0; }

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- fond sombre dès le lancement (pas d'éclair blanc), plein écran -->
+    <style name="Nexis" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:colorAccent">#FFA43A</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
+</resources>

@@ -103,6 +103,29 @@ def register(app, ctx, x):
             os.replace(cache + ".tmp", cache)
         return Response(data, 200, json_type)
 
+    @app.route("GET", f"/api/items/{RK}/subtitles/(?P<sub>\\d{{1,6}})\\.vtt")
+    def item_subtitles_vtt(req):
+        """Même piste au format WebVTT, pour les lecteurs natifs (application Android TV). Une piste interne
+        pas encore extraite est attendue (2 min au plus), puis servie en partie si besoin."""
+        req.query = {**req.query, "wait": ["1"]}
+        resp = item_subtitles(req)
+        if resp.status == 202:
+            raise HTTPError(503, "Sous-titres en préparation")
+        try:
+            cues = json.loads(resp.body).get("cues") or []
+        except (ValueError, AttributeError):
+            cues = []
+
+        def ts(ms):
+            ms = max(0, int(ms))
+            return f"{ms // 3600000:02d}:{ms // 60000 % 60:02d}:{ms // 1000 % 60:02d}.{ms % 1000:03d}"
+        out = ["WEBVTT", ""]
+        for c in cues:
+            text = str(c.get("t") or "").replace("-->", "→").strip()
+            if text:
+                out += [f"{ts(c.get('s', 0))} --> {ts(c.get('e', 0))}" + (" line:10%" if c.get("top") else ""), text, ""]
+        return Response("\n".join(out).encode(), 200, "text/vtt; charset=utf-8", {"Cache-Control": "private, max-age=600"})
+
     # -- ASS d'origine (rendu fidèle par libass dans le navigateur) et polices jointes au MKV
     ASS_FN = re.compile(rb"\\fn([^\\}]{1,100})")
 
@@ -302,9 +325,9 @@ def register(app, ctx, x):
             "markers": markers_for(r), "chapters": chapters_for(r), "next": card(nxt) if nxt else None,
         }
 
-    VIDEO_CAPS = {"h264", "hevc", "hevc10", "av1", "av1_10", "vp9"}
-    AUDIO_CAPS = {"aac", "mp3", "ac3", "eac3", "flac", "opus"}
-    CONTAINER_CAPS = {"mp4", "mov", "webm", "matroska"}
+    VIDEO_CAPS = {"h264", "hevc", "hevc10", "av1", "av1_10", "vp9", "mpeg2video", "vc1"}
+    AUDIO_CAPS = {"aac", "mp3", "ac3", "eac3", "flac", "opus", "dts", "truehd", "vorbis"}
+    CONTAINER_CAPS = {"mp4", "mov", "webm", "matroska", "mpegts"}
 
     def parse_caps(c):
         """Profil de décodage déclaré par le navigateur."""
@@ -312,7 +335,9 @@ def register(app, ctx, x):
             return {"video": {"h264"}, "audio": {"aac", "mp3"}, "containers": {"mp4", "mov"}, "pgs": False}
         pick = lambda key, allowed: {x for x in (c.get(key) or []) if isinstance(x, str) and x in allowed}
         return {"video": pick("video", VIDEO_CAPS) or {"h264"}, "audio": pick("audio", AUDIO_CAPS) or {"aac"},
-                "containers": pick("containers", CONTAINER_CAPS) or {"mp4"}, "pgs": bool(c.get("pgs"))}
+                "containers": pick("containers", CONTAINER_CAPS) or {"mp4"}, "pgs": bool(c.get("pgs")),
+                # application native (Android TV) : lecture directe des MKV, son multicanal transmis tel quel
+                "native": c.get("native") is True, "multichannel": c.get("multichannel") is True}
 
     kf_cache = {}
 
@@ -418,7 +443,9 @@ def register(app, ctx, x):
         headers = {"Accept-Ranges": "bytes", "Cache-Control": "no-store"}
         if status == 206:
             headers["Content-Range"] = f"bytes {start}-{end}/{size}"
-        ctype = "video/mp4" if path.lower().endswith((".mp4", ".m4v", ".mov")) else "video/webm"
+        low = path.lower()
+        ctype = ("video/mp4" if low.endswith((".mp4", ".m4v", ".mov")) else "video/x-matroska"
+                 if low.endswith((".mkv", ".mk3d")) else "video/mp2t" if low.endswith((".ts", ".m2ts")) else "video/webm")
         return Response(stream=gen(), status=status, content_type=ctype, length=length, headers=headers,
                         on_close=f.close)
 
