@@ -163,6 +163,7 @@ class Federation:
         self.pools = {}         # id du serveur lié -> Pool (tunnel ouvert par lui)
         self.tunnels = {}       # id -> connexions de tunnel que nous lui gardons ouvertes (en attente)
         self.tunnel_fail = {}   # id -> instant du dernier échec d'ouverture
+        self.tunnel_gen = {}    # id -> génération (nouveau jumelage : les anciennes connexions ne comptent plus)
         self.status = {}        # id -> état affiché (en ligne, liaison, latence)
         self.proxied = {}       # flux relayé -> (id du serveur lié, id de l'utilisateur, id local de l'élément)
         self.queues = {}        # id -> file des envois en arrière-plan (progression, arrêts), dans l'ordre
@@ -455,10 +456,36 @@ class Federation:
                 return
             n = IDLE_TUNNELS - self.tunnels.get(pid, 0)
             self.tunnels[pid] = self.tunnels.get(pid, 0) + max(0, n)
+            gen = self.tunnel_gen.get(pid, 0)
         for _ in range(max(0, n)):
-            threading.Thread(target=self._tunnel, args=(pid,), daemon=True, name="fed-tunnel").start()
+            threading.Thread(target=self._tunnel, args=(pid, gen), daemon=True, name="fed-tunnel").start()
 
-    def _tunnel(self, pid):
+    def reset_link(self, pid):
+        """Lien remplacé ou supprimé : connexions, tunnels et échecs passés oubliés."""
+        with self.lock:
+            self.tunnel_gen[pid] = self.tunnel_gen.get(pid, 0) + 1
+            self.tunnels.pop(pid, None)
+            self.tunnel_fail.pop(pid, None)
+            self.status.pop(pid, None)
+            pool = self.pools.pop(pid, None)
+            for sid in [s for s, v in self.proxied.items() if v[0] == pid]:
+                self.proxied.pop(sid)
+        while pool:
+            got = pool.take(0)
+            if not got:
+                break
+            try:
+                got[0].close()
+            except OSError:
+                pass
+            got[1]()  # libère le fil qui gardait cette connexion
+
+    def _uncount(self, pid, gen):
+        with self.lock:
+            if self.tunnel_gen.get(pid, 0) == gen:
+                self.tunnels[pid] = max(0, self.tunnels.get(pid, 1) - 1)
+
+    def _tunnel(self, pid, gen=0):
         """Connexion ouverte vers un serveur lié, pour qu'il nous envoie ses requêtes (il n'a pas à nous joindre)."""
         counted = True
         sock = None
@@ -485,28 +512,27 @@ class Federation:
                 if not ready:
                     return
             # une requête arrive : on rouvre tout de suite une connexion d'avance, puis on la traite
-            with self.lock:
-                self.tunnels[pid] = self.tunnels.get(pid, 1) - 1
+            self._uncount(pid, gen)
             counted = False
             self.spawn_tunnels(pid)
             self.handler(sock, split_address(peer["address"]), None)
         except (FedError, OSError, ssl.SSLError) as e:
             with self.lock:
-                self.tunnel_fail[pid] = time.time()
+                if self.tunnel_gen.get(pid, 0) == gen:
+                    self.tunnel_fail[pid] = time.time()
             log.debug("Tunnel vers le serveur lié %s : %s", pid, e)
         except Exception:
             log.exception("Tunnel vers le serveur lié %s", pid)
         finally:
             if counted:
-                with self.lock:
-                    self.tunnels[pid] = max(0, self.tunnels.get(pid, 1) - 1)
+                self._uncount(pid, gen)
             if sock:
                 try:
                     sock.close()
                 except OSError:
                     pass
             self.ctx.db.release()
-            if not counted and not self.stop_event.is_set():
+            if not counted and not self.stop_event.is_set() and self.tunnel_gen.get(pid, 0) == gen:
                 self.spawn_tunnels(pid)
 
     # ------------------------------------------------------------------ jumelage
@@ -530,7 +556,8 @@ class Federation:
         db = self.ctx.db
         if data["id"] == self.uid():
             raise HTTPError(400, "Cette invitation vient de ce serveur : collez-la sur l'autre serveur")
-        if db.scalar("SELECT 1 FROM peers WHERE uid=?", (data["id"],)):
+        known = db.scalar("SELECT id FROM peers WHERE uid=? AND online=1 AND last_seen>?", (data["id"], int(time.time()) - 120))
+        if known:
             raise HTTPError(409, "Ce serveur est déjà lié")
         try:
             self.listen()
@@ -549,9 +576,7 @@ class Federation:
         if not (HEX32.match(str(r.get("uid"))) and isinstance(r.get("secret"), str) and len(r["secret"]) >= 32):
             raise HTTPError(502, "Réponse inattendue du serveur lié")
         with db.tx():
-            pid = db.run("INSERT INTO peers(uid,name,address,fingerprint,secret,created_at,version) VALUES(?,?,?,?,?,?,?)",
-                         (r["uid"], str(r.get("name") or "Nexis")[:40], data["a"], data["f"], r["secret"], int(time.time()),
-                          str(r.get("version") or "")[:20])).lastrowid
+            pid = self._save_peer(r["uid"], r.get("name"), data["a"], data["f"], r["secret"], r.get("version"))
         self._has_peers = True
         peer = self.peer(pid)
         self.avatar_todo.setdefault(pid, []).extend(self.apply_users(peer, r.get("users") or [], [], mode="adopt"))
@@ -559,6 +584,21 @@ class Federation:
         self.spawn_tunnels(pid)
         self.wake.set()
         return peer
+
+    def _save_peer(self, uid, name, address, fingerprint, secret, version):
+        """Nouveau serveur lié, ou nouveau jumelage d'un serveur déjà connu (délié de son côté seulement, ou
+        réinstallé) : son ancien secret et son ancien certificat sont remplacés."""
+        db = self.ctx.db
+        name, version = str(name or "Nexis")[:40], str(version or "")[:20]
+        pid = db.scalar("SELECT id FROM peers WHERE uid=?", (uid,))
+        if pid:
+            db.run("UPDATE peers SET name=?, address=?, fingerprint=?, secret=?, version=?, online=1, error=NULL WHERE id=?",
+                   (name, address, fingerprint, secret, version, pid))
+        else:
+            pid = db.run("INSERT INTO peers(uid,name,address,fingerprint,secret,created_at,version) VALUES(?,?,?,?,?,?,?)",
+                         (uid, name, address, fingerprint, secret, int(time.time()), version)).lastrowid
+        self.reset_link(pid)  # (un identifiant de serveur supprimé peut être réattribué)
+        return pid
 
     def accept_join(self, req):
         """Demande d'adhésion d'un autre serveur, avec le jeton d'une invitation de ce serveur."""
@@ -576,15 +616,11 @@ class Federation:
             raise HTTPError(400, "Demande de jumelage invalide")
         if uid == self.uid():
             raise HTTPError(400, "Cette invitation vient de ce serveur : collez-la sur l'autre serveur")
-        if db.scalar("SELECT 1 FROM peers WHERE uid=?", (uid,)):
-            raise HTTPError(409, "Ce serveur est déjà lié")
         address = valid_address(b.get("address"))
         secret = secrets.token_urlsafe(32)
         with db.tx():
             db.run("DELETE FROM fed_invites WHERE token_hash=?", (row["token_hash"],))
-            pid = db.run("INSERT INTO peers(uid,name,address,fingerprint,secret,created_at,version) VALUES(?,?,?,?,?,?,?)",
-                         (uid, str(b.get("name") or "Nexis")[:40], address, fp, secret, int(time.time()),
-                          str(b.get("version") or "")[:20])).lastrowid
+            pid = self._save_peer(uid, b.get("name"), address, fp, secret, b.get("version"))
         self._has_peers = True
         peer = self.peer(pid)
         users = b.get("users") if isinstance(b.get("users"), list) else []
@@ -606,14 +642,7 @@ class Federation:
         db.run("DELETE FROM items WHERE peer_id=?", (pid,))  # y compris ceux rangés dans nos bibliothèques (fusion)
         db.run("DELETE FROM peers WHERE id=?", (pid,))  # et ses bibliothèques recopiées
         self._has_peers = None
-        with self.lock:
-            for sid in [s for s, v in self.proxied.items() if v[0] == pid]:
-                self.proxied.pop(sid)
-            self.status.pop(pid, None)
-            pool = self.pools.pop(pid, None)
-        if pool:
-            while pool.take(0):
-                pass
+        self.reset_link(pid)
         log.warning("Serveur lié retiré : %s", peer["name"])
 
     # ------------------------------------------------------------------ synchronisation
@@ -711,7 +740,7 @@ class Federation:
                         continue  # supprimé ici : la suppression l'emporte
                     rev = int(u.get("rev") or 0)
                     local = db.one("SELECT * FROM users WHERE uid=?", (u["uid"],))
-                    force = False
+                    force = adopted = False
                     if not local:
                         same = find_user(db, u["username"])
                         if same:
@@ -721,8 +750,12 @@ class Federation:
                                 continue
                             db.run("UPDATE users SET uid=? WHERE id=?", (u["uid"], same["id"]))
                             local = dict(same, uid=u["uid"])
-                            force = mode == "adopt"
+                            force, adopted = mode == "adopt", True
                     if local and not force and (local["rev"] or 0) >= rev:
+                        if adopted:
+                            # notre version est la plus récente : elle repart vers l'autre serveur sous l'uid commun,
+                            # sinon chacun garderait la sienne (deux mots de passe pour un même compte)
+                            db.run("UPDATE users SET rev=rev WHERE id=?", (local["id"],))
                         continue
                     fields = {f: u.get(f) for f in USER_FIELDS}
                     for f in ("is_admin", "all_libraries", "disabled", "managed", "home", "allow_unrated", "kids",

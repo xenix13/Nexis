@@ -347,6 +347,11 @@ Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et u
   3. à égalité, celle de ce serveur.
 
   Un saut ou un changement de piste garde la même copie. Si le serveur choisi ne répond pas, l'autre copie prend le relais.
+- **Même identifiant des deux côtés.** Au jumelage, c'est celui du serveur qui a créé l'invitation qui l'emporte : mot de passe, double authentification, profil. Chaque serveur garde l'historique, la progression et les listes de son compte, qui reste le même compte localement. Un identifiant créé ensuite sur les deux serveurs avant leur synchronisation devient lui aussi un seul compte, avec la version modifiée en dernier.
+- **Délier un serveur.**
+  - Les comptes restent sur les deux serveurs, mais ne sont plus synchronisés.
+  - Ses bibliothèques et ses titres disparaissent de ce serveur, y compris ceux fusionnés dans les vôtres ; vos propres titres et leur progression ne bougent pas. Aucun fichier n'est touché.
+  - L'autre serveur est prévenu s'il répond, et fait de même de son côté. S'il était éteint, il voit ce serveur comme injoignable : un nouveau jumelage, avec une nouvelle invitation, remplace alors l'ancien lien.
 - **Serveur éteint ou injoignable.** L'autre continue de fonctionner normalement : ses bibliothèques, la connexion et la lecture de ses titres. Après une trentaine de secondes sans réponse, les titres que seul le serveur éteint possède sont masqués, et ses bibliothèques non fusionnées aussi. Ils reviennent seuls dès qu'il répond.
 
 **Liaison et réseau**

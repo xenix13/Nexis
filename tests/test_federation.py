@@ -390,6 +390,23 @@ class FederationTest(unittest.TestCase):
         self.assertEqual(st, 502, r)
         self.assertIn("Certificat inattendu", r["error"])
 
+    def test_11_same_username_created_on_both(self):
+        """Le même identifiant créé des deux côtés après le jumelage : un seul compte au final, identique partout."""
+        st, r = self.admin_a.call("POST", "/api/admin/users", {"username": "nina", "password": "motdepasseNA"})
+        self.assertEqual(st, 200, r)
+        st, r = self.admin_b.call("POST", "/api/admin/users", {"username": "Nina", "password": "motdepasseNB"})
+        self.assertEqual(st, 200, r)
+        self.sync()
+        self.sync()
+        rows = [ctx.db.one("SELECT uid, password_hash, display_name FROM users WHERE username LIKE 'nina'") for ctx in (self.a, self.b)]
+        self.assertEqual(rows[0], rows[1])
+        self.assertEqual([ctx.db.scalar("SELECT COUNT(*) FROM users WHERE username LIKE 'nina'") for ctx in (self.a, self.b)], [1, 1])
+        # le même mot de passe sur les deux serveurs (celui de la dernière version gagnante)
+        ok = [pw for pw in ("motdepasseNA", "motdepasseNB")
+              if Client(self.base_a).call("POST", "/api/login", {"username": "nina", "password": pw})[0] == 200]
+        self.assertEqual(len(ok), 1)
+        self.login(self.base_b, "nina", ok[0])
+
     def test_99_unlink(self):
         st, r = self.admin_b.call("DELETE", f"/api/admin/federation/peers/{self.peer_on_b}")
         self.assertEqual(st, 200, r)
@@ -400,8 +417,39 @@ class FederationTest(unittest.TestCase):
         self.assertEqual(sorted(l["title"] for l in libs), ["Films", "Séries"])
         films = self.lib(self.admin_a, "Films")
         self.assertEqual(self.titles(self.admin_a, films), ["Brume", "Le Grand Voyage", "Nuit Polaire"])
-        # les comptes restent
+        # les comptes restent, des deux côtés, et ne bougent plus
         self.login(self.base_a, "lea", "motdepasseL")
+        self.login(self.base_b, "colas", "motdepasseA")
+        st, libs_b = self.admin_b.call("GET", "/api/libraries")
+        self.assertEqual(sorted(l["title"] for l in libs_b), ["Animes", "Films", "Séries"])
+        self.assertFalse(self.b.db.scalar("SELECT COUNT(*) FROM items WHERE peer_id IS NOT NULL"))
+        self.assertFalse(self.a.db.scalar("SELECT COUNT(*) FROM items WHERE peer_id IS NOT NULL"))
+        # notre épisode et notre série sont intacts (les épisodes de B fusionnés ont disparu)
+        show = self.a.db.scalar("SELECT id FROM items WHERE type='show'")
+        st, d = self.admin_a.call("GET", f"/api/items/{show}")
+        self.assertEqual([s["title"] for s in d["seasons"]], ["Saison 1"])
+
+    def pair(self):
+        st, inv = self.admin_a.call("POST", "/api/admin/federation/invite", {"address": f"127.0.0.1:{self.a.fed.port}"})
+        self.assertEqual(st, 200, inv)
+        st, r = self.admin_b.call("POST", "/api/admin/federation/join", {"invite": inv["invite"]})
+        self.assertEqual(st, 200, r)
+        type(self).peer_on_a = self.a.db.scalar("SELECT id FROM peers")
+        type(self).peer_on_b = self.b.db.scalar("SELECT id FROM peers")
+        self.sync()
+
+    def test_99b_relink_after_one_sided_unlink(self):
+        """Délié d'un seul côté (l'autre était éteint) : un nouveau jumelage remplace l'ancien lien."""
+        self.pair()
+        self.b.fed.remove(self.peer_on_b, notify=False)  # A ne l'apprend pas
+        self.b.db.release()
+        self.assertEqual(self.a.db.scalar("SELECT COUNT(*) FROM peers"), 1)
+        self.pair()
+        self.assertEqual([ctx.db.scalar("SELECT COUNT(*) FROM peers") for ctx in (self.a, self.b)], [1, 1])
+        st, v = self.admin_a.call("GET", "/api/admin/federation")
+        self.assertTrue(v["peers"][0]["online"], v)
+        st, libs = self.admin_a.call("GET", "/api/libraries")
+        self.assertEqual(sorted(l["title"] for l in libs), ["Animes", "Films", "Films", "Séries", "Séries"])
 
 
 if __name__ == "__main__":
