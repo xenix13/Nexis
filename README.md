@@ -25,6 +25,7 @@ Serveur multimédia auto-hébergé pour films, séries et animes. Nexis analyse 
 | **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou externes : `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. ASS rendus par libass (positionnement, karaoké, polices jointes), PGS rendus par le navigateur, VobSub incrustés |
 | **Applications** | Web app installable (Windows, macOS, Linux, Android, iPhone, iPad), téléchargements hors ligne, application Android TV native |
 | **Paramètres** | Un seul espace, organisé en Mon compte, Serveur, Médiathèque et Lecture, avec recherche |
+| **Serveurs liés** | Plusieurs serveurs Nexis reliés par une liaison chiffrée qui leur est propre : comptes communs, bibliothèques de chacun visibles et lisibles depuis l'autre, progression partagée. Un seul des deux doit être joignable |
 | **Langues** | Interface en **français** ou en **anglais**, au choix de chaque utilisateur ; langue par défaut des nouveaux comptes choisie par l'administrateur. Messages du serveur et appli TV dans la même langue |
 
 ### Choix du mode de lecture
@@ -325,6 +326,29 @@ films.mondomaine.fr {
 
 Avec nginx, ajouter `proxy_read_timeout 120s;` et `proxy_buffering off;` (nécessaire aux mises à jour en direct de « Regarder ensemble »).
 
+## Serveurs liés
+
+Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et une résidence secondaire, peuvent être reliés dans *Paramètres → Serveurs liés* :
+
+1. Sur le serveur que l'autre peut joindre, **Inviter un serveur**. Vérifier l'adresse proposée (IP ou nom, suivi du port **8421**), puis copier l'invitation `NEXIS1-…`.
+2. Sur l'autre serveur, **Rejoindre un serveur** et coller l'invitation, valable 15 minutes et une seule fois.
+
+**Ce qui est partagé**
+
+- **Comptes.** Ils sont communs : mots de passe, double authentification, profils, PIN, contrôle parental, langue, photo et accès aux bibliothèques. Une modification sur l'un arrive sur l'autre en moins d'une minute ; la plus récente l'emporte et une suppression est définitive. Un identifiant présent sur les deux serveurs au moment du jumelage devient un seul compte, avec les données du serveur qui a créé l'invitation. Les sessions ne sont pas partagées : il faut se connecter une fois sur chaque serveur.
+- **Bibliothèques.** Celles de l'autre serveur apparaissent avec son nom (« Séries · Maison 2 ») dans le menu, l'accueil et la recherche. Leurs fiches et affiches viennent de lui, et c'est lui qui les scanne et cherche leurs métadonnées.
+- **Lecture.** Un titre de l'autre serveur se lit depuis celui-ci : l'autre serveur lit le fichier, le convertit si besoin et le transmet par la liaison. Sous-titres, aperçus, chapitres et « Passer l'intro » fonctionnent comme pour un titre local. La position de lecture et « vu » sont renvoyés au serveur d'origine et reviennent dans l'autre sens. Les téléchargements hors ligne ne sont pas encore possibles pour ces titres.
+
+**Liaison et réseau**
+
+- **Chiffrement.** Chaque serveur a son propre certificat (clé EC P-256, créée au premier jumelage dans `/var/lib/seance/federation`). L'invitation contient l'empreinte de ce certificat : celui qui rejoint vérifie qu'il parle bien au bon serveur, puis les deux s'échangent un secret présenté à chaque requête. Tout passe en TLS sur le port 8421, sans VPN, nom de domaine ni autorité de certification, même si l'interface reste en HTTP sur le réseau local.
+- **Ports.** Un seul des deux serveurs doit être joignable par l'autre. En réseau local, rien à faire. Par Internet, il faut rediriger le port 8421 vers l'un des deux (redirection sur la box, ou reverse proxy en mode TCP/stream, car un proxy HTTPS classique casserait le certificat épinglé). L'autre serveur ouvre lui-même un tunnel chiffré vers lui : rien à ouvrir de son côté. Si aucun des deux n'est joignable, passer par un VPN de type Tailscale ou WireGuard.
+- **Restrictions.** Le port n'accepte que les serveurs jumelés et ne sert pas l'interface. Au nom d'un compte, un serveur lié ne peut que lire les titres, jamais administrer.
+- **Configuration.** Le port se change avec `SEANCE_FED_PORT` dans `/etc/seance/seance.env`. Avec Docker, publier aussi `8421:8421`. `openssl` est nécessaire, une seule fois, pour créer le certificat ; il est installé par le script, le paquet `.deb` et l'image Docker.
+- **Débit.** À distance, la qualité dépend du débit montant du serveur qui a le fichier : choisir une qualité réduite si la lecture saccade.
+
+> À réserver à vos propres serveurs : partager des films du commerce avec un autre foyer sort du cadre de la copie privée (voir [docs/AUDIT-JURIDIQUE.md](docs/AUDIT-JURIDIQUE.md)).
+
 ## Chapitres, aperçus, intro et générique
 
 - **Aperçus** : au survol ou au glissement de la barre de lecture, une vignette de la scène s'affiche avec le nom du chapitre. Les vignettes sont produites à partir des images clés, pendant la même lecture du fichier que les sous-titres.
@@ -540,4 +564,5 @@ L'interface (`static/`) est en JavaScript, sans étape de compilation.
 - Paquet `.deb`, image Docker, conteneur Proxmox en une commande, mise à jour depuis l'interface
 - Paramètres regroupés en un seul espace avec recherche
 - Interface en français et en anglais (langue par utilisateur, langue par défaut choisie par l'administrateur)
+- Serveurs liés : jumelage par invitation, liaison TLS à certificats épinglés, tunnel inverse, comptes répliqués, bibliothèques partagées, lecture relayée
 - Web app installable, téléchargements hors ligne, navigation à la télécommande et à la manette, application Android TV native (lecture directe des MKV, son multicanal transmis à l'ampli)

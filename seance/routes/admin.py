@@ -199,7 +199,9 @@ def register(app, ctx, x):
 
     @app.route("GET", "/api/admin/libraries", auth="admin")
     def admin_libraries(req):
-        return {"libraries": [library_view(l) for l in db.all("SELECT * FROM libraries ORDER BY position, name")],
+        # bibliothèques d'un serveur lié : gérées par ce serveur (page Serveurs liés)
+        return {"libraries": [library_view(l) for l in db.all("SELECT * FROM libraries WHERE peer_id IS NULL "
+                                                                "ORDER BY position, name")],
                 "scan": scan_view()}
 
     @app.route("POST", "/api/admin/libraries", auth="admin")
@@ -215,7 +217,7 @@ def register(app, ctx, x):
     @app.route("PUT", r"/api/admin/libraries/(?P<lid>\d{1,6})", auth="admin")
     def admin_library_update(req):
         lid = int(req.params["lid"])
-        l = db.one("SELECT * FROM libraries WHERE id=?", (lid,))
+        l = db.one("SELECT * FROM libraries WHERE id=? AND peer_id IS NULL", (lid,))
         if not l:
             raise HTTPError(404, "Bibliothèque introuvable")
         name, kind, paths = validate_library(req.json())
@@ -230,6 +232,8 @@ def register(app, ctx, x):
     def admin_library_delete(req):
         if ctx.scanner.status()["running"]:
             raise HTTPError(409, "Un scan est en cours. Réessayez une fois terminé.")
+        if not db.scalar("SELECT 1 FROM libraries WHERE id=? AND peer_id IS NULL", (int(req.params["lid"]),)):
+            raise HTTPError(404, "Bibliothèque introuvable")
         db.run("DELETE FROM libraries WHERE id=?", (int(req.params["lid"]),))
         db.run("DELETE FROM user_libraries WHERE section_id=?", (req.params["lid"],))
         return {"ok": True}
@@ -283,7 +287,7 @@ def register(app, ctx, x):
         # « .. » refusé : le webhook ne doit pas pouvoir désigner un dossier hors des bibliothèques
         parts = [p for p in remote.replace("\\", "/").split("/") if p and p not in (".", "..")]
         found = []
-        for lib in db.all("SELECT id, paths FROM libraries"):
+        for lib in db.all("SELECT id, paths FROM libraries WHERE peer_id IS NULL"):
             for root in json.loads(lib["paths"]):
                 real_root = os.path.realpath(root)
                 for k in range(len(parts), 0, -1):
@@ -438,6 +442,7 @@ def register(app, ctx, x):
             p = json.loads(r.pop("params") or "{}")
             r["mode"] = p.get("mode")
             r["reasons"] = [i18n.tr(x) for x in p.get("reasons", [])]
+            r["peer"] = p.get("peer")  # lecture d'un titre d'un serveur lié, relayée par ce serveur
             r.update(ctx.transcoder.stats(r["id"]))
             if p.get("video_codec"):
                 r["source"] = f"{str(p['video_codec']).upper()} {p.get('src_height') or '?'}p"
@@ -545,7 +550,7 @@ def register(app, ctx, x):
             if IN_DOCKER:
                 e = "Avec Docker, les partages se montent sur l'hôte puis se transmettent au conteneur (volumes du docker-compose.yml)"
             return {"available": False, "error": i18n.tr(str(e)), "shares": [], "env": None}
-        libs = db.all("SELECT id, name, paths FROM libraries")
+        libs = db.all("SELECT id, name, paths FROM libraries WHERE peer_id IS NULL")
         for sh in st["shares"]:
             sh["libraries"] = [l["name"] for l in libs if any(
                 p == sh["path"] or p.startswith(sh["path"] + os.sep) for p in json.loads(l["paths"]))]

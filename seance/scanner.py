@@ -177,7 +177,7 @@ class Scanner:
     def _run(self, library_ids, refresh_metadata, scope=None):
         db = self.ctx.db
         try:
-            libs = db.all("SELECT * FROM libraries ORDER BY position, id")
+            libs = db.all("SELECT * FROM libraries WHERE peer_id IS NULL ORDER BY position, id")
             if library_ids:
                 libs = [l for l in libs if l["id"] in library_ids]
             for lib in libs:

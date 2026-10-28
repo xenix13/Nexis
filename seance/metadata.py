@@ -207,8 +207,11 @@ class Metadata:
     def process_pending(self, progress=None):
         db = self.ctx.db
         tmdb = self.tmdb()
-        roots = db.all("SELECT * FROM items WHERE meta_state='pending' AND type IN ('movie','show') ORDER BY id")
-        pending_eps = db.scalar("SELECT COUNT(*) FROM items WHERE meta_state='pending' AND type IN ('season','episode')")
+        # éléments d'un serveur lié : leurs métadonnées sont cherchées par ce serveur
+        roots = db.all("SELECT * FROM items WHERE meta_state='pending' AND type IN ('movie','show') AND peer_id IS NULL "
+                       "ORDER BY id")
+        pending_eps = db.scalar("SELECT COUNT(*) FROM items WHERE meta_state='pending' AND type IN ('season','episode') "
+                                "AND peer_id IS NULL")
         total = len(roots) + (1 if pending_eps else 0)
         for n, item in enumerate(roots, 1):
             if progress:
@@ -224,7 +227,8 @@ class Metadata:
                 log.exception("Métadonnées de %s", item["title"])
                 db.run("UPDATE items SET meta_state='error' WHERE id=?", (item["id"],))
         # nouveaux épisodes de séries déjà identifiées
-        shows = db.all("SELECT DISTINCT show_id FROM items WHERE meta_state='pending' AND type IN ('season','episode')")
+        shows = db.all("SELECT DISTINCT show_id FROM items WHERE meta_state='pending' AND type IN ('season','episode') "
+                       "AND peer_id IS NULL")
         for r in shows:
             show = db.one("SELECT * FROM items WHERE id=?", (r["show_id"],))
             try:

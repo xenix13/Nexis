@@ -1101,3 +1101,13 @@ html.kids .card:focus-visible, html.kids .card:hover { transform: scale(1.04); }
 .data-credit { margin-top: 32px; }
 .about ul { margin: 6px 0 12px; padding-left: 20px; line-height: 1.7; }
 .about .sub { margin-top: 18px; }
+
+/* Serveurs liés : invitation à copier */
+.invite-text { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all; resize: none; }
+.peer-row .grow { min-width: 0; }
+.peer-actions { display: flex; align-items: center; gap: 8px; }
+@media (max-width: 640px) {
+  .peer-row { flex-wrap: wrap; }
+  .peer-row .grow { flex: 1 1 calc(100% - 60px); }
+  .peer-actions { width: 100%; justify-content: flex-end; }
+}

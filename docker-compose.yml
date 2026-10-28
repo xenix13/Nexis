@@ -7,6 +7,7 @@ services:
     restart: unless-stopped
     ports:
       - "8420:8420"
+      - "8421:8421"                  # serveurs liés (TLS) : utile seulement si un autre serveur Nexis doit joindre celui-ci
     environment:
       # derrière un reverse proxy HTTPS (nginx, Caddy…) : cookies sécurisés et vraie IP des clients
       SEANCE_COOKIE_SECURE: "0"

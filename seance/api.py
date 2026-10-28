@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from . import __version__, catalog, collections_api, discover, i18n, livetv, media, notify, suggest, syncplay, tasks, update
+from . import __version__, catalog, collections_api, discover, federation, i18n, livetv, media, notify, suggest, syncplay, tasks, update
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
@@ -54,6 +54,7 @@ class Ctx:
         self.tasks = tasks.TaskManager(self)
         self.live = livetv.LiveTV(self)
         self.together = syncplay.Groups(self)
+        self.fed = federation.Federation(self)
         for r in self.db.all("SELECT id, content_rating FROM items WHERE content_rating IS NOT NULL AND age IS NULL"):
             age = age_of(r["content_rating"])
             if age is not None:
@@ -122,7 +123,7 @@ class Ctx:
             return
         n = 0
         for r in self.db.all("SELECT id, key, probe, file_size, file_mtime, duration_ms FROM items WHERE type IN ('movie','episode') "
-                             "ORDER BY added_at DESC"):
+                             "AND peer_id IS NULL ORDER BY added_at DESC"):
             if self.subtitles.has_work(r):
                 self.subtitles.enqueue(r["id"])
                 n += 1
@@ -156,17 +157,29 @@ def build_app(ctx):
         return bool(ctx.setup_code) and hmac.compare_digest(code.strip().upper(), ctx.setup_code)
 
     def before(req, opts):
-        if opts.get("auth") == "webhook":
+        auth = opts.get("auth", "user")
+        if auth == "webhook":
             token = req.arg("token") or ""
             if not hmac.compare_digest(token, db.setting("webhook_token") or "\0"):
                 raise HTTPError(403, "Jeton invalide")
             return
-        # protection CSRF : un autre site ne peut pas ajouter cet en-tête sans l'accord du serveur (CORS)
-        if req.method != "GET" and req.headers.get("X-Seance") != "1":
-            raise HTTPError(403, "En-tête de requête manquant")
-        req.user = load_user(db, req)
+        # routes entre serveurs liés : uniquement sur leur port, par un serveur jumelé (ou avec une invitation)
+        if auth == "peer" and not req.fed_peer or auth == "join" and not req.fed_listener:
+            raise HTTPError(404, "Introuvable")
+        if auth in ("peer", "join"):
+            return
+        if req.fed_peer:
+            # requête d'un serveur lié au nom d'un compte (le même, répliqué) : la lecture d'un élément de ce
+            # serveur depuis l'autre. Pas de cookie ni d'en-tête anti-CSRF : la requête est signée par le serveur.
+            if not federation.PEER_USER_PATHS.match(req.path):
+                raise HTTPError(403, "Non autorisé entre serveurs liés")
+            req.user = ctx.fed.user_for(req)
+        else:
+            # protection CSRF : un autre site ne peut pas ajouter cet en-tête sans l'accord du serveur (CORS)
+            if req.method != "GET" and req.headers.get("X-Seance") != "1":
+                raise HTTPError(403, "En-tête de requête manquant")
+            req.user = load_user(db, req)
         i18n.set_lang(i18n.request_language(req, db))
-        auth = opts.get("auth", "user")
         if auth == "user" and not req.user:
             raise HTTPError(401, "Connexion requise")
         if auth == "admin" and not (req.user and req.user["is_admin"]):
@@ -176,10 +189,14 @@ def build_app(ctx):
             if not setup_allowed(req):
                 ctx.throttle.fail("setup:" + req.client_ip)
                 raise HTTPError(403, "Code d'installation invalide")
+        if not req.fed_peer:
+            # élément d'un serveur lié : la requête lui est relayée (ou il est prévenu)
+            return ctx.fed.intercept(req)
     app.before.append(before)
 
     catalog.install(ctx, x)
-    for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify):
+    for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify,
+                   federation):
         module.register(app, ctx, x)
     return app
 

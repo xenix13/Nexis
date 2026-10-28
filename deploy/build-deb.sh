@@ -22,7 +22,7 @@ Package: nexis
 Version: $VERSION
 Architecture: all
 Maintainer: Nexis <https://github.com/xenix13/Nexis>
-Depends: python3 (>= 3.9), ffmpeg, ca-certificates, cifs-utils, smbclient, systemd, passwd
+Depends: python3 (>= 3.9), ffmpeg, ca-certificates, cifs-utils, smbclient, systemd, passwd, openssl
 Recommends: curl, git
 Section: video
 Priority: optional

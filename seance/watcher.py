@@ -163,7 +163,7 @@ class Watcher:
         interval = self.interval()
         if interval <= 0:
             return
-        libs = self.ctx.db.all("SELECT id, name, paths FROM libraries")
+        libs = self.ctx.db.all("SELECT id, name, paths FROM libraries WHERE peer_id IS NULL")
         known = {l["id"] for l in libs}
         for k in list(self.prints):
             if k not in known:

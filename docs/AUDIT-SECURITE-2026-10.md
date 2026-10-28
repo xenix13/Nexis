@@ -87,6 +87,13 @@ Les actions tierces (`docker/build-push-action@v6`, `gradle/actions/setup-gradle
 - **Webhook (info).** Le jeton est dans l'adresse (journaux de Radarr/Sonarr ou d'un proxy). Régénérable dans l'interface.
 - **Langues (nouveau, 3.19.0).** L'en-tête `X-Lang` et la langue du compte ne servent qu'à choisir un texte dans un dictionnaire figé : valeur filtrée (`fr`/`en`), jamais insérée dans du HTML ni du SQL.
 
+## 7. Serveurs liés (nouveau, 3.20.0)
+
+- **Liaison.** TLS 1.2 minimum sur un port dédié (8421), certificat propre à chaque serveur épinglé par l'autre à l'invitation (empreinte SHA-256 dans l'invitation, vérifiée avant tout envoi), puis secret partagé de 256 bits présenté à chaque requête et comparé en temps constant. Une invitation est à usage unique, valable 15 minutes, stockée sous forme d'empreinte ; les essais de jetons sont limités comme les connexions.
+- **Surface.** Le port ne sert ni l'interface ni les routes des comptes. Au nom d'un compte, un serveur lié n'atteint que la lecture : lancer, lire, sous-titres, aperçus, progression. Toute autre route est refusée (403), et les routes entre serveurs sont introuvables sur le port de l'interface. Test : `tests/test_federation.py`.
+- **Confiance.** Les empreintes des mots de passe, les secrets de double authentification et les codes de secours sont répliqués sur chaque serveur lié : la compromission de l'un expose les comptes de tous. **Ne lier que des serveurs dont vous êtes l'administrateur.**
+- **Secrets.** La clé privée est dans `/var/lib/seance/federation` (droits 600) et le secret partagé dans la base (dossier en 700). Délier un serveur supprime son secret et ses bibliothèques recopiées.
+
 ## Recommandations par priorité
 
 1. Sécuriser le compte GitHub et la branche `main` ; mettre à jour vers des versions publiées et signées (§ 1).

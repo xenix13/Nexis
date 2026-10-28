@@ -80,10 +80,12 @@ def main(argv=None):
     threading.Thread(target=janitor, args=(ctx, stop), daemon=True).start()
     ctx.watcher.start()
     ctx.tasks.start()
+    ctx.fed.start()
     threading.Timer(60, ctx.prefetch_missing_subtitles).start()
 
     def shutdown(*_):
         stop.set()
+        ctx.fed.stop()
         ctx.watcher.stop()
         ctx.tasks.stop()
         ctx.subtitles.stop()

@@ -14,6 +14,8 @@ export const ADMIN_GROUPS = [
       keys: tr('compte profil enfant pin âge restriction administrateur désactiver mot de passe foyer langue language') },
     { id: 'update', label: tr('Mise à jour'), icon: 'upgrade', lead: tr('Version installée et mises à jour de Nexis.'),
       keys: tr('version mettre à jour github nouveautés changements réinstaller') },
+    { id: 'federation', label: tr('Serveurs liés'), icon: 'link', lead: tr('Relier vos serveurs Nexis : comptes communs, bibliothèques de chacun visibles et lisibles depuis l’autre.'),
+      keys: tr('fédération cluster lier jumeler invitation second serveur réplication tunnel') },
     { id: 'tasks', label: tr('Tâches planifiées'), icon: 'clock', lead: tr('Travaux de fond : scans, métadonnées, intros, sous-titres, nettoyage.'),
       keys: tr('planification scan automatique nettoyage cache intro générique chapitres horaire') },
   ] },
@@ -919,6 +921,7 @@ async function dashboardPage(body, ctx) {
         tr(s.state === 'paused' ? '{user} · en pause à {time} · {mode}' : '{user} · en lecture à {time} · {mode}', { user: s.user, time: fmtTime(s.position_ms), mode: MODES[s.mode] || s.mode }),
         s.hw ? tr(' · carte graphique ({p1})', { p1: s.hw === 'nvenc' ? 'NVIDIA' : 'VAAPI' }) : '',
         s.source ? tr(' · source {source}', { source: s.source }) : '', s.rss_mb ? tr(' · ffmpeg {rss_mb} Mo', { rss_mb: s.rss_mb }) : '',
+        s.peer ? tr(' · relayée depuis {peer}', { peer: s.peer }) : '',
         s.reasons && s.reasons.length ? ` (${s.reasons.join(', ')})` : '',
         s.speed ? h('span', { class: s.speed < 1.05 && s.mode === 'transcode' ? 'tag bad' : 'tag ok' }, tr('vitesse ×{speed}', { speed: s.speed })) : null),
         s.warnings && s.warnings.length ? h('details.small', h('summary', tr('Messages de ffmpeg')), h('pre.log', s.warnings.join('\n'))) : null),
@@ -930,8 +933,121 @@ async function dashboardPage(body, ctx) {
   ctx.setCleanup(() => clearInterval(t));
 }
 
+// ----------------------------------------------------------------- serveurs liés
+async function inviteDialog(view) {
+  const address = h('input', { value: view.address_manual || view.address, placeholder: view.address });
+  const out = h('div');
+  const err = h('p.form-error');
+  const body = h('div.form',
+    h('p.muted.small', tr('Créez l’invitation sur le serveur que l’autre peut joindre : en réseau local, n’importe lequel ; par Internet, celui dont le port {port} est ouvert (redirection sur la box ou reverse proxy TCP).', { port: view.port })),
+    field(tr('Adresse de ce serveur, vue depuis l’autre'), address, tr('Adresse IP ou nom, suivi du port des serveurs liés (ex. 192.168.1.20:{port}).', { port: view.port })),
+    out, err);
+  return modal(tr('Inviter un serveur'), body, [
+    { label: tr('Fermer'), value: null },
+    { label: tr('Créer l’invitation'), primary: true, handler: async () => {
+      err.textContent = '';
+      try {
+        const r = await post('/api/admin/federation/invite', { address: address.value.trim() });
+        const text = h('textarea.invite-text', { readonly: true, rows: 4, onfocus: (e) => e.target.select() }, r.invite);
+        clear(out,
+          field(tr('Invitation (à coller sur l’autre serveur, dans Serveurs liés → Rejoindre)'), text,
+            tr('Valable 15 minutes, une seule fois. Elle contient l’empreinte du certificat de ce serveur : l’autre vérifiera qu’il parle bien à celui-ci.')),
+          h('div.actions-row', h('button.btn', { type: 'button', onclick: async () => {
+            try { await navigator.clipboard.writeText(r.invite); toast(tr('Invitation copiée'), 'ok'); }
+            catch { text.select(); toast(tr('Copie impossible : sélectionnez le texte'), 'bad'); }
+          } }, tr('Copier'))));
+      } catch (e) { err.textContent = e.message; }
+      return false;
+    } },
+  ]);
+}
+
+async function joinDialog() {
+  const invite = h('textarea', { rows: 4, placeholder: 'NEXIS1-…' });
+  const address = h('input', { placeholder: tr('facultatif, ex. 192.168.1.30:8421') });
+  const err = h('p.form-error');
+  const body = h('div.form',
+    field(tr('Invitation créée sur l’autre serveur'), invite),
+    field(tr('Adresse de ce serveur, vue depuis l’autre'), address,
+      tr('Laissez vide si l’autre ne peut pas joindre ce serveur (box sans port ouvert) : ce serveur lui ouvrira lui-même un tunnel chiffré.')),
+    h('div.status-box', tr('Les comptes sont mis en commun. Un compte portant le même identifiant sur les deux serveurs devient un seul compte, avec le mot de passe et les réglages du serveur qui a créé l’invitation.')),
+    err);
+  return modal(tr('Rejoindre un serveur'), body, [
+    { label: tr('Annuler'), value: null },
+    { label: tr('Lier les serveurs'), primary: true, handler: async () => {
+      err.textContent = tr('Connexion à l’autre serveur…');
+      try { return await post('/api/admin/federation/join', { invite: invite.value.trim(), address: address.value.trim() }); }
+      catch (e) { err.textContent = e.message; return false; }
+    } },
+  ]);
+}
+
+const shortPrint = (fp) => (fp ? fp.slice(0, 32).toUpperCase().match(/.{4}/g).join(' ') : '—');
+
+async function federationPage(body, ctx) {
+  const render = (v) => {
+    if (!ctx.isCurrent()) return;
+    const name = h('input', { value: v.name, maxlength: 40 });
+    const me = h('section.panel',
+      h('h2', tr('Ce serveur')),
+      h('div.grid2', field(tr('Nom affiché chez les serveurs liés'), name), h('div.field',
+        h('span.field-label', tr('Empreinte du certificat')), h('code.small', shortPrint(v.fingerprint)),
+        h('span.field-hint', v.listening ? tr('Port des serveurs liés : {port} (TLS)', { port: v.port }) : tr('Le port des serveurs liés s’ouvrira à la première invitation.')))),
+      h('div.actions-row', h('button.btn', { onclick: async () => {
+        try { render(await put('/api/admin/federation', { name: name.value.trim() })); toast(tr('Enregistré'), 'ok'); }
+        catch (e) { toast(e.message, 'bad'); }
+      } }, tr('Enregistrer'))));
+    const state = (p) => (p.online === undefined || p.online === null ? h('span.tag', tr('En attente'))
+      : p.online ? h('span.tag.ok', p.via === 'tunnel' ? tr('En ligne · par tunnel') : tr('En ligne · direct'))
+        : h('span.tag.bad', tr('Injoignable')));
+    const peers = v.peers.length ? h('div.user-list', v.peers.map((p) => h('div.user-row.peer-row',
+      h('div.lib-icon', '🖧'),
+      h('div.grow', h('strong', p.name), ' ', state(p),
+        h('div.muted.small',
+          p.address ? tr('Adresse {address}', { address: p.address }) : tr('Sans adresse : joint par le tunnel qu’il ouvre'),
+          p.latency != null && p.online ? tr(' · {ms} ms', { ms: p.latency }) : '',
+          p.version ? ` · Nexis ${p.version}` : '',
+          tr(' · vu {when}', { when: since(p.last_seen) })),
+        p.libraries.length ? h('div.small', p.libraries.map((l) => h('span.tag', `${l.name} (${l.count})`))) : null,
+        p.error && !p.online ? h('div.form-error.small', p.error) : null),
+      h('div.peer-actions', h('button.btn.small', { onclick: async (e) => {
+        e.currentTarget.disabled = true;
+        try { render(await post(`/api/admin/federation/peers/${p.id}/sync`)); } catch (ex) { toast(ex.message, 'bad'); }
+      } }, tr('Synchroniser')),
+      h('button.btn.small', { onclick: async () => {
+        const input = h('input', { value: p.address || '', placeholder: tr('vide : par tunnel uniquement') });
+        const ok = await modal(tr('Adresse de « {name} »', { name: p.name }), h('div.form', field(tr('Adresse et port des serveurs liés'), input,
+          tr('Comment ce serveur joint l’autre. Vide si l’autre n’est pas joignable : il passe alors par le tunnel qu’il ouvre.'))),
+        [{ label: tr('Annuler'), value: null }, { label: tr('Enregistrer'), primary: true, value: true }]);
+        if (!ok) return;
+        try { render(await put(`/api/admin/federation/peers/${p.id}`, { address: input.value.trim() })); } catch (e) { toast(e.message, 'bad'); }
+      } }, tr('Adresse')),
+      h('button.icon-btn', { title: tr('Délier ce serveur'), onclick: async () => {
+        if (!await confirmDialog(tr('Délier « {name} » ?', { name: p.name }),
+          tr('Ses bibliothèques disparaissent de ce serveur (et les vôtres du sien). Les comptes restent sur les deux serveurs, mais ne sont plus synchronisés. Aucun fichier n’est touché.'), tr('Délier'))) return;
+        try { render(await del(`/api/admin/federation/peers/${p.id}`)); toast(tr('Serveur délié'), 'ok'); } catch (e) { toast(e.message, 'bad'); }
+      } }, icon('trash'))))))
+      : h('div.empty', tr('Aucun serveur lié.'));
+    clear(body,
+      h('div.toolbar', h('div.actions-row',
+          h('button.btn', { onclick: async () => { const r = await joinDialog(); if (r) { toast(tr('Serveurs liés'), 'ok'); await refreshMe(); render(r); } } }, tr('Rejoindre un serveur')),
+          h('button.btn.primary', { onclick: async () => { await inviteDialog(v); load(); } }, tr('+ Inviter un serveur')))),
+      peers, me,
+      h('section.panel', h('h2', tr('Comment ça marche')), h('ul.small.muted',
+        h('li', tr('Les deux serveurs se reconnaissent par leur certificat, échangé à l’invitation, et chiffrent tout ce qu’ils s’envoient (TLS). Pas besoin de VPN ni de nom de domaine, et cela marche aussi en HTTP sur le réseau local.')),
+        h('li', tr('Un seul des deux doit pouvoir joindre l’autre : celui qui ne l’est pas ouvre lui-même un tunnel vers lui. Rien à ouvrir sur sa box.')),
+        h('li', tr('Les comptes, mots de passe, profils et accès aux bibliothèques sont les mêmes sur les deux serveurs ; une modification faite sur l’un arrive sur l’autre en moins d’une minute.')),
+        h('li', tr('Une lecture d’un titre de l’autre serveur passe par celui-ci : c’est l’autre serveur qui lit le fichier et le convertit si besoin. Le débit montant de sa connexion limite la qualité à distance.')),
+        h('li', tr('À réserver à vos propres serveurs : partager des films avec un autre foyer sort du cadre de la copie privée.')))));
+  };
+  const load = async () => { const v = await get('/api/admin/federation'); render(v); };
+  await load();
+  const t = setInterval(() => { if (!document.querySelector('.modal-overlay')) load(); }, 15000);
+  ctx.setCleanup(() => clearInterval(t));
+}
+
 const PAGES = { dashboard: dashboardPage, users: usersTab, update: updatePage, tasks: tasksTab, libraries: librariesTab,
-  shares: sharesTab, metadata: metadataPage, detection: detectionPage, requests: requestsTab, transcoding: transcodingPage,
+  federation: federationPage, shares: sharesTab, metadata: metadataPage, detection: detectionPage, requests: requestsTab, transcoding: transcodingPage,
   subtitles: subtitlesPage, downloads: downloadsPage, live: liveTab };
 
 export async function renderAdminSection(id, body, ctx) {

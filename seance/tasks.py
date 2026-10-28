@@ -91,10 +91,12 @@ class Task:
 
 
 def lib_clause(opts, column="i.library_id"):
+    """Bibliothèques choisies pour une tâche ; jamais celles d'un serveur lié (traitées par ce serveur)."""
     libs = [int(x) for x in opts.get("libraries") or [] if str(x).isdigit()]
+    local = f" AND {column.rsplit('.', 1)[0]}.peer_id IS NULL" if "." in column else " AND peer_id IS NULL"
     if not libs:
-        return "", []
-    return f" AND {column} IN ({','.join('?' * len(libs))})", libs
+        return local, []
+    return f"{local} AND {column} IN ({','.join('?' * len(libs))})", libs
 
 
 # ------------------------------------------------------------------ tâches
@@ -399,7 +401,8 @@ class CleanupTask(Task):
         job.progress = 0.3
         job.check()
         keys = set()
-        for r in ctx.db.all("SELECT id, file_size, file_mtime FROM items WHERE type IN ('movie','episode','extra')"):
+        for r in ctx.db.all("SELECT id, file_size, file_mtime FROM items WHERE type IN ('movie','episode','extra') "
+                            "AND peer_id IS NULL"):
             keys.add(f"f{r['file_size']}_{r['file_mtime'] or 0}" if r["file_size"] else f"{r['id']}_{r['file_mtime'] or 0}")
         ctx.db.release()
         for sub in ("subs", "trickplay", "chapters"):
