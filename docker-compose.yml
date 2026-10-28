@@ -2,7 +2,8 @@
 # Le code d'installation du premier lancement s'affiche avec : docker compose logs nexis
 services:
   nexis:
-    image: ghcr.io/xenix13/nexis:latest
+    # branche test : image de test, reconstruite à chaque mise à jour de la branche (sur main : nexis:latest)
+    image: ghcr.io/xenix13/nexis:test
     container_name: nexis
     restart: unless-stopped
     ports:

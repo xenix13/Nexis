@@ -123,6 +123,8 @@ apt installe également ffmpeg, Python et les outils SMB. Le paquet prépare le 
 
 L'image `ghcr.io/xenix13/nexis` (amd64 et arm64) est publiée à chaque version. Exemple complet : [`docker-compose.yml`](docker-compose.yml).
 
+- **Tags** : `latest` pour la dernière version publiée (branche `main`). `test` est reconstruit à chaque mise à jour de la branche `test` : c'est l'image du `docker-compose.yml` de cette branche.
+
 ```bash
 mkdir -p data && chown 1000:1000 data     # Nexis tourne sous l'uid 1000 dans le conteneur
 docker compose up -d

@@ -17,11 +17,12 @@ jobs:
       - run: deploy/build-deb.sh dist && dpkg-deb --info dist/*.deb
       - run: for f in static/js/*.js static/js/views/*.js; do node --check --input-type=module < "$f"; done
 
-  # Après les tests, sur main : image Docker (ghcr.io/<propriétaire>/nexis) et, à chaque nouvelle version,
-  # une publication GitHub avec le paquet .deb.
+  # Après les tests, sur main : image Docker (ghcr.io/<propriétaire>/nexis:latest) et, à chaque nouvelle
+  # version, une publication GitHub avec le paquet .deb. Sur test : image ghcr.io/<propriétaire>/nexis:test
+  # (celle du docker-compose.yml de la branche test), sans publication.
   release:
     needs: api
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -33,7 +34,13 @@ jobs:
         run: |
           echo "version=$(python3 -c 'import re; print(re.search(r"__version__ = \"(.+?)\"", open("seance/__init__.py").read()).group(1))')" >> "$GITHUB_OUTPUT"
           echo "image=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')/nexis" >> "$GITHUB_OUTPUT"
+      - name: Le docker-compose.yml de main installe la version publiée (pas celle de test)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          grep -q 'ghcr.io/xenix13/nexis:latest' docker-compose.yml || {
+            echo "docker-compose.yml : l'image doit être ghcr.io/xenix13/nexis:latest sur main (fusion depuis test ?)"; exit 1; }
       - name: Paquet .deb et publication (nouvelle version seulement)
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -53,9 +60,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ${{ steps.v.outputs.image }}:latest
-            ${{ steps.v.outputs.image }}:${{ steps.v.outputs.version }}
+          tags: ${{ github.ref == 'refs/heads/main' && format('{0}:latest,{0}:{1}', steps.v.outputs.image, steps.v.outputs.version) || format('{0}:test', steps.v.outputs.image) }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
 
   # Appli Android TV : compilée sur test (vérification) et sur main, où elle est jointe à la publication.
