@@ -965,19 +965,44 @@ async function inviteDialog(view) {
 async function joinDialog() {
   const invite = h('textarea', { rows: 4, placeholder: 'NEXIS1-…' });
   const address = h('input', { placeholder: tr('facultatif, ex. 192.168.1.30:8421') });
+  const accounts = h('div');
   const err = h('p.form-error');
+  let choices = null; // identifiants présents des deux côtés, une fois l'invitation vérifiée
+  invite.addEventListener('input', () => { choices = null; clear(accounts); });
   const body = h('div.form',
     field(tr('Invitation créée sur l’autre serveur'), invite),
     field(tr('Adresse de ce serveur, vue depuis l’autre'), address,
       tr('Laissez vide si l’autre ne peut pas joindre ce serveur (box sans port ouvert) : ce serveur lui ouvrira lui-même un tunnel chiffré.')),
-    h('div.status-box', tr('Les comptes sont mis en commun. Un compte portant le même identifiant sur les deux serveurs devient un seul compte, avec le mot de passe et les réglages du serveur qui a créé l’invitation.')),
-    err);
+    accounts, err);
+  const showChoices = (preview) => {
+    choices = preview.conflicts.map((c) => {
+      const rename = h('input', { value: c.suggested, maxlength: 32, 'aria-label': tr('Nouvel identifiant ici') });
+      const same = select([['split', tr('Personnes différentes')], ['merge', tr('Même personne : fusionner')]], 'split');
+      const renameRow = h('div.small', tr('Le compte d’ici devient : '), rename);
+      same.addEventListener('change', () => { renameRow.hidden = same.value === 'merge'; });
+      return { c, same, rename, row: h('div.peer-lib.account-pick',
+        h('div.grow', h('strong', c.username),
+          h('div.muted.small', tr('Ici : {local} · sur « {server} » : {remote}', { local: c.display_name, server: preview.server, remote: c.remote_display_name || c.username })),
+          renameRow), same) };
+    });
+    clear(accounts, choices.length ? h('div.status-box',
+      h('p', tr('Ces identifiants existent sur les deux serveurs. S’il s’agit de la même personne, les comptes fusionnent avec le mot de passe et les réglages de « {server} » ; sinon, le compte d’ici est renommé et chacun garde le sien.', { server: preview.server })),
+      h('div.peer-libs', choices.map((x) => x.row))) : null);
+  };
   return modal(tr('Rejoindre un serveur'), body, [
     { label: tr('Annuler'), value: null },
     { label: tr('Lier les serveurs'), primary: true, handler: async () => {
       err.textContent = tr('Connexion à l’autre serveur…');
-      try { return await post('/api/admin/federation/join', { invite: invite.value.trim(), address: address.value.trim() }); }
-      catch (e) { err.textContent = e.message; return false; }
+      try {
+        if (!choices) {
+          const preview = await post('/api/admin/federation/join/preview', { invite: invite.value.trim() });
+          showChoices(preview);
+          if (choices.length) { err.textContent = ''; return false; } // l'administrateur vérifie, puis relance
+        }
+        const picked = {};
+        for (const x of choices) picked[x.c.username] = x.same.value === 'merge' ? { merge: true } : { rename: x.rename.value.trim() };
+        return await post('/api/admin/federation/join', { invite: invite.value.trim(), address: address.value.trim(), accounts: picked });
+      } catch (e) { err.textContent = e.message; return false; }
     } },
   ]);
 }
@@ -1040,7 +1065,10 @@ async function federationPage(body, ctx) {
         try { render(await del(`/api/admin/federation/peers/${p.id}`)); toast(tr('Serveur délié'), 'ok'); } catch (e) { toast(e.message, 'bad'); }
       } }, icon('trash'))))))
       : h('div.empty', tr('Aucun serveur lié.'));
-    clear(body,
+    const notices = v.notices && v.notices.length ? h('section.panel.warn', h('h2', tr('Comptes renommés')),
+      h('ul.small', v.notices.map((n) => h('li', tr('« {username} » a été créé sur deux serveurs avant leur synchronisation : ce sont deux comptes, l’un s’appelle maintenant « {renamed} ».', n)))),
+      h('div.actions-row', h('button.btn.small', { onclick: async () => { render(await del('/api/admin/federation/notices')); } }, tr('Compris')))) : null;
+    clear(body, notices,
       h('div.toolbar', h('div.actions-row',
           h('button.btn', { onclick: async () => { const r = await joinDialog(); if (r) { toast(tr('Serveurs liés'), 'ok'); await refreshMe(); render(r); } } }, tr('Rejoindre un serveur')),
           h('button.btn.primary', { onclick: async () => { await inviteDialog(v); load(); } }, tr('+ Inviter un serveur')))),
@@ -1049,6 +1077,7 @@ async function federationPage(body, ctx) {
         h('li', tr('Les deux serveurs se reconnaissent par leur certificat, échangé à l’invitation, et chiffrent tout ce qu’ils s’envoient (TLS). Pas besoin de VPN ni de nom de domaine, et cela marche aussi en HTTP sur le réseau local.')),
         h('li', tr('Un seul des deux doit pouvoir joindre l’autre : celui qui ne l’est pas ouvre lui-même un tunnel vers lui. Rien à ouvrir sur sa box.')),
         h('li', tr('Les comptes, mots de passe, profils et accès aux bibliothèques sont les mêmes sur les deux serveurs ; une modification faite sur l’un arrive sur l’autre en moins d’une minute.')),
+        h('li', tr('Un identifiant présent sur les deux serveurs au moment de les lier n’est fusionné que si vous indiquez qu’il s’agit de la même personne ; sinon, l’un des comptes est renommé.')),
         h('li', tr('Une bibliothèque reçue s’ajoute comme une nouvelle, ou se fusionne avec l’une des vôtres : un titre présent sur les deux serveurs n’apparaît qu’une fois, et les saisons et épisodes de chacun sont réunis.')),
         h('li', tr('À la lecture d’un titre présent sur les deux serveurs, la copie est choisie toute seule : celle qui a la langue voulue si une seule l’a, sinon la meilleure qualité. Si un serveur ne répond pas, l’autre prend le relais, et les titres qu’il est seul à avoir sont masqués jusqu’à son retour.')),
         h('li', tr('Une lecture d’un titre de l’autre serveur passe par celui-ci : c’est l’autre serveur qui lit le fichier et le convertit si besoin. Le débit montant de sa connexion limite la qualité à distance.')),

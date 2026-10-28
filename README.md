@@ -347,7 +347,11 @@ Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et u
   3. à égalité, celle de ce serveur.
 
   Un saut ou un changement de piste garde la même copie. Si le serveur choisi ne répond pas, l'autre copie prend le relais.
-- **Même identifiant des deux côtés.** Au jumelage, c'est celui du serveur qui a créé l'invitation qui l'emporte : mot de passe, double authentification, profil. Chaque serveur garde l'historique, la progression et les listes de son compte, qui reste le même compte localement. Un identifiant créé ensuite sur les deux serveurs avant leur synchronisation devient lui aussi un seul compte, avec la version modifiée en dernier.
+- **Même identifiant des deux côtés.** Avant de lier, *Rejoindre un serveur* affiche les identifiants présents sur les deux serveurs. Pour chacun :
+  - **Personnes différentes** (par défaut) : le compte du serveur qui rejoint est renommé, par exemple « lea-maison2 » (nom modifiable). Chacun garde son mot de passe et ses données, et les deux comptes existent ensuite sur les deux serveurs.
+  - **Même personne** : les comptes fusionnent avec le mot de passe, la double authentification et le profil du serveur qui a créé l'invitation. Chaque serveur garde l'historique, la progression et les listes du compte.
+
+  Un identifiant créé ensuite sur les deux serveurs avant leur synchronisation n'est jamais fusionné : l'un des comptes est renommé (« nina-2 ») sur les deux serveurs, et c'est signalé dans *Serveurs liés*. Lors d'un nouveau jumelage, les comptes déjà communs aux deux serveurs sont reconnus sans rien demander.
 - **Délier un serveur.**
   - Les comptes restent sur les deux serveurs, mais ne sont plus synchronisés.
   - Ses bibliothèques et ses titres disparaissent de ce serveur, y compris ceux fusionnés dans les vôtres ; vos propres titres et leur progression ne bougent pas. Aucun fichier n'est touché.

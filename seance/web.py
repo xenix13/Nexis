@@ -372,7 +372,7 @@ def make_handler(app, trust_proxy=False, hsts=False, fed=None):
                     if not parsed.path.startswith(("/api/", "/fed/")):
                         raise HTTPError(404, "Introuvable")
                     req.fed_peer = fed.authenticate(self.headers)
-                    if not req.fed_peer and parsed.path != "/fed/join":
+                    if not req.fed_peer and parsed.path not in ("/fed/join", "/fed/join/preview"):
                         raise HTTPError(401, "Serveur non reconnu")
                 resp = app.dispatch(req)
             except HTTPError as e:

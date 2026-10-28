@@ -89,12 +89,20 @@ class FederationTest(unittest.TestCase):
             wait_scan(client)
         st, r = cls.admin_b.call("POST", "/api/admin/users", {"username": "lea", "password": "motdepasseL"})
         assert st == 200, r
+        # « papa » existe des deux côtés mais ce n'est pas la même personne
+        for client, pw in ((cls.admin_a, "motdepassePA"), (cls.admin_b, "motdepassePB")):
+            st, r = client.call("POST", "/api/admin/users", {"username": "papa", "password": pw})
+            assert st == 200, r
         # invitation créée sur A (joignable), collée sur B (sans adresse : derrière une box, par exemple)
         cls.a.fed.listen()
         st, inv = cls.admin_a.call("POST", "/api/admin/federation/invite", {"address": f"127.0.0.1:{cls.a.fed.port}"})
         assert st == 200, inv
         cls.invite = inv["invite"]
-        st, cls.joined = cls.admin_b.call("POST", "/api/admin/federation/join", {"invite": inv["invite"]})
+        st, cls.preview = cls.admin_b.call("POST", "/api/admin/federation/join/preview", {"invite": inv["invite"]})
+        assert st == 200, cls.preview
+        # colas : la même personne ; papa : par défaut, deux personnes
+        st, cls.joined = cls.admin_b.call("POST", "/api/admin/federation/join",
+                                          {"invite": inv["invite"], "accounts": {"colas": {"merge": True}}})
         assert st == 200, cls.joined
         cls.peer_on_a = cls.a.db.scalar("SELECT id FROM peers")
         cls.peer_on_b = cls.b.db.scalar("SELECT id FROM peers")
@@ -134,6 +142,17 @@ class FederationTest(unittest.TestCase):
         # l'invitation ne sert qu'une fois
         st, r = self.admin_b.call("POST", "/api/admin/federation/join", {"invite": self.invite})
         self.assertEqual(st, 409, r)
+
+    def test_02a_same_username_different_people(self):
+        self.assertEqual([c["username"] for c in self.preview["conflicts"]], ["colas", "papa"])
+        suggested = self.preview["conflicts"][1]["suggested"]
+        self.assertEqual(suggested, f"papa-{self.b.fed.name()}")
+        # le papa de A garde son identifiant, celui de B est renommé, chacun avec son mot de passe, sur les deux serveurs
+        for base in (self.base_a, self.base_b):
+            self.login(base, "papa", "motdepassePA")
+            self.login(base, suggested, "motdepassePB")
+            st, _ = Client(base).call("POST", "/api/login", {"username": "papa", "password": "motdepassePB"})
+            self.assertEqual(st, 401)
 
     def test_02_accounts_replicated(self):
         # même identifiant des deux côtés : le compte de A l'emporte (mot de passe de A partout)
@@ -391,21 +410,25 @@ class FederationTest(unittest.TestCase):
         self.assertIn("Certificat inattendu", r["error"])
 
     def test_11_same_username_created_on_both(self):
-        """Le même identifiant créé des deux côtés après le jumelage : un seul compte au final, identique partout."""
+        """Le même identifiant créé des deux côtés avant la synchronisation : deux comptes, l'un renommé partout."""
         st, r = self.admin_a.call("POST", "/api/admin/users", {"username": "nina", "password": "motdepasseNA"})
         self.assertEqual(st, 200, r)
         st, r = self.admin_b.call("POST", "/api/admin/users", {"username": "Nina", "password": "motdepasseNB"})
         self.assertEqual(st, 200, r)
         self.sync()
         self.sync()
-        rows = [ctx.db.one("SELECT uid, password_hash, display_name FROM users WHERE username LIKE 'nina'") for ctx in (self.a, self.b)]
-        self.assertEqual(rows[0], rows[1])
-        self.assertEqual([ctx.db.scalar("SELECT COUNT(*) FROM users WHERE username LIKE 'nina'") for ctx in (self.a, self.b)], [1, 1])
-        # le même mot de passe sur les deux serveurs (celui de la dernière version gagnante)
-        ok = [pw for pw in ("motdepasseNA", "motdepasseNB")
-              if Client(self.base_a).call("POST", "/api/login", {"username": "nina", "password": pw})[0] == 200]
-        self.assertEqual(len(ok), 1)
-        self.login(self.base_b, "nina", ok[0])
+        q = "SELECT username, uid, password_hash FROM users WHERE username LIKE 'nina%' ORDER BY uid"
+        rows_a, rows_b = self.a.db.all(q), self.b.db.all(q)
+        self.assertEqual(rows_a, rows_b)
+        self.assertEqual(sorted(r["username"].lower() for r in rows_a), ["nina", "nina-2"])
+        renamed = next(r["username"] for r in rows_a if r["username"].lower() == "nina-2")
+        for base in (self.base_a, self.base_b):  # chacun garde son mot de passe
+            logins = {(name, pw): Client(base).call("POST", "/api/login", {"username": name, "password": pw})[0]
+                      for name, pw in (("nina", "motdepasseNA"), (renamed, "motdepasseNB"),
+                                       ("nina", "motdepasseNB"), (renamed, "motdepasseNA"))}
+            self.assertEqual(sorted(logins.values()).count(200), 2, logins)
+        st, v = self.admin_a.call("GET", "/api/admin/federation")
+        self.assertIn(renamed.lower(), [n["renamed"].lower() for n in v["notices"]])
 
     def test_99_unlink(self):
         st, r = self.admin_b.call("DELETE", f"/api/admin/federation/peers/{self.peer_on_b}")

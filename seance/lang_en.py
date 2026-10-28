@@ -479,4 +479,5 @@ EN = {
     "Lecture impossible": "Playback failed",
     "Aucune copie de ce titre n'est disponible pour l'instant": "No copy of this title is available right now",
     "Fusion impossible entre une bibliothèque de films et une de séries": "A movie library and a show library cannot be merged",
+    "Identifiant déjà pris : {}": "Username already taken: {}",
 }

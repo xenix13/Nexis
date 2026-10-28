@@ -30,7 +30,7 @@ import time
 import urllib.parse
 
 from . import __version__, i18n
-from .auth import USERNAME, find_user
+from .auth import USERNAME, USERNAME_RULE, find_user, normalize_username
 from .names import fold
 from .catalog import CARD_SQL, SID, stream_lists
 from .web import HTTPError, Response, TLSServer, json_response, make_handler
@@ -104,6 +104,16 @@ def decode_invite(text):
         raise HTTPError(400, "Invitation invalide : copiez-la en entier depuis l'autre serveur")
     data["a"] = valid_address(data["a"])
     return data
+
+
+def free_username(db, base, taken=()):
+    """Identifiant libre dérivé de base (« nina-2 », « nina-3 »…), ici et parmi `taken`."""
+    taken = {t.casefold() for t in taken}
+    for n in range(2, 1000):
+        cand = f"{base[:31 - len(str(n))]}-{n}"
+        if cand.casefold() not in taken and not find_user(db, cand):
+            return cand
+    return f"u-{secrets.token_hex(6)}"
 
 
 class Pool:
@@ -549,30 +559,82 @@ class Federation:
                                          "t": token}),
                 "address": address, "expires_at": now + INVITE_TTL}
 
-    def join(self, text, address=None):
-        """Ce serveur rejoint celui qui a créé l'invitation."""
+    def _invite_target(self, text):
         data = decode_invite(text)
-        address = valid_address(address)
         db = self.ctx.db
         if data["id"] == self.uid():
             raise HTTPError(400, "Cette invitation vient de ce serveur : collez-la sur l'autre serveur")
         known = db.scalar("SELECT id FROM peers WHERE uid=? AND online=1 AND last_seen>?", (data["id"], int(time.time()) - 120))
         if known:
             raise HTTPError(409, "Ce serveur est déjà lié")
+        return data, {"address": data["a"], "fingerprint": data["f"], "secret": ""}
+
+    def _call_target(self, data, target, path, payload):
+        self.ctx.db.release()
         try:
-            self.listen()
-        except FedError as e:
-            raise HTTPError(500, str(e))
-        target = {"address": data["a"], "fingerprint": data["f"], "secret": ""}
-        payload = {"token": data["t"], "uid": self.uid(), "name": self.name(), "fingerprint": self.fingerprint(),
-                   "address": address, "version": __version__, "users": self.users_payload()}
-        db.release()
-        try:
-            status, r = self.call(target, "POST", "/fed/join", payload, timeout=60)
+            status, r = self.call(target, "POST", path, payload, timeout=60)
         except (FedError, OSError) as e:
             raise HTTPError(502, f"Impossible de joindre {data['a']} : {e}")
         if status != 200:
             raise HTTPError(status if 400 <= status < 500 else 502, r.get("error") or "Jumelage refusé")
+        return r
+
+    def join_preview(self, text):
+        """Avant de lier : les identifiants présents sur les deux serveurs, pour que l'administrateur dise s'il
+        s'agit de la même personne (fusion) ou de deux personnes (le compte d'ici est renommé)."""
+        data, target = self._invite_target(text)
+        r = self._call_target(data, target, "/fed/join/preview", {"token": data["t"]})
+        remote = {str(u.get("username") or "").casefold(): u for u in r.get("users") or [] if isinstance(u, dict)}
+        suffix = re.sub(r"[^\w.-]+", "", self.name().lower())[:12] or "2"
+        conflicts = []
+        for u in self.ctx.db.all("SELECT username, display_name, uid FROM users ORDER BY username COLLATE NOCASE"):
+            other = remote.get(u["username"].casefold())
+            if other and other.get("uid") != u["uid"]:  # même uid : déjà le même compte (serveurs déjà liés avant)
+                base = f"{u['username'][:31 - len(suffix)]}-{suffix}"
+                conflicts.append({"username": u["username"], "display_name": u["display_name"],
+                                  "remote_display_name": str(other.get("display_name") or "")[:50],
+                                  "suggested": base if not (find_user(self.ctx.db, base) or base.casefold() in remote)
+                                  else free_username(self.ctx.db, u["username"], remote)})
+        return {"server": str(r.get("name") or "Nexis")[:40], "conflicts": conflicts, "remote": list(remote)}
+
+    def join(self, text, address=None, accounts=None):
+        """Ce serveur rejoint celui qui a créé l'invitation. accounts : {identifiant: {"merge": bool, "rename": nom}}
+        pour les identifiants présents des deux côtés ; sans choix, ils restent séparés (le nôtre est renommé)."""
+        address = valid_address(address)
+        db = self.ctx.db
+        preview = self.join_preview(text)
+        data, target = self._invite_target(text)
+        accounts = {str(k).casefold(): v for k, v in (accounts or {}).items() if isinstance(v, dict)}
+        renames, taken = [], set(preview["remote"])
+        for c in preview["conflicts"]:
+            choice = accounts.get(c["username"].casefold(), {})
+            if choice.get("merge"):
+                continue
+            new = normalize_username(choice.get("rename") or c["suggested"])
+            if not USERNAME.match(new):
+                raise HTTPError(400, USERNAME_RULE)
+            if new.casefold() in taken or (find_user(db, new) and new.casefold() != c["username"].casefold()):
+                raise HTTPError(409, f"Identifiant déjà pris : {new}")
+            taken.add(new.casefold())
+            renames.append((c["username"], new))
+        try:
+            self.listen()
+        except FedError as e:
+            raise HTTPError(500, str(e))
+        with db.tx():
+            for old, new in renames:
+                db.run("UPDATE users SET username=? WHERE username=?", (new, old))
+        payload = {"token": data["t"], "uid": self.uid(), "name": self.name(), "fingerprint": self.fingerprint(),
+                   "address": address, "version": __version__, "users": self.users_payload()}
+        try:
+            r = self._call_target(data, target, "/fed/join", payload)
+        except HTTPError:
+            with db.tx():
+                for old, new in renames:
+                    db.run("UPDATE users SET username=? WHERE username=?", (old, new))
+            raise
+        for old, new in renames:
+            log.warning("Jumelage : compte %s renommé %s (personne différente de celle de l'autre serveur)", old, new)
         if not (HEX32.match(str(r.get("uid"))) and isinstance(r.get("secret"), str) and len(r["secret"]) >= 32):
             raise HTTPError(502, "Réponse inattendue du serveur lié")
         with db.tx():
@@ -600,17 +662,28 @@ class Federation:
         self.reset_link(pid)  # (un identifiant de serveur supprimé peut être réattribué)
         return pid
 
-    def accept_join(self, req):
-        """Demande d'adhésion d'un autre serveur, avec le jeton d'une invitation de ce serveur."""
+    def _invite_row(self, req):
         ctx, db = self.ctx, self.ctx.db
         ctx.throttle.check("fedjoin:" + req.client_ip)
-        b = req.json()
-        token = str(b.get("token") or "")
+        token = str(req.json().get("token") or "")
         row = db.one("SELECT * FROM fed_invites WHERE token_hash=? AND expires_at>?",
                      (hashlib.sha256(token.encode()).hexdigest(), int(time.time())))
         if not row:
             ctx.throttle.fail("fedjoin:" + req.client_ip)
             raise HTTPError(403, "Invitation invalide ou expirée : créez-en une nouvelle")
+        return row
+
+    def accept_preview(self, req):
+        """Avec une invitation valide : nos identifiants, pour repérer ceux qui existent aussi chez l'autre."""
+        self._invite_row(req)
+        return {"name": self.name(), "users": [{"username": u["username"], "display_name": u["display_name"], "uid": u["uid"]}
+                                               for u in self.ctx.db.all("SELECT username, display_name, uid FROM users")]}
+
+    def accept_join(self, req):
+        """Demande d'adhésion d'un autre serveur, avec le jeton d'une invitation de ce serveur."""
+        db = self.ctx.db
+        row = self._invite_row(req)
+        b = req.json()
         uid, fp = str(b.get("uid") or ""), str(b.get("fingerprint") or "")
         if not HEX32.match(uid) or not HEX64.match(fp):
             raise HTTPError(400, "Demande de jumelage invalide")
@@ -740,17 +813,29 @@ class Federation:
                         continue  # supprimé ici : la suppression l'emporte
                     rev = int(u.get("rev") or 0)
                     local = db.one("SELECT * FROM users WHERE uid=?", (u["uid"],))
-                    force = adopted = False
+                    force = adopted = renamed_in = False
                     if not local:
                         same = find_user(db, u["username"])
-                        if same:
-                            # même identifiant sur les deux serveurs : un seul compte. Les deux serveurs font le même
-                            # choix (le plus petit uid) ; à l'adhésion, celui du serveur rejoint.
-                            if mode == "keep" or (mode == "lww" and same["uid"] < u["uid"]):
-                                continue
+                        if same and mode == "keep":
+                            continue  # adhésion : l'autre serveur a déjà renommé ou choisi de fusionner
+                        if same and mode == "lww":
+                            # créé des deux côtés avant la synchronisation : deux personnes, deux comptes. Les deux
+                            # serveurs renomment le même (le plus grand uid) ; le changement repart vers l'autre.
+                            # nouveau nom tiré du compte renommé : le même choix sur les deux serveurs
+                            loser = same["username"] if same["uid"] > u["uid"] else u["username"]
+                            new = free_username(db, loser)
+                            if same["uid"] > u["uid"]:
+                                db.run("UPDATE users SET username=? WHERE id=?", (new, same["id"]))
+                                self.notice(same["username"], new)
+                            else:
+                                u = dict(u, username=new)
+                                renamed_in = True
+                                self.notice(same["username"], new)
+                            same = None
+                        if same:  # adhésion, même personne d'après l'administrateur : les données du serveur rejoint
                             db.run("UPDATE users SET uid=? WHERE id=?", (u["uid"], same["id"]))
                             local = dict(same, uid=u["uid"])
-                            force, adopted = mode == "adopt", True
+                            force, adopted = True, True
                     if local and not force and (local["rev"] or 0) >= rev:
                         if adopted:
                             # notre version est la plus récente : elle repart vers l'autre serveur sous l'uid commun,
@@ -782,6 +867,8 @@ class Federation:
                         cols = ["uid", "rev", "created_at", *fields]
                         lid = db.run(f"INSERT INTO users({','.join(cols)}) VALUES({','.join('?' * len(cols))})",
                                      [u["uid"], rev, int(u.get("created_at") or time.time()), *fields.values()]).lastrowid
+                        if renamed_in:
+                            db.run("UPDATE users SET rev=rev WHERE id=?", (lid,))  # le nouveau nom repart vers l'autre
                         old_avatar = None
                     db.run("DELETE FROM user_libraries WHERE user_id=?", (lid,))
                     db.run("DELETE FROM fed_pending_libs WHERE user_id=?", (lid,))
@@ -805,6 +892,17 @@ class Federation:
             finally:
                 db.run("UPDATE fed_clock SET applying=0")
         return avatars
+
+    def notice(self, old, new):
+        """Compte renommé pour éviter un doublon d'identifiant : signalé dans Serveurs liés."""
+        log.warning("Serveurs liés : identifiant %s créé sur deux serveurs, l'un des comptes devient %s", old, new)
+        db = self.ctx.db
+        try:
+            items = json.loads(db.setting("fed_notices") or "[]")
+        except ValueError:
+            items = []
+        items = [*items, {"username": old, "renamed": new, "at": int(time.time())}][-20:]
+        db.set_setting("fed_notices", json.dumps(items))
 
     def avatar_path(self, lid):
         return os.path.join(self.ctx.data_dir, "avatars", f"{int(lid)}.jpg")
@@ -1400,7 +1498,11 @@ class Federation:
                     "i.type IN ('movie','show')) AS n, (SELECT COUNT(*) FROM items i WHERE i.src_lib=l.id AND "
                     "i.type IN ('movie','show') AND i.alias_of IS NOT NULL) AS n_alias "
                     "FROM libraries l WHERE l.peer_id=? ORDER BY l.position", (p["id"],))]})
-        return {"local_libraries": [{"id": str(l["id"]), "name": l["name"], "kind": l["kind"]} for l in db.all(
+        try:
+            notices = json.loads(db.setting("fed_notices") or "[]")
+        except ValueError:
+            notices = []
+        return {"notices": notices, "local_libraries": [{"id": str(l["id"]), "name": l["name"], "kind": l["kind"]} for l in db.all(
                     "SELECT id, name, kind FROM libraries WHERE peer_id IS NULL ORDER BY position, name")],"name": self.name(), "uid": self.uid(), "fingerprint": self.fingerprint(), "port": self.port,
                 "listening": bool(self.server), "address": self.local_address(),
                 "address_manual": db.setting("fed_address") or "", "peers": peers}
@@ -1415,6 +1517,10 @@ def register(app, ctx, x):
     @app.route("POST", "/fed/join", auth="join")
     def fed_join(req):
         return fed.accept_join(req)
+
+    @app.route("POST", "/fed/join/preview", auth="join")
+    def fed_join_preview(req):
+        return fed.accept_preview(req)
 
     @app.route("GET", "/fed/hello", auth="peer")
     def fed_hello(req):
@@ -1499,10 +1605,21 @@ def register(app, ctx, x):
     def admin_federation_invite(req):
         return checked(fed.invite, req.json().get("address"))
 
+    @app.route("POST", "/api/admin/federation/join/preview", auth="admin")
+    def admin_federation_join_preview(req):
+        out = fed.join_preview(req.json().get("invite"))
+        out.pop("remote")
+        return out
+
+    @app.route("DELETE", "/api/admin/federation/notices", auth="admin")
+    def admin_federation_notices(req):
+        db.set_setting("fed_notices", None)
+        return fed.view()
+
     @app.route("POST", "/api/admin/federation/join", auth="admin")
     def admin_federation_join(req):
         b = req.json()
-        peer = fed.join(b.get("invite"), b.get("address"))
+        peer = fed.join(b.get("invite"), b.get("address"), b.get("accounts") if isinstance(b.get("accounts"), dict) else None)
         db.release()
         fed.sync(peer["id"])
         return fed.view()
