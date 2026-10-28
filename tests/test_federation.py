@@ -9,6 +9,7 @@ python3 -m unittest tests.test_federation
 """
 import http.client
 import json
+import re
 import os
 import shutil
 import ssl
@@ -146,7 +147,7 @@ class FederationTest(unittest.TestCase):
     def test_02a_same_username_different_people(self):
         self.assertEqual([c["username"] for c in self.preview["conflicts"]], ["colas", "papa"])
         suggested = self.preview["conflicts"][1]["suggested"]
-        self.assertEqual(suggested, f"papa-{self.b.fed.name()}")
+        self.assertEqual(suggested, "papa-" + re.sub(r"[^\w.-]+", "", self.b.fed.name().lower())[:12])
         # le papa de A garde son identifiant, celui de B est renommé, chacun avec son mot de passe, sur les deux serveurs
         for base in (self.base_a, self.base_b):
             self.login(base, "papa", "motdepassePA")
