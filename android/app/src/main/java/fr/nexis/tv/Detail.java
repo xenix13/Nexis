@@ -27,7 +27,7 @@ final class Detail extends Screen {
     private FrameLayout root;
     private ImageView backdrop;
     private ScrollView scroll;
-    private LinearLayout page;
+    private Nav.Column page;
     private LinearLayout episodes;
     private JSONObject item;
     private String seasonId;
@@ -66,7 +66,8 @@ final class Detail extends Screen {
         scroll = new ScrollView(act);
         scroll.setVerticalScrollBarEnabled(false);
         scroll.setClipChildren(false);
-        page = Ui.column(act);
+        // blocs parcourus avec haut / bas : boutons de lecture, saisons, épisodes
+        page = new Nav.Column(act);
         page.setClipChildren(false);
         page.setPadding(dp(56), dp(40), dp(56), dp(56));
         scroll.addView(page);
@@ -245,6 +246,8 @@ final class Detail extends Screen {
         }
         hs.addView(tabs);
         page.addView(hs);
+        // en remontant des épisodes : la saison ouverte (une autre saison s'ouvrirait en étant sélectionnée)
+        page.entry(hs, () -> page.findViewWithTag("season:" + seasonId));
         episodes = Ui.column(act);
         page.addView(episodes, new LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT));
         loadEpisodes();

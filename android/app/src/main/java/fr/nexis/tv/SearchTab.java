@@ -22,7 +22,7 @@ import org.json.JSONObject;
 final class SearchTab extends BrowseScreen.Tab {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private EditText input;
-    private LinearLayout results;
+    private Nav.Column results;
     private ScrollView scroll;
     private TextView message;
     private Runnable pending;
@@ -65,7 +65,7 @@ final class SearchTab extends BrowseScreen.Tab {
         root.addView(message);
         scroll = new ScrollView(act);
         scroll.setClipChildren(false);
-        results = Ui.column(act);
+        results = new Nav.Column(act);
         results.setClipChildren(false);
         results.setPadding(0, 0, 0, dp(40));
         scroll.addView(results);

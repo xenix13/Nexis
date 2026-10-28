@@ -220,8 +220,8 @@ final class Cards {
     }
 
     /** Rangée horizontale (titre + cartes) : marges internes pour que la carte agrandie reste entière. */
-    static RecyclerView row(Context c, Adapter adapter) {
-        RecyclerView r = new RecyclerView(c);
+    static Nav.Row row(Context c, Adapter adapter) {
+        Nav.Row r = new Nav.Row(c);
         r.setLayoutManager(new LinearLayoutManager(c, LinearLayoutManager.HORIZONTAL, false));
         r.setAdapter(adapter);
         r.setClipChildren(false);
