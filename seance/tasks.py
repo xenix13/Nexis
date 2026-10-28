@@ -264,7 +264,7 @@ class IntroTask(Task):
         todo = []
         for s in seasons:
             eps = db.all("SELECT id, key, probe, file_size, file_mtime, duration_ms, idx FROM items WHERE parent_id=? "
-                         "AND type='episode' AND duration_ms > 120000 ORDER BY idx, id", (s["sid"],))
+                         "AND type='episode' AND duration_ms > 120000 AND peer_id IS NULL ORDER BY idx, id", (s["sid"],))
             need = {k: [e for e in eps if not analysis_done(db, e, k)] for k in kinds}
             if len(eps) >= 2 and any(need.values()):
                 todo.append((eps, need))

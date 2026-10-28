@@ -1229,4 +1229,10 @@ export default {
   "fédération cluster lier jumeler invitation second serveur réplication tunnel": "federation cluster link pair invitation second server replication tunnel",
   "vide : par tunnel uniquement": "empty: through tunnel only",
   "À réserver à vos propres serveurs : partager des films avec un autre foyer sort du cadre de la copie privée.": "For your own servers only: sharing movies with another household goes beyond private copying.",
+  " · {n} en commun avec ce serveur": " · {n} in common with this server",
+  "Bibliothèque du serveur lié « {server} »": "Library of the linked server “{server}”",
+  "Bibliothèque « {name} »": "Library “{name}”",
+  "Fusionner avec « {name} »": "Merge with “{name}”",
+  "Une bibliothèque reçue s’ajoute comme une nouvelle, ou se fusionne avec l’une des vôtres : un titre présent sur les deux serveurs n’apparaît qu’une fois, et les saisons et épisodes de chacun sont réunis.": "A received library is added as a new one, or merged with one of yours: a title present on both servers appears only once, and the seasons and episodes of each are combined.",
+  "À la lecture d’un titre présent sur les deux serveurs, la copie est choisie toute seule : celle qui a la langue voulue si une seule l’a, sinon la meilleure qualité. Si un serveur ne répond pas, l’autre prend le relais, et les titres qu’il est seul à avoir sont masqués jusqu’à son retour.": "When playing a title present on both servers, the copy is picked automatically: the one with the wanted language if only one has it, otherwise the best quality. If a server does not respond, the other takes over, and the titles only it has are hidden until it is back.",
 };

@@ -1,7 +1,9 @@
-"""Serveurs liés : jumelage chiffré, tunnel, comptes répliqués, catalogue partagé, lecture relayée.
+"""Serveurs liés : jumelage chiffré, tunnel, comptes répliqués, catalogue partagé, fusion, lecture relayée.
 
-Deux serveurs complets dans le même processus : A (films) et B (séries). B rejoint A sans donner d'adresse :
-A ne peut donc lui parler que par le tunnel que B lui ouvre.
+Deux serveurs complets dans le même processus. B rejoint A sans donner d'adresse : A ne peut donc lui parler
+que par le tunnel que B lui ouvre.
+- A : Films (Brume en français 180p, Le Grand Voyage, Nuit Polaire), Séries (Les Veilleurs S01E01 seulement)
+- B : Films (Brume en anglais 360p, Ciel Bas), Séries (Les Veilleurs complète), Animes
 
 python3 -m unittest tests.test_federation
 """
@@ -10,6 +12,7 @@ import json
 import os
 import shutil
 import ssl
+import subprocess
 import tempfile
 import threading
 import time
@@ -48,8 +51,29 @@ class FederationTest(unittest.TestCase):
     def setUpClass(cls):
         cls.work = tempfile.mkdtemp()
         root = media_root()
-        cls.media = os.path.join(cls.work, "media")
-        shutil.copytree(root, cls.media)
+        cls.media = m = os.path.join(cls.work, "media")
+        brume = os.path.join(root, "films", "Brume (2022)", "Brume.2022.HEVC.mkv")
+        shutil.copytree(os.path.join(root, "films"), os.path.join(m, "films_a"))
+        os.remove(os.path.join(m, "films_a", "Brume (2022)", "Brume.2022.HEVC.mkv"))
+        ff = ["ffmpeg", "-v", "error", "-y", "-i", brume]
+        subprocess.run([*ff, "-map", "0", "-c", "copy", "-metadata:s:a:0", "language=fre",
+                        os.path.join(m, "films_a", "Brume (2022)", "Brume.2022.HEVC.mkv")], check=True)
+        os.makedirs(os.path.join(m, "films_b", "Brume (2022)"))
+        subprocess.run([*ff, "-map", "0:v", "-map", "0:a", "-vf", "scale=640:360", "-c:v", "libx264", "-preset", "ultrafast",
+                        "-c:a", "copy", "-metadata:s:a:0", "language=eng",
+                        os.path.join(m, "films_b", "Brume (2022)", "Brume.2022.mkv")], check=True)
+        os.makedirs(os.path.join(m, "films_b", "Ciel Bas (2020)"))
+        shutil.copy(os.path.join(root, "films", "Nuit.Polaire.2021.1080p.BluRay.x264.mkv"),
+                    os.path.join(m, "films_b", "Ciel Bas (2020)", "Ciel.Bas.2020.mkv"))
+        shutil.copytree(os.path.join(root, "series"), os.path.join(m, "series_b"))
+        ep1 = os.path.join("Les Veilleurs", "Season 01", "Les.Veilleurs.S01E01.720p.WEB.mkv")
+        os.makedirs(os.path.dirname(os.path.join(m, "series_a", ep1)))
+        shutil.copy(os.path.join(root, "series", ep1), os.path.join(m, "series_a", ep1))
+        shutil.copytree(os.path.join(root, "animes"), os.path.join(m, "animes_b"))
+        old = time.time() - 3600  # sinon le scan les croit en cours de copie et les remet à plus tard
+        for d, _, files in os.walk(m):
+            for f in files:
+                os.utime(os.path.join(d, f), (old, old))
         cls.a, cls.sa, cls.base_a = start_server(cls.work, "a")
         cls.b, cls.sb, cls.base_b = start_server(cls.work, "b")
         cls.admin_a, cls.admin_b = Client(cls.base_a), Client(cls.base_b)
@@ -57,14 +81,12 @@ class FederationTest(unittest.TestCase):
             st, r = client.call("POST", "/api/setup", {"username": "colas", "password": pw},
                                 headers={"X-Setup-Code": ctx.setup_code})
             assert st == 200, r
-        st, r = cls.admin_a.call("POST", "/api/admin/libraries", {"name": "Films", "kind": "movie",
-                                                                    "paths": [os.path.join(cls.media, "films")]})
-        assert st == 200, r
-        wait_scan(cls.admin_a)
-        st, r = cls.admin_b.call("POST", "/api/admin/libraries", {"name": "Séries", "kind": "show",
-                                                                    "paths": [os.path.join(cls.media, "series")]})
-        assert st == 200, r
-        wait_scan(cls.admin_b)
+        for client, name, kind, folder in ((cls.admin_a, "Films", "movie", "films_a"), (cls.admin_a, "Séries", "show", "series_a"),
+                                           (cls.admin_b, "Films", "movie", "films_b"), (cls.admin_b, "Séries", "show", "series_b"),
+                                           (cls.admin_b, "Animes", "show", "animes_b")):
+            st, r = client.call("POST", "/api/admin/libraries", {"name": name, "kind": kind, "paths": [os.path.join(m, folder)]})
+            assert st == 200, r
+            wait_scan(client)
         st, r = cls.admin_b.call("POST", "/api/admin/users", {"username": "lea", "password": "motdepasseL"})
         assert st == 200, r
         # invitation créée sur A (joignable), collée sur B (sans adresse : derrière une box, par exemple)
@@ -138,43 +160,75 @@ class FederationTest(unittest.TestCase):
         st, users = self.admin_b.call("GET", "/api/admin/users")
         self.assertNotIn("tom", [u["username"] for u in users])
 
+    def lib(self, client, name, server=False):
+        st, libs = client.call("GET", "/api/libraries")
+        return next((l for l in libs if l["title"] == name and bool(l["server"]) == server), None)
+
+    def titles(self, client, lib):
+        st, items = client.call("GET", f"/api/libraries/{lib['id']}/items")
+        return sorted(i["title"] for i in items["items"])
+
     def test_03_catalog_shared(self):
+        # sans réglage : les bibliothèques de B s'ajoutent, sous leur nom, avec le nom du serveur pour le badge
         st, libs = self.admin_a.call("GET", "/api/libraries")
-        titles = {l["title"]: l for l in libs}
         name_b = self.b.fed.name()
-        self.assertIn("Films", titles)
-        self.assertIn(f"Séries · {name_b}", titles)
-        remote = titles[f"Séries · {name_b}"]
+        self.assertEqual(sorted((l["title"], l["server"] or "") for l in libs),
+                         sorted([("Films", ""), ("Séries", ""), ("Films", name_b), ("Séries", name_b), ("Animes", name_b)]))
+        remote = self.lib(self.admin_a, "Séries", server=True)
         st, items = self.admin_a.call("GET", f"/api/libraries/{remote['id']}/items")
-        self.assertEqual(st, 200)
         self.assertEqual([i["title"] for i in items["items"]], ["Les Veilleurs"])
         show = items["items"][0]
         st, d = self.admin_a.call("GET", f"/api/items/{show['id']}")
         self.assertEqual(st, 200, d)
-        self.assertTrue(d["seasons"])
+        self.assertEqual(len(d["seasons"]), 2)
         # la page d'administration des bibliothèques ne montre que celles de ce serveur
         st, admin_libs = self.admin_a.call("GET", "/api/admin/libraries")
-        self.assertEqual([l["name"] for l in admin_libs["libraries"]], ["Films"])
+        self.assertEqual(sorted(l["name"] for l in admin_libs["libraries"]), ["Films", "Séries"])
         st, r = self.admin_a.call("DELETE", f"/api/admin/libraries/{remote['id']}")
         self.assertEqual(st, 404)
-        # recherche : les deux serveurs
-        st, res = self.admin_a.call("GET", "/api/search?q=veilleurs")
-        self.assertTrue(any(i["title"] == "Les Veilleurs" for v in res.values() if isinstance(v, list) for i in v), res)
         # affiche relayée (image tirée de la vidéo par B)
         st, img, h = self.admin_a.call("GET", f"/api/img?p=/library/metadata/{show['id']}/thumb/1&w=200&h=300", raw=True)
         self.assertEqual(st, 200, img[:200])
         self.assertEqual(h.get("Content-Type"), "image/jpeg")
         self.assertTrue(img.startswith(b"\xff\xd8"), img[:40])  # une vraie image JPEG, pas une page
-        # et dans l'autre sens
-        st, libs_b = self.admin_b.call("GET", "/api/libraries")
-        self.assertIn(f"Films · {self.a.fed.name()}", [l["title"] for l in libs_b])
+
+    def test_04_merge(self):
+        st, v = self.admin_a.call("GET", "/api/admin/federation")
+        received = {l["name"]: l for l in v["peers"][0]["libraries"]}
+        local = {l["name"]: l for l in v["local_libraries"]}
+        # films et séries ne se fusionnent pas entre eux
+        st, r = self.admin_a.call("PUT", f"/api/admin/federation/libraries/{received['Films']['id']}",
+                                  {"merge_into": local["Séries"]["id"]})
+        self.assertEqual(st, 400, r)
+        for name in ("Films", "Séries"):
+            st, v = self.admin_a.call("PUT", f"/api/admin/federation/libraries/{received[name]['id']}",
+                                      {"merge_into": local[name]["id"]})
+            self.assertEqual(st, 200, v)
+        merged = {l["name"]: l for l in v["peers"][0]["libraries"]}
+        self.assertEqual((merged["Films"]["merge_into"], merged["Films"]["merged"]), (local["Films"]["id"], 1))
+        # plus qu'une bibliothèque Films et une Séries ; Animes reste à part
+        st, libs = self.admin_a.call("GET", "/api/libraries")
+        self.assertEqual(sorted(l["title"] for l in libs), ["Animes", "Films", "Séries"])
+        films = self.lib(self.admin_a, "Films")
+        self.assertEqual(self.titles(self.admin_a, films), ["Brume", "Ciel Bas", "Le Grand Voyage", "Nuit Polaire"])
+        series = self.lib(self.admin_a, "Séries")
+        self.assertEqual(self.titles(self.admin_a, series), ["Les Veilleurs"])
+        show = self.a.db.scalar("SELECT id FROM items WHERE type='show' AND peer_id IS NULL")
+        st, d = self.admin_a.call("GET", f"/api/items/{show}")
+        self.assertEqual([s["title"] for s in d["seasons"]], ["Saison 1", "Saison 2"])
+        st, eps = self.admin_a.call("GET", f"/api/items/{d['seasons'][0]['id']}/children")
+        self.assertEqual([e["episode"] for e in eps], [1, 2, 3])
+        # recherche : une seule fois
+        st, res = self.admin_a.call("GET", "/api/search?q=brume")
+        self.assertEqual(sum(1 for v in res.values() if isinstance(v, list) for i in v if i["title"] == "Brume"), 1)
 
     def remote_episode(self):
-        rk = self.a.db.scalar("SELECT id FROM items WHERE peer_id IS NOT NULL AND type='episode' ORDER BY id")
+        rk = self.a.db.scalar("SELECT id FROM items WHERE peer_id IS NOT NULL AND alias_of IS NULL AND type='episode' "
+                              "ORDER BY idx, id")
         remote = self.a.db.scalar("SELECT remote_id FROM items WHERE id=?", (rk,))
         return str(rk), remote
 
-    def test_04_play_from_other_server(self):
+    def test_05_play_from_other_server(self):
         rk, remote = self.remote_episode()
         path = self.b.db.scalar("SELECT key FROM items WHERE id=?", (remote,))
         caps = {"video": ["h264", "hevc"], "audio": ["aac", "ac3", "mp3"], "containers": ["mp4", "matroska", "mov"],
@@ -187,7 +241,6 @@ class FederationTest(unittest.TestCase):
         self.assertEqual(st, 206)
         with open(path, "rb") as f:
             self.assertEqual(data, f.read(100))
-        # la lecture apparaît sur les deux serveurs
         st, streams = self.admin_a.call("GET", "/api/admin/streams")
         self.assertIn(p["stream"], [s["id"] for s in streams])
         # progression : enregistrée ici et renvoyée au serveur qui a le fichier
@@ -212,20 +265,95 @@ class FederationTest(unittest.TestCase):
         st, init, _ = self.admin_a.call("GET", p["url"].replace("main.m3u8", "init.mp4"), raw=True)
         self.assertEqual(st, 200)
         self.admin_a.call("POST", "/api/stop", {"stream": p["stream"]})
-        # pas de téléchargement hors ligne pour l'instant
         st, r = self.admin_a.call("POST", "/api/downloads/options", {"id": rk})
         self.assertEqual(st, 400)
 
-    def test_05_progress_comes_back(self):
+    def test_06_best_copy(self):
+        brume = self.a.db.scalar("SELECT id FROM items WHERE title='Brume' AND peer_id IS NULL")
+        # la langue voulue n'existe que sur la copie de A (français) : A, malgré la définition plus faible
+        st, p = self.admin_a.call("POST", "/api/play", {"id": str(brume), "no_direct": True})
+        self.assertEqual(st, 200, p)
+        self.assertNotIn(p["stream"], self.a.fed.proxied)
+        self.admin_a.call("POST", "/api/stop", {"stream": p["stream"]})
+        # langue présente nulle part : la meilleure qualité, la copie 360p de B
+        self.admin_a.call("PUT", "/api/me/prefs", {"audio_lang": "deu"})
+        st, p = self.admin_a.call("POST", "/api/play", {"id": str(brume), "no_direct": True})
+        self.assertEqual(st, 200, p)
+        self.assertIn(p["stream"], self.a.fed.proxied)
+        self.assertEqual(p["item"]["id"], str(brume))
+        # même titre relancé (saut) : même copie
+        st, p2 = self.admin_a.call("POST", "/api/play", {"id": str(brume), "no_direct": True, "offset": 2000,
+                                                         "replace": p["stream"]})
+        self.assertEqual(st, 200, p2)
+        self.assertIn(p2["stream"], self.a.fed.proxied)
+        self.assertNotIn(p["stream"], self.a.fed.proxied)
+        # pendant la lecture, les sous-pages du titre viennent de la copie lue
+        st, tp = self.admin_a.call("GET", f"/api/items/{brume}/trickplay")
+        self.assertEqual(st, 200, tp)
+        self.admin_a.call("POST", "/api/stop", {"stream": p2["stream"]})
+        # piste choisie sur la fiche (anglais, présent seulement chez B) : B
+        self.admin_a.call("PUT", "/api/me/prefs", {"audio_lang": "fra"})
+        st, p = self.admin_a.call("POST", "/api/play", {"id": str(brume), "no_direct": True})
+        self.assertNotIn(p["stream"], self.a.fed.proxied)
+        self.admin_a.call("POST", "/api/stop", {"stream": p["stream"]})
+        self.admin_a.call("PUT", f"/api/items/{brume}/tracks", {"audio_lang": "eng"})
+        st, p = self.admin_a.call("POST", "/api/play", {"id": str(brume), "no_direct": True})
+        self.assertIn(p["stream"], self.a.fed.proxied)
+        self.assertEqual(p["audio"][0]["lang"], "eng")
+        self.admin_a.call("POST", "/api/stop", {"stream": p["stream"]})
+        self.admin_a.call("PUT", f"/api/items/{brume}/tracks", {"reset": True})
+
+    def test_07_progress_comes_back(self):
         rk, remote = self.remote_episode()
         colas_b = self.login(self.base_b, "colas", "motdepasseA")
         st, r = colas_b.call("POST", f"/api/items/{remote}/watched", {"watched": True})
         self.assertEqual(st, 200, r)
+        # titre présent sur les deux : vu chez B -> vu sur notre copie
+        brume_b = self.b.db.scalar("SELECT id FROM items WHERE title='Brume' AND peer_id IS NULL")
+        st, r = colas_b.call("POST", f"/api/items/{brume_b}/watched", {"watched": True})
         self.sync()
         st, d = self.admin_a.call("GET", f"/api/items/{rk}")
         self.assertTrue(d["watched"], d)
+        brume = self.a.db.scalar("SELECT id FROM items WHERE title='Brume' AND peer_id IS NULL")
+        st, d = self.admin_a.call("GET", f"/api/items/{brume}")
+        self.assertTrue(d["watched"], d)
 
-    def test_06_link_is_protected(self):
+    def test_08_offline_server(self):
+        fed = self.a.fed
+        fed.set_online(self.peer_on_a, False)
+        try:
+            st, libs = self.admin_a.call("GET", "/api/libraries")
+            self.assertEqual(sorted(l["title"] for l in libs), ["Films", "Séries"])  # Animes de B masquée
+            films = self.lib(self.admin_a, "Films")
+            self.assertEqual(self.titles(self.admin_a, films), ["Brume", "Le Grand Voyage", "Nuit Polaire"])
+            show = self.a.db.scalar("SELECT id FROM items WHERE type='show' AND peer_id IS NULL")
+            st, d = self.admin_a.call("GET", f"/api/items/{show}")
+            self.assertEqual([s["title"] for s in d["seasons"]], ["Saison 1"])
+            # le titre présent des deux côtés se lit depuis notre copie, même si B aurait été choisi
+            self.admin_a.call("PUT", "/api/me/prefs", {"audio_lang": "deu"})
+            brume = self.a.db.scalar("SELECT id FROM items WHERE title='Brume' AND peer_id IS NULL")
+            st, p = self.admin_a.call("POST", "/api/play", {"id": str(brume), "no_direct": True})
+            self.assertEqual(st, 200, p)
+            self.assertNotIn(p["stream"], fed.proxied)
+            self.admin_a.call("POST", "/api/stop", {"stream": p["stream"]})
+        finally:
+            self.admin_a.call("PUT", "/api/me/prefs", {"audio_lang": "fra"})
+            fed.set_online(self.peer_on_a, True)
+        films = self.lib(self.admin_a, "Films")
+        self.assertEqual(len(self.titles(self.admin_a, films)), 4)
+
+    def test_09_local_item_removed(self):
+        """Notre épisode supprimé : celui de B reprend sa place au lieu de disparaître avec lui."""
+        ep = self.a.db.scalar("SELECT id FROM items WHERE type='episode' AND peer_id IS NULL")
+        self.a.db.run("DELETE FROM items WHERE id=?", (ep,))
+        self.a.fed.relink(self.peer_on_a)
+        self.a.db.release()
+        show = self.a.db.scalar("SELECT id FROM items WHERE type='show' AND peer_id IS NULL")
+        st, d = self.admin_a.call("GET", f"/api/items/{show}")
+        st, eps = self.admin_a.call("GET", f"/api/items/{d['seasons'][0]['id']}/children")
+        self.assertEqual([e["episode"] for e in eps], [1, 2, 3])
+
+    def test_10_link_is_protected(self):
         port = self.a.fed.port
         st, _ = fed_raw(port, "GET", "/fed/hello")
         self.assertEqual(st, 401)
@@ -269,7 +397,9 @@ class FederationTest(unittest.TestCase):
         st, va = self.admin_a.call("GET", "/api/admin/federation")
         self.assertEqual(va["peers"], [])
         st, libs = self.admin_a.call("GET", "/api/libraries")
-        self.assertEqual([l["title"] for l in libs], ["Films"])
+        self.assertEqual(sorted(l["title"] for l in libs), ["Films", "Séries"])
+        films = self.lib(self.admin_a, "Films")
+        self.assertEqual(self.titles(self.admin_a, films), ["Brume", "Le Grand Voyage", "Nuit Polaire"])
         # les comptes restent
         self.login(self.base_a, "lea", "motdepasseL")
 

@@ -113,6 +113,10 @@ class Ctx:
 
     def on_library_changed(self):
         try:
+            self.fed.relink_all()  # nouveaux titres : fusion avec ceux des serveurs liés
+        except Exception:
+            log.exception("Fusion avec les serveurs liés")
+        try:
             self.tasks.after_scan(self.scanner.status().get("added", 0))
         except Exception:
             log.exception("Tâches après le scan")

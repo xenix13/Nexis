@@ -371,7 +371,7 @@ class Metadata:
         self._trailer(item, d, tmdb)
         self._fulfil_wishes(item, "tv", tid)
         item_seasons = {s["season_number"]: s for s in d.get("seasons", [])}
-        for s in self.ctx.db.all("SELECT * FROM items WHERE parent_id=? AND type='season'", (item["id"],)):
+        for s in self.ctx.db.all("SELECT * FROM items WHERE parent_id=? AND type='season' AND peer_id IS NULL", (item["id"],)):
             ts = item_seasons.get(s["idx"])
             if ts:
                 self._update(s["id"], {"summary": ts.get("overview") or None,
@@ -383,7 +383,8 @@ class Metadata:
         if not show:
             return
         eps = db.all("SELECT e.*, s.idx AS season_idx FROM items e JOIN items s ON s.id=e.parent_id "
-                     "WHERE e.show_id=? AND e.type='episode'" + (" AND e.meta_state='pending'" if only_pending else ""),
+                     "WHERE e.show_id=? AND e.type='episode' AND e.peer_id IS NULL"
+                     + (" AND e.meta_state='pending'" if only_pending else ""),
                      (show["id"],))
         for e in eps:
             nfo = nfo_for(e)
@@ -403,7 +404,8 @@ class Metadata:
                         seasons_cache[n] = {}
                 return seasons_cache[n]
 
-            our_seasons = {e["season_idx"] for e in db.all("SELECT s.idx AS season_idx FROM items s WHERE s.parent_id=? AND type='season'", (show["id"],))}
+            our_seasons = {e["season_idx"] for e in db.all("SELECT s.idx AS season_idx FROM items s WHERE s.parent_id=? "
+                                                           "AND type='season' AND peer_id IS NULL", (show["id"],))}
             for e in eps:
                 sn, en = e["season_idx"], e["idx"]
                 # numérotation absolue (animes) : « Episode 1071 » dans une seule saison 1
@@ -421,7 +423,7 @@ class Metadata:
                                            "rating": round(te["vote_average"], 1) if te.get("vote_average") else None})
                     self._images(e, still=te.get("still_path"))
         ids = [e["id"] for e in eps] + [s["id"] for s in db.all(
-            "SELECT id FROM items WHERE parent_id=? AND type='season'", (show["id"],))]
+            "SELECT id FROM items WHERE parent_id=? AND type='season' AND peer_id IS NULL", (show["id"],))]
         for i in range(0, len(ids), 500):
             chunk = ids[i:i + 500]
             db.run(f"UPDATE items SET meta_state='done' WHERE id IN ({','.join('?' * len(chunk))})", chunk)

@@ -1008,8 +1008,20 @@ async function federationPage(body, ctx) {
           p.latency != null && p.online ? tr(' · {ms} ms', { ms: p.latency }) : '',
           p.version ? ` · Nexis ${p.version}` : '',
           tr(' · vu {when}', { when: since(p.last_seen) })),
-        p.libraries.length ? h('div.small', p.libraries.map((l) => h('span.tag', `${l.name} (${l.count})`))) : null,
-        p.error && !p.online ? h('div.form-error.small', p.error) : null),
+        p.error && !p.online ? h('div.form-error.small', p.error) : null,
+        p.libraries.length ? h('div.peer-libs', p.libraries.map((l) => {
+          const options = [['', tr('Nouvelle bibliothèque')], ...v.local_libraries.filter((t) => t.kind === l.kind)
+            .map((t) => [t.id, tr('Fusionner avec « {name} »', { name: t.name })])];
+          const pick = select(options, l.merge_into || '', { 'aria-label': tr('Bibliothèque « {name} »', { name: l.name }),
+            onchange: async () => {
+              pick.disabled = true;
+              try { render(await put(`/api/admin/federation/libraries/${l.id}`, { merge_into: pick.value || null })); await refreshMe(); toast(tr('Enregistré'), 'ok'); }
+              catch (e) { toast(e.message, 'bad'); pick.disabled = false; }
+            } });
+          return h('div.peer-lib', h('div.grow', h('strong', l.name),
+            h('div.muted.small', l.kind === 'show' ? plural(l.count, '{n} série', '{n} séries') : plural(l.count, '{n} film', '{n} films'),
+              l.merge_into && l.merged ? tr(' · {n} en commun avec ce serveur', { n: l.merged }) : '')), pick);
+        })) : null),
       h('div.peer-actions', h('button.btn.small', { onclick: async (e) => {
         e.currentTarget.disabled = true;
         try { render(await post(`/api/admin/federation/peers/${p.id}/sync`)); } catch (ex) { toast(ex.message, 'bad'); }
@@ -1037,6 +1049,8 @@ async function federationPage(body, ctx) {
         h('li', tr('Les deux serveurs se reconnaissent par leur certificat, échangé à l’invitation, et chiffrent tout ce qu’ils s’envoient (TLS). Pas besoin de VPN ni de nom de domaine, et cela marche aussi en HTTP sur le réseau local.')),
         h('li', tr('Un seul des deux doit pouvoir joindre l’autre : celui qui ne l’est pas ouvre lui-même un tunnel vers lui. Rien à ouvrir sur sa box.')),
         h('li', tr('Les comptes, mots de passe, profils et accès aux bibliothèques sont les mêmes sur les deux serveurs ; une modification faite sur l’un arrive sur l’autre en moins d’une minute.')),
+        h('li', tr('Une bibliothèque reçue s’ajoute comme une nouvelle, ou se fusionne avec l’une des vôtres : un titre présent sur les deux serveurs n’apparaît qu’une fois, et les saisons et épisodes de chacun sont réunis.')),
+        h('li', tr('À la lecture d’un titre présent sur les deux serveurs, la copie est choisie toute seule : celle qui a la langue voulue si une seule l’a, sinon la meilleure qualité. Si un serveur ne répond pas, l’autre prend le relais, et les titres qu’il est seul à avoir sont masqués jusqu’à son retour.')),
         h('li', tr('Une lecture d’un titre de l’autre serveur passe par celui-ci : c’est l’autre serveur qui lit le fichier et le convertit si besoin. Le débit montant de sa connexion limite la qualité à distance.')),
         h('li', tr('À réserver à vos propres serveurs : partager des films avec un autre foyer sort du cadre de la copie privée.')))));
   };

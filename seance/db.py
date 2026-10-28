@@ -459,6 +459,30 @@ MIGRATIONS = [
         UPDATE progress SET fseq=(SELECT n FROM fed_clock) WHERE user_id=NEW.user_id AND rating_key=NEW.rating_key;
     END;
     """,
+    # 18 : bibliothèques d'un serveur lié fusionnées avec une bibliothèque de ce serveur. src_* : place d'origine
+    # d'un élément reçu (sa bibliothèque et ses parents chez lui) ; library_id/parent_id/show_id : place affichée
+    # (dans la bibliothèque fusionnée, sous la série locale). alias_of : même titre que cet élément local (masqué,
+    # sert de seconde copie à la lecture). Un élément local supprimé rend leur place d'origine aux éléments reçus
+    # qui en dépendaient, au lieu de les emporter avec lui.
+    """
+    ALTER TABLE libraries ADD COLUMN merge_into INTEGER REFERENCES libraries(id) ON DELETE SET NULL;
+    ALTER TABLE peers ADD COLUMN online INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE items ADD COLUMN src_lib INTEGER;
+    ALTER TABLE items ADD COLUMN src_parent INTEGER;
+    ALTER TABLE items ADD COLUMN src_show INTEGER;
+    ALTER TABLE items ADD COLUMN alias_of INTEGER REFERENCES items(id) ON DELETE SET NULL;
+    UPDATE items SET src_lib=library_id, src_parent=parent_id, src_show=show_id WHERE peer_id IS NOT NULL;
+    CREATE INDEX items_alias ON items(alias_of) WHERE alias_of IS NOT NULL;
+    CREATE INDEX items_src ON items(src_lib) WHERE src_lib IS NOT NULL;
+    CREATE TRIGGER items_fed_rehome BEFORE DELETE ON items WHEN OLD.peer_id IS NULL AND EXISTS (SELECT 1 FROM peers) BEGIN
+        UPDATE items SET library_id=src_lib, parent_id=src_parent, show_id=src_show, alias_of=NULL
+            WHERE peer_id IS NOT NULL AND (parent_id=OLD.id OR show_id=OLD.id OR alias_of=OLD.id);
+    END;
+    CREATE TRIGGER libraries_fed_rehome BEFORE DELETE ON libraries WHEN OLD.peer_id IS NULL BEGIN
+        UPDATE items SET library_id=src_lib, parent_id=src_parent, show_id=src_show, alias_of=NULL
+            WHERE peer_id IS NOT NULL AND library_id=OLD.id;
+    END;
+    """,
 ]
 
 

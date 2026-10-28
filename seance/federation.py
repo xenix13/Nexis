@@ -31,7 +31,8 @@ import urllib.parse
 
 from . import __version__, i18n
 from .auth import USERNAME, find_user
-from .catalog import CARD_SQL, SID
+from .names import fold
+from .catalog import CARD_SQL, SID, stream_lists
 from .web import HTTPError, Response, TLSServer, json_response, make_handler
 
 log = logging.getLogger("seance.fed")
@@ -50,7 +51,8 @@ ADDRESS = re.compile(r"^(\[[0-9a-fA-F:.]{2,45}\]|[A-Za-z0-9.-]{1,253})(:\d{1,5})
 USER_FIELDS = ("username", "display_name", "password_hash", "is_admin", "all_libraries", "disabled", "avatar_color",
                "pin_hash", "managed", "home", "max_age", "allow_unrated", "avatar_ver", "kids", "totp_enabled",
                "totp_secret", "totp_recovery", "language")
-ITEM_LOCAL = {"id", "library_id", "parent_id", "show_id", "key", "fseq", "peer_id", "remote_id"}
+ITEM_LOCAL = {"id", "library_id", "parent_id", "show_id", "key", "fseq", "peer_id", "remote_id", "src_lib", "src_parent",
+              "src_show", "alias_of"}
 ITEM_SUB = re.compile(r"^/api/items/(\d{1,12})/(prepare|subtitles/.+|fonts/.+|trickplay(?:/.+)?|chapters/.+)$")
 STREAM = re.compile(rf"^/api/stream/{SID}/(.+)$")
 WATCHED = re.compile(r"^/api/items/(\d{1,12})/watched$")
@@ -601,7 +603,8 @@ class Federation:
             except (FedError, OSError):
                 pass
         db = self.ctx.db
-        db.run("DELETE FROM peers WHERE id=?", (pid,))  # bibliothèques recopiées et leurs éléments avec
+        db.run("DELETE FROM items WHERE peer_id=?", (pid,))  # y compris ceux rangés dans nos bibliothèques (fusion)
+        db.run("DELETE FROM peers WHERE id=?", (pid,))  # et ses bibliothèques recopiées
         self._has_peers = None
         with self.lock:
             for sid in [s for s, v in self.proxied.items() if v[0] == pid]:
@@ -626,7 +629,8 @@ class Federation:
             db.release()
             t0 = time.monotonic()
             hello = self.call_ok(peer, "GET", "/fed/hello", timeout=15)
-            st.update(online=True, latency=int((time.monotonic() - t0) * 1000))
+            st.update(online=True, latency=int((time.monotonic() - t0) * 1000), fails=0)
+            self.set_online(pid, True)
             self.pull_users(peer)
             self.pull_catalog(peer)
             self.pull_progress(peer)
@@ -635,7 +639,10 @@ class Federation:
             db.run("UPDATE peers SET last_seen=?, version=?, name=?, error=NULL WHERE id=?",
                    (int(time.time()), str(hello.get("version") or "")[:20], str(hello.get("name") or peer["name"])[:40], pid))
         except (FedError, OSError, ValueError, KeyError, TypeError, http.client.HTTPException) as e:
-            st.update(online=False)
+            fails = self.status.get(pid, {}).get("fails", 0) + 1
+            st.update(online=False, fails=fails)
+            if fails >= 2:  # deux échecs de suite (une trentaine de secondes) : ses titres sont masqués
+                self.set_online(pid, False)
             log.info("Serveur lié %s : %s", pid, e)
             try:
                 db.run("UPDATE peers SET error=? WHERE id=?", (str(e)[:300], pid))
@@ -829,7 +836,8 @@ class Federation:
             libs = db.all("SELECT id, uid, name, kind, position FROM libraries WHERE peer_id IS NULL")
         finally:
             c.execute("COMMIT")
-        items = [{k: v for k, v in r.items() if k not in ("fseq", "peer_id", "remote_id", "key")} for r in rows]
+        items = [{k: v for k, v in r.items() if k not in ITEM_LOCAL or k in ("id", "library_id", "parent_id", "show_id")}
+                 for r in rows]
         return {"libraries": libs, "items": items, "gone": gone, "until": until, "more": more}
 
     def item_columns(self):
@@ -885,6 +893,7 @@ class Federation:
             if data.get("libraries") is not None:
                 for r in db.all("SELECT id, remote_id FROM libraries WHERE peer_id=?", (pid,)):
                     if r["remote_id"] not in seen:
+                        db.run("DELETE FROM items WHERE src_lib=?", (r["id"],))  # y compris ceux rangés ailleurs (fusion)
                         db.run("DELETE FROM libraries WHERE id=?", (r["id"],))
             libmap = {r["remote_id"]: r["id"] for r in db.all("SELECT id, remote_id FROM libraries WHERE peer_id=?", (pid,))}
             for it in data.get("items") or []:
@@ -894,7 +903,8 @@ class Federation:
                     continue
                 vals = {k: v for k, v in it.items() if k in cols}
                 parent, show = self.local_item(pid, it.get("parent_id")), self.local_item(pid, it.get("show_id"))
-                vals.update(library_id=lib, parent_id=parent, show_id=show)
+                # place d'origine ; la place affichée (fusion, serveur éteint) est décidée par relink()
+                vals.update(src_lib=lib, src_parent=parent, src_show=show)
                 if vals.get("meta_state") == "pending":
                     vals["meta_state"] = "done"  # les métadonnées se cherchent chez le serveur d'origine
                 cur = self.local_item(pid, rid)
@@ -902,7 +912,7 @@ class Federation:
                     sets = ",".join(f"{k}=?" for k in vals)
                     db.run(f"UPDATE items SET {sets} WHERE id=?", [*vals.values(), cur])
                 else:
-                    vals.update(peer_id=pid, remote_id=rid)
+                    vals.update(peer_id=pid, remote_id=rid, library_id=lib, parent_id=parent, show_id=show)
                     for k, default in (("title", "?"), ("sort_title", "?"), ("search", ""), ("type", "movie"),
                                        ("added_at", int(time.time())), ("updated_at", int(time.time()))):
                         if vals.get(k) is None:
@@ -918,8 +928,91 @@ class Federation:
             for lid, (rp, rs) in list(orphans.items()):
                 parent, show = self.local_item(pid, rp), self.local_item(pid, rs)
                 if (parent or not rp) and (show or not rs):
-                    db.run("UPDATE items SET parent_id=?, show_id=? WHERE id=?", (parent, show, lid))
+                    db.run("UPDATE items SET src_parent=?, src_show=? WHERE id=?", (parent, show, lid))
                     orphans.pop(lid)
+        self.relink(pid)
+
+    # fusion ----------------------------------------------------------------
+    def relink_all(self):
+        if not self.has_peers():
+            return
+        for p in self.ctx.db.all("SELECT id FROM peers"):
+            self.relink(p["id"])
+
+    def relink(self, pid):
+        """Place affichée des éléments reçus d'un serveur lié.
+
+        - Bibliothèque non fusionnée : telle quelle (une bibliothèque de plus).
+        - Fusionnée avec une bibliothèque de ce serveur : un titre que nous avons aussi (même identifiant TMDB, IMDb,
+          TVDB, ou même titre et même année) est masqué et devient une seconde copie du nôtre (alias_of) ; une saison
+          ou un épisode qui nous manque se range sous notre série. Le reste rejoint notre bibliothèque.
+        - Serveur injoignable : tout retourne dans sa bibliothèque, masquée ; nos titres restent.
+        """
+        db = self.ctx.db
+        peer = db.one("SELECT online FROM peers WHERE id=?", (pid,))
+        if not peer:
+            return
+        changes = []
+        for lib in db.all("SELECT l.id, l.kind, l.merge_into, t.kind AS target_kind FROM libraries l "
+                          "LEFT JOIN libraries t ON t.id=l.merge_into AND t.peer_id IS NULL WHERE l.peer_id=?", (pid,)):
+            rows = db.all("SELECT id, type, idx, title, year, tmdb_id, imdb_id, tvdb_id, library_id, parent_id, show_id, "
+                          "alias_of, src_parent, src_show FROM items WHERE src_lib=?", (lib["id"],))
+            target = lib["merge_into"] if peer["online"] and lib["target_kind"] == lib["kind"] else None
+            alias = {}
+            if target:
+                index = {}
+                for r in db.all("SELECT id, type, title, year, tmdb_id, imdb_id, tvdb_id FROM items WHERE library_id=? "
+                                "AND peer_id IS NULL AND type IN ('movie','show')", (target,)):
+                    for key in self._match_keys(r):
+                        index.setdefault(key, r)
+                for r in rows:
+                    if r["type"] not in ("movie", "show"):
+                        continue
+                    for key in self._match_keys(r):
+                        hit = index.get(key)
+                        # même titre et même année, mais deux films différents chez TMDB (remake) : pas le même
+                        if hit and not (key[1] == "title" and r["tmdb_id"] and hit["tmdb_id"]
+                                        and r["tmdb_id"] != hit["tmdb_id"]):
+                            alias[r["id"]] = hit["id"]
+                            break
+                for kind in ("season", "episode"):
+                    for r in rows:
+                        if r["type"] != kind or r["src_parent"] not in alias or r["idx"] is None:
+                            continue
+                        hit = db.scalar("SELECT id FROM items WHERE parent_id=? AND type=? AND idx=? AND peer_id IS NULL "
+                                        "ORDER BY id LIMIT 1", (alias[r["src_parent"]], kind, r["idx"]))
+                        if hit:
+                            alias[r["id"]] = hit
+            for r in rows:
+                if not peer["online"] or not target:
+                    want = (lib["id"], r["src_parent"], r["src_show"], None)
+                elif r["id"] in alias:
+                    want = (lib["id"], r["src_parent"], r["src_show"], alias[r["id"]])
+                else:
+                    want = (target, alias.get(r["src_parent"], r["src_parent"]), alias.get(r["src_show"], r["src_show"]), None)
+                if want != (r["library_id"], r["parent_id"], r["show_id"], r["alias_of"]):
+                    changes.append((*want, r["id"]))
+        if changes:
+            with db.tx():
+                db.conn().executemany("UPDATE items SET library_id=?, parent_id=?, show_id=?, alias_of=? WHERE id=?", changes)
+
+    @staticmethod
+    def _match_keys(r):
+        keys = []
+        for col in ("tmdb_id", "imdb_id", "tvdb_id"):
+            if r[col]:
+                keys.append((r["type"], col, str(r[col])))
+        if r["title"]:
+            keys.append((r["type"], "title", fold(r["title"]), r["year"]))
+        return keys
+
+    def set_online(self, pid, online):
+        db = self.ctx.db
+        cur = db.scalar("SELECT online FROM peers WHERE id=?", (pid,))
+        if cur is not None and bool(cur) != online:
+            db.run("UPDATE peers SET online=? WHERE id=?", (1 if online else 0, pid))
+            log.warning("Serveur lié %s %s", pid, "de nouveau joignable" if online else "injoignable : ses titres sont masqués")
+            self.relink(pid)
 
     # progression -----------------------------------------------------------
     def progress_feed(self, since, limit):
@@ -957,6 +1050,8 @@ class Federation:
                     users[r["user"]] = db.scalar("SELECT id FROM users WHERE uid=?", (str(r["user"]),))
                 uid = users[r["user"]]
                 item = self.local_item(peer["id"], r["rating_key"])
+                if item:  # titre fusionné avec l'un des nôtres : la progression va sur le nôtre
+                    item = db.scalar("SELECT COALESCE(alias_of, id) FROM items WHERE id=?", (item,))
                 if not uid or not item:
                     continue
                 rk = str(item)
@@ -1025,6 +1120,14 @@ class Federation:
         return Response(stream=gen(), status=resp.status, content_type=resp.getheader("Content-Type") or "application/octet-stream",
                         length=int(length) if length and length.isdigit() else None, headers=out, on_close=close)
 
+    def active_source(self, user_id, rk):
+        """Copie d'un serveur lié en cours de lecture par ce compte pour cet élément (la plus récente)."""
+        with self.lock:
+            for e in reversed(list(self.proxied.values())):
+                if e[1] == user_id and e[2] == int(rk):
+                    return e
+        return None
+
     def intercept(self, req):
         """Requête d'un appareil connecté à ce serveur, portant sur un élément d'un serveur lié : relayée.
         -> Response, ou None si la route locale s'en charge (éventuellement après avoir prévenu le serveur lié)."""
@@ -1035,10 +1138,15 @@ class Federation:
             m = ITEM_SUB.match(path)
             if m:
                 r = self.mirror(m.group(1))
-                if not r:
-                    return None
-                x.require_item(req.user, m.group(1))
-                return self.relay(req, r["peer_id"], f"/api/items/{r['remote_id']}/{m.group(2)}")
+                if r:
+                    x.require_item(req.user, m.group(1))
+                    return self.relay(req, r["peer_id"], f"/api/items/{r['remote_id']}/{m.group(2)}")
+                # titre fusionné lu depuis la copie d'un serveur lié : sous-titres, aperçus, chapitres de cette copie
+                e = self.active_source(req.user["id"], m.group(1))
+                if e:
+                    x.require_item(req.user, m.group(1))
+                    return self.relay(req, e[0], f"/api/items/{e[3]}/{m.group(2)}")
+                return None
             m = STREAM.match(path)
             if m:
                 entry = self.proxied.get(m.group("sid"))
@@ -1054,12 +1162,15 @@ class Federation:
             return self.play(req)
         if req.method == "POST" and path == "/api/progress":
             b = req.json()
-            r = self.mirror(b["id"]) if str(b.get("id") or "").isdigit() else None
-            if r:
-                fwd = dict(b, id=str(r["remote_id"]))
-                if fwd.get("stream") not in self.proxied:
+            e = self.proxied.get(str(b.get("stream") or ""))
+            if e and str(e[2]) == str(b.get("id")):
+                self.send_later(e[0], "POST", "/api/progress", dict(b, id=str(e[3])), req.user)
+            elif str(b.get("id") or "").isdigit():
+                r = self.mirror(b["id"])
+                if r:
+                    fwd = dict(b, id=str(r["remote_id"]))
                     fwd.pop("stream", None)
-                self.send_later(r["peer_id"], "POST", "/api/progress", fwd, req.user)
+                    self.send_later(r["peer_id"], "POST", "/api/progress", fwd, req.user)
             return None
         if req.method == "POST" and path == "/api/stop":
             entry = self.proxied.pop(str(req.json().get("stream") or ""), None)
@@ -1090,34 +1201,122 @@ class Federation:
             raise HTTPError(400, "Cet élément vient d'un serveur lié : modifiez-le sur ce serveur")
         return None
 
+    # choix de la copie ------------------------------------------------------
+    def sources(self, row):
+        """Copies lisibles d'un titre : la nôtre (si le fichier est là) et celles des serveurs liés joignables."""
+        if row["peer_id"] is not None:
+            return [row]
+        out = [row] if row["key"] and os.path.isfile(row["key"]) else []
+        return out + self.ctx.db.all("SELECT i.* FROM items i JOIN peers p ON p.id=i.peer_id WHERE i.alias_of=? "
+                                     "AND p.online=1 ORDER BY i.id", (row["id"],))
+
+    @staticmethod
+    def _tracks(row):
+        return stream_lists(json.loads(row["probe"] or "{}"))
+
+    def rank(self, req, row, cands, b):
+        """La copie qui a la langue voulue (audio, puis sous-titres demandés) si une seule l'a, sinon la meilleure
+        qualité (définition, puis débit) ; à égalité, la nôtre."""
+        x, uid = self.x, req.user["id"]
+        audio0, subs0 = self._tracks(row)
+        tp = x.track_prefs(uid, row) or {}
+        want_a = next((a["lang"] for a in audio0 if a["id"] == b.get("audio")), None) \
+            or (tp.get("audio_lang") if tp.get("audio_lang") not in (None, "", "off") else None) \
+            or x.get_prefs(uid).get("audio_lang") or None
+        want_s = next((t["lang"] for t in subs0 if t["id"] == b.get("subtitle")), None) if b.get("subtitle") else None
+
+        def score(c):
+            audio, subs = self._tracks(c)
+            probe = json.loads(c["probe"] or "{}")
+            video = probe.get("video") or {}
+            return (not want_a or any(a["lang"] == want_a for a in audio),
+                    not want_s or any(t["lang"] == want_s for t in subs),
+                    int(video.get("height") or 0), int(probe.get("bitrate") or 0), c["peer_id"] is None)
+        return sorted(cands, key=score, reverse=True)
+
+    def remap(self, b, row, c):
+        """Pistes choisies sur la fiche (celles de notre copie) -> les mêmes langues dans la copie retenue."""
+        if c["id"] == row["id"]:
+            return b
+        audio0, subs0 = self._tracks(row)
+        audio, subs = self._tracks(c)
+        out = dict(b)
+        a = next((t for t in audio0 if t["id"] == b.get("audio")), None)
+        if b.get("audio") is not None:
+            same = [t for t in audio if a and t["lang"] == a["lang"]]
+            same.sort(key=lambda t: (t["codec"] == a["codec"], t["channels"] == a["channels"]), reverse=True)
+            out["audio"] = same[0]["id"] if same else None
+        t0 = next((t for t in subs0 if t["id"] == b.get("subtitle")), None) if b.get("subtitle") else None
+        if b.get("subtitle"):
+            same = [t for t in subs if t0 and t["lang"] == t0["lang"] and bool(t["forced"]) == bool(t0["forced"])]
+            same.sort(key=lambda t: t["codec"] == t0["codec"], reverse=True)
+            out["subtitle"] = same[0]["id"] if same else 0
+        return out
+
+    def _drop_proxied(self, sid, user):
+        entry = self.proxied.pop(sid, None) if sid else None
+        if entry:
+            self.send_later(entry[0], "POST", "/api/stop", {"stream": sid}, user)
+        return entry
+
     def play(self, req):
         b = req.json()
         rk = str(b.get("id") or "")
         old = str(b.get("replace") or "")
-        r = self.mirror(rk) if rk.isdigit() else None
-        if not r:
-            if old in self.proxied:  # un flux relayé remplacé par une lecture locale : on arrête l'autre
-                entry = self.proxied.pop(old)
-                self.send_later(entry[0], "POST", "/api/stop", {"stream": old}, req.user)
+        if not rk.isdigit():
             return None
         x, db = self.x, self.ctx.db
+        r = db.one("SELECT id, peer_id FROM items WHERE id=?", (int(rk),))
+        if not r or (r["peer_id"] is None and not db.scalar("SELECT 1 FROM items WHERE alias_of=? LIMIT 1", (r["id"],))):
+            self._drop_proxied(old, req.user)  # flux relayé remplacé par une lecture locale : on arrête l'autre
+            return None
         row = x.require_item(req.user, rk)
-        peer = self.peer(r["peer_id"])
-        fwd = dict(b, id=str(r["remote_id"]))
+        cands = self.sources(row)
+        # même titre relancé (saut, changement de piste ou de qualité) : même copie, ses pistes
+        e = self.proxied.get(old) if old else None
+        sticky = None
+        if e and e[2] == row["id"]:
+            sticky = next((c for c in cands if c["peer_id"] == e[0] and c["remote_id"] == e[3]), None)
+        elif old and db.scalar("SELECT 1 FROM streams WHERE id=? AND rating_key=?", (old, rk)):
+            sticky = next((c for c in cands if c["peer_id"] is None), None)
+        order = [sticky] + [c for c in cands if c is not sticky] if sticky else self.rank(req, row, cands, b)
+        if not order and row["peer_id"] is None:
+            return None  # aucune copie : la route locale explique (fichier introuvable)
+        error = None
+        for c in order:
+            body = b if c is sticky else self.remap(b, row, c)
+            if c["peer_id"] is None:
+                self._drop_proxied(old, req.user)
+                req._body = json.dumps(body).encode()
+                return None
+            try:
+                return self.play_remote(req, row, c, body, old)
+            except HTTPError as ex:
+                log.info("Lecture depuis le serveur lié %s impossible : %s", c["peer_id"], ex.message)
+                error = ex
+        raise error or HTTPError(503, "Aucune copie de ce titre n'est disponible pour l'instant")
+
+    def play_remote(self, req, row, c, body, old):
+        x, db = self.x, self.ctx.db
+        uid = req.user["id"]
+        peer = self.peer(c["peer_id"])
+        fwd = dict(body, id=str(c["remote_id"]))
         fwd.pop("playlist", None)
-        if old and old not in self.proxied:
-            x.stop_stream(old, req.user["id"])  # flux local remplacé par celui du serveur lié
+        e = self.proxied.get(old) if old else None
+        if old and not e:
+            x.stop_stream(old, uid)  # flux local remplacé par celui du serveur lié
             fwd.pop("replace", None)
-        else:
-            self.proxied.pop(old, None)
+        elif e and e[0] != peer["id"]:
+            self._drop_proxied(old, req.user)
+            fwd.pop("replace", None)
         nxt = x.next_episode(row)
-        if b.get("playlist"):
-            nxt = x.playlist_next(req.user, b["playlist"], row["id"]) if str(b["playlist"]).isdigit() else None
+        if body.get("playlist"):
+            nxt = x.playlist_next(req.user, body["playlist"], row["id"]) if str(body["playlist"]).isdigit() else None
         db.release()
         try:
             status, data = self.call(peer, "POST", "/api/play", fwd, user=req.user, timeout=90)
-        except FedError as e:
-            raise HTTPError(502, str(e))
+        except FedError as ex:
+            raise HTTPError(502, str(ex))
         if status != 200:
             raise HTTPError(status, data.get("error") or "Lecture impossible",
                             {k: v for k, v in data.items() if k != "error"})
@@ -1125,23 +1324,27 @@ class Federation:
         if not re.match(rf"^{SID}$", sid):
             raise HTTPError(502, "Réponse inattendue du serveur lié")
         with self.lock:
-            self.proxied[sid] = (peer["id"], req.user["id"], int(rk))
-        c = x.card(row)
-        remote_prefix, local_prefix = f"/api/items/{r['remote_id']}/", f"/api/items/{rk}/"
+            if e and e[0] == peer["id"]:
+                self.proxied.pop(old, None)  # remplacé chez lui par le nouveau flux
+            self.proxied[sid] = (peer["id"], uid, row["id"], c["remote_id"])
+        if old and e:
+            db.run("DELETE FROM streams WHERE id=? AND user_id=?", (old, uid))
+        rk = str(row["id"])
+        card = x.card(row)
+        remote_prefix, local_prefix = f"/api/items/{c['remote_id']}/", f"/api/items/{rk}/"
         for k in ("subtitle_overlay", "subtitle_ass", "subtitle_pgs"):
             if data.get(k):
                 data[k] = data[k].replace(remote_prefix, local_prefix, 1)
-        data["item"] = c
+        data["item"] = card
         data["next"] = x.card(nxt) if nxt else None
         now = int(time.time())
-        title = c["title"] if c["type"] == "movie" else f"{c.get('show')} · S{c.get('season')}E{c.get('episode')}"
+        title = card["title"] if card["type"] == "movie" else f"{card.get('show')} · S{card.get('season')}E{card.get('episode')}"
         params = {"mode": data.get("mode"), "reasons": data.get("reasons") or [], "peer": peer["name"]}
         db.run("INSERT OR REPLACE INTO streams(id,user_id,plex_session,rating_key,params,title,quality,position_ms,"
                "created_at,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?)",
-               (sid, req.user["id"], sid, rk, json.dumps(params), title, data.get("quality"), int(data.get("offset") or 0),
-                now, now))
+               (sid, uid, sid, rk, json.dumps(params), title, data.get("quality"), int(data.get("offset") or 0), now, now))
         if row["type"] != "extra":
-            x.upsert_meta(req.user["id"], c)
+            x.upsert_meta(uid, card)
         return json_response(data)
 
     # ------------------------------------------------------------------ état pour l'administration
@@ -1157,10 +1360,15 @@ class Federation:
                 "error": i18n.tr(p["error"]) if p["error"] else None, "online": st.get("online"),
                 "latency": st.get("latency"), "via": st.get("via"),
                 "tunnel_in": pool.count() if pool else 0, "tunnel_out": self.tunnels.get(p["id"], 0),
-                "libraries": [{"id": str(l["id"]), "name": l["name"], "kind": l["kind"], "count": l["n"]} for l in db.all(
-                    "SELECT l.id, l.name, l.kind, (SELECT COUNT(*) FROM items i WHERE i.library_id=l.id AND "
-                    "i.type IN ('movie','show')) AS n FROM libraries l WHERE l.peer_id=? ORDER BY l.position", (p["id"],))]})
-        return {"name": self.name(), "uid": self.uid(), "fingerprint": self.fingerprint(), "port": self.port,
+                "libraries": [{"id": str(l["id"]), "name": l["name"], "kind": l["kind"], "count": l["n"],
+                               "merged": l["n_alias"], "merge_into": str(l["merge_into"]) if l["merge_into"] else None}
+                              for l in db.all(
+                    "SELECT l.id, l.name, l.kind, l.merge_into, (SELECT COUNT(*) FROM items i WHERE i.src_lib=l.id AND "
+                    "i.type IN ('movie','show')) AS n, (SELECT COUNT(*) FROM items i WHERE i.src_lib=l.id AND "
+                    "i.type IN ('movie','show') AND i.alias_of IS NOT NULL) AS n_alias "
+                    "FROM libraries l WHERE l.peer_id=? ORDER BY l.position", (p["id"],))]})
+        return {"local_libraries": [{"id": str(l["id"]), "name": l["name"], "kind": l["kind"]} for l in db.all(
+                    "SELECT id, name, kind FROM libraries WHERE peer_id IS NULL ORDER BY position, name")],"name": self.name(), "uid": self.uid(), "fingerprint": self.fingerprint(), "port": self.port,
                 "listening": bool(self.server), "address": self.local_address(),
                 "address_manual": db.setting("fed_address") or "", "peers": peers}
 
@@ -1274,6 +1482,29 @@ def register(app, ctx, x):
         with fed.lock:
             fed.tunnel_fail.pop(pid, None)
         fed.wake.set()
+        return fed.view()
+
+    @app.route("PUT", r"/api/admin/federation/libraries/(?P<lid>\d{1,6})", auth="admin")
+    def admin_federation_library(req):
+        """Bibliothèque reçue d'un serveur lié : nouvelle bibliothèque, ou fusionnée avec l'une des nôtres."""
+        lib = db.one("SELECT * FROM libraries WHERE id=? AND peer_id IS NOT NULL", (int(req.params["lid"]),))
+        if not lib:
+            raise HTTPError(404, "Bibliothèque introuvable")
+        target = req.json().get("merge_into")
+        if target not in (None, "", 0, "0"):
+            t = db.one("SELECT id, kind FROM libraries WHERE id=? AND peer_id IS NULL", (int(target) if str(target).isdigit() else 0,))
+            if not t:
+                raise HTTPError(404, "Bibliothèque introuvable")
+            if t["kind"] != lib["kind"]:
+                raise HTTPError(400, "Fusion impossible entre une bibliothèque de films et une de séries")
+            target = t["id"]
+            # qui a accès à notre bibliothèque a accès à ce qui y est fusionné (et le serveur lié l'apprend)
+            db.run("INSERT OR IGNORE INTO user_libraries(user_id, section_id) SELECT user_id, ? FROM user_libraries "
+                   "WHERE section_id=?", (str(lib["id"]), str(target)))
+        else:
+            target = None
+        db.run("UPDATE libraries SET merge_into=? WHERE id=?", (target, lib["id"]))
+        fed.relink(lib["peer_id"])
         return fed.view()
 
     @app.route("POST", r"/api/admin/federation/peers/(?P<pid>\d{1,6})/sync", auth="admin")

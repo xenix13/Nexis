@@ -190,7 +190,7 @@ class Scanner:
             if refresh_metadata:
                 ids = [l["id"] for l in libs]
                 if ids:
-                    db.run(f"UPDATE items SET meta_state='pending' WHERE locked=0 AND library_id IN "
+                    db.run(f"UPDATE items SET meta_state='pending' WHERE locked=0 AND peer_id IS NULL AND library_id IN "
                            f"({','.join('?' * len(ids))})", ids)
             self._set(phase="Métadonnées", done=0, total=0)
             self.ctx.metadata.process_pending(progress=lambda d, t: self._set(done=d, total=t))
@@ -233,7 +233,7 @@ class Scanner:
             return
         existing = {r["key"]: r for r in db.all(
             "SELECT id, key, file_size, file_mtime, probe, type FROM items WHERE library_id=? "
-            "AND type IN ('movie','episode','extra')",
+            "AND type IN ('movie','episode','extra') AND peer_id IS NULL",
             (lib["id"],))}
         if scope is not None:
             # seuls les fichiers DIRECTEMENT dans les dossiers revus, ou sous un dossier disparu, peuvent avoir
@@ -288,9 +288,10 @@ class Scanner:
                 log.warning("Bonus %s : %s", path, e)
                 self._err(f"{os.path.basename(path)} : {e}")
         # saisons et séries vides
-        db.run("DELETE FROM items WHERE library_id=? AND type='season' AND NOT EXISTS "
+        # (pas les éléments d'un serveur lié rangés ici par une fusion : c'est lui qui les gère)
+        db.run("DELETE FROM items WHERE library_id=? AND type='season' AND peer_id IS NULL AND NOT EXISTS "
                "(SELECT 1 FROM items e WHERE e.parent_id=items.id)", (lib["id"],))
-        db.run("DELETE FROM items WHERE library_id=? AND type='show' AND NOT EXISTS "
+        db.run("DELETE FROM items WHERE library_id=? AND type='show' AND peer_id IS NULL AND NOT EXISTS "
                "(SELECT 1 FROM items s WHERE s.parent_id=items.id)", (lib["id"],))
         db.run("UPDATE libraries SET scanned_at=? WHERE id=?", (int(time.time()), lib["id"]))
         if deferred:

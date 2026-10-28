@@ -25,7 +25,7 @@ Serveur multimédia auto-hébergé pour films, séries et animes. Nexis analyse 
 | **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou externes : `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. ASS rendus par libass (positionnement, karaoké, polices jointes), PGS rendus par le navigateur, VobSub incrustés |
 | **Applications** | Web app installable (Windows, macOS, Linux, Android, iPhone, iPad), téléchargements hors ligne, application Android TV native |
 | **Paramètres** | Un seul espace, organisé en Mon compte, Serveur, Médiathèque et Lecture, avec recherche |
-| **Serveurs liés** | Plusieurs serveurs Nexis reliés par une liaison chiffrée qui leur est propre : comptes communs, bibliothèques de chacun visibles et lisibles depuis l'autre, progression partagée. Un seul des deux doit être joignable |
+| **Serveurs liés** | Plusieurs serveurs Nexis reliés par une liaison chiffrée qui leur est propre : comptes communs, bibliothèques de chacun visibles et lisibles depuis l'autre (ajoutées ou fusionnées : un titre une seule fois, meilleure copie choisie automatiquement), progression partagée. Un seul des deux doit être joignable |
 | **Langues** | Interface en **français** ou en **anglais**, au choix de chaque utilisateur ; langue par défaut des nouveaux comptes choisie par l'administrateur. Messages du serveur et appli TV dans la même langue |
 
 ### Choix du mode de lecture
@@ -336,8 +336,18 @@ Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et u
 **Ce qui est partagé**
 
 - **Comptes.** Ils sont communs : mots de passe, double authentification, profils, PIN, contrôle parental, langue, photo et accès aux bibliothèques. Une modification sur l'un arrive sur l'autre en moins d'une minute ; la plus récente l'emporte et une suppression est définitive. Un identifiant présent sur les deux serveurs au moment du jumelage devient un seul compte, avec les données du serveur qui a créé l'invitation. Les sessions ne sont pas partagées : il faut se connecter une fois sur chaque serveur.
-- **Bibliothèques.** Celles de l'autre serveur apparaissent avec son nom (« Séries · Maison 2 ») dans le menu, l'accueil et la recherche. Leurs fiches et affiches viennent de lui, et c'est lui qui les scanne et cherche leurs métadonnées.
+- **Bibliothèques.** Chaque bibliothèque reçue de l'autre serveur se règle dans *Serveurs liés* :
+  - **Nouvelle bibliothèque** (par défaut) : elle s'ajoute comme une bibliothèque de plus, sous son nom, avec un petit badge du serveur sur sa page ;
+  - **Fusionner avec « … »** : ses titres rejoignent l'une de vos bibliothèques du même type. Un film ou une série présent sur les deux serveurs n'apparaît qu'une fois (même identifiant TMDB, IMDb ou TVDB, sinon même titre et même année), et les saisons et épisodes de chacun sont réunis sous la même série.
+  - Fiches et affiches viennent du serveur d'origine, et c'est lui qui scanne ses dossiers et cherche ses métadonnées.
 - **Lecture.** Un titre de l'autre serveur se lit depuis celui-ci : l'autre serveur lit le fichier, le convertit si besoin et le transmet par la liaison. Sous-titres, aperçus, chapitres et « Passer l'intro » fonctionnent comme pour un titre local. La position de lecture et « vu » sont renvoyés au serveur d'origine et reviennent dans l'autre sens. Les téléchargements hors ligne ne sont pas encore possibles pour ces titres.
+- **Titre présent sur les deux serveurs.** La copie est choisie automatiquement, sans rien demander :
+  1. celle qui a la langue audio voulue (choisie pour ce titre ou dans *Lecture*), ou les sous-titres demandés, si une seule l'a ;
+  2. sinon, la meilleure qualité (définition, puis débit) ;
+  3. à égalité, celle de ce serveur.
+
+  Un saut ou un changement de piste garde la même copie. Si le serveur choisi ne répond pas, l'autre copie prend le relais.
+- **Serveur éteint ou injoignable.** L'autre continue de fonctionner normalement : ses bibliothèques, la connexion et la lecture de ses titres. Après une trentaine de secondes sans réponse, les titres que seul le serveur éteint possède sont masqués, et ses bibliothèques non fusionnées aussi. Ils reviennent seuls dès qu'il répond.
 
 **Liaison et réseau**
 
@@ -564,5 +574,5 @@ L'interface (`static/`) est en JavaScript, sans étape de compilation.
 - Paquet `.deb`, image Docker, conteneur Proxmox en une commande, mise à jour depuis l'interface
 - Paramètres regroupés en un seul espace avec recherche
 - Interface en français et en anglais (langue par utilisateur, langue par défaut choisie par l'administrateur)
-- Serveurs liés : jumelage par invitation, liaison TLS à certificats épinglés, tunnel inverse, comptes répliqués, bibliothèques partagées, lecture relayée
+- Serveurs liés : jumelage par invitation, liaison TLS à certificats épinglés, tunnel inverse, comptes répliqués, bibliothèques partagées ou fusionnées (un titre une seule fois, meilleure copie choisie automatiquement), lecture relayée
 - Web app installable, téléchargements hors ligne, navigation à la télécommande et à la manette, application Android TV native (lecture directe des MKV, son multicanal transmis à l'ampli)

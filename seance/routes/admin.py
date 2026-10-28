@@ -89,6 +89,9 @@ def register(app, ctx, x):
             db.run("DELETE FROM user_libraries WHERE user_id=?", (uid,))
             for sid in set(libs):
                 db.run("INSERT INTO user_libraries(user_id,section_id) VALUES(?,?)", (uid, sid))
+                # bibliothèques d'un serveur lié fusionnées avec celle-ci : même accès
+                db.run("INSERT OR IGNORE INTO user_libraries(user_id,section_id) SELECT ?, CAST(id AS TEXT) FROM libraries "
+                       "WHERE merge_into=?", (uid, int(sid)))
         if not creating and (fields.get("disabled") or "password_hash" in fields):
             db.run("DELETE FROM sessions WHERE user_id=?", (uid,))
 
@@ -161,9 +164,9 @@ def register(app, ctx, x):
     # ----------------------------------------------------- admin libraries
     def library_view(l):
         counts = {r["type"]: r["n"] for r in db.all(
-            "SELECT type, COUNT(*) AS n FROM items WHERE library_id=? GROUP BY type", (l["id"],))}
+            "SELECT type, COUNT(*) AS n FROM items WHERE library_id=? AND peer_id IS NULL GROUP BY type", (l["id"],))}
         unmatched = db.scalar("SELECT COUNT(*) FROM items WHERE library_id=? AND type IN ('movie','show') "
-                              "AND meta_state IN ('nomatch','error')", (l["id"],))
+                              "AND meta_state IN ('nomatch','error') AND peer_id IS NULL", (l["id"],))
         return {"id": str(l["id"]), "name": l["name"], "kind": l["kind"], "paths": json.loads(l["paths"]),
                 "scanned_at": l["scanned_at"], "counts": counts, "unmatched": unmatched,
                 "paths_ok": [os.path.isdir(p) for p in json.loads(l["paths"])],
@@ -222,8 +225,9 @@ def register(app, ctx, x):
             raise HTTPError(404, "Bibliothèque introuvable")
         name, kind, paths = validate_library(req.json())
         if kind != l["kind"] and db.scalar("SELECT COUNT(*) FROM items WHERE library_id=?", (lid,)):
-            db.run("DELETE FROM items WHERE library_id=?", (lid,))
+            db.run("DELETE FROM items WHERE library_id=? AND peer_id IS NULL", (lid,))
         db.run("UPDATE libraries SET name=?, kind=?, paths=? WHERE id=?", (name, kind, json.dumps(paths), lid))
+        ctx.fed.relink_all()  # une fusion avec une bibliothèque d'un autre type ne vaut plus
         db.release()
         ctx.scanner.start([lid])
         return library_view(db.one("SELECT * FROM libraries WHERE id=?", (lid,)))
