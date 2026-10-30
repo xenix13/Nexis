@@ -462,7 +462,6 @@ EN = {
     "Invitation invalide ou expirée : créez-en une nouvelle": "Invalid or expired invitation: create a new one",
     "Cet élément vient d'un serveur lié : modifiez-le sur ce serveur": "This item comes from a linked server: edit it on that server",
     "Impossible de joindre {} : {}": "Cannot reach {}: {}",
-    "Les titres d'un serveur lié ne se téléchargent pas encore pour le hors ligne": "Titles from a linked server cannot be downloaded for offline use yet",
     "Nom du serveur : 1 à 40 caractères": "Server name: 1 to 40 characters",
     "Non autorisé entre serveurs liés": "Not allowed between linked servers",
     "Demande de jumelage invalide": "Invalid link request",
@@ -489,4 +488,5 @@ EN = {
     "Groupe indisponible": "Group unavailable",
     "Requête TMDB invalide": "Invalid TMDB request",
     "Requête Seerr invalide": "Invalid Seerr request",
+    "Téléchargement impossible": "Download failed",
 }

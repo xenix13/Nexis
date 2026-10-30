@@ -60,13 +60,15 @@ STREAM = re.compile(rf"^/api/stream/{SID}/(.+)$")
 WATCHED = re.compile(r"^/api/items/(\d{1,12})/watched$")
 ADMIN_ITEM = re.compile(r"^/api/admin/(?:identify|refresh|markers)/(\d{1,12})$")
 ADMIN_STREAM = re.compile(rf"^/api/admin/streams/{SID}$")
+DOWNLOAD_JOB = re.compile(r"^/api/downloads/([A-Za-z0-9_-]{8,20})(/file)?$")
 TMDB_PATH = re.compile(r"^/(movie|tv|search|discover|trending|watch|genre|find|configuration|collection|person)"
                        r"(/[A-Za-z0-9_.-]{1,40}){0,5}$")
 SEERR_ALLOWED = (("GET", re.compile(r"^/media\?[A-Za-z0-9=&_.-]{0,200}$")),
                  ("GET", re.compile(r"^/user\?[A-Za-z0-9=&_.-]{0,200}$")),
                  ("POST", re.compile(r"^/request$")))
 # ce qu'un serveur lié peut demander au nom d'un compte : la lecture des éléments de ce serveur, rien d'autre
-PEER_USER_PATHS = re.compile(r"^/api/(play|progress|stop|stream/.+|items/\d{1,12}/(prepare|subtitles/.+|fonts/.+|"
+PEER_USER_PATHS = re.compile(r"^/api/(play|progress|stop|stream/.+|downloads(/options|/[A-Za-z0-9_-]{8,20}(/file)?)?|"
+                             r"items/\d{1,12}/(prepare|subtitles/.+|fonts/.+|"
                              r"trickplay(/.+)?|chapters/.+|watched))$")
 
 
@@ -255,6 +257,7 @@ class Federation:
         self.tunnel_gen = {}    # id -> génération (nouveau jumelage : les anciennes connexions ne comptent plus)
         self.status = {}        # id -> état affiché (en ligne, liaison, latence)
         self.proxied = {}       # flux relayé -> (id du serveur lié, id de l'utilisateur, id local de l'élément)
+        self.dl_jobs = {}       # téléchargement préparé par un serveur lié -> (id du serveur, id de l'utilisateur, id local)
         self.queues = {}        # id -> file des envois en arrière-plan (progression, arrêts), dans l'ordre
         self.sync_locks = {}
         self.orphans = {}       # éléments reçus avant leur parent : id local -> (parent, série) chez le serveur lié
@@ -1375,6 +1378,20 @@ class Federation:
         if not req.user or not self.has_peers():
             return None
         path, x = req.path, self.x
+        m = DOWNLOAD_JOB.match(path)
+        if m and req.method in ("GET", "DELETE"):
+            entry = self.dl_jobs.get(m.group(1))
+            if not entry:
+                return None
+            if entry[1] != req.user["id"]:
+                raise HTTPError(404, "Téléchargement introuvable : relancez-le")
+            if req.method == "DELETE":
+                self.dl_jobs.pop(m.group(1), None)
+                self.send_later(entry[0], "DELETE", path, None, req.user)
+                return json_response({"ok": True})
+            if m.group(2):
+                return self.relay(req, entry[0], path)
+            return self.download_view(req, entry, path)
         if req.method == "GET":
             m = ITEM_SUB.match(path)
             if m:
@@ -1433,14 +1450,63 @@ class Federation:
                 self.send_later(r["peer_id"], "POST", f"/api/items/{r['remote_id']}/watched", req.json(), req.user)
             return None
         if req.method == "POST" and path in ("/api/downloads/options", "/api/downloads"):
-            b = req.json()
-            if str(b.get("id") or "").isdigit() and self.mirror(b["id"]):
-                raise HTTPError(400, "Les titres d'un serveur lié ne se téléchargent pas encore pour le hors ligne")
-            return None
+            return self.download(req)
         m = ADMIN_ITEM.match(path)
         if m and self.mirror(m.group(1)):
             raise HTTPError(400, "Cet élément vient d'un serveur lié : modifiez-le sur ce serveur")
         return None
+
+    # téléchargements (hors ligne) -------------------------------------------
+    def download(self, req):
+        """Titre d'un serveur lié, ou présent seulement là-bas : le téléchargement est préparé par lui et relayé.
+        Un titre dont ce serveur a le fichier se télécharge d'ici (rien ne transite par la liaison)."""
+        b = req.json()
+        rk = str(b.get("id") or "")
+        if not rk.isdigit():
+            return None
+        db = self.ctx.db
+        r = db.one("SELECT id, peer_id, key FROM items WHERE id=?", (int(rk),))
+        if not r or r["peer_id"] is None and (r["key"] and os.path.isfile(r["key"])
+                                              or not db.scalar("SELECT 1 FROM items WHERE alias_of=? LIMIT 1", (r["id"],))):
+            return None
+        if db.setting("downloads", "1") != "1":
+            raise HTTPError(403, "Les téléchargements sont désactivés par l'administrateur")
+        row = self.x.require_item(req.user, rk)
+        cands = [c for c in self.sources(row) if c["peer_id"] is not None]
+        if not cands:
+            raise HTTPError(503, "Aucune copie de ce titre n'est disponible pour l'instant")
+        c = cands[0]
+        fwd = dict(self.remap(b, row, c) if c["id"] != row["id"] else b, id=str(c["remote_id"]))
+        if "burn" in b and b.get("burn") is not None:  # sous-titres à incruster : la même langue dans cette copie
+            fwd["burn"] = self.remap({"subtitle": b["burn"]}, row, c).get("subtitle") or None
+        peer = self.peer(c["peer_id"])
+        db.release()
+        try:
+            status, data = self.call(peer, "POST", req.path, fwd, user=req.user, timeout=60)
+        except FedError as e:
+            raise HTTPError(502, str(e))
+        if status != 200:
+            raise HTTPError(status, data.get("error") or "Téléchargement impossible")
+        if req.path == "/api/downloads":
+            jid = str(data.get("id") or "")
+            if not re.match(r"^[A-Za-z0-9_-]{8,20}$", jid):
+                raise HTTPError(502, "Réponse inattendue du serveur lié")
+            with self.lock:
+                self.dl_jobs[jid] = (peer["id"], req.user["id"], row["id"])
+            data["item_id"] = str(row["id"])
+        return json_response(data)
+
+    def download_view(self, req, entry, path):
+        try:
+            status, data = self.call(self.peer(entry[0]), "GET", path, user=req.user, timeout=20)
+        except FedError as e:
+            raise HTTPError(502, str(e))
+        if status != 200:
+            if status == 404:
+                self.dl_jobs.pop(path.rsplit("/", 1)[1], None)
+            raise HTTPError(status, data.get("error") or "Téléchargement introuvable : relancez-le")
+        data["item_id"] = str(entry[2])
+        return json_response(data)
 
     # choix de la copie ------------------------------------------------------
     def sources(self, row):

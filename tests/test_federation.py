@@ -285,8 +285,36 @@ class FederationTest(unittest.TestCase):
         st, init, _ = self.admin_a.call("GET", p["url"].replace("main.m3u8", "init.mp4"), raw=True)
         self.assertEqual(st, 200)
         self.admin_a.call("POST", "/api/stop", {"stream": p["stream"]})
-        st, r = self.admin_a.call("POST", "/api/downloads/options", {"id": rk})
-        self.assertEqual(st, 400)
+        # téléchargement hors ligne : préparé par B, relayé par A
+        caps = {"video": ["h264", "hevc"], "audio": ["aac"], "containers": ["mp4"], "native": True}
+        st, r = self.admin_a.call("POST", "/api/downloads/options", {"id": rk, "caps": caps})
+        self.assertEqual(st, 200, r)
+        self.assertEqual(len(r["options"]), 4)
+        st, job = self.admin_a.call("POST", "/api/downloads", {"id": rk, "quality": "auto", "caps": caps})
+        self.assertEqual(st, 200, job)
+        self.assertEqual(job["item_id"], rk)
+        self.assertIn(job["id"], self.a.fed.dl_jobs)
+        for _ in range(300):
+            st, job = self.admin_a.call("GET", f"/api/downloads/{job['id']}")
+            self.assertEqual(st, 200, job)
+            if job["state"] in ("ready", "error"):
+                break
+            time.sleep(0.2)
+        self.assertEqual((job["state"], job["item_id"]), ("ready", rk), job)
+        st, data, h = self.admin_a.call("GET", f"/api/downloads/{job['id']}/file", headers={"Range": "bytes=0-99"}, raw=True)
+        self.assertEqual((st, len(data)), (206, 100))
+        self.assertIn(b"ftyp", data[:16])
+        # un autre compte ne voit pas ce téléchargement
+        lea = self.login(self.base_a, "lea", "motdepasseL")
+        self.assertEqual(lea.call("GET", f"/api/downloads/{job['id']}")[0], 404)
+        st, _ = self.admin_a.call("DELETE", f"/api/downloads/{job['id']}")
+        self.assertEqual(st, 200)
+        self.assertNotIn(job["id"], self.a.fed.dl_jobs)
+        for _ in range(50):
+            if not self.b.downloads.jobs:
+                break
+            time.sleep(0.1)
+        self.assertEqual(self.b.downloads.jobs, {})  # B a effacé sa préparation
 
     def test_06_best_copy(self):
         brume = self.a.db.scalar("SELECT id FROM items WHERE title='Brume' AND peer_id IS NULL")
