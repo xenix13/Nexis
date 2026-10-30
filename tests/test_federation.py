@@ -431,6 +431,137 @@ class FederationTest(unittest.TestCase):
         st, v = self.admin_a.call("GET", "/api/admin/federation")
         self.assertIn(renamed.lower(), [n["renamed"].lower() for n in v["notices"]])
 
+    def test_12_load_balancing(self):
+        """Serveur déjà chargé : la copie d'un serveur libre est lue, même en moins bonne qualité."""
+        st, v = self.admin_a.call("PUT", "/api/admin/federation", {"busy": 2})
+        self.assertEqual((st, v["busy"]), (200, 2), v)
+        self.assertEqual(self.admin_a.call("PUT", "/api/admin/federation", {"busy": 99})[0], 400)
+        brume = str(self.a.db.scalar("SELECT id FROM items WHERE title='Brume' AND peer_id IS NULL"))
+        st_b = self.a.fed.status.setdefault(self.peer_on_a, {})
+        self.admin_a.call("PUT", "/api/me/prefs", {"audio_lang": "deu"})  # aucune copie n'a la langue : la qualité décide
+        try:
+            st_b["load"] = 5  # B est occupé : notre copie (180p) plutôt que la sienne (360p)
+            st, p = self.admin_a.call("POST", "/api/play", {"id": brume, "no_direct": True})
+            self.assertEqual(st, 200, p)
+            self.assertNotIn(p["stream"], self.a.fed.proxied)
+            self.admin_a.call("POST", "/api/stop", {"stream": p["stream"]})
+            st_b["load"] = 0  # B libre : sa copie, meilleure
+            st, p = self.admin_a.call("POST", "/api/play", {"id": brume, "no_direct": True})
+            self.assertIn(p["stream"], self.a.fed.proxied)
+            self.assertEqual(st_b["load"], 1)  # compté chez lui d'ici sa prochaine annonce
+            self.admin_a.call("POST", "/api/stop", {"stream": p["stream"]})
+        finally:
+            st_b["load"] = 0
+            self.admin_a.call("PUT", "/api/me/prefs", {"audio_lang": "fra"})
+            self.admin_a.call("PUT", "/api/admin/federation", {"busy": 3})
+
+    def test_13_watch_together_across_servers(self):
+        """Groupe créé sur A, rejoint depuis B : titres, comptes et commandes traduits d'un serveur à l'autre."""
+        brume_a = self.a.db.scalar("SELECT id FROM items WHERE title='Brume' AND peer_id IS NULL")
+        brume_on_b = str(self.b.db.scalar("SELECT id FROM items WHERE peer_id IS NOT NULL AND remote_id=?", (brume_a,)))
+        st, g = self.admin_a.call("POST", "/api/together", {"item_id": str(brume_a), "position": 5000, "name": "Soirée"})
+        self.assertEqual(st, 200, g)
+        gid = g["id"]
+        lea = self.login(self.base_b, "lea", "motdepasseL")
+        st, lst = lea.call("GET", "/api/together")
+        self.assertEqual(st, 200, lst)
+        mine = [x for x in lst if x["id"] == gid]
+        self.assertEqual(len(mine), 1, lst)
+        self.assertEqual((mine[0]["name"], mine[0]["item"]["id"], mine[0]["member"]), ("Soirée", brume_on_b, False))
+        st, j = lea.call("POST", f"/api/together/{gid}/join")
+        self.assertEqual(st, 200, j)
+        lea_b = self.b.db.scalar("SELECT id FROM users WHERE username='lea'")
+        self.assertEqual((j["item_id"], j["item"]["id"], j["position"], j["member"]), (brume_on_b, brume_on_b, 5000, True))
+        self.assertIn(lea_b, [m["id"] for m in j["members"]])
+        # événements relayés par B
+        cookie = "; ".join(f"{c.name}={c.value}" for c in lea.jar)
+        conn = http.client.HTTPConnection("127.0.0.1", self.sb.server_address[1], timeout=15)
+        conn.request("GET", f"/api/together/{gid}/events", headers={"Cookie": cookie})
+        resp = conn.getresponse()
+        self.assertEqual(resp.status, 200)
+
+        def next_event(kind):
+            deadline = time.time() + 15
+            while time.time() < deadline:
+                line = resp.fp.readline()
+                if line.startswith(b"data: "):
+                    ev = json.loads(line[6:])
+                    if ev.get("type") == kind:
+                        return ev
+            self.fail(f"pas d'événement {kind}")
+        members = next_event("members")
+        self.assertIn(lea_b, [m["id"] for m in members["members"]])
+        state = next_event("state")
+        self.assertEqual(state["item_id"], brume_on_b)
+        # hôte (A) prêt : on part ; pause depuis B, vue par A
+        self.admin_a.call("POST", f"/api/together/{gid}/cmd", {"action": "ready"})
+        st, r = lea.call("POST", f"/api/together/{gid}/cmd", {"action": "pause", "position": 7000})
+        self.assertEqual((st, r["playing"], r["position"]), (200, False, 7000), r)
+        st, ga = self.admin_a.call("GET", f"/api/together/{gid}")
+        self.assertEqual((ga["playing"], ga["position"]), (False, 7000))
+        # changement de titre depuis B (un titre de B) : A reçoit le sien
+        ciel_b = self.b.db.scalar("SELECT id FROM items WHERE title='Ciel Bas' AND peer_id IS NULL")
+        ciel_on_a = self.a.db.scalar("SELECT COALESCE(alias_of, id) FROM items WHERE peer_id IS NOT NULL AND remote_id=?",
+                                     (ciel_b,))
+        st, r = lea.call("POST", f"/api/together/{gid}/cmd", {"action": "item", "item_id": str(ciel_b)})
+        self.assertEqual((st, r["item_id"]), (200, str(ciel_b)), r)
+        st, ga = self.admin_a.call("GET", f"/api/together/{gid}")
+        self.assertEqual(ga["item_id"], str(ciel_on_a))
+        ev = next_event("state")
+        while ev.get("action") != "item":
+            ev = next_event("state")
+        self.assertEqual(ev["item_id"], str(ciel_b))
+        conn.close()
+        st, _ = lea.call("POST", f"/api/together/{gid}/leave")
+        self.assertEqual(st, 200)
+        st, ga = self.admin_a.call("GET", f"/api/together/{gid}")
+        self.assertNotIn("Léa", [m["name"] for m in ga["members"]])
+        self.admin_a.call("POST", f"/api/together/{gid}/leave")
+
+    def test_14_shared_tmdb_and_seerr(self):
+        """Clé TMDB et Seerr configurés sur A seulement : B s'en sert (métadonnées, Découvrir, demandes)."""
+        from tests.fixtures import FakeSeerr
+        from tests.test_api import TMDB
+        seerr = FakeSeerr()
+        try:
+            self.assertFalse(self.b.metadata.tmdb().enabled)
+            st, r = self.admin_a.call("PUT", "/api/admin/settings", {"tmdb_key": TMDB.key})
+            self.assertEqual(st, 200, r)
+            st, r = self.admin_a.call("PUT", "/api/admin/requests", {"seerr_url": seerr.url, "seerr_key": seerr.key})
+            self.assertEqual(st, 200, r)
+            self.sync()
+            self.assertTrue(self.b.metadata.tmdb().enabled)
+            # titres de B restés sans métadonnées faute de clé : cherchés avec celle de A
+            for _ in range(100):
+                left = self.b.db.scalar("SELECT COUNT(*) FROM items WHERE peer_id IS NULL AND type IN ('movie','show') "
+                                        "AND meta_state IN ('local','pending')")
+                if not left:
+                    break
+                time.sleep(0.1)
+            self.assertEqual(left, 0)
+            lea = self.login(self.base_b, "lea", "motdepasseL")
+            st, me = lea.call("GET", "/api/me")
+            self.assertEqual((me["features"]["discover"], me["features"]["requests"]), (True, True))
+            st, home = lea.call("GET", "/api/discover/home")
+            self.assertEqual((st, home["seerr"]), (200, True), home)
+            st, cfg = self.admin_b.call("GET", "/api/admin/requests")
+            self.assertEqual((cfg["enabled"], cfg["shared_by"]), (True, self.a.fed.name()))
+            st, r = lea.call("POST", "/api/discover/request", {"type": "movie", "tmdb_id": 9101})
+            self.assertEqual((st, r["as_user"]), (200, True), r)
+            lea_seerr = next(u for u in seerr.users if u.get("username") == "lea")
+            self.assertEqual(seerr.requests[-1]["user"], lea_seerr["id"])
+            # seules les routes utiles de Seerr sont prêtées
+            peer = self.b.fed.peer(self.peer_on_b)
+            st, r = self.b.fed.call(peer, "POST", "/fed/seerr", {"method": "GET", "path": "/settings/main"})
+            self.assertEqual(st, 403, r)
+            st, r = self.b.fed.call(peer, "POST", "/fed/tmdb", {"path": "/../account", "params": {}})
+            self.assertEqual(st, 400, r)
+        finally:
+            self.admin_a.call("PUT", "/api/admin/settings", {"tmdb_key": ""})
+            self.admin_a.call("PUT", "/api/admin/requests", {"seerr_url": "", "seerr_key": ""})
+            seerr.httpd.shutdown()
+            self.sync()
+
     def test_99_unlink(self):
         st, r = self.admin_b.call("DELETE", f"/api/admin/federation/peers/{self.peer_on_b}")
         self.assertEqual(st, 200, r)

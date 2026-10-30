@@ -138,7 +138,10 @@ def register(app, ctx, x):
             raise HTTPError(502, str(e))
 
     def seerr():
-        return Seerr(db.setting("seerr_url"), db.setting("seerr_key"))
+        s = Seerr(db.setting("seerr_url"), db.setting("seerr_key"))
+        if not s.enabled and getattr(ctx, "fed", None):
+            return ctx.fed.shared_seerr() or s  # Seerr d'un serveur lié : les demandes passent par lui
+        return s
 
     # ------------------------------------------------------------ statuts
     def seerr_statuses():
@@ -454,7 +457,8 @@ def register(app, ctx, x):
     def admin_view():
         s = seerr()
         return {"seerr_url": db.setting("seerr_url") or "", "seerr_key_set": bool(db.setting("seerr_key")),
-                "auto_request": db.setting("seerr_auto_request", "1") == "1", "region": region(), "enabled": s.enabled}
+                "auto_request": db.setting("seerr_auto_request", "1") == "1", "region": region(), "enabled": s.enabled,
+                "shared_by": getattr(s, "name", None)}
 
     @app.route("GET", "/api/admin/requests", auth="admin")
     def admin_requests(req):

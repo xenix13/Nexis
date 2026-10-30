@@ -33,6 +33,8 @@ from . import __version__, i18n
 from .auth import USERNAME, USERNAME_RULE, find_user, normalize_username
 from .names import fold
 from .catalog import CARD_SQL, SID, stream_lists
+from .discover import Seerr, SeerrError
+from .metadata import TMDB, MetaError
 from .web import HTTPError, Response, TLSServer, json_response, make_handler
 
 log = logging.getLogger("seance.fed")
@@ -58,6 +60,11 @@ STREAM = re.compile(rf"^/api/stream/{SID}/(.+)$")
 WATCHED = re.compile(r"^/api/items/(\d{1,12})/watched$")
 ADMIN_ITEM = re.compile(r"^/api/admin/(?:identify|refresh|markers)/(\d{1,12})$")
 ADMIN_STREAM = re.compile(rf"^/api/admin/streams/{SID}$")
+TMDB_PATH = re.compile(r"^/(movie|tv|search|discover|trending|watch|genre|find|configuration|collection|person)"
+                       r"(/[A-Za-z0-9_.-]{1,40}){0,5}$")
+SEERR_ALLOWED = (("GET", re.compile(r"^/media\?[A-Za-z0-9=&_.-]{0,200}$")),
+                 ("GET", re.compile(r"^/user\?[A-Za-z0-9=&_.-]{0,200}$")),
+                 ("POST", re.compile(r"^/request$")))
 # ce qu'un serveur lié peut demander au nom d'un compte : la lecture des éléments de ce serveur, rien d'autre
 PEER_USER_PATHS = re.compile(r"^/api/(play|progress|stop|stream/.+|items/\d{1,12}/(prepare|subtitles/.+|fonts/.+|"
                              r"trickplay(/.+)?|chapters/.+|watched))$")
@@ -116,6 +123,29 @@ def free_username(db, base, taken=()):
     return f"u-{secrets.token_hex(6)}"
 
 
+def keepalive(sock):
+    """Connexion coupée sans prévenir (changement d'adresse IP, box redémarrée) : détectée en une minute environ,
+    au lieu de rester ouverte « dans le vide » jusqu'à son renouvellement."""
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        for opt, v in (("TCP_KEEPIDLE", 30), ("TCP_KEEPINTVL", 10), ("TCP_KEEPCNT", 3)):
+            if hasattr(socket, opt):
+                sock.setsockopt(socket.IPPROTO_TCP, getattr(socket, opt), v)
+    except OSError:
+        pass
+
+
+def alive(sock):
+    """Connexion de tunnel inutilisée encore valable : rien à lire (sinon c'est sa fermeture par l'autre côté)."""
+    try:
+        if sock.pending():
+            return False
+        ready, _, _ = select.select([sock], [], [], 0)
+        return not ready
+    except (OSError, ValueError):
+        return False
+
+
 class Pool:
     """Connexions de tunnel ouvertes par un serveur lié, en attente d'une requête de notre part."""
 
@@ -125,6 +155,7 @@ class Pool:
 
     def offer(self, sock):
         """Fil de la connexion entrante : attend qu'une requête s'en serve (puis qu'elle soit finie), ou l'expiration."""
+        keepalive(sock)
         entry = {"sock": sock, "born": time.monotonic(), "done": threading.Event(), "taken": False}
         with self.cond:
             self.idle.append(entry)
@@ -145,10 +176,10 @@ class Pool:
                 now = time.monotonic()
                 while self.idle:
                     e = self.idle.pop()
-                    if now - e["born"] < TUNNEL_TTL - 15:
+                    if now - e["born"] < TUNNEL_TTL - 15 and alive(e["sock"]):
                         e["taken"] = True
                         return e["sock"], e["done"].set
-                    e["done"].set()  # trop ancienne : l'autre serveur va la renouveler
+                    e["done"].set()  # trop ancienne ou coupée : l'autre serveur va la renouveler
                 if now >= end:
                     return None
                 self.cond.wait(end - now)
@@ -156,6 +187,54 @@ class Pool:
     def count(self):
         with self.cond:
             return len(self.idle)
+
+
+class PeerTMDB(TMDB):
+    """TMDB interrogé avec la clé d'un serveur lié (ce serveur n'en a pas) : même usage qu'une clé locale."""
+
+    def __init__(self, fed, peer, language, country):
+        super().__init__("", language, country)
+        self.fed, self.peer = fed, peer
+
+    @property
+    def enabled(self):
+        return True
+
+    def get(self, path, lang=None, **params):
+        params = {k: v for k, v in params.items() if v not in (None, "")}
+        key = json.dumps([path, lang or self.language, sorted(params.items())], default=str)
+        if key in self._cache:
+            return self._cache[key]
+        try:
+            status, data = self.fed.call(self.peer, "POST", "/fed/tmdb",
+                                         {"path": path, "lang": lang or self.language, "params": params}, timeout=60)
+        except FedError as e:
+            raise MetaError(f"TMDB injoignable ({e})")
+        if status != 200:
+            raise MetaError(data.get("error") or f"TMDB a répondu {status}")
+        self._cache[key] = data
+        if len(self._cache) > 500:
+            self._cache.clear()
+        return data
+
+
+class PeerSeerr:
+    """Seerr d'un serveur lié : les demandes de ce serveur passent par lui."""
+    enabled = True
+
+    def __init__(self, fed, peer):
+        self.fed, self.peer = fed, peer
+        self.name = peer["name"]
+
+    def call(self, method, path, body=None, user=None, timeout=15):
+        try:
+            status, data = self.fed.call(self.peer, "POST", "/fed/seerr",
+                                         {"method": method, "path": path, "body": body, "user": user}, timeout=timeout + 15)
+        except FedError as e:
+            raise SeerrError(f"Seerr injoignable ({e})") from None
+        if status != 200:
+            raise SeerrError(data.get("error") or f"Seerr a répondu {status}")
+        return data.get("data") or {}
 
 
 class Federation:
@@ -180,6 +259,8 @@ class Federation:
         self.sync_locks = {}
         self.orphans = {}       # éléments reçus avant leur parent : id local -> (parent, série) chez le serveur lié
         self.avatar_todo = {}   # id -> comptes dont l'avatar est à récupérer
+        self.rgroups = {}       # id -> (instant, groupes « regarder ensemble » qu'il anime)
+        self.rgroup_peer = {}   # groupe d'un serveur lié -> id de ce serveur
         self.stop_event = threading.Event()
         self.wake = threading.Event()
         self._fp = None
@@ -385,6 +466,16 @@ class Federation:
         raise FedError("Serveur injoignable : il n'a pas d'adresse et n'a pas ouvert de tunnel")
 
     def request(self, peer, method, path, body=None, headers=None, user=None, timeout=30):
+        try:
+            return self._request(peer, method, path, body, headers, user, timeout)
+        except FedError as e:
+            # connexion de tunnel morte (l'autre serveur a changé d'adresse IP) : la requête n'est pas arrivée,
+            # on la refait une fois par une autre connexion
+            if getattr(e, "retry", False):
+                return self._request(peer, method, path, body, headers, user, timeout)
+            raise
+
+    def _request(self, peer, method, path, body, headers, user, timeout):
         sock, release, via = self._open(peer, timeout)
         sock.settimeout(timeout)
         conn = http.client.HTTPConnection("nexis-peer", timeout=timeout)
@@ -404,12 +495,17 @@ class Federation:
             finally:
                 if release:
                     release()
+        sent = False
         try:
             conn.request(method, path, body=body, headers=h)
+            sent = True
             resp = conn.getresponse()
         except (OSError, http.client.HTTPException) as e:
             close()
-            raise FedError(f"Le serveur lié ne répond pas : {e}")
+            err = FedError(f"Le serveur lié ne répond pas : {e}")
+            err.retry = via == "tunnel" and (not sent or method == "GET" or isinstance(
+                e, (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError)))
+            raise err
         if peer.get("id"):
             self.status.setdefault(peer["id"], {})["via"] = via
         return resp, close
@@ -441,7 +537,7 @@ class Federation:
                 q = self.queues[peer_id] = queue.Queue(500)
                 threading.Thread(target=self._sender, args=(peer_id, q), daemon=True).start()
         try:
-            q.put_nowait((method, path, data, {"uid": user["uid"]}))
+            q.put_nowait((method, path, data, {"uid": user["uid"]} if user else None))
         except queue.Full:
             pass
 
@@ -477,6 +573,7 @@ class Federation:
             self.tunnels.pop(pid, None)
             self.tunnel_fail.pop(pid, None)
             self.status.pop(pid, None)
+            self.rgroups.pop(pid, None)
             pool = self.pools.pop(pid, None)
             for sid in [s for s, v in self.proxied.items() if v[0] == pid]:
                 self.proxied.pop(sid)
@@ -505,6 +602,7 @@ class Federation:
             if not peer["address"]:
                 return
             sock = self._tls_connect(peer, 15)
+            keepalive(sock)
             sock.sendall((f"GET /fed/reverse HTTP/1.1\r\nHost: nexis\r\nX-Fed-Peer: {self.uid()}\r\n"
                           f"X-Fed-Key: {peer['secret']}\r\n\r\n").encode())
             self.ctx.db.release()
@@ -729,15 +827,27 @@ class Federation:
         try:
             peer = self.peer(pid)
             db.release()
-            t0 = time.monotonic()
+            t0, w0 = time.monotonic(), time.time() * 1000
             hello = self.call_ok(peer, "GET", "/fed/hello", timeout=15)
-            st.update(online=True, latency=int((time.monotonic() - t0) * 1000), fails=0)
+            w1 = time.time() * 1000
+            caps = hello.get("caps") if isinstance(hello.get("caps"), dict) else {}
+            st.update(online=True, latency=int((time.monotonic() - t0) * 1000), fails=0,
+                      tmdb=bool(caps.get("tmdb")), seerr=bool(caps.get("seerr")), load=int(hello.get("load") or 0),
+                      # écart entre son horloge et la nôtre (regarder ensemble : positions datées par son horloge)
+                      clock=int(hello["now_ms"] - (w0 + w1) / 2) if isinstance(hello.get("now_ms"), (int, float)) else 0)
             self.set_online(pid, True)
             self.pull_users(peer)
             self.pull_catalog(peer)
             self.pull_progress(peer)
             for lid, uid, ver in self.avatar_todo.pop(pid, []):
                 self.fetch_avatar(peer, lid, uid, ver)
+            with self.lock:
+                self.status.setdefault(pid, {}).update(st)
+            self.kick_metadata()
+            try:
+                self.fetch_groups(peer)
+            except FedError as e:
+                log.debug("Groupes du serveur lié %s : %s", pid, e)
             db.run("UPDATE peers SET last_seen=?, version=?, name=?, error=NULL WHERE id=?",
                    (int(time.time()), str(hello.get("version") or "")[:20], str(hello.get("name") or peer["name"])[:40], pid))
         except (FedError, OSError, ValueError, KeyError, TypeError, http.client.HTTPException) as e:
@@ -1346,8 +1456,9 @@ class Federation:
         return stream_lists(json.loads(row["probe"] or "{}"))
 
     def rank(self, req, row, cands, b):
-        """La copie qui a la langue voulue (audio, puis sous-titres demandés) si une seule l'a, sinon la meilleure
-        qualité (définition, puis débit) ; à égalité, la nôtre."""
+        """La copie qui a la langue voulue (audio, puis sous-titres demandés) si une seule l'a ; puis celle d'un
+        serveur qui n'est pas déjà chargé (assez de lectures en cours) ; puis la meilleure qualité (définition,
+        puis débit) ; à égalité, celle du serveur le moins occupé, puis la nôtre."""
         x, uid = self.x, req.user["id"]
         audio0, subs0 = self._tracks(row)
         tp = x.track_prefs(uid, row) or {}
@@ -1355,14 +1466,17 @@ class Federation:
             or (tp.get("audio_lang") if tp.get("audio_lang") not in (None, "", "off") else None) \
             or x.get_prefs(uid).get("audio_lang") or None
         want_s = next((t["lang"] for t in subs0 if t["id"] == b.get("subtitle")), None) if b.get("subtitle") else None
+        limit, here = self.busy_limit(), self.local_load()
 
         def score(c):
             audio, subs = self._tracks(c)
             probe = json.loads(c["probe"] or "{}")
             video = probe.get("video") or {}
+            load = here if c["peer_id"] is None else int((self.status.get(c["peer_id"]) or {}).get("load") or 0)
             return (not want_a or any(a["lang"] == want_a for a in audio),
                     not want_s or any(t["lang"] == want_s for t in subs),
-                    int(video.get("height") or 0), int(probe.get("bitrate") or 0), c["peer_id"] is None)
+                    not (limit and load >= limit),
+                    int(video.get("height") or 0), int(probe.get("bitrate") or 0), -load, c["peer_id"] is None)
         return sorted(cands, key=score, reverse=True)
 
     def remap(self, b, row, c):
@@ -1458,6 +1572,9 @@ class Federation:
             if e and e[0] == peer["id"]:
                 self.proxied.pop(old, None)  # remplacé chez lui par le nouveau flux
             self.proxied[sid] = (peer["id"], uid, row["id"], c["remote_id"])
+            if not (e and e[0] == peer["id"]):  # une lecture de plus chez lui, d'ici sa prochaine annonce
+                st = self.status.setdefault(peer["id"], {})
+                st["load"] = int(st.get("load") or 0) + 1
         if old and e:
             db.run("DELETE FROM streams WHERE id=? AND user_id=?", (old, uid))
         rk = str(row["id"])
@@ -1478,6 +1595,171 @@ class Federation:
             x.upsert_meta(uid, card)
         return json_response(data)
 
+    # ------------------------------------------------------------------ services partagés (TMDB, Seerr)
+    def provider(self, cap):
+        """Serveur lié joignable qui a ce service (clé TMDB, Seerr) et le prête aux autres, ou None."""
+        if not self.has_peers():
+            return None
+        for p in self.peers():
+            st = self.status.get(p["id"]) or {}
+            if st.get("online") and st.get(cap):
+                return p
+        return None
+
+    def shared_tmdb(self, language, country):
+        p = self.provider("tmdb")
+        return PeerTMDB(self, p, language, country) if p else None
+
+    def shared_seerr(self):
+        p = self.provider("seerr")
+        return PeerSeerr(self, p) if p else None
+
+    def kick_metadata(self):
+        """Une clé TMDB devient disponible par un serveur lié : les titres restés sans métadonnées faute de clé
+        sont cherchés (une fois par serveur prêteur)."""
+        p = self.provider("tmdb")
+        db = self.ctx.db
+        if not p or db.setting("tmdb_key") or db.setting("fed_tmdb_from") == p["uid"]:
+            return
+        db.set_setting("fed_tmdb_from", p["uid"])
+        n = db.run("UPDATE items SET meta_state='pending' WHERE peer_id IS NULL AND locked=0 AND type IN ('movie','show') "
+                   "AND meta_state IN ('local','nomatch','error')").rowcount
+        if n:
+            log.info("Métadonnées : %d titre(s) à chercher avec la clé TMDB de %s", n, p["name"])
+            threading.Thread(target=self._process_pending, daemon=True, name="fed-meta").start()
+
+    def _process_pending(self):
+        try:
+            self.ctx.metadata.process_pending()
+        except Exception:
+            log.exception("Métadonnées par la clé TMDB d'un serveur lié")
+        finally:
+            self.ctx.db.release()
+
+    # ------------------------------------------------------------------ charge (répartition des lectures)
+    def local_load(self):
+        """Lectures servies par ce serveur (les flux qu'il relaie depuis un serveur lié ne comptent pas)."""
+        cut = int(time.time()) - 60
+        ids = [r["id"] for r in self.ctx.db.all("SELECT id FROM streams WHERE last_seen>?", (cut,))]
+        with self.lock:
+            return sum(1 for i in ids if i not in self.proxied)
+
+    def busy_limit(self):
+        try:
+            return max(0, int(self.ctx.db.setting("fed_busy", "3")))
+        except ValueError:
+            return 3
+
+    # ------------------------------------------------------------------ titres d'un serveur à l'autre
+    def ref_of(self, item_id):
+        """Désignation d'un élément valable sur tous les serveurs liés : le serveur qui a le fichier et son numéro là-bas."""
+        r = self.ctx.db.one("SELECT i.id, i.remote_id, p.uid FROM items i LEFT JOIN peers p ON p.id=i.peer_id WHERE i.id=?",
+                            (int(item_id),))
+        if not r:
+            return None
+        return {"s": r["uid"], "i": r["remote_id"]} if r["uid"] else {"s": self.uid(), "i": r["id"]}
+
+    def resolve_ref(self, ref):
+        """Élément d'ici (celui qu'on affiche) correspondant à une désignation reçue d'un serveur lié, ou None."""
+        if not isinstance(ref, dict) or not HEX32.match(str(ref.get("s"))) or not isinstance(ref.get("i"), int):
+            return None
+        db = self.ctx.db
+        if ref["s"] == self.uid():
+            return db.scalar("SELECT id FROM items WHERE id=? AND peer_id IS NULL", (ref["i"],))
+        r = db.one("SELECT i.id, i.alias_of FROM items i JOIN peers p ON p.id=i.peer_id WHERE p.uid=? AND i.remote_id=?",
+                   (ref["s"], ref["i"]))
+        return (r["alias_of"] or r["id"]) if r else None
+
+    def local_user_id(self, uid):
+        return self.ctx.db.scalar("SELECT id FROM users WHERE uid=?", (str(uid or ""),))
+
+    # ------------------------------------------------------------------ regarder ensemble entre serveurs
+    def together_changed(self):
+        """Les groupes de ce serveur ont changé : les serveurs liés rafraîchissent leur liste tout de suite."""
+        if not self.has_peers():
+            return
+        for p in self.peers():
+            if (self.status.get(p["id"]) or {}).get("online"):
+                self.send_later(p["id"], "POST", "/fed/together/changed", {}, None)
+
+    def present_uids(self):
+        """Comptes qui ont Nexis ouvert ici : ils restent membres des groupes d'un serveur lié pendant qu'ils cherchent."""
+        ids = sorted(self.ctx.together.present())
+        if not ids:
+            return []
+        return [r["uid"] for r in self.ctx.db.all(f"SELECT uid FROM users WHERE id IN ({','.join('?' * len(ids))})", ids)]
+
+    def fetch_groups(self, peer):
+        q = urllib.parse.urlencode({"present": ",".join(self.present_uids())})
+        data = self.call_ok(peer, "GET", f"/fed/together?{q}", timeout=8)
+        groups = [g for g in data.get("groups") or [] if isinstance(g, dict) and isinstance(g.get("id"), str)]
+        with self.lock:
+            old = self.rgroups.get(peer["id"])
+            self.rgroups[peer["id"]] = (time.monotonic(), groups)
+            for g in groups:
+                self.rgroup_peer[g["id"]] = peer["id"]
+        if old is None or old[1] != groups:
+            self.ctx.together.wake()
+        return groups
+
+    def remote_groups(self, max_age=3):
+        """[(serveur lié, groupes)] des serveurs liés joignables (gardés quelques secondes)."""
+        if not self.has_peers():
+            return []
+        out = []
+        for p in self.peers():
+            if not (self.status.get(p["id"]) or {}).get("online"):
+                continue
+            hit = self.rgroups.get(p["id"])
+            if hit and time.monotonic() - hit[0] < max_age:
+                out.append((p, hit[1]))
+                continue
+            try:
+                out.append((p, self.fetch_groups(p)))
+            except (FedError, OSError) as e:
+                log.debug("Groupes du serveur lié %s : %s", p["id"], e)
+                if hit:
+                    out.append((p, hit[1]))
+            finally:
+                self.ctx.db.release()
+        return out
+
+    def group_peer(self, gid):
+        """Serveur lié qui anime ce groupe, ou None."""
+        pid = self.rgroup_peer.get(gid)
+        if pid is None:
+            self.remote_groups(max_age=0)
+            pid = self.rgroup_peer.get(gid)
+        if pid is None:
+            return None
+        try:
+            return self.peer(pid)
+        except FedError:
+            return None
+
+    def forget_groups(self, pid):
+        with self.lock:
+            self.rgroups.pop(pid, None)
+
+    def to_local(self, pid, ev):
+        """Événement ou état d'un groupe animé par un serveur lié -> nos numéros (titre, comptes) et notre horloge."""
+        shift = int((self.status.get(pid) or {}).get("clock") or 0)
+        for k in ("ref", "server_now"):
+            if isinstance(ev.get(k), (int, float)):
+                ev[k] = int(ev[k] - shift)
+        if "item_ref" in ev:
+            rk = self.resolve_ref(ev.pop("item_ref"))
+            ev["item_id"] = str(rk) if rk else None
+        if "waiting_uids" in ev:
+            ev["waiting_ids"] = [i for i in (self.local_user_id(u) for u in ev.pop("waiting_uids") or []) if i]
+        if isinstance(ev.get("members"), list):
+            for m in ev["members"]:
+                u = self.ctx.db.one("SELECT id, avatar_ver FROM users WHERE uid=?", (str(m.get("uid") or ""),))
+                m["id"] = u["id"] if u else 0
+                m["avatar"] = f"/api/users/{u['id']}/avatar?v={u['avatar_ver']}" if u and u["avatar_ver"] else None
+                m.pop("uid", None)
+        return ev
+
     # ------------------------------------------------------------------ état pour l'administration
     def view(self):
         db = self.ctx.db
@@ -1489,7 +1771,8 @@ class Federation:
                 "id": p["id"], "name": p["name"], "address": p["address"], "fingerprint": p["fingerprint"],
                 "created_at": p["created_at"], "last_seen": p["last_seen"], "version": p["version"],
                 "error": i18n.tr(p["error"]) if p["error"] else None, "online": st.get("online"),
-                "latency": st.get("latency"), "via": st.get("via"),
+                "latency": st.get("latency"), "via": st.get("via"), "load": st.get("load"),
+                "shares": [k for k in ("tmdb", "seerr") if st.get(k)],
                 "tunnel_in": pool.count() if pool else 0, "tunnel_out": self.tunnels.get(p["id"], 0),
                 "libraries": [{"id": str(l["id"]), "name": l["name"], "kind": l["kind"], "count": l["n"],
                                "merged": l["n_alias"], "merge_into": str(l["merge_into"]) if l["merge_into"] else None}
@@ -1505,7 +1788,8 @@ class Federation:
         return {"notices": notices, "local_libraries": [{"id": str(l["id"]), "name": l["name"], "kind": l["kind"]} for l in db.all(
                     "SELECT id, name, kind FROM libraries WHERE peer_id IS NULL ORDER BY position, name")],"name": self.name(), "uid": self.uid(), "fingerprint": self.fingerprint(), "port": self.port,
                 "listening": bool(self.server), "address": self.local_address(),
-                "address_manual": db.setting("fed_address") or "", "peers": peers}
+                "address_manual": db.setting("fed_address") or "", "busy": self.busy_limit(), "load": self.local_load(),
+                "peers": peers}
 
 
 def register(app, ctx, x):
@@ -1524,7 +1808,9 @@ def register(app, ctx, x):
 
     @app.route("GET", "/fed/hello", auth="peer")
     def fed_hello(req):
-        return {"uid": fed.uid(), "name": fed.name(), "version": __version__, "time": int(time.time())}
+        return {"uid": fed.uid(), "name": fed.name(), "version": __version__, "time": int(time.time()),
+                "now_ms": int(time.time() * 1000), "load": fed.local_load(),
+                "caps": {"tmdb": bool(db.setting("tmdb_key")), "seerr": bool(db.setting("seerr_url") and db.setting("seerr_key"))}}
 
     @app.route("GET", "/fed/reverse", auth="peer")
     def fed_reverse(req):
@@ -1572,6 +1858,45 @@ def register(app, ctx, x):
         with open(path, "rb") as f:
             return Response(f.read(), 200, "image/jpeg")
 
+    @app.route("POST", "/fed/tmdb", auth="peer")
+    def fed_tmdb(req):
+        """Clé TMDB prêtée à un serveur lié : il nous fait chercher ses métadonnées (lecture seule)."""
+        b = req.json()
+        path, params = str(b.get("path") or ""), b.get("params") or {}
+        if not TMDB_PATH.match(path) or not isinstance(params, dict) or len(params) > 20 or not all(
+                isinstance(k, str) and isinstance(v, (str, int, float)) for k, v in params.items()):
+            raise HTTPError(400, "Requête TMDB invalide")
+        lang = str(b.get("lang") or "")
+        if not re.match(r"^[a-z]{2}(-[A-Z]{2})?$", lang):
+            lang = None
+        t = TMDB(db.setting("tmdb_key"), db.setting("meta_language", "fr-FR"), db.setting("meta_country", "FR"))
+        if not t.enabled:
+            raise HTTPError(409, "Ce serveur n'a plus de clé TMDB")
+        db.release()
+        try:
+            return t.get(path, lang=lang, **params)
+        except MetaError as e:
+            raise HTTPError(404 if "Introuvable" in str(e) else 502, str(e))
+
+    @app.route("POST", "/fed/seerr", auth="peer")
+    def fed_seerr(req):
+        """Seerr prêté à un serveur lié : statuts, comptes Seerr et nouvelles demandes, rien d'autre."""
+        b = req.json()
+        method, path = b.get("method"), str(b.get("path") or "")
+        if not any(method == m and rx.match(path) for m, rx in SEERR_ALLOWED):
+            raise HTTPError(403, "Requête Seerr non autorisée entre serveurs liés")
+        body, user = b.get("body"), b.get("user")
+        if body is not None and not isinstance(body, dict) or user is not None and not isinstance(user, int):
+            raise HTTPError(400, "Requête Seerr invalide")
+        s = Seerr(db.setting("seerr_url"), db.setting("seerr_key"))
+        if not s.enabled:
+            raise HTTPError(409, "Ce serveur n'a plus de Seerr configuré")
+        db.release()
+        try:
+            return {"data": s.call(method, path, body, user=user)}
+        except SeerrError as e:
+            raise HTTPError(502, str(e))
+
     @app.route("POST", "/fed/leave", auth="peer")
     def fed_leave(req):
         fed.remove(req.fed_peer["id"], notify=False)
@@ -1598,6 +1923,14 @@ def register(app, ctx, x):
             db.set_setting("server_name", name)
         if "address" in b:
             db.set_setting("fed_address", valid_address(b["address"]))
+        if "busy" in b:
+            try:
+                n = int(b["busy"])
+            except (TypeError, ValueError):
+                n = -1
+            if not 0 <= n <= 50:
+                raise HTTPError(400, "Nombre de lectures invalide (0 à 50)")
+            db.set_setting("fed_busy", str(n))
         fed.wake.set()
         return fed.view()
 

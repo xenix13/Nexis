@@ -444,7 +444,8 @@ const metadataPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   return [
     h('section.panel', h('h2', tr('Clé TMDB et langue')),
       h('p.muted.small', tr('Affiches, résumés, distribution et titres d’épisodes proviennent de The Movie Database. Une clé gratuite s’obtient sur themoviedb.org (Paramètres → API). Sans clé, Nexis utilise les noms de fichiers, les fichiers .nfo et les images présentes dans les dossiers.')),
-      h('div.status-box', { class: s.tmdb_set ? 'status-box ok' : 'status-box' }, s.tmdb_set ? tr('Clé TMDB configurée.') : tr('Aucune clé TMDB.')),
+      h('div.status-box', { class: s.tmdb_set || s.tmdb_shared ? 'status-box ok' : 'status-box' }, s.tmdb_set ? tr('Clé TMDB configurée.')
+        : s.tmdb_shared ? tr('Pas de clé ici : celle du serveur lié « {name} » est utilisée.', { name: s.tmdb_shared }) : tr('Aucune clé TMDB.')),
       h('div.grid2', field(tr('Clé TMDB'), key), field(tr('Langue des métadonnées'), lang)),
       h('div.actions-row',
         h('button.btn.primary', { onclick: () => save({ ...(key.value.trim() ? { tmdb_key: key.value.trim() } : {}), language: lang.value }, tr('Métadonnées enregistrées')) }, tr('Enregistrer')),
@@ -637,7 +638,8 @@ async function requestsTab(body, ctx) {
     try { await put('/api/admin/requests', { auto_request: e.target.checked }); toast(tr('Enregistré'), 'ok'); } catch (err) { toast(err.message, 'bad'); }
   });
   const status = h('div.status-box', { class: cfg.enabled ? 'status-box ok' : 'status-box' },
-    cfg.enabled ? tr('Seerr est configuré : les utilisateurs peuvent demander des films et des séries.') : tr('Seerr n’est pas encore configuré.'));
+    cfg.shared_by ? tr('Pas de Seerr ici : les demandes passent par celui du serveur lié « {name} ».', { name: cfg.shared_by })
+      : cfg.enabled ? tr('Seerr est configuré : les utilisateurs peuvent demander des films et des séries.') : tr('Seerr n’est pas encore configuré.'));
   clear(body,
     h('section.panel', h('h2', tr('Seerr')),
       h('p.muted.small', tr('Seerr reçoit les demandes faites depuis l’onglet Découvrir et les transmet à Radarr / Sonarr. Une demande est faite au nom du compte Seerr portant le même nom que le compte Nexis, sinon au nom du propriétaire de la clé d’API.')),
@@ -653,11 +655,11 @@ async function requestsTab(body, ctx) {
             reload();
           } catch (e) { toast(e.message, 'bad'); reload(); }
         } }, tr('Enregistrer et tester')),
-        cfg.enabled ? h('button.btn', { onclick: async () => {
+        cfg.enabled && !cfg.shared_by ? h('button.btn', { onclick: async () => {
           try { const t = await post('/api/admin/requests/test'); toast(tr('Connecté à {title} (serveur : {media_server})', { title: t.title, media_server: t.media_server }), 'ok'); }
           catch (e) { toast(e.message, 'bad'); }
         } }, tr('Tester')) : null,
-        cfg.enabled ? h('button.btn.ghost', { onclick: async () => {
+        cfg.enabled && !cfg.shared_by ? h('button.btn.ghost', { onclick: async () => {
           await put('/api/admin/requests', { seerr_url: '', seerr_key: '' }); await refreshMe(); reload();
         } }, tr('Déconnecter')) : null),
       auto,
@@ -1013,13 +1015,15 @@ async function federationPage(body, ctx) {
   const render = (v) => {
     if (!ctx.isCurrent()) return;
     const name = h('input', { value: v.name, maxlength: 40 });
+    const busy = h('input', { type: 'number', min: 0, max: 50, value: v.busy });
     const me = h('section.panel',
       h('h2', tr('Ce serveur')),
       h('div.grid2', field(tr('Nom affiché chez les serveurs liés'), name), h('div.field',
         h('span.field-label', tr('Empreinte du certificat')), h('code.small', shortPrint(v.fingerprint)),
         h('span.field-hint', v.listening ? tr('Port des serveurs liés : {port} (TLS)', { port: v.port }) : tr('Le port des serveurs liés s’ouvrira à la première invitation.')))),
+      h('div.grid2', field(tr('Serveur occupé à partir de'), busy, tr('Lectures en cours ({n} en ce moment). Au-delà, un titre présent sur un serveur moins occupé est lu depuis celui-ci. 0 : toujours la meilleure copie.', { n: v.load })), h('div')),
       h('div.actions-row', h('button.btn', { onclick: async () => {
-        try { render(await put('/api/admin/federation', { name: name.value.trim() })); toast(tr('Enregistré'), 'ok'); }
+        try { render(await put('/api/admin/federation', { name: name.value.trim(), busy: Number(busy.value) })); toast(tr('Enregistré'), 'ok'); }
         catch (e) { toast(e.message, 'bad'); }
       } }, tr('Enregistrer'))));
     const state = (p) => (p.online === undefined || p.online === null ? h('span.tag', tr('En attente'))
@@ -1032,7 +1036,10 @@ async function federationPage(body, ctx) {
           p.address ? tr('Adresse {address}', { address: p.address }) : tr('Sans adresse : joint par le tunnel qu’il ouvre'),
           p.latency != null && p.online ? tr(' · {ms} ms', { ms: p.latency }) : '',
           p.version ? ` · Nexis ${p.version}` : '',
+          p.online && p.load != null ? plural(p.load, ' · {n} lecture en cours', ' · {n} lectures en cours') : '',
           tr(' · vu {when}', { when: since(p.last_seen) })),
+        p.online && p.shares && p.shares.length ? h('div.muted.small', tr('Prête : {list}', {
+          list: p.shares.map((k) => (k === 'tmdb' ? tr('sa clé TMDB') : tr('son Seerr (demandes)'))).join(', ') })) : null,
         p.error && !p.online ? h('div.form-error.small', p.error) : null,
         p.libraries.length ? h('div.peer-libs', p.libraries.map((l) => {
           const options = [['', tr('Nouvelle bibliothèque')], ...v.local_libraries.filter((t) => t.kind === l.kind)
@@ -1079,7 +1086,9 @@ async function federationPage(body, ctx) {
         h('li', tr('Les comptes, mots de passe, profils et accès aux bibliothèques sont les mêmes sur les deux serveurs ; une modification faite sur l’un arrive sur l’autre en moins d’une minute.')),
         h('li', tr('Un identifiant présent sur les deux serveurs au moment de les lier n’est fusionné que si vous indiquez qu’il s’agit de la même personne ; sinon, l’un des comptes est renommé.')),
         h('li', tr('Une bibliothèque reçue s’ajoute comme une nouvelle, ou se fusionne avec l’une des vôtres : un titre présent sur les deux serveurs n’apparaît qu’une fois, et les saisons et épisodes de chacun sont réunis.')),
-        h('li', tr('À la lecture d’un titre présent sur les deux serveurs, la copie est choisie toute seule : celle qui a la langue voulue si une seule l’a, sinon la meilleure qualité. Si un serveur ne répond pas, l’autre prend le relais, et les titres qu’il est seul à avoir sont masqués jusqu’à son retour.')),
+        h('li', tr('À la lecture d’un titre présent sur les deux serveurs, la copie est choisie toute seule : celle qui a la langue voulue si une seule l’a, puis celle d’un serveur qui n’est pas occupé, puis la meilleure qualité. Si un serveur ne répond pas, l’autre prend le relais, et les titres qu’il est seul à avoir sont masqués jusqu’à son retour.')),
+        h('li', tr('Un serveur sans clé TMDB ou sans Seerr se sert de ceux d’un serveur lié : métadonnées, onglet Découvrir et demandes.')),
+        h('li', tr('« Regarder ensemble » marche d’un serveur à l’autre : les groupes créés sur l’un apparaissent sur l’autre, et chacun regarde depuis le serveur auquel il est connecté.')),
         h('li', tr('Une lecture d’un titre de l’autre serveur passe par celui-ci : c’est l’autre serveur qui lit le fichier et le convertit si besoin. Le débit montant de sa connexion limite la qualité à distance.')),
         h('li', tr('À réserver à vos propres serveurs : partager des films avec un autre foyer sort du cadre de la copie privée.')))));
   };

@@ -147,7 +147,7 @@ class MetadataTask(Task):
     ]
 
     def available(self, ctx):
-        return (True, None) if ctx.db.setting("tmdb_key") else (True, "Sans clé TMDB, seuls les .nfo sont relus.")
+        return (True, None) if ctx.metadata.tmdb().enabled else (True, "Sans clé TMDB, seuls les .nfo sont relus.")
 
     def run(self, ctx, job, opts):
         db = ctx.db

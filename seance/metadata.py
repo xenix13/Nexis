@@ -169,8 +169,13 @@ class Metadata:
 
     def tmdb(self):
         db = self.ctx.db
-        return TMDB(db.setting("tmdb_key"), db.setting("meta_language", "fr-FR"),
-                    db.setting("meta_country", "FR"))
+        key, lang, country = db.setting("tmdb_key"), db.setting("meta_language", "fr-FR"), db.setting("meta_country", "FR")
+        if not key:
+            fed = getattr(self.ctx, "fed", None)
+            shared = fed.shared_tmdb(lang, country) if fed else None  # clé d'un serveur lié
+            if shared:
+                return shared
+        return TMDB(key, lang, country)
 
     def _update(self, item_id, fields):
         fields = {k: v for k, v in fields.items() if v is not None}

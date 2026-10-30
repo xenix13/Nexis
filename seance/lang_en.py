@@ -480,4 +480,13 @@ EN = {
     "Aucune copie de ce titre n'est disponible pour l'instant": "No copy of this title is available right now",
     "Fusion impossible entre une bibliothèque de films et une de séries": "A movie library and a show library cannot be merged",
     "Identifiant déjà pris : {}": "Username already taken: {}",
+    "Compte inconnu de ce serveur": "Account unknown on this server",
+    "Ce titre n'est pas disponible sur le serveur du groupe": "This title isn't available on the group's server",
+    "Ce serveur n'a plus de clé TMDB": "This server no longer has a TMDB key",
+    "Requête Seerr non autorisée entre serveurs liés": "Seerr request not allowed between linked servers",
+    "Ce serveur n'a plus de Seerr configuré": "This server no longer has Seerr configured",
+    "Nombre de lectures invalide (0 à 50)": "Invalid number of streams (0 to 50)",
+    "Groupe indisponible": "Group unavailable",
+    "Requête TMDB invalide": "Invalid TMDB request",
+    "Requête Seerr invalide": "Invalid Seerr request",
 }

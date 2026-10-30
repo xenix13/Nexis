@@ -93,6 +93,8 @@ Les actions tierces (`docker/build-push-action@v6`, `gradle/actions/setup-gradle
 - **Surface.** Le port ne sert ni l'interface ni les routes des comptes. Au nom d'un compte, un serveur lié n'atteint que la lecture : lancer, lire, sous-titres, aperçus, progression. Toute autre route est refusée (403), et les routes entre serveurs sont introuvables sur le port de l'interface. Test : `tests/test_federation.py`.
 - **Confiance.** Les empreintes des mots de passe, les secrets de double authentification et les codes de secours sont répliqués sur chaque serveur lié : la compromission de l'un expose les comptes de tous. **Ne lier que des serveurs dont vous êtes l'administrateur.**
 - **Secrets.** La clé privée est dans `/var/lib/seance/federation` (droits 600) et le secret partagé dans la base (dossier en 700). Délier un serveur supprime son secret et ses bibliothèques recopiées.
+- **Services prêtés (3.24.0).** Un serveur qui a une clé TMDB ou Seerr les prête aux serveurs liés sans transmettre la clé : il relaie lui-même les requêtes. TMDB : chemins de lecture seulement (`/movie`, `/tv`, `/search`, `/discover`…, sans `..`). Seerr : statuts (`GET /media`), comptes (`GET /user`) et nouvelles demandes (`POST /request`) ; toute autre route est refusée (403), notamment les réglages de Seerr. Un serveur lié peut faire une demande au nom de n'importe quel compte Seerr, comme le ferait le serveur lui-même.
+- **Regarder ensemble entre serveurs (3.24.0).** Les routes `/fed/together/…` agissent au nom du compte (répliqué) indiqué par le serveur lié. Elles ne donnent accès qu'aux groupes, et l'accès au titre (bibliothèques, restriction d'âge) est vérifié sur le serveur du groupe.
 
 ## Recommandations par priorité
 
