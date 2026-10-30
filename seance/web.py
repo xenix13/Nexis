@@ -37,6 +37,8 @@ class Request:
         self.client_ip = client_ip
         self.user = None
         self.session_hash = None
+        self.fed_peer = None       # serveur lié qui envoie la requête (port des serveurs liés)
+        self.fed_listener = False
         self.params = {}
         self._body = None
         self.set_cookies = []
@@ -104,6 +106,7 @@ class Response:
         self.stream = stream
         self.length = length
         self.on_close = on_close
+        self.hijacked = False  # la connexion a été reprise par la route (tunnel d'un serveur lié) : rien à écrire
 
 
 def json_response(data, status=200):
@@ -133,7 +136,7 @@ class App:
         return deco
 
     def dispatch(self, req):
-        if req.path.startswith("/api/") or req.path in self.plain_paths:
+        if req.path.startswith(("/api/", "/fed/")) or req.path in self.plain_paths:
             allowed = False
             for method, regex, fn, opts in self.routes:
                 m = regex.match(req.path)
@@ -144,7 +147,9 @@ class App:
                     continue
                 req.params = m.groupdict()
                 for hook in self.before:
-                    hook(req, opts)
+                    early = hook(req, opts)
+                    if isinstance(early, Response):
+                        return early  # réponse donnée d'avance (élément d'un serveur lié : relayée)
                 result = fn(req)
                 if isinstance(result, Response):
                     return result
@@ -326,12 +331,19 @@ mimetypes.add_type("font/woff", ".woff")
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 
 
-def make_handler(app, trust_proxy=False, hsts=False):
+def make_handler(app, trust_proxy=False, hsts=False, fed=None):
+    """fed : la fédération, pour le port réservé aux serveurs liés (TLS, chaque requête signée par le serveur)."""
     class Handler(http.server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
         server_version = "Seance"
         sys_version = ""
         timeout = IDLE_TIMEOUT
+
+        def setup(self):
+            if fed is not None and hasattr(self.request, "do_handshake"):
+                self.request.settimeout(30)
+                self.request.do_handshake()  # ici plutôt qu'à l'acceptation : un client lent ne bloque pas les autres
+            super().setup()
 
         def log_message(self, fmt, *args):
             log.debug("%s - %s", self.address_string(), fmt % args)
@@ -353,6 +365,15 @@ def make_handler(app, trust_proxy=False, hsts=False):
             try:
                 if app.begin:
                     app.begin(req)
+                if fed is not None:
+                    # port des serveurs liés : l'API seulement, et uniquement pour un serveur jumelé
+                    # (sauf la demande d'adhésion, qui présente le jeton de l'invitation)
+                    req.fed_listener = True
+                    if not parsed.path.startswith(("/api/", "/fed/")):
+                        raise HTTPError(404, "Introuvable")
+                    req.fed_peer = fed.authenticate(self.headers)
+                    if not req.fed_peer and parsed.path not in ("/fed/join", "/fed/join/preview"):
+                        raise HTTPError(401, "Serveur non reconnu")
                 resp = app.dispatch(req)
             except HTTPError as e:
                 payload = {"error": app.translate(e.message) if app.translate else e.message}
@@ -384,6 +405,9 @@ def make_handler(app, trust_proxy=False, hsts=False):
                         pass
 
         def _write(self, resp, req, head=False):
+            if resp.hijacked:
+                self.close_connection = True
+                return
             # Drain an unread request body so keep-alive stays in sync.
             if req._body is None and req.method in ("POST", "PUT", "DELETE"):
                 try:
@@ -470,4 +494,25 @@ class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
         import sys
         if isinstance(sys.exc_info()[1], (ConnectionResetError, BrokenPipeError, TimeoutError)):
             return  # le navigateur a coupé la connexion (saut, changement de page) : normal
+        super().handle_error(request, client_address)
+
+
+class TLSServer(Server):
+    """Port des serveurs liés : TLS avec le certificat de ce serveur (épinglé par les serveurs jumelés)."""
+    max_connections = 128
+
+    def __init__(self, address, handler, ssl_context):
+        self.ssl_context = ssl_context
+        super().__init__(address, handler)
+
+    def get_request(self):
+        sock, addr = self.socket.accept()
+        return self.ssl_context.wrap_socket(sock, server_side=True, do_handshake_on_connect=False), addr
+
+    def handle_error(self, request, client_address):
+        import ssl
+        import sys
+        if isinstance(sys.exc_info()[1], (ssl.SSLError, OSError)):
+            log.debug("Connexion d'un serveur lié refusée (%s) : %s", client_address[0], sys.exc_info()[1])
+            return
         super().handle_error(request, client_address)

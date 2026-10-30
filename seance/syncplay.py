@@ -10,9 +10,14 @@ attend que chacun ait assez de vidéo en réserve, puis repart en même temps.
 
 Les événements arrivent aux navigateurs par « Server-Sent Events » (une connexion HTTP ouverte), sans
 dépendance. Les groupes vivent en mémoire : un redémarrage du serveur les dissout.
+
+Serveurs liés : un groupe vit sur le serveur de la personne qui l'a créé. Les autres serveurs liés le listent et
+y relaient les commandes et les événements de leurs utilisateurs, en traduisant le titre (chaque serveur a ses
+numéros), les comptes (répliqués, mais numérotés différemment) et l'horloge.
 """
 import json
 import logging
+import re
 import queue
 import secrets
 import threading
@@ -26,6 +31,7 @@ WAIT_TIMEOUT = 12        # s : on repart sans le membre trop lent
 RELOAD_TIMEOUT = 60      # s : un membre qui change de langue ou de qualité (extraction, relance de ffmpeg)
 GONE_AFTER = 40          # s sans connexion : le membre a quitté
 EMPTY_AFTER = 120        # s : groupe vide supprimé
+REMOTE_PRESENT_FOR = 45  # s : « Nexis ouvert » annoncé par un serveur lié (renouvelé toutes les 15 s)
 PRESENT_FOR = 1800       # s : Nexis ouvert ailleurs garde membre d'un groupe, pas plus (salon oublié sur une TV)
 MAX_STREAMS_PER_USER = 6  # connexions d'événements ouvertes en même temps par une personne (onglets, appareils)
 FEED_PING = 10           # s : ping de la liste en direct (détecte aussi un onglet fermé ou une session finie)
@@ -51,6 +57,10 @@ def _translated(data):
 class Member:
     def __init__(self, user):
         self.uid = user["id"]
+        try:
+            self.guid = user["uid"]  # identifiant du compte commun aux serveurs liés
+        except (KeyError, IndexError):
+            self.guid = None
         self.name = user["display_name"]
         self.color = user["avatar_color"]
         ver = user.get("avatar_ver") if hasattr(user, "get") else None
@@ -96,7 +106,7 @@ class Group:
 
     def members_event(self):
         return {"type": "members", "server_now": now_ms(), "host_only": self.host_only, "name": self.name,
-                "members": [{"id": m.uid, "name": m.name, "color": m.color, "avatar": m.avatar, "ready": m.ready, "host": m.uid == self.owner,
+                "members": [{"id": m.uid, "uid": m.guid, "name": m.name, "color": m.color, "avatar": m.avatar, "ready": m.ready, "host": m.uid == self.owner,
                              "online": m.connections > 0 or m.uid in self.present()} for m in self.members.values()]}
 
 
@@ -106,10 +116,21 @@ class Groups:
         self.lock = threading.RLock()
         self.groups = {}
         self.watchers = {}  # file d'attente -> id de la personne (liste des groupes en direct)
+        self.remote_present = {}  # id de la personne -> échéance (Nexis ouvert sur un serveur lié)
 
     # ------------------------------------------------------------ liste en direct
     def present(self):
-        return set(self.watchers.values())
+        now = time.time()
+        return set(self.watchers.values()) | {u for u, t in list(self.remote_present.items()) if t > now}
+
+    def set_remote_present(self, ids):
+        until = time.time() + REMOTE_PRESENT_FOR
+        with self.lock:
+            for u in ids:
+                self.remote_present[u] = until
+            now = time.time()
+            for u in [u for u, t in self.remote_present.items() if t <= now]:
+                self.remote_present.pop(u, None)
 
     def watch(self, user):
         q = queue.Queue(maxsize=1)
@@ -129,7 +150,14 @@ class Groups:
                     m.seen = now
 
     def _changed(self):
-        """La liste des groupes a changé : on réveille les listes ouvertes (une notification suffit)."""
+        """La liste des groupes a changé : on réveille les listes ouvertes (une notification suffit), ici et sur
+        les serveurs liés."""
+        self.wake()
+        fed = getattr(self.ctx, "fed", None)
+        if fed:
+            fed.together_changed()
+
+    def wake(self):
         for q in list(self.watchers):
             try:
                 q.put_nowait(1)
@@ -388,7 +416,9 @@ class Groups:
 def register(app, ctx, x):
     from .web import HTTPError, Response
     db = ctx.db
+    from .federation import FedError
     groups = ctx.together
+    fed = ctx.fed
     GID = r"(?P<gid>[A-Za-z0-9_-]{6,12})"
 
     def item_card(user, item_id):
@@ -412,7 +442,7 @@ def register(app, ctx, x):
             raise HTTPError(404, "Ce groupe n'existe plus")
         return g
 
-    def listing_for(user):
+    def listing_for(user, max_age=3):
         out = []
         for g in groups.listing():
             g = dict(g)
@@ -420,11 +450,44 @@ def register(app, ctx, x):
             g["member"] = user["id"] in g.pop("member_ids")
             g["is_host"] = g.pop("owner_id") == user["id"]
             out.append(g)
+        # groupes animés sur un serveur lié (chacun ses numéros de titres : traduits)
+        uid = user["uid"]
+        for peer, remote in fed.remote_groups(max_age):
+            for g in remote:
+                out.append({"id": g["id"], "name": str(g.get("name") or ""), "owner": str(g.get("owner") or ""),
+                            "playing": bool(g.get("playing")), "host_only": bool(g.get("host_only")),
+                            "members": [str(n) for n in g.get("members") or []],
+                            "item": item_card(user, fed.resolve_ref(g.get("item_ref"))),
+                            "member": uid in (g.get("member_uids") or []), "is_host": g.get("owner_uid") == uid})
         return out
+
+    # ------------------------------------------------------------ groupe animé par un serveur lié
+    def remote_peer(gid):
+        """Serveur lié qui anime ce groupe (None : groupe d'ici, ou inconnu -> 404 plus loin)."""
+        if groups.get(gid):
+            return None
+        return fed.group_peer(gid)
+
+    def remote_call(peer, req, method, path, body=None):
+        db.release()
+        try:
+            status, data = fed.call(peer, method, path, body, user=req.user, timeout=20)
+        except FedError as e:
+            raise HTTPError(502, str(e))
+        if status != 200:
+            if status == 404:
+                fed.forget_groups(peer["id"])
+            raise HTTPError(status, (data.get("error") if isinstance(data, dict) else None) or "Groupe indisponible")
+        return data
+
+    def remote_view(peer, user, v):
+        v = fed.to_local(peer["id"], v)
+        v["item"] = item_card(user, v.get("item_id"))
+        return v
 
     @app.route("GET", "/api/together")
     def together_list(req):
-        return listing_for(req.user)
+        return listing_for(req.user, max_age=0)
 
     @app.route("GET", "/api/together/feed")
     def together_feed(req):
@@ -498,11 +561,18 @@ def register(app, ctx, x):
 
     @app.route("GET", f"/api/together/{GID}")
     def together_get(req):
+        peer = remote_peer(req.params["gid"])
+        if peer:
+            return remote_view(peer, req.user, remote_call(peer, req, "GET", f"/fed/together/{req.params['gid']}"))
         return view(group_or_404(req.params["gid"]), req.user)
 
     @app.route("PUT", f"/api/together/{GID}")
     def together_update(req):
         b = req.json()
+        peer = remote_peer(req.params["gid"])
+        if peer:
+            return remote_view(peer, req.user, remote_call(peer, req, "PUT", f"/fed/together/{req.params['gid']}",
+                                                           {"name": b.get("name"), "host_only": b.get("host_only")}))
         try:
             g = groups.update(req.params["gid"], req.user, str(b.get("name") or "").strip() or None, b.get("host_only"))
         except PermissionError as e:
@@ -513,6 +583,9 @@ def register(app, ctx, x):
 
     @app.route("POST", f"/api/together/{GID}/join")
     def together_join(req):
+        peer = remote_peer(req.params["gid"])
+        if peer:
+            return remote_view(peer, req.user, remote_call(peer, req, "POST", f"/fed/together/{req.params['gid']}/join", {}))
         g = groups.join(req.params["gid"], req.user)
         if not g:
             raise HTTPError(404, "Ce groupe n'existe plus")
@@ -520,6 +593,10 @@ def register(app, ctx, x):
 
     @app.route("POST", f"/api/together/{GID}/leave")
     def together_leave(req):
+        peer = remote_peer(req.params["gid"])
+        if peer:
+            remote_call(peer, req, "POST", f"/fed/together/{req.params['gid']}/leave", {})
+            return {"ok": True}
         groups.leave(req.params["gid"], req.user)
         return {"ok": True}
 
@@ -537,6 +614,12 @@ def register(app, ctx, x):
         pos = b.get("position")
         if pos is not None and not isinstance(pos, (int, float)):
             raise HTTPError(400, "Position invalide")
+        peer = remote_peer(req.params["gid"])
+        if peer:
+            fwd = {"action": action, "position": pos, "reason": b.get("reason")}
+            if action == "item":
+                fwd["item_ref"] = fed.ref_of(item_id)
+            return fed.to_local(peer["id"], remote_call(peer, req, "POST", f"/fed/together/{req.params['gid']}/cmd", fwd))
         try:
             g = groups.command(req.params["gid"], req.user, action, pos, item_id,
                                "reload" if b.get("reason") == "reload" else None)
@@ -550,6 +633,9 @@ def register(app, ctx, x):
 
     @app.route("GET", f"/api/together/{GID}/events")
     def together_events(req):
+        peer = remote_peer(req.params["gid"])
+        if peer:
+            return remote_events(peer, req)
         g = group_or_404(req.params["gid"])
         user = dict(req.user)
         try:
@@ -575,6 +661,186 @@ def register(app, ctx, x):
                     data = _translated(data)
                 yield data
                 if data.startswith(b'data: {"type":"closed"'):
+                    return
+
+        def close():
+            closed.set()
+            groups.unsubscribe(g, user, q)
+        return Response(stream=gen(), content_type="text/event-stream; charset=utf-8",
+                        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"}, on_close=close)
+
+    def remote_events(peer, req):
+        """Événements d'un groupe animé par un serveur lié, relayés et traduits (titre, comptes, horloge)."""
+        db.release()
+        try:
+            resp, close = fed.request(peer, "GET", f"/fed/together/{req.params['gid']}/events", user=req.user, timeout=60)
+        except FedError as e:
+            raise HTTPError(502, str(e))
+        if resp.status != 200:
+            close()
+            raise HTTPError(404 if resp.status == 404 else 502, "Ce groupe n'existe plus")
+
+        def gen():
+            yield b"retry: 3000\n\n"
+            try:
+                while True:
+                    line = resp.readline(1024 * 1024)
+                    if not line:
+                        yield b'data: {"type":"closed"}\n\n'
+                        return
+                    if not line.startswith(b"data: "):
+                        if line.startswith(b":"):
+                            yield b": ping\n\n"
+                        continue
+                    try:
+                        ev = json.loads(line[6:])
+                        ev = fed.to_local(peer["id"], ev)
+                    except ValueError:
+                        continue
+                    finally:
+                        db.release()
+                    data = ("data: " + json.dumps(ev, ensure_ascii=False, separators=(",", ":")) + "\n\n").encode()
+                    if ev.get("notice") or ev.get("text"):
+                        data = _translated(data)
+                    yield data
+                    if ev.get("type") == "closed":
+                        return
+            except OSError:
+                yield b'data: {"type":"closed"}\n\n'
+        return Response(stream=gen(), content_type="text/event-stream; charset=utf-8",
+                        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"}, on_close=close)
+
+    # ------------------------------------------------------------ pour les serveurs liés (port des serveurs liés)
+    def peer_user(req):
+        u = fed.user_for(req)
+        if not u:
+            raise HTTPError(403, "Compte inconnu de ce serveur")
+        return u
+
+    def uid_of(user_id):
+        return db.scalar("SELECT uid FROM users WHERE id=?", (user_id,))
+
+    def raw_state(g, ev):
+        """État ou événement d'un de nos groupes, tel qu'un serveur lié peut le traduire chez lui."""
+        if "item_id" in ev:
+            ev["item_ref"] = fed.ref_of(g.item_id) if g.item_id else None
+            ev.pop("item_id")
+        if "waiting_ids" in ev:
+            ev["waiting_uids"] = [g.members[u].guid if u in g.members else uid_of(u) for u in ev.pop("waiting_ids")]
+        return ev
+
+    def raw_view(g, user):
+        v = view(g, user)
+        v.pop("item", None)
+        return raw_state(g, v)
+
+    @app.route("GET", "/fed/together", auth="peer")
+    def fed_together(req):
+        present = [u for u in (req.arg("present") or "").split(",") if re.match(r"^[0-9a-f]{32}$", u)][:500]
+        if present:
+            ids = [r["id"] for r in db.all(f"SELECT id FROM users WHERE uid IN ({','.join('?' * len(present))})", present)]
+            groups.set_remote_present(ids)
+        out = []
+        for g in groups.listing():
+            gg = groups.get(g["id"])
+            members = list(gg.members.values()) if gg else []
+            out.append({"id": g["id"], "name": g["name"], "owner": g["owner"], "owner_uid": uid_of(g["owner_id"]),
+                        "playing": g["playing"], "host_only": g["host_only"], "members": g["members"],
+                        "member_uids": [m.guid for m in members if m.guid],
+                        "item_ref": fed.ref_of(g["item_id"]) if g["item_id"] else None})
+        return {"groups": out}
+
+    @app.route("POST", "/fed/together/changed", auth="peer")
+    def fed_together_changed(req):
+        fed.forget_groups(req.fed_peer["id"])
+        groups.wake()
+        return {"ok": True}
+
+    @app.route("GET", f"/fed/together/{GID}", auth="peer")
+    def fed_together_get(req):
+        return raw_view(group_or_404(req.params["gid"]), peer_user(req))
+
+    @app.route("PUT", f"/fed/together/{GID}", auth="peer")
+    def fed_together_update(req):
+        user, b = peer_user(req), req.json()
+        try:
+            g = groups.update(req.params["gid"], user, str(b.get("name") or "").strip() or None, b.get("host_only"))
+        except PermissionError as e:
+            raise HTTPError(403, str(e))
+        if not g:
+            raise HTTPError(404, "Ce groupe n'existe plus")
+        return raw_view(g, user)
+
+    @app.route("POST", f"/fed/together/{GID}/join", auth="peer")
+    def fed_together_join(req):
+        user = peer_user(req)
+        g = groups.join(req.params["gid"], user)
+        if not g:
+            raise HTTPError(404, "Ce groupe n'existe plus")
+        return raw_view(g, user)
+
+    @app.route("POST", f"/fed/together/{GID}/leave", auth="peer")
+    def fed_together_leave(req):
+        groups.leave(req.params["gid"], peer_user(req))
+        return {"ok": True}
+
+    @app.route("POST", f"/fed/together/{GID}/cmd", auth="peer")
+    def fed_together_cmd(req):
+        user, b = peer_user(req), req.json()
+        action, item_id = b.get("action"), None
+        if action == "item":
+            item_id = fed.resolve_ref(b.get("item_ref"))
+            if not item_id:
+                raise HTTPError(404, "Ce titre n'est pas disponible sur le serveur du groupe")
+            r = x.require_item(user, str(item_id))
+            if r["type"] not in ("movie", "episode", "extra"):
+                raise HTTPError(400, "Élément non lisible")
+        pos = b.get("position")
+        if pos is not None and not isinstance(pos, (int, float)):
+            raise HTTPError(400, "Position invalide")
+        try:
+            g = groups.command(req.params["gid"], user, action, pos, item_id,
+                               "reload" if b.get("reason") == "reload" else None)
+        except LookupError as e:
+            raise HTTPError(404, str(e))
+        except PermissionError as e:
+            raise HTTPError(403, str(e))
+        except ValueError as e:
+            raise HTTPError(400, str(e))
+        return raw_state(g, g.state())
+
+    @app.route("GET", f"/fed/together/{GID}/events", auth="peer")
+    def fed_together_events(req):
+        g = group_or_404(req.params["gid"])
+        user = dict(peer_user(req))
+        try:
+            q = groups.subscribe(g, user)
+        except PermissionError as e:
+            raise HTTPError(403, str(e))
+        except OverflowError as e:
+            raise HTTPError(429, str(e))
+        db.release()
+        closed = threading.Event()
+
+        def gen():
+            while not closed.is_set():
+                try:
+                    data = q.get(timeout=15)
+                except queue.Empty:
+                    if groups.get(g.id) is not g:
+                        yield b'data: {"type":"closed"}\n\n'
+                        return
+                    yield b": ping\n\n"
+                    continue
+                try:
+                    ev = json.loads(data[len(b"data: "):])
+                    ev = raw_state(g, ev)
+                except ValueError:
+                    continue
+                finally:
+                    db.release()
+                yield ("data: " + json.dumps(ev, ensure_ascii=False, separators=(",", ":")) + "\n\n").encode()
+                if ev.get("type") == "closed":
                     return
 
         def close():

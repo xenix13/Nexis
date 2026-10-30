@@ -19,7 +19,7 @@ import java.util.List;
 /** Accueil : « Reprendre », une rangée par bibliothèque (derniers ajouts) et « Ma liste » si elle n'est pas vide. */
 final class HomeTab extends BrowseScreen.Tab {
     private ScrollView scroll;
-    private LinearLayout list;
+    private Nav.Column list;
     private TextView message;
     private final List<RecyclerView> rows = new ArrayList<>();
     private final List<String> keys = new ArrayList<>();
@@ -36,7 +36,7 @@ final class HomeTab extends BrowseScreen.Tab {
         scroll.setClipChildren(false);
         scroll.setVerticalScrollBarEnabled(false);
         scroll.setSmoothScrollingEnabled(true);
-        list = Ui.column(act);
+        list = new Nav.Column(act);  // haut / bas : de rangée en rangée, en retrouvant la carte quittée
         list.setClipChildren(false);
         list.setPadding(0, dp(4), 0, dp(48));
         scroll.addView(list);
@@ -135,8 +135,6 @@ final class HomeTab extends BrowseScreen.Tab {
 
     @Override
     View entry() {
-        if (rows.isEmpty()) return null;
-        RecyclerView r = rows.get(0);
-        return r.getChildCount() > 0 ? r.getChildAt(0) : null;
+        return list == null || list.getChildCount() == 0 ? null : list.entryOf(list.getChildAt(0));
     }
 }

@@ -4,7 +4,6 @@ import android.graphics.Rect;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -18,15 +17,11 @@ import org.json.JSONObject;
 
 /** Une bibliothèque : toutes les affiches en grille, chargées par pages au fil du défilement. */
 final class LibraryTab extends BrowseScreen.Tab {
-    private static final String[] SORT_KEYS = {"title", "added", "year", "rating"};
-    private static final String[] SORT_LABELS = {"Titre", "Ajouts récents", "Année", "Note"};
 
     private final JSONObject lib;
     private RecyclerView grid;
     private Cards.Adapter adapter;
     private TextView count, message;
-    private Button sort;
-    private int sortIndex;
     private int total = -1;
     private boolean loading;
     private int generation;
@@ -34,8 +29,6 @@ final class LibraryTab extends BrowseScreen.Tab {
     LibraryTab(BrowseScreen b, JSONObject lib) {
         super(b);
         this.lib = lib;
-        String saved = Api.store().getString("sort:" + lib.optString("id"), "title");
-        for (int i = 0; i < SORT_KEYS.length; i++) if (SORT_KEYS[i].equals(saved)) sortIndex = i;
     }
 
     @Override
@@ -49,11 +42,7 @@ final class LibraryTab extends BrowseScreen.Tab {
         count = Ui.text(act, "", 16, Ui.MUTED);
         count.setPadding(dp(14), 0, 0, 0);
         head.addView(count, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        sort = Ui.button(act, Tr.t("Trier : ") + Tr.t(SORT_LABELS[sortIndex]), false);
-        sort.setTextSize(15);
-        sort.setOnClickListener(v -> chooseSort());
-        head.addView(sort);
-        root.addView(head);
+        root.addView(head);  // pas de bouton ici : en remontant de la grille, on arrive directement sur la barre
 
         FrameLayout body = new FrameLayout(act);
         body.setClipChildren(false);
@@ -104,7 +93,7 @@ final class LibraryTab extends BrowseScreen.Tab {
         loading = true;
         int gen = generation;
         int start = adapter.items.size();
-        Api.obj("/api/libraries/" + lib.optString("id") + "/items?start=" + start + "&size=100&sort=" + SORT_KEYS[sortIndex], r -> {
+        Api.obj("/api/libraries/" + lib.optString("id") + "/items?start=" + start + "&size=100&sort=title", r -> {
             if (gen != generation) return;
             loading = false;
             total = r.optInt("total", 0);
@@ -124,7 +113,7 @@ final class LibraryTab extends BrowseScreen.Tab {
         if (adapter.items.isEmpty()) return;
         int gen = generation;
         int size = Math.min(200, adapter.items.size());
-        Api.obj("/api/libraries/" + lib.optString("id") + "/items?start=0&size=" + size + "&sort=" + SORT_KEYS[sortIndex], r -> {
+        Api.obj("/api/libraries/" + lib.optString("id") + "/items?start=0&size=" + size + "&sort=title", r -> {
             if (gen != generation) return;
             JSONArray items = r.optJSONArray("items");
             if (items == null) return;
@@ -138,19 +127,8 @@ final class LibraryTab extends BrowseScreen.Tab {
         }, null);
     }
 
-    private void chooseSort() {
-        Ui.dialog(act).setTitle(Tr.t("Trier par")).setSingleChoiceItems(Tr.all(SORT_LABELS), sortIndex, (d, which) -> {
-            d.dismiss();
-            if (which == sortIndex) return;
-            sortIndex = which;
-            Api.store().edit().putString("sort:" + lib.optString("id"), SORT_KEYS[which]).apply();
-            sort.setText(Tr.t("Trier : ") + Tr.t(SORT_LABELS[which]));
-            reload();
-        }).show();
-    }
-
     @Override
     View entry() {
-        return grid != null && grid.getChildCount() > 0 ? grid.getChildAt(0) : sort;
+        return grid != null && grid.getChildCount() > 0 ? grid.getChildAt(0) : null;
     }
 }

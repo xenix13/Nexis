@@ -21,7 +21,7 @@ fi
 
 echo "==> Paquets système"
 apt-get update -qq
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 ca-certificates curl git ffmpeg cifs-utils smbclient >/dev/null
+DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 ca-certificates curl git ffmpeg cifs-utils smbclient openssl >/dev/null
 echo "   $(ffmpeg -version | head -1 | cut -d' ' -f1-3)"
 
 PYV=$(python3 -c 'import sys; print("%d%02d" % sys.version_info[:2])')

@@ -25,6 +25,7 @@ Serveur multimédia auto-hébergé pour films, séries et animes. Nexis analyse 
 | **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou externes : `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. ASS rendus par libass (positionnement, karaoké, polices jointes), PGS rendus par le navigateur, VobSub incrustés |
 | **Applications** | Web app installable (Windows, macOS, Linux, Android, iPhone, iPad), téléchargements hors ligne, application Android TV native |
 | **Paramètres** | Un seul espace, organisé en Mon compte, Serveur, Médiathèque et Lecture, avec recherche |
+| **Serveurs liés** | Plusieurs serveurs Nexis reliés par une liaison chiffrée qui leur est propre : comptes communs, bibliothèques de chacun visibles et lisibles depuis l'autre (ajoutées ou fusionnées : un titre une seule fois, meilleure copie choisie automatiquement, serveur le moins occupé en priorité), progression partagée, clé TMDB et Seerr partagés, Regarder ensemble d'un serveur à l'autre. Un seul des deux doit être joignable |
 | **Langues** | Interface en **français** ou en **anglais**, au choix de chaque utilisateur ; langue par défaut des nouveaux comptes choisie par l'administrateur. Messages du serveur et appli TV dans la même langue |
 
 ### Choix du mode de lecture
@@ -121,6 +122,8 @@ apt installe également ffmpeg, Python et les outils SMB. Le paquet prépare le 
 ### Docker
 
 L'image `ghcr.io/xenix13/nexis` (amd64 et arm64) est publiée à chaque version. Exemple complet : [`docker-compose.yml`](docker-compose.yml).
+
+- **Tags** : `latest` pour la dernière version publiée (branche `main`). `test` est reconstruit à chaque mise à jour de la branche `test` : c'est l'image du `docker-compose.yml` de cette branche.
 
 ```bash
 mkdir -p data && chown 1000:1000 data     # Nexis tourne sous l'uid 1000 dans le conteneur
@@ -293,10 +296,11 @@ L'interface se parcourt entièrement sans souris.
 
 Application native pour Android TV, Google TV et boîtiers (Shield, Chromecast avec Google TV). Au premier lancement, elle demande l'adresse du serveur (`https://nexis.mondomaine.fr` ou `192.168.1.20:8420`) et vérifie qu'il s'agit bien de Nexis. On se connecte ensuite (avec le code de double authentification si le compte en a une), puis on choisit son profil.
 
-- **Navigation** : une barre en haut réduite à l'essentiel, avec **Accueil** (Reprendre, une rangée par bibliothèque, Ma liste si elle n'est pas vide), une entrée par **bibliothèque** (Films, Séries, Animes…) et **Plus**, qui regroupe **Recherche**, **TV en direct** et **Paramètres**. Affiches et textes sont agrandis pour la lecture à distance ; la fiche d'un titre ne garde que **Lecture** / **Reprendre**.
+- **Navigation** : une barre en haut avec **Accueil** (Reprendre, une rangée par bibliothèque, Ma liste si elle n'est pas vide), une entrée par **bibliothèque** (Films, Séries, Animes…), puis **Rechercher**, **TV en direct** (si elle est configurée) et **Paramètres**. Affiches et textes sont agrandis pour la lecture à distance ; la fiche d'un titre ne garde que **Lecture** / **Reprendre**, et pour une série le choix de la saison et de l'épisode.
+- **Déplacements à la télécommande** : par rangées, comme sur les applis de TV. Gauche et droite restent dans la rangée (au bout, le curseur ne saute plus dans la rangée voisine) ; haut et bas passent à la rangée voisine et retrouvent la carte qu'on y avait quittée. Sur la fiche d'une série, remonter des épisodes ramène sur la saison ouverte, sans en ouvrir une autre.
 - **Lecteur natif (ExoPlayer)** : les MKV, le HEVC et le 10 bits sont lus directement quand la TV sait les décoder ; le son multicanal (Dolby Digital, Dolby Digital+, DTS, TrueHD) est transmis tel quel à l'ampli ou à la barre de son quand la sortie HDMI l'accepte. Le serveur ne convertit que ce que l'appareil ne sait pas lire.
 - **Attente au lancement** : tant que l'image n'apparaît pas, le lecteur indique ce qui se passe (lecture directe, flux préparé par le serveur, conversion et sa raison) et depuis combien de secondes. Une lecture directe qui ne démarre pas au bout de 20 s bascule d'elle-même sur un flux préparé par le serveur ; après 60 s, un message propose de réessayer. En cas d'erreur, la cause technique est affichée.
-- **Paramètres** : langue audio, sous-titres (quand et dans quelle langue), qualité, épisode suivant automatique, passage des génériques, changement de profil, déconnexion, changement de serveur.
+- **Paramètres** : réduits au nécessaire : changer de profil, langue de l'interface, se déconnecter, changer de serveur. Les réglages de lecture (langues audio et sous-titres, qualité, épisode suivant, génériques) suivent le compte : ils se changent depuis le téléphone ou l'ordinateur et valent aussi sur la TV.
 - **Télécommande** : flèches et OK pour naviguer, **Retour** pour revenir en arrière. Dans le lecteur : OK lecture/pause, gauche/droite pour reculer ou avancer (plus vite en restant appuyé), haut/bas pour les commandes (audio et sous-titres, épisode suivant). En TV en direct : haut/bas ou CH+/CH- pour changer de chaîne.
 - **Installation avec Downloader** :
   1. Installer **Downloader** (AFTVnews) depuis le Play Store.
@@ -324,6 +328,52 @@ films.mondomaine.fr {
 ```
 
 Avec nginx, ajouter `proxy_read_timeout 120s;` et `proxy_buffering off;` (nécessaire aux mises à jour en direct de « Regarder ensemble »).
+
+## Serveurs liés
+
+Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et une résidence secondaire, peuvent être reliés dans *Paramètres → Serveurs liés* :
+
+1. Sur le serveur que l'autre peut joindre, **Inviter un serveur**. Vérifier l'adresse proposée (IP ou nom, suivi du port **8421**), puis copier l'invitation `NEXIS1-…`.
+2. Sur l'autre serveur, **Rejoindre un serveur** et coller l'invitation, valable 15 minutes et une seule fois.
+
+**Ce qui est partagé**
+
+- **Comptes.** Ils sont communs : mots de passe, double authentification, profils, PIN, contrôle parental, langue, photo et accès aux bibliothèques. Une modification sur l'un arrive sur l'autre en moins d'une minute ; la plus récente l'emporte et une suppression est définitive. Un identifiant présent sur les deux serveurs au moment du jumelage devient un seul compte, avec les données du serveur qui a créé l'invitation. Les sessions ne sont pas partagées : il faut se connecter une fois sur chaque serveur.
+- **Bibliothèques.** Chaque bibliothèque reçue de l'autre serveur se règle dans *Serveurs liés* :
+  - **Nouvelle bibliothèque** (par défaut) : elle s'ajoute comme une bibliothèque de plus, sous son nom, avec un petit badge du serveur sur sa page ;
+  - **Fusionner avec « … »** : ses titres rejoignent l'une de vos bibliothèques du même type. Un film ou une série présent sur les deux serveurs n'apparaît qu'une fois (même identifiant TMDB, IMDb ou TVDB, sinon même titre et même année), et les saisons et épisodes de chacun sont réunis sous la même série.
+  - Fiches et affiches viennent du serveur d'origine, et c'est lui qui scanne ses dossiers et cherche ses métadonnées.
+- **Lecture.** Un titre de l'autre serveur se lit depuis celui-ci : l'autre serveur lit le fichier, le convertit si besoin et le transmet par la liaison. Sous-titres, aperçus, chapitres et « Passer l'intro » fonctionnent comme pour un titre local. La position de lecture et « vu » sont renvoyés au serveur d'origine et reviennent dans l'autre sens. Les **téléchargements hors ligne** marchent aussi : le serveur qui a le fichier prépare le MP4, transmis par la liaison (un titre présent sur les deux serveurs se télécharge depuis celui auquel l'appareil est connecté).
+- **Titre présent sur les deux serveurs.** La copie est choisie automatiquement, sans rien demander :
+  1. celle qui a la langue audio voulue (choisie pour ce titre ou dans *Lecture*), ou les sous-titres demandés, si une seule l'a ;
+  2. puis celle d'un serveur qui n'est pas **occupé** : par défaut, 3 lectures en cours ou plus (réglable dans *Serveurs liés → Ce serveur*, 0 pour ne jamais en tenir compte) ;
+  3. puis la meilleure qualité (définition, puis débit) ;
+  4. à égalité, celle du serveur le moins occupé, puis celle de ce serveur.
+
+  Un saut ou un changement de piste garde la même copie. Si le serveur choisi ne répond pas, l'autre copie prend le relais. La répartition soulage le processeur (conversion) et les disques du serveur occupé ; le flux transite quand même par le serveur auquel l'appareil est connecté.
+- **Clé TMDB et Seerr.** Un serveur qui n'a pas de clé TMDB se sert de celle d'un serveur lié : métadonnées de ses propres titres (cherchées dès le jumelage), onglet *Découvrir*. De même, sans Seerr configuré, les demandes passent par le Seerr d'un serveur lié, au nom du compte Seerr de la personne. Le serveur qui prête n'accepte que ces usages (lecture TMDB ; statuts, comptes et nouvelles demandes Seerr).
+- **Regarder ensemble.** Les groupes créés sur un serveur apparaissent sur l'autre : chacun rejoint depuis le serveur auquel il est connecté, et regarde la copie que ce serveur choisit. Voir [Regarder ensemble](#regarder-ensemble).
+- **Même identifiant des deux côtés.** Avant de lier, *Rejoindre un serveur* affiche les identifiants présents sur les deux serveurs. Pour chacun :
+  - **Personnes différentes** (par défaut) : le compte du serveur qui rejoint est renommé, par exemple « lea-maison2 » (nom modifiable). Chacun garde son mot de passe et ses données, et les deux comptes existent ensuite sur les deux serveurs.
+  - **Même personne** : les comptes fusionnent avec le mot de passe, la double authentification et le profil du serveur qui a créé l'invitation. Chaque serveur garde l'historique, la progression et les listes du compte.
+
+  Un identifiant créé ensuite sur les deux serveurs avant leur synchronisation n'est jamais fusionné : l'un des comptes est renommé (« nina-2 ») sur les deux serveurs, et c'est signalé dans *Serveurs liés*. Lors d'un nouveau jumelage, les comptes déjà communs aux deux serveurs sont reconnus sans rien demander.
+- **Délier un serveur.**
+  - Les comptes restent sur les deux serveurs, mais ne sont plus synchronisés.
+  - Ses bibliothèques et ses titres disparaissent de ce serveur, y compris ceux fusionnés dans les vôtres ; vos propres titres et leur progression ne bougent pas. Aucun fichier n'est touché.
+  - L'autre serveur est prévenu s'il répond, et fait de même de son côté. S'il était éteint, il voit ce serveur comme injoignable : un nouveau jumelage, avec une nouvelle invitation, remplace alors l'ancien lien.
+- **Serveur éteint ou injoignable.** L'autre continue de fonctionner normalement : ses bibliothèques, la connexion et la lecture de ses titres. Après une trentaine de secondes sans réponse, les titres que seul le serveur éteint possède sont masqués, et ses bibliothèques non fusionnées aussi. Ils reviennent seuls dès qu'il répond.
+
+**Liaison et réseau**
+
+- **Chiffrement.** Chaque serveur a son propre certificat (clé EC P-256, créée au premier jumelage dans `/var/lib/seance/federation`). L'invitation contient l'empreinte de ce certificat : celui qui rejoint vérifie qu'il parle bien au bon serveur, puis les deux s'échangent un secret présenté à chaque requête. Tout passe en TLS sur le port 8421, sans VPN, nom de domaine ni autorité de certification, même si l'interface reste en HTTP sur le réseau local.
+- **Ports.** Un seul des deux serveurs doit être joignable par l'autre. En réseau local, rien à faire. Par Internet, il faut rediriger le port 8421 vers l'un des deux (redirection sur la box, ou reverse proxy en mode TCP/stream, car un proxy HTTPS classique casserait le certificat épinglé). L'autre serveur ouvre lui-même un tunnel chiffré vers lui : rien à ouvrir de son côté. Si aucun des deux n'est joignable, passer par un VPN de type Tailscale ou WireGuard.
+- **Restrictions.** Le port n'accepte que les serveurs jumelés et ne sert pas l'interface. Au nom d'un compte, un serveur lié ne peut que lire les titres, jamais administrer.
+- **Configuration.** Le port se change avec `SEANCE_FED_PORT` dans `/etc/seance/seance.env`. Avec Docker, publier aussi `8421:8421`. `openssl` est nécessaire, une seule fois, pour créer le certificat ; il est installé par le script, le paquet `.deb` et l'image Docker.
+- **Débit.** À distance, la qualité dépend du débit montant du serveur qui a le fichier : choisir une qualité réduite si la lecture saccade.
+- **Changement d'adresse IP.** Utiliser de préférence un nom (DNS dynamique) plutôt qu'une IP dans l'invitation. Si l'IP du serveur joignable change, les connexions coupées sont détectées en une minute environ et rouvertes vers la nouvelle adresse dès que le nom y pointe ; ses titres sont masqués entre-temps et reviennent seuls. Si l'adresse enregistrée est une IP, la corriger avec le bouton **Adresse** du serveur lié. Le serveur qui n'est pas joignable peut changer d'IP sans rien faire : il rouvre lui-même son tunnel.
+
+> À réserver à vos propres serveurs : partager des films du commerce avec un autre foyer sort du cadre de la copie privée (voir [docs/AUDIT-JURIDIQUE.md](docs/AUDIT-JURIDIQUE.md)).
 
 ## Chapitres, aperçus, intro et générique
 
@@ -369,6 +419,7 @@ Plusieurs personnes regardent la même vidéo en même temps, chacune sur son ap
 - Lecture, pause, sauts, chapitres, « Passer l'intro » et **épisode suivant** sont synchronisés. Un membre qui rejoint arrive au même endroit.
 - Chacun conserve son propre flux (qualité, langue, sous-titres). Un faible décalage est corrigé en ajustant légèrement la vitesse de lecture, un décalage important par un saut. Si la connexion d'un membre faiblit, le groupe l'attend (12 s au plus).
 - Reprise de lecture et historique restent individuels. L'accès au contenu (bibliothèques, restriction d'âge) est vérifié pour chaque membre.
+- **Serveurs liés** : un groupe vit sur le serveur où il a été créé et apparaît aussi sur les serveurs liés. Une personne connectée à l'autre serveur le rejoint de la même façon ; son serveur relaie les commandes et les événements, en traduisant le titre, les comptes et l'heure.
 
 ## Profils, code PIN et contrôle parental
 
@@ -540,4 +591,5 @@ L'interface (`static/`) est en JavaScript, sans étape de compilation.
 - Paquet `.deb`, image Docker, conteneur Proxmox en une commande, mise à jour depuis l'interface
 - Paramètres regroupés en un seul espace avec recherche
 - Interface en français et en anglais (langue par utilisateur, langue par défaut choisie par l'administrateur)
+- Serveurs liés : jumelage par invitation, liaison TLS à certificats épinglés, tunnel inverse, comptes répliqués, bibliothèques partagées ou fusionnées (un titre une seule fois, meilleure copie choisie automatiquement), lecture relayée, répartition des lectures selon la charge, clé TMDB et Seerr partagés, Regarder ensemble entre serveurs
 - Web app installable, téléchargements hors ligne, navigation à la télécommande et à la manette, application Android TV native (lecture directe des MKV, son multicanal transmis à l'ampli)

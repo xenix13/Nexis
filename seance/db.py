@@ -366,6 +366,123 @@ MIGRATIONS = [
     """
     ALTER TABLE users ADD COLUMN language TEXT;
     """,
+    # 17 : fédération (serveurs liés). Chaque compte et chaque bibliothèque a un identifiant commun à tous les
+    # serveurs (uid). Les bibliothèques et éléments venus d'un serveur lié gardent son identifiant (remote_id).
+    # fseq : numéro de changement, pour n'envoyer aux serveurs liés que ce qui a changé depuis leur dernier passage.
+    """
+    ALTER TABLE users ADD COLUMN uid TEXT;
+    ALTER TABLE users ADD COLUMN rev INTEGER;
+    ALTER TABLE users ADD COLUMN fseq INTEGER;
+    UPDATE users SET uid=lower(hex(randomblob(16))), rev=created_at*1000;
+    CREATE UNIQUE INDEX users_uid ON users(uid);
+    ALTER TABLE libraries ADD COLUMN uid TEXT;
+    ALTER TABLE libraries ADD COLUMN peer_id INTEGER REFERENCES peers(id) ON DELETE CASCADE;
+    ALTER TABLE libraries ADD COLUMN remote_id INTEGER;
+    UPDATE libraries SET uid=lower(hex(randomblob(16)));
+    ALTER TABLE items ADD COLUMN peer_id INTEGER;
+    ALTER TABLE items ADD COLUMN remote_id INTEGER;
+    ALTER TABLE items ADD COLUMN fseq INTEGER;
+    CREATE UNIQUE INDEX items_remote ON items(peer_id, remote_id) WHERE peer_id IS NOT NULL;
+    CREATE INDEX items_fseq ON items(fseq) WHERE peer_id IS NULL;
+    ALTER TABLE progress ADD COLUMN fseq INTEGER;
+    CREATE INDEX progress_fseq ON progress(fseq);
+    CREATE TABLE peers(
+        id INTEGER PRIMARY KEY,
+        uid TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        address TEXT,
+        fingerprint TEXT NOT NULL,
+        secret TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        last_seen INTEGER,
+        version TEXT,
+        error TEXT,
+        users_cursor INTEGER NOT NULL DEFAULT 0,
+        catalog_cursor INTEGER NOT NULL DEFAULT 0,
+        progress_cursor INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE fed_invites(token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);
+    CREATE TABLE fed_gone(kind TEXT NOT NULL, ref TEXT NOT NULL, seq INTEGER NOT NULL, PRIMARY KEY(kind, ref));
+    CREATE TABLE fed_pending_libs(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        uid TEXT NOT NULL,
+        PRIMARY KEY(user_id, uid)
+    );
+    CREATE TABLE fed_clock(n INTEGER NOT NULL, applying INTEGER NOT NULL DEFAULT 0);
+    INSERT INTO fed_clock(n) VALUES(0);
+    CREATE TRIGGER users_fed_ins AFTER INSERT ON users BEGIN
+        UPDATE fed_clock SET n=n+1;
+        UPDATE users SET uid=COALESCE(NEW.uid, lower(hex(randomblob(16)))),
+            rev=COALESCE(NEW.rev, CAST((julianday('now')-2440587.5)*86400000 AS INTEGER)),
+            fseq=(SELECT n FROM fed_clock) WHERE id=NEW.id;
+    END;
+    CREATE TRIGGER users_fed_upd AFTER UPDATE OF username, display_name, password_hash, is_admin, all_libraries,
+        disabled, avatar_color, pin_hash, managed, home, max_age, allow_unrated, avatar_ver, kids, totp_enabled,
+        totp_secret, totp_recovery, language, rev ON users WHEN NEW.fseq IS OLD.fseq BEGIN
+        UPDATE fed_clock SET n=n+1;
+        UPDATE users SET fseq=(SELECT n FROM fed_clock),
+            rev=CASE WHEN NEW.rev IS OLD.rev THEN CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) ELSE NEW.rev END
+            WHERE id=NEW.id;
+    END;
+    CREATE TRIGGER users_fed_del AFTER DELETE ON users BEGIN
+        UPDATE fed_clock SET n=n+1;
+        INSERT OR REPLACE INTO fed_gone(kind, ref, seq) VALUES('user', OLD.uid, (SELECT n FROM fed_clock));
+    END;
+    CREATE TRIGGER user_libraries_fed_ins AFTER INSERT ON user_libraries WHEN (SELECT applying FROM fed_clock)=0 BEGIN
+        UPDATE users SET rev=CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) WHERE id=NEW.user_id;
+    END;
+    CREATE TRIGGER user_libraries_fed_del AFTER DELETE ON user_libraries WHEN (SELECT applying FROM fed_clock)=0 BEGIN
+        UPDATE users SET rev=CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) WHERE id=OLD.user_id;
+    END;
+    CREATE TRIGGER libraries_fed_ins AFTER INSERT ON libraries WHEN NEW.uid IS NULL BEGIN
+        UPDATE libraries SET uid=lower(hex(randomblob(16))) WHERE id=NEW.id;
+    END;
+    CREATE TRIGGER items_fed_ins AFTER INSERT ON items WHEN NEW.peer_id IS NULL AND EXISTS (SELECT 1 FROM peers) BEGIN
+        UPDATE fed_clock SET n=n+1;
+        UPDATE items SET fseq=(SELECT n FROM fed_clock) WHERE id=NEW.id;
+    END;
+    CREATE TRIGGER items_fed_upd AFTER UPDATE ON items WHEN NEW.peer_id IS NULL AND NEW.fseq IS OLD.fseq
+        AND EXISTS (SELECT 1 FROM peers) BEGIN
+        UPDATE fed_clock SET n=n+1;
+        UPDATE items SET fseq=(SELECT n FROM fed_clock) WHERE id=NEW.id;
+    END;
+    CREATE TRIGGER items_fed_del AFTER DELETE ON items WHEN OLD.peer_id IS NULL AND EXISTS (SELECT 1 FROM peers) BEGIN
+        UPDATE fed_clock SET n=n+1;
+        INSERT OR REPLACE INTO fed_gone(kind, ref, seq) VALUES('item', OLD.id, (SELECT n FROM fed_clock));
+    END;
+    CREATE TRIGGER progress_fed_ins AFTER INSERT ON progress WHEN EXISTS (SELECT 1 FROM peers) BEGIN
+        UPDATE fed_clock SET n=n+1;
+        UPDATE progress SET fseq=(SELECT n FROM fed_clock) WHERE user_id=NEW.user_id AND rating_key=NEW.rating_key;
+    END;
+    CREATE TRIGGER progress_fed_upd AFTER UPDATE ON progress WHEN NEW.fseq IS OLD.fseq AND EXISTS (SELECT 1 FROM peers) BEGIN
+        UPDATE fed_clock SET n=n+1;
+        UPDATE progress SET fseq=(SELECT n FROM fed_clock) WHERE user_id=NEW.user_id AND rating_key=NEW.rating_key;
+    END;
+    """,
+    # 18 : bibliothèques d'un serveur lié fusionnées avec une bibliothèque de ce serveur. src_* : place d'origine
+    # d'un élément reçu (sa bibliothèque et ses parents chez lui) ; library_id/parent_id/show_id : place affichée
+    # (dans la bibliothèque fusionnée, sous la série locale). alias_of : même titre que cet élément local (masqué,
+    # sert de seconde copie à la lecture). Un élément local supprimé rend leur place d'origine aux éléments reçus
+    # qui en dépendaient, au lieu de les emporter avec lui.
+    """
+    ALTER TABLE libraries ADD COLUMN merge_into INTEGER REFERENCES libraries(id) ON DELETE SET NULL;
+    ALTER TABLE peers ADD COLUMN online INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE items ADD COLUMN src_lib INTEGER;
+    ALTER TABLE items ADD COLUMN src_parent INTEGER;
+    ALTER TABLE items ADD COLUMN src_show INTEGER;
+    ALTER TABLE items ADD COLUMN alias_of INTEGER REFERENCES items(id) ON DELETE SET NULL;
+    UPDATE items SET src_lib=library_id, src_parent=parent_id, src_show=show_id WHERE peer_id IS NOT NULL;
+    CREATE INDEX items_alias ON items(alias_of) WHERE alias_of IS NOT NULL;
+    CREATE INDEX items_src ON items(src_lib) WHERE src_lib IS NOT NULL;
+    CREATE TRIGGER items_fed_rehome BEFORE DELETE ON items WHEN OLD.peer_id IS NULL AND EXISTS (SELECT 1 FROM peers) BEGIN
+        UPDATE items SET library_id=src_lib, parent_id=src_parent, show_id=src_show, alias_of=NULL
+            WHERE peer_id IS NOT NULL AND (parent_id=OLD.id OR show_id=OLD.id OR alias_of=OLD.id);
+    END;
+    CREATE TRIGGER libraries_fed_rehome BEFORE DELETE ON libraries WHEN OLD.peer_id IS NULL BEGIN
+        UPDATE items SET library_id=src_lib, parent_id=src_parent, show_id=src_show, alias_of=NULL
+            WHERE peer_id IS NOT NULL AND library_id=OLD.id;
+    END;
+    """,
 ]
 
 

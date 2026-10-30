@@ -91,10 +91,12 @@ class Task:
 
 
 def lib_clause(opts, column="i.library_id"):
+    """Bibliothèques choisies pour une tâche ; jamais celles d'un serveur lié (traitées par ce serveur)."""
     libs = [int(x) for x in opts.get("libraries") or [] if str(x).isdigit()]
+    local = f" AND {column.rsplit('.', 1)[0]}.peer_id IS NULL" if "." in column else " AND peer_id IS NULL"
     if not libs:
-        return "", []
-    return f" AND {column} IN ({','.join('?' * len(libs))})", libs
+        return local, []
+    return f"{local} AND {column} IN ({','.join('?' * len(libs))})", libs
 
 
 # ------------------------------------------------------------------ tâches
@@ -145,7 +147,7 @@ class MetadataTask(Task):
     ]
 
     def available(self, ctx):
-        return (True, None) if ctx.db.setting("tmdb_key") else (True, "Sans clé TMDB, seuls les .nfo sont relus.")
+        return (True, None) if ctx.metadata.tmdb().enabled else (True, "Sans clé TMDB, seuls les .nfo sont relus.")
 
     def run(self, ctx, job, opts):
         db = ctx.db
@@ -262,7 +264,7 @@ class IntroTask(Task):
         todo = []
         for s in seasons:
             eps = db.all("SELECT id, key, probe, file_size, file_mtime, duration_ms, idx FROM items WHERE parent_id=? "
-                         "AND type='episode' AND duration_ms > 120000 ORDER BY idx, id", (s["sid"],))
+                         "AND type='episode' AND duration_ms > 120000 AND peer_id IS NULL ORDER BY idx, id", (s["sid"],))
             need = {k: [e for e in eps if not analysis_done(db, e, k)] for k in kinds}
             if len(eps) >= 2 and any(need.values()):
                 todo.append((eps, need))
@@ -399,7 +401,8 @@ class CleanupTask(Task):
         job.progress = 0.3
         job.check()
         keys = set()
-        for r in ctx.db.all("SELECT id, file_size, file_mtime FROM items WHERE type IN ('movie','episode','extra')"):
+        for r in ctx.db.all("SELECT id, file_size, file_mtime FROM items WHERE type IN ('movie','episode','extra') "
+                            "AND peer_id IS NULL"):
             keys.add(f"f{r['file_size']}_{r['file_mtime'] or 0}" if r["file_size"] else f"{r['id']}_{r['file_mtime'] or 0}")
         ctx.db.release()
         for sub in ("subs", "trickplay", "chapters"):

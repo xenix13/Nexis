@@ -136,8 +136,8 @@ def register(app, ctx, x):
         warning = None if media.available() else i18n.tr("ffmpeg n'est pas installé sur le serveur : la lecture est impossible.")
         return {"user": user_view(req.user), "prefs": get_prefs(req.user["id"]),
                 "libraries": [l for l in libraries_all() if l["id"] in allowed], "warning": warning,
-                "features": {"discover": bool(db.setting("tmdb_key")),
-                             "requests": bool(db.setting("seerr_url") and db.setting("seerr_key")),
+                "features": {"discover": bool(db.setting("tmdb_key") or ctx.fed.provider("tmdb")),
+                             "requests": bool(db.setting("seerr_url") and db.setting("seerr_key") or ctx.fed.provider("seerr")),
                              "live": x.live_available(req.user),
                              "downloads": db.setting("downloads", "1") == "1"},
                 "update": ctx.update_latest if req.user["is_admin"] else None,

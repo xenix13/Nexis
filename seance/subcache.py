@@ -150,6 +150,8 @@ class SubtitleCache:
 
     def missing(self, item):
         """Pistes à extraire : texte (JSON), ASS d'origine (rendu fidèle) et polices jointes."""
+        if item.get("peer_id"):
+            return []  # élément d'un serveur lié : préparé par ce serveur
         probe = _probe(item)
         ass = ass_tracks(probe)
         need = [i for i in text_tracks(probe) if not os.path.isfile(self.path(item, i))
@@ -180,7 +182,7 @@ class SubtitleCache:
             return None
 
     def needs_trick(self, item):
-        if self.ctx.db.setting("trickplay", "1") != "1" or media.is_strm(item["key"]):
+        if item.get("peer_id") or self.ctx.db.setting("trickplay", "1") != "1" or media.is_strm(item["key"]):
             return False
         probe = json.loads(item["probe"] or "{}") if isinstance(item["probe"], str) else item["probe"]
         if not (probe or {}).get("video") or (probe.get("duration") or 0) < 60:

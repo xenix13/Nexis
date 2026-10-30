@@ -207,8 +207,13 @@ def install(ctx, x):
 
     # -------------------------------------------------------------- catalog
     def libraries_all():
-        return [{"id": str(r["id"]), "title": r["name"], "type": r["kind"]}
-                for r in db.all("SELECT id, name, kind FROM libraries ORDER BY position, name")]
+        # bibliothèque d'un serveur lié : comme les autres (server : son nom, pour un badge discret) ; absente si elle
+        # est fusionnée avec l'une des nôtres ou si le serveur est injoignable
+        return [{"id": str(r["id"]), "title": r["name"], "type": r["kind"], "server": r["server"]}
+                for r in db.all("SELECT l.id, l.name, l.kind, p.name AS server FROM libraries l "
+                                "LEFT JOIN peers p ON p.id=l.peer_id LEFT JOIN libraries t ON t.id=l.merge_into "
+                                "WHERE l.peer_id IS NULL OR (p.online=1 AND (t.id IS NULL OR t.kind<>l.kind)) "
+                                "ORDER BY l.position, l.name")]
 
     def allowed_ids(user):
         ids = [l["id"] for l in libraries_all()]

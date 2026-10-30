@@ -102,6 +102,8 @@ class Images:
         return dest
 
     def get(self, item, kind, w, h):
+        if item.get("peer_id"):  # élément d'un serveur lié : son image vient de lui
+            return self.ctx.fed.image(item, kind, w, h)
         src = self.resolve(item, kind)
         if not src:
             return None

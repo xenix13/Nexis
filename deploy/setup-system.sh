@@ -31,6 +31,8 @@ SEANCE_COOKIE_SECURE=0
 SEANCE_TRUST_PROXY=0
 # Journaux détaillés
 SEANCE_DEBUG=0
+# Port des serveurs liés (liaison TLS entre vos serveurs Nexis, ouverte à la première invitation)
+SEANCE_FED_PORT=8421
 ENVFILE
 fi
 

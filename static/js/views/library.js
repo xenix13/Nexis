@@ -1,6 +1,6 @@
 import { get } from '../api.js';
 import { state } from '../app.js';
-import { clear, h, posterCard, select, spinner } from '../ui.js';
+import { clear, h, icon, posterCard, select, spinner } from '../ui.js';
 import { pinButton } from '../pins.js';
 import { tr, plural } from '../i18n.js';
 
@@ -41,7 +41,9 @@ export async function renderLibrary(main, sid, ctx) {
   const grid = h('div.grid');
   const sentinel = h('div.sentinel');
   const pin = genre ? pinButton({ type: 'genre', ref: genre, lib: sid, title: `${genre} · ${lib.title}` }) : null;
-  clear(main, h('div.page-head', h('h1', lib.title), count, h('div.filters', sortSel, genreSel, pin)), viewTabs, grid, sentinel);
+  // bibliothèque d'un serveur lié : un simple badge, elle s'utilise comme les autres
+  const server = lib.server ? h('span.server-badge', { title: tr('Bibliothèque du serveur lié « {server} »', { server: lib.server }) }, icon('link'), lib.server) : null;
+  clear(main, h('div.page-head', h('h1', lib.title), server, count, h('div.filters', sortSel, genreSel, pin)), viewTabs, grid, sentinel);
 
   let start = 0, total = Infinity, loading = false;
   async function more() {

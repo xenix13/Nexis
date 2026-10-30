@@ -173,5 +173,7 @@ final class Tr {
         en("Qui regarde ?", "Who's watching?");
         en("Code PIN", "PIN code");
         en("Code de double authentification", "Two-factor authentication code");
+        en("Langues audio et sous-titres, qualité, épisode suivant : ces réglages suivent votre compte et se changent depuis le téléphone ou l'ordinateur.",
+                "Audio and subtitle languages, quality, next episode: these settings follow your account and are changed from the phone or computer.");
     }
 }

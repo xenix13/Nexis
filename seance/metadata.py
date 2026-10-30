@@ -169,8 +169,13 @@ class Metadata:
 
     def tmdb(self):
         db = self.ctx.db
-        return TMDB(db.setting("tmdb_key"), db.setting("meta_language", "fr-FR"),
-                    db.setting("meta_country", "FR"))
+        key, lang, country = db.setting("tmdb_key"), db.setting("meta_language", "fr-FR"), db.setting("meta_country", "FR")
+        if not key:
+            fed = getattr(self.ctx, "fed", None)
+            shared = fed.shared_tmdb(lang, country) if fed else None  # clé d'un serveur lié
+            if shared:
+                return shared
+        return TMDB(key, lang, country)
 
     def _update(self, item_id, fields):
         fields = {k: v for k, v in fields.items() if v is not None}
@@ -207,8 +212,11 @@ class Metadata:
     def process_pending(self, progress=None):
         db = self.ctx.db
         tmdb = self.tmdb()
-        roots = db.all("SELECT * FROM items WHERE meta_state='pending' AND type IN ('movie','show') ORDER BY id")
-        pending_eps = db.scalar("SELECT COUNT(*) FROM items WHERE meta_state='pending' AND type IN ('season','episode')")
+        # éléments d'un serveur lié : leurs métadonnées sont cherchées par ce serveur
+        roots = db.all("SELECT * FROM items WHERE meta_state='pending' AND type IN ('movie','show') AND peer_id IS NULL "
+                       "ORDER BY id")
+        pending_eps = db.scalar("SELECT COUNT(*) FROM items WHERE meta_state='pending' AND type IN ('season','episode') "
+                                "AND peer_id IS NULL")
         total = len(roots) + (1 if pending_eps else 0)
         for n, item in enumerate(roots, 1):
             if progress:
@@ -224,7 +232,8 @@ class Metadata:
                 log.exception("Métadonnées de %s", item["title"])
                 db.run("UPDATE items SET meta_state='error' WHERE id=?", (item["id"],))
         # nouveaux épisodes de séries déjà identifiées
-        shows = db.all("SELECT DISTINCT show_id FROM items WHERE meta_state='pending' AND type IN ('season','episode')")
+        shows = db.all("SELECT DISTINCT show_id FROM items WHERE meta_state='pending' AND type IN ('season','episode') "
+                       "AND peer_id IS NULL")
         for r in shows:
             show = db.one("SELECT * FROM items WHERE id=?", (r["show_id"],))
             try:
@@ -367,7 +376,7 @@ class Metadata:
         self._trailer(item, d, tmdb)
         self._fulfil_wishes(item, "tv", tid)
         item_seasons = {s["season_number"]: s for s in d.get("seasons", [])}
-        for s in self.ctx.db.all("SELECT * FROM items WHERE parent_id=? AND type='season'", (item["id"],)):
+        for s in self.ctx.db.all("SELECT * FROM items WHERE parent_id=? AND type='season' AND peer_id IS NULL", (item["id"],)):
             ts = item_seasons.get(s["idx"])
             if ts:
                 self._update(s["id"], {"summary": ts.get("overview") or None,
@@ -379,7 +388,8 @@ class Metadata:
         if not show:
             return
         eps = db.all("SELECT e.*, s.idx AS season_idx FROM items e JOIN items s ON s.id=e.parent_id "
-                     "WHERE e.show_id=? AND e.type='episode'" + (" AND e.meta_state='pending'" if only_pending else ""),
+                     "WHERE e.show_id=? AND e.type='episode' AND e.peer_id IS NULL"
+                     + (" AND e.meta_state='pending'" if only_pending else ""),
                      (show["id"],))
         for e in eps:
             nfo = nfo_for(e)
@@ -399,7 +409,8 @@ class Metadata:
                         seasons_cache[n] = {}
                 return seasons_cache[n]
 
-            our_seasons = {e["season_idx"] for e in db.all("SELECT s.idx AS season_idx FROM items s WHERE s.parent_id=? AND type='season'", (show["id"],))}
+            our_seasons = {e["season_idx"] for e in db.all("SELECT s.idx AS season_idx FROM items s WHERE s.parent_id=? "
+                                                           "AND type='season' AND peer_id IS NULL", (show["id"],))}
             for e in eps:
                 sn, en = e["season_idx"], e["idx"]
                 # numérotation absolue (animes) : « Episode 1071 » dans une seule saison 1
@@ -417,7 +428,7 @@ class Metadata:
                                            "rating": round(te["vote_average"], 1) if te.get("vote_average") else None})
                     self._images(e, still=te.get("still_path"))
         ids = [e["id"] for e in eps] + [s["id"] for s in db.all(
-            "SELECT id FROM items WHERE parent_id=? AND type='season'", (show["id"],))]
+            "SELECT id FROM items WHERE parent_id=? AND type='season' AND peer_id IS NULL", (show["id"],))]
         for i in range(0, len(ids), 500):
             chunk = ids[i:i + 500]
             db.run(f"UPDATE items SET meta_state='done' WHERE id IN ({','.join('?' * len(chunk))})", chunk)

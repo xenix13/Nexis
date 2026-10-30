@@ -19,9 +19,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Navigation principale : barre du haut (Accueil, une entrée par bibliothèque, Plus) et la page choisie en
- * dessous. Une entrée sélectionnée à la télécommande s'ouvre d'elle-même. « Plus » regroupe la recherche, la TV en
- * direct et les paramètres.
+ * Navigation principale : barre du haut (Accueil, une entrée par bibliothèque, puis Rechercher, TV en direct et
+ * Paramètres) et la page choisie en dessous. Une entrée sélectionnée à la télécommande s'ouvre d'elle-même.
  */
 final class BrowseScreen extends Screen {
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -100,7 +99,9 @@ final class BrowseScreen extends Screen {
         }
         View spacer = new View(act);
         bar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
-        addTab(Tr.t("Plus"), new MoreTab(this));
+        addTab(Tr.t("Rechercher"), new SearchTab(this));
+        if (Session.live()) addTab(Tr.t("TV en direct"), new LiveTab(this));
+        addTab(Tr.t("Paramètres"), new SettingsTab(this));
         page.addView(bar, new LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         content = new FrameLayout(act);

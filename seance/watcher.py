@@ -56,7 +56,8 @@ def vanished_dirs(db, lib):
     if not roots:
         return set()
     by_top = {}
-    for r in db.all("SELECT key FROM items WHERE library_id=? AND type IN ('movie','episode','extra')", (lib["id"],)):
+    for r in db.all("SELECT key FROM items WHERE library_id=? AND type IN ('movie','episode','extra') AND peer_id IS NULL",
+                    (lib["id"],)):
         d = os.path.dirname(r["key"])
         for root in roots:
             if d.startswith(os.path.join(root, "")):
@@ -163,7 +164,7 @@ class Watcher:
         interval = self.interval()
         if interval <= 0:
             return
-        libs = self.ctx.db.all("SELECT id, name, paths FROM libraries")
+        libs = self.ctx.db.all("SELECT id, name, paths FROM libraries WHERE peer_id IS NULL")
         known = {l["id"] for l in libs}
         for k in list(self.prints):
             if k not in known:

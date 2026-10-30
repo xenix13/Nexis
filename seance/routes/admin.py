@@ -89,6 +89,9 @@ def register(app, ctx, x):
             db.run("DELETE FROM user_libraries WHERE user_id=?", (uid,))
             for sid in set(libs):
                 db.run("INSERT INTO user_libraries(user_id,section_id) VALUES(?,?)", (uid, sid))
+                # bibliothèques d'un serveur lié fusionnées avec celle-ci : même accès
+                db.run("INSERT OR IGNORE INTO user_libraries(user_id,section_id) SELECT ?, CAST(id AS TEXT) FROM libraries "
+                       "WHERE merge_into=?", (uid, int(sid)))
         if not creating and (fields.get("disabled") or "password_hash" in fields):
             db.run("DELETE FROM sessions WHERE user_id=?", (uid,))
 
@@ -161,9 +164,9 @@ def register(app, ctx, x):
     # ----------------------------------------------------- admin libraries
     def library_view(l):
         counts = {r["type"]: r["n"] for r in db.all(
-            "SELECT type, COUNT(*) AS n FROM items WHERE library_id=? GROUP BY type", (l["id"],))}
+            "SELECT type, COUNT(*) AS n FROM items WHERE library_id=? AND peer_id IS NULL GROUP BY type", (l["id"],))}
         unmatched = db.scalar("SELECT COUNT(*) FROM items WHERE library_id=? AND type IN ('movie','show') "
-                              "AND meta_state IN ('nomatch','error')", (l["id"],))
+                              "AND meta_state IN ('nomatch','error') AND peer_id IS NULL", (l["id"],))
         return {"id": str(l["id"]), "name": l["name"], "kind": l["kind"], "paths": json.loads(l["paths"]),
                 "scanned_at": l["scanned_at"], "counts": counts, "unmatched": unmatched,
                 "paths_ok": [os.path.isdir(p) for p in json.loads(l["paths"])],
@@ -199,7 +202,9 @@ def register(app, ctx, x):
 
     @app.route("GET", "/api/admin/libraries", auth="admin")
     def admin_libraries(req):
-        return {"libraries": [library_view(l) for l in db.all("SELECT * FROM libraries ORDER BY position, name")],
+        # bibliothèques d'un serveur lié : gérées par ce serveur (page Serveurs liés)
+        return {"libraries": [library_view(l) for l in db.all("SELECT * FROM libraries WHERE peer_id IS NULL "
+                                                                "ORDER BY position, name")],
                 "scan": scan_view()}
 
     @app.route("POST", "/api/admin/libraries", auth="admin")
@@ -215,13 +220,14 @@ def register(app, ctx, x):
     @app.route("PUT", r"/api/admin/libraries/(?P<lid>\d{1,6})", auth="admin")
     def admin_library_update(req):
         lid = int(req.params["lid"])
-        l = db.one("SELECT * FROM libraries WHERE id=?", (lid,))
+        l = db.one("SELECT * FROM libraries WHERE id=? AND peer_id IS NULL", (lid,))
         if not l:
             raise HTTPError(404, "Bibliothèque introuvable")
         name, kind, paths = validate_library(req.json())
         if kind != l["kind"] and db.scalar("SELECT COUNT(*) FROM items WHERE library_id=?", (lid,)):
-            db.run("DELETE FROM items WHERE library_id=?", (lid,))
+            db.run("DELETE FROM items WHERE library_id=? AND peer_id IS NULL", (lid,))
         db.run("UPDATE libraries SET name=?, kind=?, paths=? WHERE id=?", (name, kind, json.dumps(paths), lid))
+        ctx.fed.relink_all()  # une fusion avec une bibliothèque d'un autre type ne vaut plus
         db.release()
         ctx.scanner.start([lid])
         return library_view(db.one("SELECT * FROM libraries WHERE id=?", (lid,)))
@@ -230,6 +236,8 @@ def register(app, ctx, x):
     def admin_library_delete(req):
         if ctx.scanner.status()["running"]:
             raise HTTPError(409, "Un scan est en cours. Réessayez une fois terminé.")
+        if not db.scalar("SELECT 1 FROM libraries WHERE id=? AND peer_id IS NULL", (int(req.params["lid"]),)):
+            raise HTTPError(404, "Bibliothèque introuvable")
         db.run("DELETE FROM libraries WHERE id=?", (int(req.params["lid"]),))
         db.run("DELETE FROM user_libraries WHERE section_id=?", (req.params["lid"],))
         return {"ok": True}
@@ -283,7 +291,7 @@ def register(app, ctx, x):
         # « .. » refusé : le webhook ne doit pas pouvoir désigner un dossier hors des bibliothèques
         parts = [p for p in remote.replace("\\", "/").split("/") if p and p not in (".", "..")]
         found = []
-        for lib in db.all("SELECT id, paths FROM libraries"):
+        for lib in db.all("SELECT id, paths FROM libraries WHERE peer_id IS NULL"):
             for root in json.loads(lib["paths"]):
                 real_root = os.path.realpath(root)
                 for k in range(len(parts), 0, -1):
@@ -348,7 +356,8 @@ def register(app, ctx, x):
                 "downmix_boost": float(db.setting("downmix_boost", "2") or 2),
                 "subs_queue": len(ctx.subtitles.urgent) + len(ctx.subtitles.idle),
                 "webhook_path": f"/api/hooks/scan?token={db.setting('webhook_token')}",
-                "watch_events": [dict(e, text=i18n.tr(e["text"])) for e in ctx.watcher.events[:8]],"tmdb_set": bool(db.setting("tmdb_key")), "language": db.setting("meta_language", "fr-FR"),
+                "watch_events": [dict(e, text=i18n.tr(e["text"])) for e in ctx.watcher.events[:8]],"tmdb_set": bool(db.setting("tmdb_key")),
+                "tmdb_shared": (lambda p: p["name"] if p else None)(ctx.fed.provider("tmdb")), "language": db.setting("meta_language", "fr-FR"),
                 "max_streams": max_streams,
                 "max_transcodes": max_transcodes, "cpus": os.cpu_count(), "ffmpeg": media.available(),
                 "hw_engine": db.setting("hw_engine", "none"), "hw_device": db.setting("hw_device", "/dev/dri/renderD128"),
@@ -438,6 +447,7 @@ def register(app, ctx, x):
             p = json.loads(r.pop("params") or "{}")
             r["mode"] = p.get("mode")
             r["reasons"] = [i18n.tr(x) for x in p.get("reasons", [])]
+            r["peer"] = p.get("peer")  # lecture d'un titre d'un serveur lié, relayée par ce serveur
             r.update(ctx.transcoder.stats(r["id"]))
             if p.get("video_codec"):
                 r["source"] = f"{str(p['video_codec']).upper()} {p.get('src_height') or '?'}p"
@@ -545,7 +555,7 @@ def register(app, ctx, x):
             if IN_DOCKER:
                 e = "Avec Docker, les partages se montent sur l'hôte puis se transmettent au conteneur (volumes du docker-compose.yml)"
             return {"available": False, "error": i18n.tr(str(e)), "shares": [], "env": None}
-        libs = db.all("SELECT id, name, paths FROM libraries")
+        libs = db.all("SELECT id, name, paths FROM libraries WHERE peer_id IS NULL")
         for sh in st["shares"]:
             sh["libraries"] = [l["name"] for l in libs if any(
                 p == sh["path"] or p.startswith(sh["path"] + os.sep) for p in json.loads(l["paths"]))]
