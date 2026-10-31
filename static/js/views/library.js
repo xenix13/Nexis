@@ -3,12 +3,14 @@ import { state } from '../app.js';
 import { clear, h, icon, posterCard, select, spinner } from '../ui.js';
 import { pinButton } from '../pins.js';
 import { tr, plural } from '../i18n.js';
+import { renderPhotos } from './photos.js';
 
 const PAGE = 60;
 
 export async function renderLibrary(main, sid, ctx) {
   const lib = state.me.libraries.find((l) => l.id === sid);
   if (!lib) { clear(main, h('div.empty', tr('Bibliothèque introuvable.'))); return; }
+  if (lib.type === 'photo') { await renderPhotos(main, lib, ctx); return; }
   document.title = `${lib.title} · Nexis`;
   const sort = ctx.query.get('sort') || 'title';
   const genre = ctx.query.get('genre') || '';

@@ -1072,12 +1072,14 @@ class Federation:
         c = self._snapshot()
         try:
             clock = db.scalar("SELECT n FROM fed_clock")
-            rows = db.all("SELECT * FROM items WHERE peer_id IS NULL AND fseq>? ORDER BY fseq LIMIT ?", (since, limit))
+            # photothèques : pas partagées entre serveurs (photos personnelles, et rien à y fusionner)
+            rows = db.all("SELECT * FROM items WHERE peer_id IS NULL AND fseq>? AND type NOT IN ('photo','album') "
+                          "ORDER BY fseq LIMIT ?", (since, limit))
             more = len(rows) == limit
             until = rows[-1]["fseq"] if more else clock
             gone = [int(r["ref"]) for r in db.all("SELECT ref FROM fed_gone WHERE kind='item' AND seq>? AND seq<=?",
                                                   (since, until))]
-            libs = db.all("SELECT id, uid, name, kind, position FROM libraries WHERE peer_id IS NULL")
+            libs = db.all("SELECT id, uid, name, kind, position FROM libraries WHERE peer_id IS NULL AND kind<>'photo'")
         finally:
             c.execute("COMMIT")
         items = [{k: v for k, v in r.items() if k not in ITEM_LOCAL or k in ("id", "library_id", "parent_id", "show_id")}

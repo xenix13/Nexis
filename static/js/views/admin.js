@@ -36,6 +36,8 @@ export const ADMIN_GROUPS = [
       keys: tr('processeur cpu gpu carte graphique nvidia nvenc vaapi intel amd limites lectures simultanées matériel') },
     { id: 'subtitles', label: tr('Sous-titres et son'), icon: 'subs', lead: tr('Préparation des sous-titres intégrés et mixage du son 5.1 / 7.1.'),
       keys: tr('sous-titres préparer audio son 5.1 7.1 stéréo mixage downmix volume dialogues') },
+    { id: 'dlna', label: tr('DLNA'), icon: 'tv', lead: tr('Téléviseurs, consoles et box du réseau local : Nexis apparaît comme serveur multimédia.'),
+      keys: tr('dlna upnp téléviseur smart tv samsung lg sony console xbox ps5 box réseau local serveur multimédia') },
     { id: 'downloads', label: tr('Téléchargements'), icon: 'install', lead: tr('Visionnage hors ligne dans l’application.'),
       keys: tr('hors ligne télécharger offline téléphone') },
     { id: 'live', label: tr('TV en direct'), icon: 'tv', lead: tr('Listes de chaînes IPTV (M3U) et guide des programmes.'),
@@ -216,7 +218,7 @@ async function libraryForm(lib) {
   const isNew = !lib || !lib.id;
   lib = lib || { name: '', kind: 'movie', paths: [] };
   const name = h('input', { value: lib.name, maxlength: 40, placeholder: tr('Films, Séries, Animes…') });
-  const kind = select([['movie', tr('Films')], ['show', tr('Séries (et animes)')]], lib.kind);
+  const kind = select([['movie', tr('Films')], ['show', tr('Séries (et animes)')], ['photo', tr('Photos')]], lib.kind);
   const paths = h('div.paths');
   const addPath = (value = '') => {
     const input = h('input', { value, placeholder: '/mnt/films' });
@@ -232,7 +234,7 @@ async function libraryForm(lib) {
   const err = h('p.form-error');
   const body = h('div.form',
     h('div.grid2', field(tr('Nom'), name), field(tr('Type de contenu'), kind)),
-    field(tr('Dossiers'), paths, tr('Chemins sur le serveur Nexis (ex. /mnt/films). Chaque film ou série dans son propre sous-dossier.')),
+    field(tr('Dossiers'), paths, tr('Chemins sur le serveur Nexis (ex. /mnt/films). Chaque film ou série dans son propre sous-dossier ; pour des photos, chaque sous-dossier devient un album.')),
     h('button.btn.small.ghost', { type: 'button', onclick: () => addPath() }, tr('+ Ajouter un dossier')),
     isNew ? null : h('p.muted.small', tr('Changer le type vide la bibliothèque avant de la rescanner.')), err);
   return modal(isNew ? tr('Nouvelle bibliothèque') : tr('Modifier « {name} »', { name: lib.name }), body, [
@@ -280,9 +282,11 @@ async function librariesTab(body, ctx) {
         h('button.btn.primary', { onclick: async () => { if (await libraryForm(null)) { await refreshMe(); toast(tr('Bibliothèque créée, scan en cours'), 'ok'); reload(); } } }, tr('+ Ajouter')))),
     scanBox(data.scan),
     data.libraries.length ? h('div.user-list', data.libraries.map((l) => h('div.user-row',
-      h('div.lib-icon', l.kind === 'movie' ? '🎬' : '📺'),
+      h('div.lib-icon', l.kind === 'movie' ? '🎬' : l.kind === 'photo' ? '🖼️' : '📺'),
       h('div.grow', h('strong', l.name),
-        h('div.muted.small', l.kind === 'movie' ? plural(c(l, 'movie'), '{n} film', '{n} films') : tr('{p1} séries · {p2} épisodes', { p1: c(l, 'show'), p2: c(l, 'episode') }),
+        h('div.muted.small', l.kind === 'movie' ? plural(c(l, 'movie'), '{n} film', '{n} films')
+          : l.kind === 'photo' ? tr('{p1} photos · {p2} albums', { p1: c(l, 'photo'), p2: c(l, 'album') })
+            : tr('{p1} séries · {p2} épisodes', { p1: c(l, 'show'), p2: c(l, 'episode') }),
           l.unmatched ? h('span', tr(' · {unmatched} non identifié(s)', { unmatched: l.unmatched })) : null,
           tr(' · scanné {p1}', { p1: since(l.scanned_at) })),
         h('div.small', l.paths.map((p, i) => h('code', { class: l.paths_ok[i] ? '' : 'bad-path', title: l.paths_ok[i] ? '' : tr('Dossier inaccessible') }, p))),
@@ -1098,8 +1102,41 @@ async function federationPage(body, ctx) {
   ctx.setCleanup(() => clearInterval(t));
 }
 
+// ----------------------------------------------------------------- DLNA
+async function dlnaPage(body, ctx) {
+  const render = (v) => {
+    if (!ctx.isCurrent()) return;
+    const on = toggle(tr('Activer le serveur DLNA'), v.enabled);
+    const name = h('input', { value: v.custom_name, maxlength: 60, placeholder: v.name });
+    const libs = v.libraries.map((l) => ({ l, box: h('input', { type: 'checkbox', checked: l.shared }) }));
+    const status = !v.enabled ? h('div.status-box', tr('Le serveur DLNA est désactivé.'))
+      : v.error ? h('div.status-box.bad', v.error)
+        : h('div.status-box.ok', tr('Nexis est visible sur le réseau local sous le nom « {name} ».', { name: v.name }));
+    clear(body,
+      h('section.panel', h('h2', tr('Serveur DLNA')),
+        h('p.muted.small', tr('Les téléviseurs, consoles et box du réseau local trouvent Nexis dans leur liste de sources (« Serveurs multimédia », « DLNA », « Partage »). Ils lisent les fichiers tels quels : sans conversion, un format que l’appareil ne connaît pas ne se lit pas (préférez alors l’application Nexis).')),
+        status, on,
+        field(tr('Nom affiché sur les appareils'), name),
+        field(tr('Bibliothèques partagées'), h('div.check-list', libs.map(({ l, box }) => h('label.check-row', box, h('span', l.name)))),
+          tr('Le DLNA ne connaît pas les comptes : tout appareil du réseau local voit ces bibliothèques, sans contrôle parental.')),
+        h('div.actions-row', h('button.btn.primary', { onclick: async () => {
+          try {
+            render(await put('/api/admin/dlna', { enabled: on.querySelector('input').checked, name: name.value.trim(),
+              libraries: libs.filter((x) => x.box.checked).map((x) => x.l.id) }));
+            toast(tr('Enregistré'), 'ok');
+          } catch (e) { toast(e.message, 'bad'); }
+        } }, tr('Enregistrer')))),
+      h('section.panel', h('h2', tr('Bon à savoir')), h('ul.small.muted',
+        h('li', tr('Réservé au réseau local : les appareils doivent être sur le même réseau que le serveur, et les adresses extérieures sont refusées.')),
+        h('li', tr('Avec Docker, le conteneur doit utiliser le réseau de l’hôte (network_mode: host) : l’annonce DLNA ne traverse pas le réseau interne de Docker.')),
+        h('li', tr('Les titres d’un serveur lié ne sont pas partagés en DLNA, seulement ceux de ce serveur.')),
+        v.address ? h('li', tr('Adresse de description : {address}', { address: v.address })) : null)));
+  };
+  render(await get('/api/admin/dlna'));
+}
+
 const PAGES = { dashboard: dashboardPage, users: usersTab, update: updatePage, tasks: tasksTab, libraries: librariesTab,
-  federation: federationPage, shares: sharesTab, metadata: metadataPage, detection: detectionPage, requests: requestsTab, transcoding: transcodingPage,
+  federation: federationPage, dlna: dlnaPage, shares: sharesTab, metadata: metadataPage, detection: detectionPage, requests: requestsTab, transcoding: transcodingPage,
   subtitles: subtitlesPage, downloads: downloadsPage, live: liveTab };
 
 export async function renderAdminSection(id, body, ctx) {

@@ -86,6 +86,10 @@ export function episodeCode(c) {
 export function icon(name) {
   const paths = {
     play: 'M8 5v14l11-7z',
+    chevleft: 'M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z',
+    chevright: 'M8.6 7.4 10 6l6 6-6 6-1.4-1.4 4.6-4.6z',
+    download: 'M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z',
+    info: 'M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z',
     pause: 'M6 5h4v14H6zM14 5h4v14h-4z',
     check: 'M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z',
     back: 'M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z',

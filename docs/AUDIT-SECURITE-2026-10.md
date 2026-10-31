@@ -96,6 +96,13 @@ Les actions tierces (`docker/build-push-action@v6`, `gradle/actions/setup-gradle
 - **Services prêtés (3.24.0).** Un serveur qui a une clé TMDB ou Seerr les prête aux serveurs liés sans transmettre la clé : il relaie lui-même les requêtes. TMDB : chemins de lecture seulement (`/movie`, `/tv`, `/search`, `/discover`…, sans `..`). Seerr : statuts (`GET /media`), comptes (`GET /user`) et nouvelles demandes (`POST /request`) ; toute autre route est refusée (403), notamment les réglages de Seerr. Un serveur lié peut faire une demande au nom de n'importe quel compte Seerr, comme le ferait le serveur lui-même.
 - **Regarder ensemble entre serveurs (3.24.0).** Les routes `/fed/together/…` agissent au nom du compte (répliqué) indiqué par le serveur lié. Elles ne donnent accès qu'aux groupes, et l'accès au titre (bibliothèques, restriction d'âge) est vérifié sur le serveur du groupe.
 
+## 8. Serveur DLNA et photothèque (nouveau, 3.25.0)
+
+- **DLNA sans comptes.** Le protocole ne prévoit aucune authentification : quand le service est activé, tout appareil du réseau local peut parcourir et lire les bibliothèques partagées, sans contrôle parental. Le service est donc **désactivé par défaut**, limité aux bibliothèques choisies par l'administrateur, et refuse toute adresse qui n'est pas locale (privée, boucle locale, lien local), y compris derrière un reverse proxy (403). Les routes `/dlna/` ne servent que les fichiers des bibliothèques partagées, désignés par leur numéro : aucun chemin n'est accepté du client.
+- **Événements UPnP.** L'état initial envoyé à l'abonnement ne part que vers l'adresse de l'appareil qui s'abonne (pas de requête vers une adresse tierce).
+- **SOAP.** Les corps de requête sont limités à 64 Ko et lus avec le parseur XML de la bibliothèque standard (expat protège des entités récursives).
+- **Photothèque.** Lecture seule : les miniatures et images redimensionnées vont dans le cache de Nexis. L'accès aux photos (vignettes, visionneuse, fichier d'origine) vérifie l'accès du compte à la bibliothèque. Les photothèques ne sont pas recopiées chez les serveurs liés.
+
 ## Recommandations par priorité
 
 1. Sécuriser le compte GitHub et la branche `main` ; mettre à jour vers des versions publiées et signées (§ 1).

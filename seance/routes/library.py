@@ -132,7 +132,7 @@ def register(app, ctx, x):
         allowed = allowed_set(user)
         rows = []
         for lib in libraries_all():
-            if lib["id"] not in allowed or lib["id"] in prefs["hidden_libraries"]:
+            if lib["id"] not in allowed or lib["id"] in prefs["hidden_libraries"] or lib["type"] == "photo":
                 continue
             items = attach_state(user["id"], recent_row(lib, user))
             if items:

@@ -81,11 +81,13 @@ def main(argv=None):
     ctx.watcher.start()
     ctx.tasks.start()
     ctx.fed.start()
+    ctx.dlna.start(args.port)
     threading.Timer(60, ctx.prefetch_missing_subtitles).start()
 
     def shutdown(*_):
         stop.set()
         ctx.fed.stop()
+        ctx.dlna.stop()
         ctx.watcher.stop()
         ctx.tasks.stop()
         ctx.subtitles.stop()

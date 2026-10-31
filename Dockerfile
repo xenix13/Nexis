@@ -22,7 +22,7 @@ RUN cd static/vendor && sha256sum -c --quiet hls.min.js.sha256 && (cd qrcode && 
 
 USER seance
 VOLUME /data
-EXPOSE 8420 8421
+EXPOSE 8420 8421 1900/udp
 HEALTHCHECK --interval=30s --timeout=6s --start-period=20s \
   CMD python3 -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/api/status' % os.environ.get('SEANCE_PORT', '8420'), timeout=5)"
 CMD ["python3", "-m", "seance"]

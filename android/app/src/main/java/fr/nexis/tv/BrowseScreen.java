@@ -95,7 +95,8 @@ final class BrowseScreen extends Screen {
         addTab(Tr.t("Accueil"), new HomeTab(this));
         for (int i = 0; i < Session.libraries.length(); i++) {
             JSONObject lib = Session.libraries.optJSONObject(i);
-            if (lib != null) addTab(lib.optString("title"), new LibraryTab(this, lib));
+            // photothèques : sur le site et en DLNA (l'appli TV ne lit que les films et séries)
+            if (lib != null && !"photo".equals(lib.optString("type"))) addTab(lib.optString("title"), new LibraryTab(this, lib));
         }
         View spacer = new View(act);
         bar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));

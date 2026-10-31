@@ -136,7 +136,7 @@ class App:
         return deco
 
     def dispatch(self, req):
-        if req.path.startswith(("/api/", "/fed/")) or req.path in self.plain_paths:
+        if req.path.startswith(("/api/", "/fed/", "/dlna/")) or req.path in self.plain_paths:
             allowed = False
             for method, regex, fn, opts in self.routes:
                 m = regex.match(req.path)
@@ -460,6 +460,12 @@ def make_handler(app, trust_proxy=False, hsts=False, fed=None):
 
         def do_DELETE(self):
             self._handle("DELETE")
+
+        def do_SUBSCRIBE(self):  # événements UPnP (serveur DLNA)
+            self._handle("SUBSCRIBE")
+
+        def do_UNSUBSCRIBE(self):
+            self._handle("UNSUBSCRIBE")
 
     return Handler
 

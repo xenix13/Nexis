@@ -17,6 +17,10 @@ services:
       - ./data:/data                 # base, cache des images et sous-titres (doit appartenir à l'uid 1000)
       - /mnt/films:/media/films:ro   # tes médias, en lecture seule ; ajoute une ligne par dossier
       - /mnt/series:/media/series:ro
+      # - /mnt/photos:/media/photos:ro  # photothèque (bibliothèque de type « Photos »)
+    # Serveur DLNA (Paramètres → DLNA) : l'annonce aux téléviseurs ne traverse pas le réseau interne de Docker.
+    # Décommente network_mode et retire la section ports (les ports de l'hôte sont alors utilisés directement).
+    # network_mode: host
     # Transcodage matériel Intel / AMD (VAAPI) : décommente, et mets le GID du groupe « render » de l'hôte
     # (getent group render) dans group_add
     # devices:

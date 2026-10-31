@@ -25,6 +25,8 @@ Serveur multimédia auto-hébergé pour films, séries et animes. Nexis analyse 
 | **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou externes : `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. ASS rendus par libass (positionnement, karaoké, polices jointes), PGS rendus par le navigateur, VobSub incrustés |
 | **Applications** | Web app installable (Windows, macOS, Linux, Android, iPhone, iPad), téléchargements hors ligne, application Android TV native |
 | **Paramètres** | Un seul espace, organisé en Mon compte, Serveur, Médiathèque et Lecture, avec recherche |
+| **Photothèque** | Bibliothèque de photos : albums (les sous-dossiers), toutes les photos par mois, visionneuse plein écran avec diaporama, date et orientation lues dans les données EXIF |
+| **Serveur DLNA** | Téléviseurs, consoles et box du réseau local trouvent Nexis dans leurs sources et lisent films, séries et photos sans application |
 | **Serveurs liés** | Plusieurs serveurs Nexis reliés par une liaison chiffrée qui leur est propre : comptes communs, bibliothèques de chacun visibles et lisibles depuis l'autre (ajoutées ou fusionnées : un titre une seule fois, meilleure copie choisie automatiquement, serveur le moins occupé en priorité), progression partagée, clé TMDB et Seerr partagés, Regarder ensemble d'un serveur à l'autre. Un seul des deux doit être joignable |
 | **Langues** | Interface en **français** ou en **anglais**, au choix de chaque utilisateur ; langue par défaut des nouveaux comptes choisie par l'administrateur. Messages du serveur et appli TV dans la même langue |
 
@@ -134,6 +136,7 @@ docker compose logs nexis                 # code d'installation du premier lance
 - **Médias** : un volume par dossier, en lecture seule (`/mnt/films:/media/films:ro`), puis des bibliothèques sur `/media/...`. Les partages SMB se montent sur l'hôte ; la page *Partages réseau* n'est pas disponible avec Docker.
 - **Mise à jour** : `docker compose pull && docker compose up -d`.
 - **Transcodage matériel** : `devices: /dev/dri` (Intel/AMD) ou la réservation `nvidia` (avec le NVIDIA Container Toolkit sur l'hôte), en commentaire dans le fichier d'exemple.
+- **DLNA** : `network_mode: host` (en commentaire dans le fichier d'exemple), sinon les téléviseurs ne voient pas le serveur.
 
 ### Accès aux médias
 
@@ -410,6 +413,30 @@ Une seule tâche s'exécute à la fois. Celles qui lisent les fichiers du partag
 - **Chaînes simultanées (max.)** : la plupart des fournisseurs limitent le nombre de connexions ; au-delà, un message l'indique.
 - Les chaînes qui ne répondent pas deux fois de suite sont masquées, puis réaffichées dès qu'elles répondent à nouveau.
 
+## Photothèque
+
+Dans *Paramètres → Bibliothèques*, **+ Ajouter** avec le type **Photos**, puis le dossier des photos.
+
+- **Albums.** Chaque sous-dossier devient un album, et les sous-dossiers d'un album des sous-albums. Les photos placées directement dans le dossier de la bibliothèque s'affichent sans album.
+- **Toutes les photos.** Cet onglet les range de la plus récente à la plus ancienne, groupées par mois.
+- **Date et orientation.** Elles viennent des données EXIF (JPEG, TIFF) ; sans EXIF, la date du fichier est utilisée. Une photo prise en portrait s'affiche à l'endroit.
+- **Visionneuse.** Elle s'ouvre en plein écran : flèches du clavier ou balayage pour passer d'une photo à l'autre, Espace pour le diaporama, Échap pour fermer. Le bouton d'informations affiche la date, les dimensions et l'appareil ; le fichier d'origine se télécharge d'un clic.
+- **Formats.** JPEG, PNG, WebP, GIF (animés tels quels), HEIC/HEIF (selon la version d'ffmpeg du serveur), TIFF et BMP.
+- **Détection.** Les nouvelles photos sont repérées comme les films, et rien n'est écrit dans les dossiers de photos.
+- **Accès et partage.** L'accès se règle par compte comme pour les autres bibliothèques. Les photothèques ne sont pas partagées avec les serveurs liés, et pas encore affichées dans l'appli Android TV : sur un téléviseur, passer par le DLNA.
+
+## Serveur DLNA
+
+Nexis peut aussi apparaître comme **serveur multimédia DLNA / UPnP** sur le réseau local. Téléviseurs (Samsung, LG, Sony…), consoles, box et applications comme VLC le trouvent alors dans leurs sources et lisent son contenu sans application Nexis.
+
+- **Activation.** Dans *Paramètres → DLNA* : activer, choisir le nom affiché et les bibliothèques partagées (toutes par défaut).
+- **Contenu.** Les films ; les séries, avec leurs saisons puis leurs épisodes ; les photos, rangées par album. Chaque photo est aussi proposée en JPEG 1920 px remis à l'endroit, que tous les téléviseurs savent afficher (HEIC compris).
+- **Fichiers lus tels quels.** Pas de conversion : un format que l'appareil ne connaît pas ne se lit pas. Dans ce cas, utiliser l'appli Nexis ou le site.
+- **Pas de comptes.** Tout appareil du réseau local voit les bibliothèques partagées, sans contrôle parental : ne partagez que ce qui convient à tous. Les adresses extérieures au réseau local sont refusées, et le service est désactivé par défaut.
+- **Ports.** L'annonce passe par le port UDP 1900 (multidiffusion SSDP), et le contenu par le port web de Nexis (8420).
+- **Docker.** Le conteneur doit utiliser le réseau de l'hôte (`network_mode: host`, voir le `docker-compose.yml`), car l'annonce ne traverse pas le réseau interne de Docker. En LXC ou avec le paquet `.deb`, rien à faire.
+- **Serveurs liés.** Les titres d'un serveur lié ne sont pas partagés en DLNA : chaque serveur partage les siens.
+
 ## Regarder ensemble
 
 Plusieurs personnes regardent la même vidéo en même temps, chacune sur son appareil, sur place ou à distance.
@@ -591,5 +618,6 @@ L'interface (`static/`) est en JavaScript, sans étape de compilation.
 - Paquet `.deb`, image Docker, conteneur Proxmox en une commande, mise à jour depuis l'interface
 - Paramètres regroupés en un seul espace avec recherche
 - Interface en français et en anglais (langue par utilisateur, langue par défaut choisie par l'administrateur)
+- Photothèque (albums, chronologie, visionneuse, EXIF) et serveur DLNA / UPnP
 - Serveurs liés : jumelage par invitation, liaison TLS à certificats épinglés, tunnel inverse, comptes répliqués, bibliothèques partagées ou fusionnées (un titre une seule fois, meilleure copie choisie automatiquement), lecture relayée, répartition des lectures selon la charge, clé TMDB et Seerr partagés, Regarder ensemble entre serveurs
 - Web app installable, téléchargements hors ligne, navigation à la télécommande et à la manette, application Android TV native (lecture directe des MKV, son multicanal transmis à l'ampli)

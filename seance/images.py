@@ -5,7 +5,7 @@ import os
 import threading
 import urllib.request
 
-from . import media
+from . import media, photos
 from .metadata import TMDB_IMG
 
 log = logging.getLogger("seance.images")
@@ -104,6 +104,9 @@ class Images:
     def get(self, item, kind, w, h):
         if item.get("peer_id"):  # élément d'un serveur lié : son image vient de lui
             return self.ctx.fed.image(item, kind, w, h)
+        if item["type"] in ("photo", "album"):  # photothèque : la photo elle-même (celle de l'album : la plus récente)
+            photo = item if item["type"] == "photo" else photos.cover(self.ctx.db, item["id"])
+            return photos.render(self.ctx, photo, w, h, crop=True) if photo else None
         src = self.resolve(item, kind)
         if not src:
             return None

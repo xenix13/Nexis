@@ -489,4 +489,11 @@ EN = {
     "Requête TMDB invalide": "Invalid TMDB request",
     "Requête Seerr invalide": "Invalid Seerr request",
     "Téléchargement impossible": "Download failed",
+    "Nom : 60 caractères au plus": "Name: 60 characters max",
+    "Réservé au réseau local": "Local network only",
+    "Photo introuvable": "Photo not found",
+    "Album introuvable": "Album not found",
+    "Recherche des photos": "Looking for photos",
+    "Analyse des photos": "Reading photos",
+    "Annonce DLNA impossible (port UDP {}) : {}": "Cannot announce DLNA (UDP port {}): {}",
 }

@@ -204,13 +204,17 @@ def keyframe_before(path, seconds, video_index=0):
     return best if best is not None else seconds
 
 
-def resize_image(src, dest, w, h, crop=True):
-    """Redimensionne (et recadre) une image avec ffmpeg -> JPEG."""
+def resize_image(src, dest, w, h, crop=True, orient=None):
+    """Redimensionne (et recadre) une image avec ffmpeg -> JPEG. orient : filtres qui la remettent à l'endroit
+    (orientation EXIF d'une photo, appliquée ici plutôt que devinée par ffmpeg selon sa version)."""
     vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}" if crop
-          else f"scale={w}:{h}:force_original_aspect_ratio=decrease")
+          else f"scale='min({w},iw)':'min({h},ih)':force_original_aspect_ratio=decrease")
+    if orient:
+        vf = f"{orient},{vf}"
     tmp = f"{dest}.{threading.get_ident()}.tmp.jpg"
     with _image_slots:
-        run([FFMPEG, "-y", "-v", "error", "-i", src, "-vf", vf, "-frames:v", "1", "-q:v", "4", tmp], timeout=60)
+        run([FFMPEG, "-y", "-v", "error", *(["-noautorotate"] if orient is not None else []), "-i", src, "-vf", vf,
+             "-frames:v", "1", "-q:v", "4", tmp], timeout=60)
     _keep_image(tmp, dest)
 
 

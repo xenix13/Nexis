@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from . import __version__, catalog, collections_api, discover, federation, i18n, livetv, media, notify, suggest, syncplay, tasks, update
+from . import __version__, catalog, collections_api, discover, dlna, federation, i18n, livetv, media, notify, photos, suggest, syncplay, tasks, update
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
@@ -55,6 +55,7 @@ class Ctx:
         self.live = livetv.LiveTV(self)
         self.together = syncplay.Groups(self)
         self.fed = federation.Federation(self)
+        self.dlna = dlna.DLNA(self)
         for r in self.db.all("SELECT id, content_rating FROM items WHERE content_rating IS NOT NULL AND age IS NULL"):
             age = age_of(r["content_rating"])
             if age is not None:
@@ -162,6 +163,14 @@ def build_app(ctx):
 
     def before(req, opts):
         auth = opts.get("auth", "user")
+        if auth == "dlna":
+            # serveur DLNA : pas de compte (les téléviseurs n'en ont pas), seulement s'il est activé et depuis le
+            # réseau local
+            if not ctx.dlna.enabled():
+                raise HTTPError(404, "Introuvable")
+            if not dlna.is_local(req.client_ip):
+                raise HTTPError(403, "Réservé au réseau local")
+            return
         if auth == "webhook":
             token = req.arg("token") or ""
             if not hmac.compare_digest(token, db.setting("webhook_token") or "\0"):
@@ -199,7 +208,7 @@ def build_app(ctx):
     app.before.append(before)
 
     catalog.install(ctx, x)
-    for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify,
+    for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify, photos, dlna,
                    federation):
         module.register(app, ctx, x)
     return app
