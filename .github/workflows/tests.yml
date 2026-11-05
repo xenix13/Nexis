@@ -5,12 +5,15 @@ on:
 jobs:
   api:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: ffmpeg
+        timeout-minutes: 10  # dépôt apt bloqué : échec rapide plutôt qu'une heure d'attente
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - run: pip install pillow
       - run: python -m unittest discover -s tests -t . -v
       - run: for f in deploy/*.sh; do bash -n "$f"; done
