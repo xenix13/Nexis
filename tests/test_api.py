@@ -742,7 +742,10 @@ class SeanceTest(unittest.TestCase):
     def test_progressive_subtitles(self):
         """Gros fichier : la lecture démarre dès que les premières minutes sont prêtes, la suite arrive en route."""
         import seance.routes.media as api_mod  # lecture : fenêtre de préparation des sous-titres
-        from seance import subcache
+        from seance import media, subcache
+        if not media.readrate_ok():
+            # l'extraction n'est ralentie (pour l'observer en cours) qu'avec -readrate, écarté depuis ffmpeg 7
+            self.skipTest(f"lecture limitée non utilisée avec ffmpeg {media.ffmpeg_major()}")
         m = self.movie("Nuit polaire")
         row = self.ctx.db.one("SELECT * FROM items WHERE id=?", (int(m["id"]),))
         st, d = self.admin.call("GET", f"/api/items/{m['id']}")

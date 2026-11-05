@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -64,6 +65,29 @@ def has_option(name):
         except (OSError, subprocess.SubprocessError):
             _options[name] = False
     return _options[name]
+
+
+_version = []
+
+
+def ffmpeg_major():
+    """Version majeure d'ffmpeg (6, 7, 8…), 0 si inconnue (version de développement « N-… »)."""
+    if not _version:
+        try:
+            out = subprocess.run([FFMPEG, "-hide_banner", "-version"], capture_output=True, timeout=20).stdout
+            m = re.match(rb"ffmpeg version n?(\d+)\.", out)
+            _version.append(int(m.group(1)) if m else 0)
+        except (OSError, subprocess.SubprocessError):
+            _version.append(0)
+    return _version[0]
+
+
+def readrate_ok():
+    """-readrate utilisable pour ménager le partage réseau. Depuis ffmpeg 7, la lecture limitée se fige en cours
+    de route sur certains fichiers (constaté avec ffmpeg 8.0 : préparation bloquée à mi-fichier) : on s'en passe,
+    la priorité basse (nice, ionice) suffit à laisser la place aux lectures."""
+    major = ffmpeg_major()
+    return has_option("readrate") and 0 < major < 7
 
 
 def available():

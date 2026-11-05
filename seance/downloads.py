@@ -163,7 +163,7 @@ class Downloads:
         cmd = [*([IONICE, "-c", "3"] if IONICE else []),  # disque : seulement quand personne d'autre ne s'en sert
                media.FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "error", "-y", *(hw_input(hw) if hw else []),
                "-threads", str(THREADS),
-               *(["-readrate", str(COPY_READRATE)] if copy and media.has_option("readrate") else []),
+               *(["-readrate", str(COPY_READRATE)] if copy and media.readrate_ok() else []),
                *media.input_args(job.source), "-map_metadata", "-1", "-map_chapters", "-1",
                "-threads", str(THREADS), "-filter_threads", "1",
                *media_args(job.plan, hw), "-sn", "-dn", "-movflags", "+faststart", "-max_muxing_queue_size", "2048",

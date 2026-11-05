@@ -328,6 +328,15 @@ class PhotosDlnaTest(unittest.TestCase):
         st, me = self.admin.call("GET", "/api/me")
         self.assertEqual(me["prefs"]["quality"], "auto")
 
+    def test_21_readrate_only_with_ffmpeg_6(self):
+        """-readrate fige la préparation avec ffmpeg 8 : utilisé seulement avec ffmpeg 5 et 6."""
+        from unittest import mock
+        from seance import media
+        with mock.patch.object(media, "has_option", return_value=True):
+            for major, ok in ((6, True), (5, True), (7, False), (8, False), (0, False)):
+                with mock.patch.object(media, "ffmpeg_major", return_value=major):
+                    self.assertEqual(media.readrate_ok(), ok, major)
+
     def test_12_local_only(self):
         for ip, ok in (("192.168.1.20", True), ("10.0.0.5", True), ("127.0.0.1", True), ("::ffff:192.168.0.3", True),
                        ("fe80::1", True), ("8.8.8.8", False), ("2a01:e0a::1", False), ("x", False)):
