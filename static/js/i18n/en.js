@@ -1282,4 +1282,9 @@ export default {
   "{n} photo": "{n} photo",
   "{n} photos": "{n} photos",
   "{p1} photos · {p2} albums": "{p1} photos · {p2} albums",
+  "Automatique (selon le débit)": "Automatic (based on bandwidth)",
+  "Automatique ({q})": "Automatic ({q})",
+  "Connexion trop lente : qualité réduite": "Connection too slow: quality lowered",
+  "automatique": "automatic",
+  "« Automatique » mesure le débit de l’appareil à chaque lecture : l’original quand la connexion suffit, sinon la meilleure qualité qui passe.": "“Automatic” measures the device’s bandwidth when playing: the original when the connection is fast enough, otherwise the best quality that fits.",
 };

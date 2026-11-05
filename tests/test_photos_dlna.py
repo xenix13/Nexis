@@ -286,6 +286,48 @@ class PhotosDlnaTest(unittest.TestCase):
         self.admin.call("PUT", "/api/admin/dlna", {"enabled": False})
         self.assertEqual(self.raw("GET", "/dlna/description.xml")[0], 404)
 
+    # ---------------------------------------------------------------- qualité automatique
+    def test_20_auto_quality(self):
+        from seance.transcoder import auto_quality
+        p4k = {"bitrate": 40_000_000, "video": {"height": 2160}}
+        self.assertEqual(auto_quality(p4k, None), "original")       # pas de mesure : l'original
+        self.assertEqual(auto_quality(p4k, 100_000), "original")    # réseau local rapide
+        self.assertEqual(auto_quality(p4k, 20_000), "1080p")
+        self.assertEqual(auto_quality(p4k, 6_000), "720p")
+        self.assertEqual(auto_quality(p4k, 800), "480p")            # jamais en dessous de 480p
+        p720 = {"bitrate": 9_000_000, "video": {"height": 720}}
+        self.assertEqual(auto_quality(p720, 12_000), "original")
+        self.assertEqual(auto_quality(p720, 11_000), "720p")         # pas de « 1080p » pour un fichier 720p
+        p720hi = {"bitrate": 20_000_000, "video": {"height": 720}}
+        self.assertEqual(auto_quality(p720hi, 12_000), "1080p")      # 720p très lourd : le palier 1080p réduit le débit
+        size_only = {"video": {"height": 1080}}  # débit d'après la taille : 3 Go en 1 h = 6,7 Mbit/s
+        self.assertEqual(auto_quality(size_only, 9_000, 3_000_000_000, 3_600_000), "original")
+        self.assertEqual(auto_quality(size_only, 8_000, 3_000_000_000, 3_600_000), "720p")
+        # mesure du débit : octets incompressibles, taille bornée
+        st, data, h = self.admin.call("GET", "/api/bandwidth?size=70000", raw=True)
+        self.assertEqual((st, len(data), h.get("Cache-Control")), (200, 70000, "no-store"))
+        st, data, h = self.admin.call("GET", "/api/bandwidth?size=1", raw=True)
+        self.assertEqual(len(data), 1 << 16)
+        # lecture en automatique : débit faible -> conversion, débit large -> l'original
+        movie = self.ctx.db.one("SELECT id, probe FROM items WHERE type='movie' ORDER BY id LIMIT 1")
+        caps = {"video": ["h264", "hevc"], "audio": ["aac", "ac3", "mp3"], "containers": ["mp4", "matroska"], "native": True}
+        st, r = self.admin.call("POST", "/api/play", {"id": str(movie["id"]), "quality": "auto", "bandwidth": 900, "caps": caps})
+        self.assertEqual(st, 200, r)
+        # (fichier de test en 180p à 0,8 Mbit/s : en 480p, rien à réduire, il reste lu tel quel)
+        self.assertEqual((r["quality"], r["auto_quality"], r["bandwidth"]), ("auto", "480p", 900))
+        self.admin.call("POST", "/api/stop", {"stream": r["stream"]})
+        st, r = self.admin.call("POST", "/api/play", {"id": str(movie["id"]), "quality": "auto", "bandwidth": 500_000, "caps": caps})
+        self.assertEqual((r["auto_quality"], r["mode"]), ("original", "direct"))
+        self.admin.call("POST", "/api/stop", {"stream": r["stream"]})
+        # sans mesure dans la demande : la dernière de cet appareil (même compte, même adresse)
+        self.admin.call("POST", "/api/play", {"id": str(movie["id"]), "quality": "auto", "bandwidth": 900, "caps": caps})
+        st, r = self.admin.call("POST", "/api/play", {"id": str(movie["id"]), "quality": "auto", "caps": caps})
+        self.assertEqual((r["auto_quality"], r["bandwidth"]), ("480p", 900))
+        self.admin.call("POST", "/api/stop", {"stream": r["stream"]})
+        # qualité par défaut d'un compte : automatique
+        st, me = self.admin.call("GET", "/api/me")
+        self.assertEqual(me["prefs"]["quality"], "auto")
+
     def test_12_local_only(self):
         for ip, ok in (("192.168.1.20", True), ("10.0.0.5", True), ("127.0.0.1", True), ("::ffff:192.168.0.3", True),
                        ("fe80::1", True), ("8.8.8.8", False), ("2a01:e0a::1", False), ("x", False)):

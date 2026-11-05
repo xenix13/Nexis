@@ -31,6 +31,9 @@ from .keyframes import equal_segments, segments_from_keyframes
 log = logging.getLogger("seance.transcode")
 
 QUALITY = {"original": None, "1080p": (1080, 8000), "720p": (720, 4000), "480p": (480, 1500)}
+QUALITIES = ("auto", *QUALITY)  # « auto » : choisie selon le débit mesuré de l'appareil (auto_quality)
+AUDIO_KBPS = 192
+HEADROOM = 1.3  # marge sur le débit : pointes du fichier, variations de la connexion
 SEGMENT = 6            # secondes
 COPY_SEEK_PAD = 0.25   # remux : viser juste après l'image clé
 SEG_RE = re.compile(r"^(\d{1,6})\.m4s$")
@@ -132,6 +135,32 @@ def video_ok(v, caps=None):
     if codec == "vp9":
         return "vp9" in caps["video"] and depth == 8
     return False
+
+
+def source_kbps(probe, file_size=0, duration_ms=0):
+    """Débit moyen du fichier (kbit/s), d'après l'analyse, sinon d'après sa taille et sa durée."""
+    rate = int((probe.get("bitrate") or 0) / 1000)
+    if not rate and file_size and duration_ms:
+        rate = int(file_size * 8 / (duration_ms / 1000) / 1000)
+    return rate
+
+
+def auto_quality(probe, kbps, file_size=0, duration_ms=0):
+    """Qualité pour un débit mesuré (kbit/s) : l'original s'il passe avec de la marge, sinon la meilleure
+    qualité convertie qui tient dans le débit, au plus 480p. Sans mesure : l'original."""
+    if not kbps:
+        return "original"
+    src = source_kbps(probe, file_size, duration_ms)
+    src_h = (probe.get("video") or {}).get("height") or 0
+    if src and kbps >= src * HEADROOM or not src and kbps >= 25000:
+        return "original"
+    for q in ("1080p", "720p", "480p"):
+        height, rate = QUALITY[q]
+        if src_h and height > src_h and (not src or rate * HEADROOM >= src):
+            continue  # au-dessus de la définition et du débit du fichier : rien à y gagner
+        if kbps >= (rate + AUDIO_KBPS) * HEADROOM:
+            return q
+    return "480p"
 
 
 def plan(probe, audio_index=None, burn_index=None, quality="original", caps=None, algo="none", boost=2.0):

@@ -42,6 +42,14 @@ Au lancement, le lecteur indique au serveur les codecs que le navigateur sait d�
 
 Le lecteur reçoit une playlist couvrant toute la vidéo, découpée en segments de 6 s (calés sur les images clés en remux). Les segments sont produits à la demande au format fMP4, avec les horodatages d'origine : la position affichée est toujours exacte et un saut ne recrée pas le flux. Si le lecteur demande un segment éloigné, ffmpeg est relancé à cet endroit.
 
+**Qualité automatique** (réglage par défaut, *Paramètres → Lecture → Qualité par défaut*) : au lancement d'une vidéo, l'appareil mesure son débit depuis le serveur, en 2,5 s au plus, puis garde la mesure 10 minutes. Le serveur choisit alors :
+
+1. l'**original** si la connexion dépasse d'au moins 30 % le débit du fichier (lecture directe ou remux, rien n'est converti) ;
+2. sinon, la meilleure qualité convertie qui tient dans le débit : 1080p (8 Mbit/s), 720p (4 Mbit/s), puis 480p (1,5 Mbit/s) au plus bas, jamais au-dessus de la définition du fichier ;
+3. si la lecture s'arrête deux fois en trois minutes pour charger, elle descend d'un cran toute seule.
+
+Sur le réseau local, le débit suffit presque toujours pour l'original. Sans mesure (ancienne version de l'appli), le serveur reprend la dernière mesure du même appareil, sinon il lit l'original. Une qualité fixe (Originale, 1080p…) reste disponible par compte, par appareil et dans le lecteur.
+
 Le menu ⚙ du lecteur indique le mode utilisé et sa raison. ffmpeg est mis en pause après 3 minutes d'avance et tourne en priorité réduite. Le nombre de transcodages simultanés est limité (*Paramètres → Lecture → Transcodage*).
 
 ### Transcodage matériel

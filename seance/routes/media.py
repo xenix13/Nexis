@@ -11,7 +11,7 @@ from ..catalog import EXTERNAL_BASE, PREPARE_WINDOW_MS, RK, SID, WATCHED_RATIO, 
 from ..keyframes import mkv_keyframes
 from ..subtitles import parse_subtitles
 from ..downloads import DownloadError
-from ..transcoder import Busy, QUALITY, StreamError, plan
+from ..transcoder import Busy, QUALITIES, QUALITY, StreamError, auto_quality, plan, source_kbps
 from ..web import HTTPError, Response
 
 
@@ -245,6 +245,41 @@ def register(app, ctx, x):
         elif uid is None:
             ctx.transcoder.stop(sid)
 
+    # ----------------------------------------------------------- débit de l'appareil
+    BW_CHUNK = os.urandom(256 * 1024)  # incompressible : un proxy ne fausse pas la mesure
+    BW_KEEP = 3600
+    bandwidths = {}  # (compte, adresse IP) -> (kbit/s, instant) : dernière mesure de cet appareil
+
+    @app.route("GET", "/api/bandwidth")
+    def bandwidth_probe(req):
+        """Octets à télécharger : l'appareil mesure son débit depuis le serveur (qualité automatique)."""
+        size = req.int_arg("size", 1 << 20, 1 << 16, 32 << 20)
+        db.release()
+
+        def gen():
+            left = size
+            while left > 0:
+                n = min(len(BW_CHUNK), left)
+                left -= n
+                yield BW_CHUNK[:n]
+        return Response(stream=gen(), content_type="application/octet-stream", length=size,
+                        headers={"Cache-Control": "no-store", "Content-Encoding": "identity"})
+
+    def measured_bandwidth(req, b):
+        """Débit (kbit/s) mesuré par l'appareil, envoyé avec la demande de lecture ; sinon la dernière mesure
+        du même compte depuis la même adresse (moins d'une heure)."""
+        key = (req.user["id"], req.client_ip)
+        v = b.get("bandwidth")
+        now = time.time()
+        if isinstance(v, (int, float)) and 50 <= v <= 10_000_000:
+            bandwidths[key] = (int(v), now)
+            if len(bandwidths) > 2000:
+                for k in [k for k, (_, t) in bandwidths.items() if now - t > BW_KEEP]:
+                    bandwidths.pop(k, None)
+            return int(v)
+        hit = bandwidths.get(key)
+        return hit[0] if hit and now - hit[1] < BW_KEEP else None
+
     @app.route("POST", "/api/play")
     def play(req):
         b = req.json()
@@ -263,8 +298,11 @@ def register(app, ctx, x):
         audio, subs = stream_lists(probe)
         prefs = get_prefs(uid)
         quality = b.get("quality") or prefs["quality"]
-        if quality not in QUALITY:
+        if quality not in QUALITIES:
             raise HTTPError(400, "Qualité invalide")
+        requested, kbps = quality, measured_bandwidth(req, b)
+        if quality == "auto":
+            quality = auto_quality(probe, kbps, r["file_size"] or 0, r["duration_ms"] or 0)
         duration = int(r["duration_ms"] or 0)
         try:
             offset = max(0, int(b.get("offset") or 0))
@@ -288,6 +326,8 @@ def register(app, ctx, x):
             stop_stream(str(b["replace"]), uid)
         p = plan(probe, audio_id, burn, quality, caps, db.setting("downmix_algo", "none"),
                  float(db.setting("downmix_boost", "2") or 2))
+        if requested == "auto" and p["mode"] == "transcode" and quality != "original" and kbps:
+            p["reasons"].append(f"connexion à {kbps / 1000:.1f} Mbit/s")
         if p["mode"] == "direct" and (b.get("no_direct") or media.is_strm(r["key"])):
             p["mode"] = "copy"  # le navigateur a refusé la lecture directe, ou flux distant (.strm) relayé par Nexis
         sid = secrets.token_urlsafe(12)
@@ -317,7 +357,8 @@ def register(app, ctx, x):
         url = f"/api/stream/{sid}/file" if p["mode"] == "direct" else f"/api/stream/{sid}/main.m3u8"
         return {
             "stream": sid, "mode": p["mode"], "reasons": [i18n.tr(r) for r in p["reasons"]], "url": url, "offset": actual,
-            "duration": duration, "quality": quality, "item": c, "audio": audio, "subtitles": subs,
+            "duration": duration, "quality": requested, "auto_quality": quality if requested == "auto" else None,
+            "bandwidth": kbps, "source_kbps": source_kbps(probe, r["file_size"] or 0, r["duration_ms"] or 0), "item": c, "audio": audio, "subtitles": subs,
             "audio_selected": p["audio_index"], "subtitle_selected": sub["id"] if sub else 0,
             "subtitle_overlay": f"/api/items/{rk}/subtitles/{sub['id']}" if sub and sub["overlay"] else None,
             "subtitle_ass": f"/api/items/{rk}/subtitles/{sub['id']}/ass" if sub and sub.get("ass") else None,

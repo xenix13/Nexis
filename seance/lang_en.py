@@ -496,4 +496,5 @@ EN = {
     "Recherche des photos": "Looking for photos",
     "Analyse des photos": "Reading photos",
     "Annonce DLNA impossible (port UDP {}) : {}": "Cannot announce DLNA (UDP port {}): {}",
+    "connexion à {} Mbit/s": "connection at {} Mbit/s",
 }

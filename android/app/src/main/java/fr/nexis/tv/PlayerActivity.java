@@ -76,6 +76,8 @@ public class PlayerActivity extends Activity {
     private JSONObject audioSel, subSel;
     private boolean burning, forceHls, tracksApplied, introSkipped, upNextDismissed, ended, leaving;
     private boolean everReady, stallShown;
+    private final java.util.ArrayList<Long> stalls = new java.util.ArrayList<>();  // arrêts en cours de lecture
+    private long seekedAt;
     private int startSeq, retries, countdown;
     private long lastReport, lastPosition;
     private long waitSince = SystemClock.elapsedRealtime(), preparedAt;
@@ -115,6 +117,8 @@ public class PlayerActivity extends Activity {
             @Override
             public void onPlaybackStateChanged(int s) {
                 loader.setVisibility(s == androidx.media3.common.Player.STATE_BUFFERING ? View.VISIBLE : View.GONE);
+                if (s == androidx.media3.common.Player.STATE_BUFFERING && everReady && !switchingStream()
+                        && player.getPlayWhenReady() && SystemClock.elapsedRealtime() - seekedAt > 5000) onStall();
                 if (s == androidx.media3.common.Player.STATE_READY) {
                     retries = 0;
                     everReady = true;
@@ -125,6 +129,12 @@ public class PlayerActivity extends Activity {
                     }
                 }
                 if (s == androidx.media3.common.Player.STATE_ENDED) onEnded();
+            }
+
+            @Override
+            public void onPositionDiscontinuity(androidx.media3.common.Player.PositionInfo oldPos,
+                                                androidx.media3.common.Player.PositionInfo newPos, int reason) {
+                if (reason == androidx.media3.common.Player.DISCONTINUITY_REASON_SEEK) seekedAt = SystemClock.elapsedRealtime();
             }
 
             @Override
@@ -354,11 +364,41 @@ public class PlayerActivity extends Activity {
         preparedAt = 0;
         waitSince = SystemClock.elapsedRealtime();
         lastPosition = offset;
-        JSONObject body = Api.json("id", itemId, "offset", offset, "caps", Players.caps(this),
-                "audio", audioSel == null ? null : audioSel.optInt("id"),
-                "subtitle", burn && subSel != null ? subSel.optInt("id") : 0,
-                "replace", session == null ? null : session.optString("stream"),
-                "no_direct", forceHls);
+        // qualité automatique (réglage du compte) : le serveur choisit selon le débit mesuré de la TV
+        Bandwidth.get(kbps -> {
+            if (seq != startSeq || leaving) return;
+            JSONObject body = Api.json("id", itemId, "offset", offset, "caps", Players.caps(this),
+                    "audio", audioSel == null ? null : audioSel.optInt("id"),
+                    "subtitle", burn && subSel != null ? subSel.optInt("id") : 0,
+                    "replace", session == null ? null : session.optString("stream"),
+                    "no_direct", forceHls, "bandwidth", kbps > 0 ? kbps : null);
+            requestStream(seq, offset, burn, body);
+        });
+    }
+
+    private boolean switchingStream() {
+        return loader.getVisibility() == View.VISIBLE && preparedAt == 0;
+    }
+
+    /** Lecture qui s'arrête pour charger, deux fois en trois minutes, en qualité automatique : un cran plus bas. */
+    private void onStall() {
+        long now = SystemClock.elapsedRealtime();
+        for (java.util.Iterator<Long> it = stalls.iterator(); it.hasNext(); ) {
+            if (now - it.next() > 180000) it.remove();  // (removeIf : Android 7 minimum)
+        }
+        stalls.add(now);
+        if (stalls.size() < 2 || session == null || !"auto".equals(session.optString("quality"))) return;
+        String q = session.optString("auto_quality", "original");
+        if ("480p".equals(q)) return;
+        stalls.clear();
+        long rate = "1080p".equals(q) ? 8000 : "720p".equals(q) ? 4000 : Math.max(1500, session.optLong("source_kbps", 8000));
+        long bw = session.optLong("bandwidth", 0);
+        Bandwidth.lower(Math.max(300, (long) (Math.min(bw > 0 ? bw : rate * 13 / 10, rate * 12 / 10) * 0.6)));
+        Ui.toast(this, Tr.t("Connexion trop lente : qualité réduite"));
+        startStream(player.getCurrentPosition(), burning);
+    }
+
+    private void requestStream(int seq, long offset, boolean burn, JSONObject body) {
         Api.send("POST", "/api/play", body, s -> {
             if (seq != startSeq || leaving) {
                 Api.fire("POST", "/api/stop", Api.json("stream", s.optString("stream")));

@@ -9,7 +9,7 @@ from .markers import from_chapters as chapter_markers
 from .i18n import tr
 from .names import fold
 from .scanner import EXTRA_LABELS
-from .transcoder import QUALITY
+from .transcoder import QUALITIES
 from .web import HTTPError
 
 RK = r"(?P<rk>\d{1,12})"
@@ -35,7 +35,7 @@ CODEC_NAMES = {"aac": "AAC", "ac3": "Dolby Digital", "eac3": "Dolby Digital+", "
                "dvd_subtitle": "VobSub", "dvb_subtitle": "DVB"}
 
 DEFAULT_PREFS = {
-    "quality": "original",
+    "quality": "auto",
     "audio_lang": "fra",
     "sub_mode": "foreign",
     "sub_lang": "fra",
@@ -95,7 +95,7 @@ def validate_prefs(data):
             continue
         ok = False
         if k == "quality":
-            ok = v in QUALITY
+            ok = v in QUALITIES
         elif k in ("audio_lang", "sub_lang"):
             ok = isinstance(v, str) and (v == "" or LANG.match(v))
         elif k == "sub_mode":

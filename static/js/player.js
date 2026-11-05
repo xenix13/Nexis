@@ -11,6 +11,7 @@ import { nextDownloaded, playable, saveProgress } from './offline.js';
 import { chapterStrip, chapterTitle } from './chapters.js';
 import { avatar, clear, episodeCode, errorBox, fmtTime, h, icon, img, loadHls, spinner, store, toast } from './ui.js';
 import { tr } from './i18n.js';
+import { measureBandwidth, saveBandwidth } from './bandwidth.js';
 
 const REPORT_EVERY = 10000;
 const HIDE_AFTER = 3000;
@@ -94,6 +95,7 @@ export async function renderPlayer(root, rk, ctx) {
   let idleTimer = null, scrubbing = false, startedAt = 0;
   let switching = true, finished = false; // no progress reports while a stream is (re)starting or after the end
   let rebuffering = false, stalls = [], lowerHinted = false, everPlayed = false;
+  let bandwidth = null; // débit mesuré (kbit/s), pour la qualité automatique
 
   // téléchargement lu hors ligne (#/offline/…) : fichier gardé sur l'appareil, rien ne passe par le serveur
   const offline = !!ctx.offline;
@@ -214,7 +216,10 @@ export async function renderPlayer(root, rk, ctx) {
         markers: item.markers || {}, next: await nextDownloaded(state.me.user.id, item), audio: item.audio,
         subtitles: item.subtitles, subtitle_overlay: subSel ? local.subUrls[subSel.id] || null : null };
     } else try {
-      s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality, no_direct: forceHls || undefined,
+      if (quality === 'auto' && bandwidth === null) bandwidth = await measureBandwidth();
+      if (destroyed || seq !== startSeq) return;
+      s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality, bandwidth: bandwidth || undefined,
+        no_direct: forceHls || undefined,
         caps: browserCaps(),
         playlist: ctx.query.get('playlist') || undefined,
         audio: audioSel ? audioSel.id : null, subtitle: subSel ? subSel.id : 0, replace: previous || undefined });
@@ -360,10 +365,25 @@ export async function renderPlayer(root, rk, ctx) {
       if (group) { paintPlay(); gsend('ready'); return; } // le groupe repart quand tout le monde est prêt
       video.play().catch(() => paintPlay());
     });
-    if (stalls.length >= 2 && ['original', '1080p'].includes(quality) && !lowerHinted) {
+    if (stalls.length >= 2 && quality === 'auto') {
+      stepDown(); // qualité automatique : on descend d'un cran tout seul (connexion, ou conversion trop lente)
+    } else if (stalls.length >= 2 && ['original', '1080p'].includes(quality) && !lowerHinted) {
       lowerHinted = true;
       suggestLowerQuality(session.mode === 'transcode');
     }
+  }
+
+  // Qualité automatique et lecture qui saccade malgré la mesure : un cran plus bas, et la mesure gardée pour les
+  // prochaines lectures est revue à la baisse
+  function stepDown() {
+    if (!session || session.auto_quality === '480p') return;
+    stalls = [];
+    // débit revu à la baisse, sous celui du fichier : le serveur choisit la qualité convertie qui y tient
+    const rate = ({ '1080p': 8000, '720p': 4000 })[session.auto_quality] || session.source_kbps || 8000;
+    bandwidth = Math.max(300, Math.round(Math.min(bandwidth || rate * 1.3, rate * 1.2) * 0.6));
+    saveBandwidth(bandwidth);
+    toast(tr('Connexion trop lente : qualité réduite'));
+    start(pos());
   }
 
   function suggestLowerQuality(cpu) {
@@ -782,9 +802,10 @@ export async function renderPlayer(root, rk, ctx) {
           menuSubs(subs, audioSel).map((s) => opt(s.title, subSel && s.id === subSel.id, () => pickSub(s),
             s.forced ? SIGNS_HINT : (s.overlay || s.pgs ? null : tr('incrusté'))))));
     } else {
-      const q = [['original', tr('Originale')], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p']];
+      const autoLabel = session.auto_quality ? tr('Automatique ({q})', { q: session.auto_quality === 'original' ? tr('originale') : session.auto_quality }) : tr('Automatique');
+      const q = [['auto', autoLabel], ['original', tr('Originale')], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p']];
       const modeLabel = { direct: tr('Lecture directe'), copy: tr('Remux (vidéo copiée)'), transcode: tr('Transcodage') }[session.mode] || '';
-      const cols = [h('div.menu-col', h('h4', tr('Qualité')), q.map(([v, l]) => opt(l, quality === v, () => { quality = v; restart(); })),
+      const cols = [h('div.menu-col', h('h4', tr('Qualité')), q.map(([v, l]) => opt(l, quality === v, () => { quality = v; if (v === 'auto') bandwidth = null; restart(); })),
         h('p.menu-info', h('strong', modeLabel), session.reasons && session.reasons.length ? ` — ${session.reasons.join(', ')}` : '',
           session.mode === 'transcode' ? h('br') : null, session.mode === 'transcode' ? tr('Le processeur du serveur travaille pour cette lecture.') : null))];
       if (isAdmin && item.type === 'episode') {
