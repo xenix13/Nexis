@@ -276,6 +276,24 @@ def register(app, ctx, x):
         return bool(tid and db.scalar("SELECT 1 FROM hidden_items WHERE user_id=? AND item_id=?", (user["id"], tid)))
     x.is_hidden = is_hidden
 
+    def set_stars(uid, tid, v):
+        """Note de 1 à 5 (None : retirée) d'un film ou d'une série, et l'avis qui en découle."""
+        now = int(time.time())
+        if v is None:
+            db.run("DELETE FROM stars WHERE user_id=? AND item_id=?", (uid, tid))
+        else:
+            db.run("INSERT INTO stars(user_id,item_id,stars,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id,item_id) "
+                   "DO UPDATE SET stars=excluded.stars, updated_at=excluded.updated_at", (uid, tid, v, now))
+            opinion = 1 if v >= 4 else -1 if v <= 2 else None
+            if opinion is None:
+                db.run("DELETE FROM ratings WHERE user_id=? AND item_id=? AND value<>0", (uid, tid))
+            else:
+                db.run("INSERT INTO ratings(user_id,item_id,value,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id,item_id) "
+                       "DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at", (uid, tid, opinion, now))
+        with lock:
+            cache.pop(uid, None)
+    x.set_stars = set_stars
+
     @app.route("PUT", f"/api/items/{RK}/stars")
     def item_stars(req):
         """Note de 1 à 5 étoiles (null : retirée). Elle oriente aussi les suggestions : 4 ou 5 = j'aime,
@@ -285,22 +303,9 @@ def register(app, ctx, x):
         if not tid:
             raise HTTPError(400, "Avis possible sur un film ou une série uniquement")
         v = req.json().get("stars")
-        uid, now = req.user["id"], int(time.time())
-        if v is None:
-            db.run("DELETE FROM stars WHERE user_id=? AND item_id=?", (uid, tid))
-        elif isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 5:
-            db.run("INSERT INTO stars(user_id,item_id,stars,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id,item_id) "
-                   "DO UPDATE SET stars=excluded.stars, updated_at=excluded.updated_at", (uid, tid, v, now))
-            opinion = 1 if v >= 4 else -1 if v <= 2 else None
-            if opinion is None:
-                db.run("DELETE FROM ratings WHERE user_id=? AND item_id=? AND value<>0", (uid, tid))
-            else:
-                db.run("INSERT INTO ratings(user_id,item_id,value,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id,item_id) "
-                       "DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at", (uid, tid, opinion, now))
-        else:
+        if v is not None and not (isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 5):
             raise HTTPError(400, "Note invalide (1 à 5)")
-        with lock:
-            cache.pop(uid, None)
+        set_stars(req.user["id"], tid, v)
         return {"stars": v, "opinion": my_opinion(req.user, row)}
 
     @app.route("PUT", f"/api/items/{RK}/hidden")

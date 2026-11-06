@@ -545,6 +545,41 @@ class WhisperTask(Task):
         return f"{done} sous-titre(s) généré(s) sur {len(todo)}" if todo else "Rien à transcrire"
 
 
+class TraktTask(Task):
+    id = "trakt"
+    name = "Synchroniser avec Trakt"
+    description = ("Pour chaque compte relié à Trakt : ce qui est vu, les notes et la liste « À regarder » passent d'un "
+                   "côté à l'autre. Rien n'est retiré.")
+    category = "Bibliothèques"
+    default = {"mode": "interval", "hours": 6}
+
+    def available(self, ctx):
+        if not ctx.tracking.configured():
+            return False, "Enregistrez l'application Trakt dans Paramètres → Trakt et Letterboxd."
+        return True, None
+
+    def run(self, ctx, job, opts):
+        from .tracking import TraktError
+        users = ctx.db.all("SELECT u.* FROM users u JOIN trakt_links t ON t.user_id=u.id WHERE u.disabled=0")
+        ctx.db.release()
+        done, errors = 0, []
+        for n, u in enumerate(users):
+            job.check()
+            job.progress = n / max(1, len(users))
+            job.message = u["display_name"]
+            try:
+                ctx.tracking.sync(u)
+                done += 1
+            except TraktError as e:
+                errors.append(f"{u['display_name']} : {e}")
+            finally:
+                ctx.db.release()
+        job.progress = 1
+        if errors and not done:
+            raise RuntimeError("; ".join(errors)[:280])
+        return f"{done} compte(s) synchronisé(s)" + (f", {len(errors)} en échec" if errors else "")
+
+
 class BackupTask(Task):
     id = "backup"
     name = "Sauvegarder le serveur"
@@ -567,7 +602,7 @@ class BackupTask(Task):
         return f"{b['name']} ({b['size'] / 1e6:.1f} Mo)"
 
 
-TASKS = [ScanTask(), MetadataTask(), ChapterImagesTask(), IntroTask(), SubtitlesTask(), OpenSubtitlesTask(), WhisperTask(), LiveTask(),
+TASKS = [ScanTask(), MetadataTask(), TraktTask(), ChapterImagesTask(), IntroTask(), SubtitlesTask(), OpenSubtitlesTask(), WhisperTask(), LiveTask(),
          CleanupTask(), BackupTask()]
 
 

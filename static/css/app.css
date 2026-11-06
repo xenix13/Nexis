@@ -1295,3 +1295,7 @@ button.chip[aria-pressed="true"] { background: var(--accent); color: var(--ink-o
 .alert-row:hover { background: color-mix(in srgb, #ff6b6b 16%, var(--surface)); }
 .alert-conf { margin-top: 12px; }
 .alert-conf summary { cursor: pointer; color: var(--muted); }
+
+/* code de liaison Trakt */
+.trakt-code { font: 700 32px/1.2 var(--mono, monospace); letter-spacing: .2em; padding: 14px 18px; margin: 10px 0 16px;
+  border-radius: 12px; background: var(--surface-2); display: inline-block; user-select: all; }

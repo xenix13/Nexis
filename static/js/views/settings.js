@@ -214,9 +214,100 @@ export const ACCOUNT_GROUP = { title: tr('Mon compte'), items: [
     keys: tr('thème sombre clair oled couleur accent affiches taille fond d’écran') },
   { id: 'device', label: tr('Cet appareil'), icon: 'tv', lead: tr('Réglages propres à ce navigateur ou à cette TV, prioritaires sur ceux du profil.'),
     keys: tr('appareil tv téléphone qualité sous-titres taille animations mouvement télécommande manette navigateur') },
+  { id: 'services', label: tr('Trakt et Letterboxd'), icon: 'link', lead: tr('Ce que vous regardez, vos notes et votre liste « À regarder », partagés avec Trakt ou Letterboxd.'),
+    keys: tr('trakt letterboxd synchroniser historique notes import export csv scrobble') },
   { id: 'layout', label: tr('Accueil et menu'), icon: 'home', lead: tr('Ordre et affichage des rangées de l’accueil et des liens de la barre du haut.'),
     keys: tr('accueil rangées ordre barre du haut menu liens masquer réorganiser épingler page d’ouverture démarrage') },
 ] };
+
+// Trakt (compte relié par un code, synchronisé toutes les 6 h) et Letterboxd (export / import de fichiers)
+async function servicesPage(body) {
+  const when = (ts) => new Date(ts * 1000).toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' });
+  const traktBox = h('section.panel', h('h2', 'Trakt'), spinner());
+  const lbResult = h('div');
+  const lbFile = h('input', { type: 'file', accept: '.zip,.csv,text/csv,application/zip', hidden: true, onchange: async () => {
+    const f = lbFile.files[0];
+    if (!f) return;
+    lbResult.replaceChildren(spinner());
+    try {
+      const r = await fetch('/api/me/letterboxd', { method: 'POST', body: f, credentials: 'same-origin', headers: { 'X-Seance': '1', 'X-Lang': lang } });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || r.statusText);
+      lbResult.replaceChildren(h('div.status-box.ok', tr('Import terminé : {w} film(s) marqué(s) comme vu(s), {r} note(s), {l} ajout(s) à « À regarder ».', { w: j.watched, r: j.rated, l: j.watchlist })),
+        j.unmatched_count ? h('details.small', h('summary', tr('{n} film(s) absent(s) de ce serveur', { n: j.unmatched_count })),
+          h('ul', j.unmatched.map((n) => h('li', n)))) : null);
+    } catch (e) { lbResult.replaceChildren(h('p.form-error', e.message)); }
+    lbFile.value = '';
+  } });
+  clear(body, traktBox, h('section.panel', h('h2', 'Letterboxd'),
+    h('p.muted.small', tr('Letterboxd n’a pas d’API publique : on passe par des fichiers. L’export contient vos films vus sur Nexis, avec la date et votre note, au format d’import de Letterboxd (letterboxd.com → Settings → Import & Export → Import). Pour l’import, téléchargez votre export Letterboxd (fichier ZIP) et envoyez-le ici : les films vus, les notes et la liste « À regarder » sont reconnus par titre et année.')),
+    h('div.actions-row', h('a.btn', { href: '/api/me/letterboxd.csv', download: 'nexis-letterboxd.csv' }, icon('download'), tr('Exporter pour Letterboxd')),
+      h('button.btn', { onclick: () => lbFile.click() }, tr('Importer l’export Letterboxd…')), lbFile),
+    lbResult));
+
+  let timer = null;
+  const paint = (v) => {
+    clearTimeout(timer);
+    const admin = state.me.user.is_admin ? (() => {
+      const id = h('input', { value: v.client_id || '', spellcheck: false, autocomplete: 'off' });
+      const secret = h('input', { type: 'password', autocomplete: 'off', placeholder: v.secret_set ? tr('Enregistré (laisser vide pour le garder)') : '' });
+      return h('details.alert-conf', { open: !v.configured },
+        h('summary.small', tr('Application Trakt du serveur (administrateur)')),
+        h('p.muted.small', tr('Une fois pour tout le serveur : sur trakt.tv → Settings → Your API Apps → New Application, nom « Nexis », Redirect URI : urn:ietf:wg:oauth:2.0:oob. Copiez ici le Client ID et le Client Secret.')),
+        h('div.grid2', field('Client ID', id), field('Client Secret', secret)),
+        h('button.btn', { onclick: async () => {
+          const b = { client_id: id.value.trim() };
+          if (secret.value.trim()) b.client_secret = secret.value.trim();
+          try { paint(await put('/api/admin/trakt', b)); toast(tr('Enregistré'), 'ok'); } catch (e) { toast(e.message, 'bad'); }
+        } }, tr('Enregistrer')));
+    })() : null;
+    const intro = h('p.muted.small', tr('Relié à Trakt, Nexis y envoie ce que vous regardez et récupère ce que vous avez vu ailleurs (toutes les 6 heures) ; les notes et la liste « À regarder » s’ajoutent dans les deux sens. Rien n’est jamais retiré.'));
+    if (!v.configured) {
+      clear(traktBox, h('h2', 'Trakt'), intro, state.me.user.is_admin ? null : h('div.status-box', tr('L’administrateur du serveur doit d’abord enregistrer une application Trakt.')), admin);
+      return;
+    }
+    if (v.linked) {
+      const r = v.last_result;
+      clear(traktBox, h('h2', 'Trakt'), intro,
+        h('div.status-box.ok', tr('Relié au compte Trakt {name}.', { name: v.username || '?' })),
+        v.last_sync ? h('p.small.muted', tr('Dernière synchronisation : {date}', { date: when(v.last_sync) }),
+          r ? ` · ${tr('{a} reçu(s), {b} envoyé(s)', { a: r.imported + r.ratings_in + r.watchlist_in, b: r.exported + r.ratings_out + r.watchlist_out })}` : '') : null,
+        v.last_error ? h('p.form-error.small', v.last_error) : null,
+        h('div.actions-row',
+          h('button.btn.primary', { onclick: async (e) => {
+            e.target.disabled = true;
+            e.target.textContent = tr('Synchronisation…');
+            try { const j = await post('/api/me/trakt/sync'); paint(j); toast(tr('Synchronisé'), 'ok'); } catch (ex) { toast(ex.message, 'bad'); paint(await get('/api/me/trakt')); }
+          } }, tr('Synchroniser maintenant')),
+          h('button.btn', { onclick: async () => { paint(await del('/api/me/trakt')); toast(tr('Compte Trakt délié'), 'ok'); } }, tr('Délier'))),
+        admin);
+      return;
+    }
+    clear(traktBox, h('h2', 'Trakt'), intro,
+      h('button.btn.primary', { onclick: async () => {
+        try {
+          const c = await post('/api/me/trakt/link');
+          const poll = async () => {
+            try {
+              const r = await post('/api/me/trakt/poll');
+              if (r.status === 'pending') { timer = setTimeout(poll, (c.interval || 5) * 1000); return; }
+              if (r.status === 'linked') { toast(tr('Compte Trakt relié : première synchronisation en cours'), 'ok'); paint(await get('/api/me/trakt')); return; }
+              toast(r.status === 'denied' ? tr('Accès refusé sur Trakt') : tr('Code expiré : recommencez'), 'bad');
+              paint(await get('/api/me/trakt'));
+            } catch (e) { toast(e.message, 'bad'); }
+          };
+          clear(traktBox, h('h2', 'Trakt'),
+            h('p', tr('Sur {url}, saisissez ce code :', { url: c.verification_url })),
+            h('div.trakt-code', c.user_code),
+            h('div.actions-row', h('a.btn.primary', { href: c.verification_url, target: '_blank', rel: 'noopener' }, tr('Ouvrir trakt.tv')),
+              h('button.btn', { onclick: () => { clearTimeout(timer); get('/api/me/trakt').then(paint); } }, tr('Annuler'))),
+            h('p.muted.small', tr('Cette page se met à jour toute seule une fois l’accès accordé.')));
+          timer = setTimeout(poll, (c.interval || 5) * 1000);
+        } catch (e) { toast(e.message, 'bad'); }
+      } }, tr('Relier mon compte Trakt')), admin);
+  };
+  try { paint(await get('/api/me/trakt')); } catch (e) { clear(traktBox, h('h2', 'Trakt'), h('p.muted', e.message)); }
+}
 
 function accountPage(id, body, rerender) {
   const me = state.me;
@@ -448,6 +539,11 @@ function accountPage(id, body, rerender) {
         tr('Nom affiché dans la page Télécommande des autres appareils quand celui-ci lit une vidéo (ex. « TV du salon »).'))),
       shortcutsPanel(),
       h('p.muted.small', tr('Ces réglages sont enregistrés dans ce navigateur uniquement.')));
+    return;
+  }
+
+  if (id === 'services') {
+    servicesPage(body);
     return;
   }
 

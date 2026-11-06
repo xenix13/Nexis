@@ -425,6 +425,7 @@ Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et u
 | Tâche | Par défaut | Options |
 |---|---|---|
 | Analyser les bibliothèques | toutes les 24 h | bibliothèques concernées |
+| Synchroniser avec Trakt | toutes les 6 h (application Trakt enregistrée) | |
 | Actualiser les métadonnées | le dimanche à 4 h | fiches incomplètes / non actualisées depuis N jours / toutes ; bibliothèques |
 | Extraire les images des chapitres | chaque nuit et après chaque ajout | pause pendant les lectures, bibliothèques |
 | Détecter les intros et génériques | chaque nuit et après chaque ajout | zones analysées, durées min. et max., générique de fin, épisodes à chapitres nommés |
@@ -498,6 +499,13 @@ Plusieurs personnes regardent la même vidéo en même temps, chacune sur son ap
 - **Débit maximum hors de la maison** par compte : depuis l'extérieur, la qualité est réduite (720p, 480p…) pour tenir dans ce débit, par exemple pour ménager l'envoi de la box ou pour un compte prêté. Sur le réseau local, rien ne change.
 
 Configuration : *Paramètres → Serveur → Utilisateurs*. Les limites suivent le compte sur les serveurs liés.
+
+## Trakt et Letterboxd
+
+*Paramètres → Mon compte → Trakt et Letterboxd*, pour chaque personne :
+
+- **Trakt.** L'administrateur enregistre une fois une application sur trakt.tv (*Settings → Your API Apps → New Application*, Redirect URI `urn:ietf:wg:oauth:2.0:oob`) et colle son Client ID et son Client Secret sur cette page. Chacun relie ensuite son compte avec un code à saisir sur trakt.tv : Nexis ne connaît jamais le mot de passe Trakt. Toutes les 6 heures (tâche *Synchroniser avec Trakt*) et à la demande : les films et épisodes vus d'un côté deviennent vus de l'autre (avec leur date), les notes s'ajoutent (1 à 5 étoiles ici, 1 à 10 sur Trakt) ainsi que la liste « À regarder ». Rien n'est jamais retiré : un « non vu » ou une note effacée ne se propage pas. Les titres sont reconnus par leur identifiant TMDB.
+- **Letterboxd** (pas d'API publique, donc des fichiers). *Exporter pour Letterboxd* produit un CSV de vos films vus, avec la date et la note, à importer sur letterboxd.com (*Settings → Import & Export*). *Importer l'export Letterboxd…* lit le ZIP téléchargé depuis Letterboxd (films vus, journal, notes, liste « À regarder ») et reconnaît les films par titre et année (à un an près) ; ceux qui ne sont pas sur le serveur sont listés.
 
 ## Alertes pour les administrateurs
 

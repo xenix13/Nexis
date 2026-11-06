@@ -569,6 +569,20 @@ MIGRATIONS = [
             WHERE id=NEW.id;
     END;
     """,
+    # 23 : comptes Trakt reliés
+    """
+    CREATE TABLE trakt_links(
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT NOT NULL DEFAULT '',
+        expires_at INTEGER NOT NULL,
+        username TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        last_sync INTEGER,
+        last_error TEXT,
+        last_result TEXT
+    );
+    """,
 ]
 
 
