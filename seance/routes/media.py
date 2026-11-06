@@ -1,4 +1,5 @@
 """Lecture : préparation et sous-titres, polices, aperçus, chapitres, flux vidéo, progression."""
+import hashlib
 import json
 import os
 import re
@@ -80,7 +81,9 @@ def register(app, ctx, x):
         ext = probe.get("external", [])
         if sub - EXTERNAL_BASE >= len(ext):
             raise HTTPError(404, "Sous-titres introuvables")
-        cache = os.path.join(ctx.data_dir, "cache", "subs", f"ext_{r['id']}_{sub}_{r['file_mtime']}.json")
+        # clé : le fichier lui-même (un sous-titre ajouté dans le dossier décale les numéros des suivants)
+        tag = hashlib.sha1(f"{ext[sub - EXTERNAL_BASE]['path']}|{r['file_mtime']}".encode()).hexdigest()[:16]
+        cache = os.path.join(ctx.data_dir, "cache", "subs", f"ext_{r['id']}_{tag}.json")
         if os.path.isfile(cache):
             with open(cache, "rb") as f:
                 return Response(f.read(), 200, json_type, {"Cache-Control": "private, max-age=3600"})

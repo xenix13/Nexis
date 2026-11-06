@@ -36,8 +36,8 @@ export const ADMIN_GROUPS = [
   { title: tr('Lecture'), items: [
     { id: 'transcoding', label: tr('Transcodage'), icon: 'bolt', lead: tr('Lectures simultanées et carte graphique.'),
       keys: tr('processeur cpu gpu carte graphique nvidia nvenc vaapi intel amd limites lectures simultanées matériel') },
-    { id: 'subtitles', label: tr('Sous-titres et son'), icon: 'subs', lead: tr('Préparation des sous-titres intégrés et mixage du son 5.1 / 7.1.'),
-      keys: tr('sous-titres préparer audio son 5.1 7.1 stéréo mixage downmix volume dialogues') },
+    { id: 'subtitles', label: tr('Sous-titres et son'), icon: 'subs', lead: tr('Sous-titres manquants (OpenSubtitles), sous-titres intégrés et mixage du son 5.1 / 7.1.'),
+      keys: tr('sous-titres opensubtitles bazarr télécharger manquants préparer audio son 5.1 7.1 stéréo mixage downmix volume dialogues') },
     { id: 'dlna', label: tr('DLNA'), icon: 'tv', lead: tr('Téléviseurs, consoles et box du réseau local : Nexis apparaît comme serveur multimédia.'),
       keys: tr('dlna upnp téléviseur smart tv samsung lg sony console xbox ps5 box réseau local serveur multimédia') },
     { id: 'downloads', label: tr('Téléchargements'), icon: 'install', lead: tr('Visionnage hors ligne dans l’application.'),
@@ -499,7 +499,10 @@ const subtitlesPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   const algo = select([['none', tr('ffmpeg (par défaut)')], ['dave750', 'Dave750'], ['nightmode', tr('Dialogues (nuit)')],
     ['rfc7845', 'RFC 7845'], ['ac4', 'AC-4']], s.downmix_algo);
   const boost = select([['1', tr('× 1 (aucun)')], ['1.5', tr('× 1,5')], ['2', tr('× 2 (par défaut)')], ['2.5', tr('× 2,5')], ['3', '× 3']], String(s.downmix_boost));
+  const osPanel = h('section.panel', h('h2', 'OpenSubtitles'), h('p.muted.small', tr('Chargement…')));
+  openSubtitlesPanel(osPanel);
   return [
+    osPanel,
     h('section.panel', h('h2', tr('Sous-titres intégrés')),
       h('p.muted.small', tr('Les sous-titres intégrés aux fichiers (MKV) ne peuvent être extraits qu’en lisant le fichier en entier. Nexis les prépare à l’avance, en dehors des lectures, pour qu’ils soient disponibles dès le début de la vidéo.')),
       prefetch,
@@ -511,6 +514,49 @@ const subtitlesPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
       h('button.btn.primary', { onclick: () => save({ downmix_algo: algo.value, downmix_boost: Number(boost.value) }, tr('Mixage enregistré (prochaines lectures)')) }, tr('Enregistrer'))),
   ];
 });
+
+// Sous-titres téléchargés depuis OpenSubtitles.com : compte, langues, quota du jour
+async function openSubtitlesPanel(panel) {
+  let v;
+  try { v = await get('/api/admin/opensubtitles'); } catch (e) { clear(panel, h('h2', 'OpenSubtitles'), h('p.muted', e.message)); return; }
+  const key = h('input', { type: 'password', autocomplete: 'off', placeholder: v.key_set ? tr('Clé enregistrée (laisser vide pour la garder)') : tr('Clé d’API (consumer)') });
+  const user = h('input', { value: v.user, autocomplete: 'off', spellcheck: false });
+  const pass = h('input', { type: 'password', autocomplete: 'new-password', placeholder: v.password_set ? tr('Enregistré (laisser vide pour le garder)') : '' });
+  const chosen = new Set(v.langs);
+  const chips = h('div.chips', v.all_langs.map((c) => {
+    const b = h('button.chip', { type: 'button', 'aria-pressed': String(chosen.has(c)), onclick: () => {
+      if (chosen.has(c)) chosen.delete(c); else if (chosen.size < 6) chosen.add(c);
+      b.setAttribute('aria-pressed', String(chosen.has(c)));
+    } }, v.lang_names[c] || c);
+    return b;
+  }));
+  const hi = toggle(tr('Accepter les sous-titres pour sourds et malentendants (SDH) s’il n’y a qu’eux'), v.hi);
+  const status = v.configured
+    ? h('div.status-box.ok', v.remaining != null ? tr('Compte connecté : {n} téléchargement(s) restant(s) aujourd’hui.', { n: v.remaining }) : tr('Compte connecté.'))
+    : h('div.status-box', tr('Pas encore configuré.'));
+  const saveBtn = h('button.btn.primary', { onclick: async () => {
+    saveBtn.disabled = true;
+    try {
+      const body = { user: user.value.trim(), langs: [...chosen], hi: hi.querySelector('input').checked };
+      if (key.value.trim()) body.key = key.value.trim();
+      if (pass.value) body.password = pass.value;
+      const r = await put('/api/admin/opensubtitles', body);
+      toast(r.account ? tr('Connexion réussie : {n} téléchargement(s) restant(s) aujourd’hui', { n: r.account.remaining ?? '?' }) : tr('Enregistré'), 'ok');
+      await refreshMe();
+      openSubtitlesPanel(panel);
+    } catch (e) { toast(e.message, 'bad'); saveBtn.disabled = false; }
+  } }, tr('Tester et enregistrer'));
+  clear(panel, h('h2', 'OpenSubtitles'),
+    h('p.muted.small', tr('Nexis télécharge lui-même les sous-titres manquants, sans Bazarr. Il faut un compte gratuit sur opensubtitles.com (20 sous-titres par jour) et une clé d’API, créée sur le site dans « API consumers ». Les sous-titres sont rangés dans le dossier de données de Nexis, jamais à côté des vidéos.')),
+    status,
+    h('div.grid2', field(tr('Clé d’API'), key), field(tr('Identifiant OpenSubtitles'), user)),
+    h('div.grid2', field(tr('Mot de passe OpenSubtitles'), pass), h('div')),
+    field(tr('Langues à télécharger automatiquement (6 au plus)'), chips,
+      tr('Un film ou un épisode qui n’a aucun sous-titre complet dans l’une de ces langues en reçoit un, chaque nuit et après chaque ajout (tâche « Télécharger les sous-titres manquants »). Les sous-titres calés sur le fichier exact passent en premier ; les traductions automatiques sont écartées.')),
+    hi,
+    v.last ? h('p.muted.small', tr('Dernier passage : {summary}', { summary: v.last.summary || v.last.status })) : null,
+    h('div.actions-row', saveBtn, h('a.btn', { href: '#/admin/tasks' }, tr('Tâches planifiées'))));
+}
 
 const transcodingPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   const maxStreams = h('input', { type: 'number', min: 1, max: 50, value: s.max_streams });

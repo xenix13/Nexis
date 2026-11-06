@@ -7,6 +7,7 @@ import threading
 import time
 
 from . import media, photos
+from .opensubs import keep_downloaded
 from .names import (IMAGE_NAMES, SUB_EXT, VIDEO_EXT, clean_title, fold, parse_episode, parse_movie,
                     sort_title, sub_language)
 
@@ -353,7 +354,8 @@ class Scanner:
             pass  # inchangé (les analyses d'anciennes versions sont refaites une fois)
         else:
             info = media.probe(path)
-        info["external"] = external_subs(path, dir_files)
+        # sous-titres du dossier, puis ceux téléchargés (OpenSubtitles) qui sont toujours là
+        info["external"] = keep_downloaded(row["probe"] if row else None, external_subs(path, dir_files))
         return info
 
     def _insert(self, **f):

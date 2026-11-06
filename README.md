@@ -256,6 +256,15 @@ Si les sous-titres ne sont pas encore prêts au lancement, la lecture démarre d
 
 Les vignettes d'aperçu de la barre de lecture ne sont produites qu'en dehors des lectures.
 
+### Sous-titres manquants : OpenSubtitles
+
+Nexis télécharge lui-même les sous-titres qui manquent, sans Bazarr ni autre outil à installer. *Paramètres → Lecture → Sous-titres et son → OpenSubtitles* : un compte gratuit sur [opensubtitles.com](https://www.opensubtitles.com) (20 sous-titres par jour, davantage avec un compte VIP), et une clé d'API créée sur le site (*API consumers*).
+
+- **Automatique.** Chaque nuit et après chaque ajout, un film ou un épisode qui n'a aucun sous-titre complet (intégré, à côté du fichier ou déjà téléchargé) dans l'une des langues choisies en reçoit un, en commençant par les ajouts les plus récents. La tâche s'arrête au quota du jour et reprend le lendemain ; un titre sans résultat est recherché de nouveau au bout d'une semaine.
+- **Choix du sous-titre.** D'abord ceux calés sur le fichier exact (empreinte du fichier, qui reconnaît la sortie précise), puis les plus téléchargés. Les traductions automatiques et les sous-titres « forcés seuls » sont écartés ; ceux pour sourds et malentendants (SDH) ne sont pris que s'il n'y a qu'eux (réglable).
+- **À la main.** Sur la fiche d'un film ou d'un épisode, menu ⋯ → *Chercher des sous-titres…* liste les sous-titres trouvés (calés sur ce fichier, SDH, traduction automatique) ; un clic les ajoute. Un administrateur peut y retirer un sous-titre téléchargé : il n'est alors plus retéléchargé automatiquement.
+- **Stockage.** Les fichiers vont dans `data/subtitles/`, jamais à côté des vidéos (montées en lecture seule) ; ils font partie des sauvegardes et restent après un nouveau scan. Le mot de passe OpenSubtitles est enregistré dans la base de Nexis (nécessaire pour se connecter à l'API) et n'est jamais renvoyé à l'interface.
+
 ### Sous-titres ASS
 
 Les sous-titres ASS (fansubs, plateformes d'animes) contiennent des panneaux positionnés, des dessins, du karaoké et des polices jointes au MKV. Nexis les fait rendre dans le navigateur par **libass**, compilé en WebAssembly via [JASSUB](https://github.com/ThaUnknown/jassub) (fourni dans `static/vendor/jassub`, licences dans ce dossier). Seules les polices utilisées par la piste sont téléchargées. Sur un navigateur trop ancien, un affichage texte simplifié est utilisé.
@@ -411,6 +420,7 @@ Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et u
 | Extraire les images des chapitres | chaque nuit et après chaque ajout | pause pendant les lectures, bibliothèques |
 | Détecter les intros et génériques | chaque nuit et après chaque ajout | zones analysées, durées min. et max., générique de fin, épisodes à chapitres nommés |
 | Préparer les sous-titres et les aperçus | chaque nuit | |
+| Télécharger les sous-titres manquants | chaque nuit à 6 h 10 et après chaque ajout (OpenSubtitles configuré) | bibliothèques |
 | Actualiser les chaînes et le guide TV | toutes les 12 h | vérification des chaînes |
 | Nettoyer les caches | chaque nuit | ancienneté des images conservées |
 | Sauvegarder le serveur | chaque nuit à 4 h 30 | nombre de sauvegardes automatiques gardées |
@@ -592,7 +602,7 @@ Les pistes 5.1 / 7.1 (AC3, E-AC3, DTS, TrueHD, AAC 5.1…) sont mixées en stér
 
 *Paramètres → Serveur → Sauvegardes* :
 
-- **Contenu.** L'archive (`.tar.gz`) contient la base (comptes et mots de passe chiffrés, double authentification, historique, notes, playlists, réglages, bibliothèques et métadonnées), l'identité des serveurs liés, la clé des notifications et les images de profil. Les vidéos et les photos n'y sont pas ; les caches (images redimensionnées, sous-titres extraits, aperçus) se refont tout seuls.
+- **Contenu.** L'archive (`.tar.gz`) contient la base (comptes et mots de passe chiffrés, double authentification, historique, notes, playlists, réglages, bibliothèques et métadonnées), l'identité des serveurs liés, la clé des notifications, les images de profil et les sous-titres téléchargés. Les vidéos et les photos n'y sont pas ; les caches (images redimensionnées, sous-titres extraits, aperçus) se refont tout seuls.
 - **Automatique.** Chaque nuit à 4 h 30 par défaut (réglable, ou chaque semaine), en gardant les 7 dernières. Les sauvegardes faites à la main ne sont jamais supprimées.
 - **Où.** Dans `data/backups` par défaut. Mieux vaut un autre disque ou un NAS : avec Docker, monter le dossier (`- /mnt/nas/nexis:/backups`) et l'indiquer comme *Dossier des sauvegardes*. Les archives ne sont lisibles que par Nexis (droits 600) : elles contiennent les mots de passe chiffrés et les clés.
 - **Restaurer.** *Restaurer* sur une sauvegarde de la liste. Nexis vérifie l'archive, redémarre et la met en place avant d'ouvrir la base ; l'état d'avant est gardé dans `data/before-restore-<date>`. Une sauvegarde d'une version plus récente de Nexis est refusée (mettre Nexis à jour d'abord) ; une plus ancienne est mise à niveau au démarrage.

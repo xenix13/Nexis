@@ -525,6 +525,16 @@ MIGRATIONS = [
         expires_at INTEGER NOT NULL
     );
     """,
+    # 21 : sous-titres OpenSubtitles (recherches automatiques sans résultat, ou sous-titre retiré à la main)
+    """
+    CREATE TABLE subs_attempts(
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        lang TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        result TEXT NOT NULL,
+        PRIMARY KEY(item_id, lang)
+    );
+    """,
 ]
 
 

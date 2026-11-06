@@ -7,6 +7,7 @@ Une sauvegarde est une archive .tar.gz qui contient :
 - federation/ : identité et certificats des serveurs liés (sans elle, il faudrait les lier à nouveau) ;
 - push/ : clé des notifications (sans elle, chaque appareil devrait se réabonner) ;
 - avatars/ : images de profil ;
+- subtitles/ : sous-titres téléchargés depuis OpenSubtitles (comptés sur un quota quotidien) ;
 - manifest.json : version de Nexis et de la base, date.
 Les vidéos et les photos n'y sont pas : elles restent dans leurs dossiers. Les caches (images redimensionnées,
 sous-titres extraits, aperçus) se refont tout seuls.
@@ -30,7 +31,7 @@ from . import __version__ as VERSION
 log = logging.getLogger("seance.backup")
 
 FORMAT = 1
-DIRS = ("federation", "push", "avatars")
+DIRS = ("federation", "push", "avatars", "subtitles")
 NAME = re.compile(r"^nexis-\d{8}-\d{6}(?:-[a-z0-9]{1,12})?\.tar\.gz$")
 PENDING = "restore-pending"
 KEEP_BEFORE = 2  # copies « avant restauration » gardées
@@ -84,7 +85,7 @@ def create(ctx, label="", keep=None):
             dst.close()
             src.close()
         manifest = {"format": FORMAT, "version": VERSION, "schema": _schema(db_copy), "created": int(now),
-                    "server": ctx.db.setting("server_name") or ""}
+                    "server": ctx.db.setting("server_name") or "", "data_dir": os.path.abspath(ctx.data_dir)}
         man = os.path.join(tmp_dir, "manifest.json")
         with open(man, "w", encoding="utf-8") as f:
             json.dump(manifest, f)
@@ -239,6 +240,18 @@ def apply_pending(data_dir):
         if os.path.exists(p):
             shutil.move(p, os.path.join(data_dir, name))
     shutil.rmtree(pending, ignore_errors=True)
+    old_dir, new_dir = man.get("data_dir"), os.path.abspath(data_dir)
+    if isinstance(old_dir, str) and old_dir and old_dir != new_dir:
+        # autre dossier de données (nouveau serveur) : chemins des sous-titres téléchargés mis à jour
+        c = sqlite3.connect(os.path.join(data_dir, "seance.db"))
+        try:
+            c.execute("UPDATE items SET probe=replace(probe, ?, ?) WHERE probe LIKE ?",
+                      (old_dir + "/subtitles/", new_dir + "/subtitles/", "%" + old_dir + "/subtitles/%"))
+            c.commit()
+        except sqlite3.Error as e:
+            log.warning("Chemins des sous-titres : %s", e)
+        finally:
+            c.close()
     olds = sorted(n for n in os.listdir(data_dir) if n.startswith("before-restore-"))
     for n in olds[:-KEEP_BEFORE]:
         shutil.rmtree(os.path.join(data_dir, n), ignore_errors=True)

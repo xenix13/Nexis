@@ -419,6 +419,14 @@ class CleanupTask(Task):
                 except OSError:
                     continue
                 rm(p)
+        # sous-titres téléchargés de titres qui ne sont plus dans les bibliothèques
+        dl = os.path.join(ctx.data_dir, "subtitles")
+        if os.path.isdir(dl):
+            ids = {str(r["id"]) for r in ctx.db.all("SELECT id FROM items WHERE type IN ('movie','episode')")}
+            ctx.db.release()
+            for name in os.listdir(dl):
+                if name.isdigit() and name not in ids:
+                    rm(os.path.join(dl, name))
         fp = ctx.fingerprints.base
         for name in os.listdir(fp):
             stem = name.split("_head")[0].split("_tail")[0]
@@ -426,6 +434,66 @@ class CleanupTask(Task):
                 rm(os.path.join(fp, name))
         job.progress = 1
         return f"{removed} élément(s) supprimé(s), {freed / 1e6:.1f} Mo libérés"
+
+
+class OpenSubtitlesTask(Task):
+    id = "opensubs"
+    name = "Télécharger les sous-titres manquants"
+    description = ("Cherche sur OpenSubtitles les sous-titres des langues choisies (Paramètres → Sous-titres et son) "
+                   "pour les films et épisodes qui n'en ont pas, en commençant par les plus récents. S'arrête au quota "
+                   "du jour du compte et reprend le lendemain.")
+    category = "Lecture"
+    default = {"mode": "daily", "time": "06:10"}
+    options = [AFTER_SCAN, opt_libraries()]
+
+    def available(self, ctx):
+        if not ctx.opensubs.configured():
+            return False, "Renseignez le compte OpenSubtitles dans Paramètres → Sous-titres et son."
+        return True, None
+
+    def run(self, ctx, job, opts):
+        from .opensubs import FAIL_RETRY, SubsError
+        os_ = ctx.opensubs
+        conf = os_.conf()
+        if not conf["langs"]:
+            return "Aucune langue choisie"
+        clause, args = lib_clause(opts)
+        rows = ctx.db.all("SELECT i.* FROM items i WHERE i.type IN ('movie','episode') AND i.probe IS NOT NULL" + clause +
+                          " ORDER BY i.added_at DESC, i.id DESC", args)
+        tried = {(r["item_id"], r["lang"]): r for r in ctx.db.all("SELECT * FROM subs_attempts")}
+        ctx.db.release()
+        now = time.time()
+        got = searched = 0
+        todo = []
+        for r in rows:
+            probe = json.loads(r["probe"] or "{}")
+            want = [l for l in os_.missing_langs(probe, conf["langs"])
+                    if not ((r["id"], l) in tried and (tried[(r["id"], l)]["result"] == "removed"
+                                                        or now - tried[(r["id"], l)]["at"] < FAIL_RETRY))]
+            if want:
+                todo.append((r, want))
+        for n, (r, want) in enumerate(todo):
+            job.check()
+            job.progress = n / max(1, len(todo))
+            job.message = r["title"]
+            left = os_.quota_left()
+            if left is not None and left <= 0:
+                return f"{got} sous-titre(s) téléchargé(s) ; quota du jour atteint, reprise demain"
+            try:
+                g, _ = os_.fetch_missing(r, want, conf["hi"])
+                got += g
+                searched += 1
+            except SubsError as e:
+                if "Quota" in str(e):
+                    return f"{got} sous-titre(s) téléchargé(s) ; quota du jour atteint, reprise demain"
+                if "refuse" in str(e) or "manquant" in str(e):
+                    raise RuntimeError(str(e))
+                log.warning("OpenSubtitles, %s : %s", r["title"], e)
+            finally:
+                ctx.db.release()
+            time.sleep(0.3)  # l'API limite à quelques requêtes par seconde
+        job.progress = 1
+        return f"{got} sous-titre(s) téléchargé(s) pour {searched} titre(s)" if todo else "Rien à chercher"
 
 
 class BackupTask(Task):
@@ -450,8 +518,8 @@ class BackupTask(Task):
         return f"{b['name']} ({b['size'] / 1e6:.1f} Mo)"
 
 
-TASKS = [ScanTask(), MetadataTask(), ChapterImagesTask(), IntroTask(), SubtitlesTask(), LiveTask(), CleanupTask(),
-         BackupTask()]
+TASKS = [ScanTask(), MetadataTask(), ChapterImagesTask(), IntroTask(), SubtitlesTask(), OpenSubtitlesTask(), LiveTask(),
+         CleanupTask(), BackupTask()]
 
 
 # ------------------------------------------------------------------ planification

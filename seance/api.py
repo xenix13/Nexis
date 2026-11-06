@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from . import __version__, backup, catalog, collections_api, discover, dlna, federation, i18n, push, remote, livetv, media, notify, photos, suggest, syncplay, tasks, update
+from . import __version__, backup, catalog, opensubs, collections_api, discover, dlna, federation, i18n, push, remote, livetv, media, notify, photos, suggest, syncplay, tasks, update
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
@@ -60,6 +60,7 @@ class Ctx:
         self.dlna = dlna.DLNA(self)
         self.remote = remote.Remote()
         self.push = push.Push(self)
+        self.opensubs = opensubs.OpenSubtitles(self)
         for r in self.db.all("SELECT id, content_rating FROM items WHERE content_rating IS NOT NULL AND age IS NULL"):
             age = age_of(r["content_rating"])
             if age is not None:
@@ -218,7 +219,7 @@ def build_app(ctx):
 
     catalog.install(ctx, x)
     for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify, photos, dlna, remote, push,
-                   federation):
+                   opensubs, federation):
         module.register(app, ctx, x)
     return app
 

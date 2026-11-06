@@ -1277,3 +1277,13 @@ kbd { display: inline-block; min-width: 26px; padding: 2px 7px; border-radius: 6
 .backup-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
   padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
 .backup-row .bad { color: #ff6b6b; }
+
+/* choix de langues (OpenSubtitles) et résultats de recherche */
+button.chip { border: 1px solid var(--line); cursor: pointer; }
+button.chip[aria-pressed="true"] { background: var(--accent); color: var(--ink-on-accent); border-color: transparent; }
+.os-results { display: flex; flex-direction: column; gap: 6px; max-height: 52vh; overflow-y: auto; margin-top: 10px; }
+.os-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); }
+.os-row .os-info { flex: 1; min-width: 0; }
+.os-row .os-release { font-size: 13px; overflow-wrap: anywhere; }
+.os-badge { display: inline-block; padding: 0 6px; margin-right: 4px; border-radius: 4px; font-size: 11px; background: var(--line); }
+.os-badge.good { background: color-mix(in srgb, #3dd68c 30%, transparent); }

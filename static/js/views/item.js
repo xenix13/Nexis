@@ -59,6 +59,58 @@ function fileInfo(d) {
   ), []);
 }
 
+// Sous-titres en ligne (OpenSubtitles) : résultats pour ce fichier, téléchargement en un clic
+async function subtitleSearch(d, rerender) {
+  const list = h('div.os-results', spinner());
+  const info = h('p.muted.small');
+  const langSel = h('select');
+  const body = h('div', h('div.grid2', field(tr('Langue'), langSel), h('div')), info, list);
+  let changed = false;
+  const load = async (langs) => {
+    list.replaceChildren(spinner());
+    try {
+      const r = await get(`/api/items/${d.id}/opensubtitles${langs ? `?langs=${langs}` : ''}`);
+      if (!langSel.options.length) {
+        const codes = [...new Set([...r.langs, ...Object.keys(r.lang_names)])];
+        langSel.replaceChildren(h('option', { value: r.langs.join(',') }, r.langs.map((c) => r.lang_names[c] || c).join(' + ')),
+          ...codes.map((c) => h('option', { value: c }, r.lang_names[c] || c)));
+        langSel.onchange = () => load(langSel.value);
+      }
+      info.textContent = [r.remaining != null ? tr('{n} téléchargement(s) restant(s) aujourd’hui.', { n: r.remaining }) : '',
+        r.downloaded.length ? tr('Déjà téléchargés : {list}', { list: r.downloaded.map((x) => `${r.lang_names[x.lang] || x.lang}`).join(', ') }) : ''].filter(Boolean).join(' ');
+      const isAdmin = state.me.user.is_admin;
+      const rows = [
+        ...(isAdmin ? r.downloaded.map((x) => h('div.os-row', h('div.os-info', h('strong', r.lang_names[x.lang] || x.lang), h('div.os-release.muted', x.release || tr('téléchargé'))),
+          h('button.btn.small', { onclick: async () => {
+            try { await del(`/api/items/${d.id}/opensubtitles/${x.file_id}`); changed = true; toast(tr('Sous-titre retiré'), 'ok'); load(langSel.value); } catch (e) { toast(e.message, 'bad'); }
+          } }, tr('Retirer')))) : []),
+        ...r.results.map((s) => {
+          const btn = h('button.btn.small.primary', { onclick: async () => {
+            btn.disabled = true;
+            btn.textContent = tr('Téléchargement…');
+            try {
+              await post(`/api/items/${d.id}/opensubtitles`, { file_id: s.file_id, lang: s.lang, hi: s.hi, release: s.release });
+              changed = true;
+              btn.textContent = tr('Ajouté');
+              toast(tr('Sous-titres ajoutés : ils apparaissent dans le lecteur'), 'ok');
+            } catch (e) { toast(e.message, 'bad'); btn.disabled = false; btn.textContent = tr('Télécharger'); }
+          } }, tr('Télécharger'));
+          return h('div.os-row', h('div.os-info',
+            h('div', h('strong', r.lang_names[s.lang] || s.lang), ' ',
+              s.hash_match ? h('span.os-badge.good', tr('calé sur ce fichier')) : null,
+              s.hi ? h('span.os-badge', 'SDH') : null, s.forced ? h('span.os-badge', tr('forcés')) : null,
+              s.machine ? h('span.os-badge', tr('traduction automatique')) : null),
+            h('div.os-release.muted', s.release || '—'),
+            h('div.muted.small', tr('{n} téléchargements', { n: s.downloads.toLocaleString(locale()) }))), btn);
+        })];
+      list.replaceChildren(...(rows.length ? rows : [h('p.muted', tr('Aucun sous-titre trouvé pour ce titre dans cette langue.'))]));
+    } catch (e) { list.replaceChildren(h('p.muted', e.message)); }
+  };
+  load('');
+  await modal(tr('Sous-titres en ligne'), body, [{ label: tr('Fermer'), value: true }]);
+  if (changed) rerender();
+}
+
 async function addToPlaylist(d) {
   const lists = await get('/api/playlists');
   const name = h('input', { placeholder: tr('Nouvelle playlist…'), maxlength: 100 });
@@ -135,6 +187,9 @@ function itemMenu(d, rerender) {
         toast(current ? tr('Fond d’écran retiré') : tr('Fond d’écran appliqué'), 'ok');
       } catch (e) { toast(e.message, 'bad'); }
     } });
+  }
+  if (['movie', 'episode'].includes(d.type) && state.me.features && state.me.features.opensubtitles) {
+    items.push({ label: tr('Chercher des sous-titres…'), onClick: () => subtitleSearch(d, rerender) });
   }
   if (['movie', 'show'].includes(d.type)) {
     // masqué pour soi : disparaît des listes (bibliothèques, accueil, recherche), la fiche reste accessible
