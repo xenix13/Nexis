@@ -18,7 +18,8 @@ def env_bool(name, default=False):
 def admin_command(argv):
     """Commandes de secours, sur le serveur (accès console) :
     reset-2fa <identifiant>  désactive la double authentification d'un compte (téléphone et codes de secours perdus)
-    list-users               liste les comptes et l'état de leur double authentification"""
+    list-users               liste les comptes et l'état de leur double authentification
+    restore <archive>        prépare la restauration d'une sauvegarde (appliquée au prochain démarrage)"""
     from .db import DB
     from . import twofa
     ap = argparse.ArgumentParser(prog="nexis", description="Commandes d'administration de Nexis (en console)")
@@ -27,7 +28,20 @@ def admin_command(argv):
     r = sub.add_parser("reset-2fa", help="désactiver la double authentification d'un compte")
     r.add_argument("username")
     sub.add_parser("list-users", help="lister les comptes")
+    rs = sub.add_parser("restore", help="restaurer une sauvegarde (Nexis arrêté, ou redémarré ensuite)")
+    rs.add_argument("archive")
     args = ap.parse_args(argv)
+    if args.cmd == "restore":
+        from . import backup
+        os.makedirs(args.data, mode=0o700, exist_ok=True)
+        try:
+            man = backup.stage(args.data, args.archive)
+        except backup.BackupError as e:
+            print(str(e), file=sys.stderr)
+            return 1
+        print(f"Sauvegarde de la version {man.get('version')} prête : elle sera mise en place au prochain démarrage "
+              "de Nexis (l'état actuel est gardé dans before-restore-…).")
+        return 0
     path = os.path.join(args.data, "seance.db")
     if not os.path.isfile(path):
         print(f"Base introuvable : {path} (option --data)", file=sys.stderr)
@@ -56,7 +70,7 @@ def admin_command(argv):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    if any(a in ("reset-2fa", "list-users") for a in argv):
+    if any(a in ("reset-2fa", "list-users", "restore") for a in argv):
         return admin_command(argv)
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     ap = argparse.ArgumentParser(prog="seance", description="Nexis — serveur multimédia auto-hébergé")
@@ -84,6 +98,8 @@ def main(argv=None):
     ctx.dlna.start(args.port)
     threading.Timer(60, ctx.prefetch_missing_subtitles).start()
 
+    exit_code = [0]
+
     def shutdown(*_):
         stop.set()
         ctx.fed.stop()
@@ -94,12 +110,18 @@ def main(argv=None):
         ctx.transcoder.stop_all()
         ctx.live.stop_all()
         threading.Thread(target=server.shutdown, daemon=True).start()
+    def restart():
+        # code non nul : systemd (Restart=on-failure) et Docker (restart: unless-stopped) relancent Nexis
+        logging.getLogger("seance").warning("Redémarrage de Nexis (restauration d'une sauvegarde)")
+        exit_code[0] = 75
+        shutdown()
+    ctx.restart = restart
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
     logging.getLogger("seance").info("Nexis écoute sur http://%s:%d", args.host, args.port)
     server.serve_forever()
     server.server_close()
-    return 0
+    return exit_code[0]
 
 
 if __name__ == "__main__":

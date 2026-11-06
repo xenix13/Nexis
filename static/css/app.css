@@ -1271,3 +1271,9 @@ kbd { display: inline-block; min-width: 26px; padding: 2px 7px; border-radius: 6
   background: color-mix(in srgb, var(--surface) 80%, transparent); border-top-left-radius: 6px; }
 .map-credit a { text-decoration: underline; }
 .map-place-head { margin: 0 0 12px; font-size: 18px; }
+
+/* sauvegardes */
+.backup-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.backup-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.backup-row .bad { color: #ff6b6b; }

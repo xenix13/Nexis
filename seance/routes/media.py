@@ -325,7 +325,7 @@ def register(app, ctx, x):
         if b.get("replace"):
             stop_stream(str(b["replace"]), uid)
         p = plan(probe, audio_id, burn, quality, caps, db.setting("downmix_algo", "none"),
-                 float(db.setting("downmix_boost", "2") or 2))
+                 float(db.setting("downmix_boost", "2") or 2), db.setting("tonemap", "hable"))
         if requested == "auto" and p["mode"] == "transcode" and quality != "original" and kbps:
             p["reasons"].append(f"connexion à {kbps / 1000:.1f} Mbit/s")
         if b.get("cast"):
@@ -601,7 +601,8 @@ def register(app, ctx, x):
         caps = parse_caps(b.get("caps"))
         caps["containers"] = {"mp4"}  # le fichier gardé est un MP4
         p = plan(probe, audio_id, burn, "original" if quality == "auto" else quality, caps,
-                 db.setting("downmix_algo", "none"), float(db.setting("downmix_boost", "2") or 2))
+                 db.setting("downmix_algo", "none"), float(db.setting("downmix_boost", "2") or 2),
+                 db.setting("tonemap", "hable"))
         if p["mode"] == "direct" and media.is_strm(r["key"]):
             p["mode"] = "copy"  # flux distant : on en fait un fichier
         duration = probe.get("duration") or (r["duration_ms"] or 0) / 1000

@@ -50,12 +50,14 @@ class Client:
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar),
                                                   urllib.request.ProxyHandler({}))
 
-    def call(self, method, path, body=None, headers=None, csrf=True, raw=False):
+    def call(self, method, path, body=None, headers=None, csrf=True, raw=False, raw_body=None):
         h = {"Content-Type": "application/json"}
         if csrf:
             h["X-Seance"] = "1"
         h.update(headers or {})
         data = json.dumps(body).encode() if body is not None else (b"" if method != "GET" else None)
+        if raw_body is not None:
+            data = raw_body
         req = urllib.request.Request(self.base + path, data=data, headers=h, method=method)
         try:
             with self.opener.open(req, timeout=120) as r:

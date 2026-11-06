@@ -14,6 +14,8 @@ export const ADMIN_GROUPS = [
       keys: tr('compte profil enfant pin âge restriction administrateur désactiver mot de passe foyer langue language') },
     { id: 'update', label: tr('Mise à jour'), icon: 'upgrade', lead: tr('Version installée et mises à jour de Nexis.'),
       keys: tr('version mettre à jour github nouveautés changements réinstaller') },
+    { id: 'backups', label: tr('Sauvegardes'), icon: 'backup', lead: tr('Sauvegarde automatique de la base et des clés, et restauration.'),
+      keys: tr('sauvegarde backup restaurer restauration archive base de données migration nouveau serveur') },
     { id: 'federation', label: tr('Serveurs liés'), icon: 'link', lead: tr('Relier vos serveurs Nexis : comptes communs, bibliothèques de chacun visibles et lisibles depuis l’autre.'),
       keys: tr('fédération cluster lier jumeler invitation second serveur réplication tunnel') },
     { id: 'tasks', label: tr('Tâches planifiées'), icon: 'clock', lead: tr('Travaux de fond : scans, métadonnées, intros, sous-titres, nettoyage.'),
@@ -540,6 +542,11 @@ const transcodingPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
       h('div.grid2', field(tr('Lectures simultanées (max.)'), maxStreams), field(tr('Transcodages simultanés (max.)'), maxTranscodes,
         tr('0 : transcodage désactivé (lecture directe et remux uniquement).'))),
       h('button.btn.primary', { onclick: () => save({ max_streams: Number(maxStreams.value), max_transcodes: Number(maxTranscodes.value) }, tr('Enregistré')) }, tr('Enregistrer'))),
+    h('section.panel', h('h2', tr('Films HDR')),
+      h('p.muted.small', tr('Quand un film HDR (HDR10, HLG, Dolby Vision avec base HDR10) doit être transcodé, ses couleurs sont converties pour un écran ordinaire ; sans cela, l’image paraît délavée et grise. La lecture directe d’un fichier HDR n’est pas touchée. La conversion se fait sur le processeur et coûte environ un cœur de plus en 1080p.')),
+      s.tonemap_ok ? null : h('div.status-box.bad', tr('Le ffmpeg de ce serveur n’a pas le filtre zscale : la conversion HDR est impossible.')),
+      field(tr('Conversion HDR → SDR'), select([['hable', tr('Hable (contraste naturel, par défaut)')], ['mobius', tr('Mobius (couleurs plus vives)')],
+        ['reinhard', tr('Reinhard (plus doux)')], ['off', tr('Désactivée')]], s.tonemap, { onchange: (e) => save({ tonemap: e.target.value }, tr('Enregistré (prochaines lectures)')) }))),
     h('section.panel', h('h2', tr('Carte graphique')),
       h('p.muted.small', tr('La carte graphique décode et encode la vidéo à la place du processeur, ce qui permet beaucoup plus de transcodages simultanés. Un essai est effectué avant l’enregistrement ; si la carte refuse un fichier, le processeur prend le relais. L’accès d’un conteneur LXC à la carte est décrit dans le README.')),
       h('div.grid2', field(tr('Accélération matérielle'), hwEngine), hwDeviceField),
@@ -1135,7 +1142,90 @@ async function dlnaPage(body, ctx) {
   render(await get('/api/admin/dlna'));
 }
 
-const PAGES = { dashboard: dashboardPage, users: usersTab, update: updatePage, tasks: tasksTab, libraries: librariesTab,
+// --------------------------------------------------------------- sauvegardes
+async function backupsPage(body, ctx) {
+  const size = (b) => (b >= 1e9 ? tr('{n} Go', { n: (b / 1e9).toLocaleString(locale(), { maximumFractionDigits: 1 }) })
+    : b >= 1e6 ? tr('{n} Mo', { n: (b / 1e6).toLocaleString(locale(), { maximumFractionDigits: 1 }) })
+      : tr('{n} Ko', { n: Math.max(1, Math.round(b / 1e3)) }));
+  const when = (ts) => new Date(ts * 1000).toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' });
+  const render = (v) => {
+    if (!ctx.isCurrent()) return;
+    const sched = v.schedule || { mode: 'off' };
+    const mode = select([['off', tr('Désactivée')], ['daily', tr('Chaque jour')], ['weekly', tr('Chaque semaine (dimanche)')]],
+      sched.mode === 'interval' ? 'daily' : sched.mode);
+    const time = h('input', { type: 'time', value: sched.time || '04:30' });
+    const keep = h('input', { type: 'number', min: 1, max: 90, value: v.keep });
+    const dir = h('input', { value: v.custom_dir ? v.dir : '', placeholder: v.default_dir, spellcheck: false });
+    const saveConf = async () => {
+      const schedule = mode.value === 'off' ? { mode: 'off' } : { mode: mode.value, time: time.value || '04:30', ...(mode.value === 'weekly' ? { weekday: 6 } : {}) };
+      try {
+        render(await put('/api/admin/backups/settings', { schedule, keep: Number(keep.value), dir: dir.value.trim() }));
+        toast(tr('Enregistré'), 'ok');
+      } catch (e) { toast(e.message, 'bad'); }
+    };
+    const nowBtn = h('button.btn.primary', { onclick: async () => {
+      nowBtn.disabled = true;
+      nowBtn.textContent = tr('Sauvegarde en cours…');
+      try { render(await post('/api/admin/backups')); toast(tr('Sauvegarde terminée'), 'ok'); } catch (e) { toast(e.message, 'bad'); nowBtn.disabled = false; }
+    } }, tr('Sauvegarder maintenant'));
+    const fileInput = h('input', { type: 'file', accept: '.gz,.tar.gz,application/gzip', hidden: true, onchange: async () => {
+      const f = fileInput.files[0];
+      if (!f) return;
+      toast(tr('Envoi de la sauvegarde…'));
+      try {
+        const r = await fetch('/api/admin/backups/upload', { method: 'POST', body: f, credentials: 'same-origin',
+          headers: { 'X-Seance': '1', 'Content-Type': 'application/gzip' } });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || r.statusText);
+        render(j);
+        toast(tr('Sauvegarde ajoutée : vous pouvez la restaurer'), 'ok');
+      } catch (e) { toast(e.message, 'bad'); }
+    } });
+    const last = v.last;
+    const row = (b) => h('div.backup-row',
+      h('div.backup-info', h('strong', when(b.created)),
+        h('div.muted.small', [b.version ? `Nexis ${b.version}` : null, size(b.size),
+          b.name.includes('-envoi') ? tr('envoyée') : b.auto ? tr('automatique') : tr('manuelle')].filter(Boolean).join(' · '),
+        b.broken ? h('span.bad', ` · ${tr('illisible')}`) : null)),
+      h('div.actions-row',
+        h('a.btn.small', { href: `/api/admin/backups/${b.name}`, download: b.name }, icon('download'), tr('Télécharger')),
+        h('button.btn.small', { disabled: !!b.broken, onclick: async () => {
+          if (!await confirmDialog(tr('Restaurer cette sauvegarde ?'), tr('Comptes, historique, réglages et bibliothèques reviennent à leur état du {date}. Ce qui a changé depuis est perdu (l’état actuel reste gardé dans le dossier de données, sous « before-restore »). Nexis redémarre.', { date: when(b.created) }), tr('Restaurer'))) return;
+          try {
+            const r = await post(`/api/admin/backups/${b.name}/restore`);
+            if (!r.restarting) { toast(tr('Restauration prête : redémarrez Nexis pour l’appliquer'), 'ok'); return; }
+            clear(body, h('section.panel', h('h2', tr('Restauration en cours')), h('p.muted', tr('Nexis redémarre avec la sauvegarde. La page se rechargera toute seule.'))));
+            const started = Date.now();
+            const wait = async () => {
+              await new Promise((res) => setTimeout(res, 2500));
+              try { await get('/api/status'); location.reload(); } catch { if (Date.now() - started < 180000) wait(); }
+            };
+            wait();
+          } catch (e) { toast(e.message, 'bad'); }
+        } }, tr('Restaurer')),
+        h('button.icon-btn', { title: tr('Supprimer'), 'aria-label': tr('Supprimer'), onclick: async () => {
+          if (!await confirmDialog(tr('Supprimer cette sauvegarde ?'), when(b.created), tr('Supprimer'))) return;
+          try { render(await del(`/api/admin/backups/${b.name}`)); } catch (e) { toast(e.message, 'bad'); }
+        } }, icon('trash'))));
+    clear(body,
+      v.restored ? h('div.status-box.ok', tr('Sauvegarde du {date} restaurée (Nexis {version}).', { date: when(v.restored.created), version: v.restored.version || '?' })) : null,
+      h('section.panel', h('h2', tr('Sauvegarde automatique')),
+        h('p.muted.small', tr('L’archive contient la base (comptes, historique, notes, playlists, réglages, bibliothèques et métadonnées), les clés des serveurs liés et des notifications, et les images de profil. Les vidéos et les photos n’y sont pas. Elle contient les mots de passe (chiffrés) : gardez-la en lieu sûr.')),
+        h('div.grid2', field(tr('Fréquence'), mode), field(tr('Heure'), time)),
+        h('div.grid2', field(tr('Sauvegardes automatiques gardées'), keep),
+          field(tr('Dossier des sauvegardes'), dir, tr('De préférence sur un autre disque ou un NAS (dossier monté dans le conteneur avec Docker). Vide : dans le dossier de données.'))),
+        h('p.muted.small', [v.free != null ? tr('Espace libre : {n}', { n: size(v.free) }) : null,
+          last ? tr('Dernière sauvegarde automatique : {date} ({status})', { date: when(last.start), status: last.status === 'ok' ? tr('réussie') : last.summary || tr('échec') }) : null].filter(Boolean).join(' · ')),
+        h('button.btn', { onclick: saveConf }, tr('Enregistrer'))),
+      h('section.panel', h('h2', tr('Sauvegardes')),
+        h('div.actions-row', nowBtn, h('button.btn', { onclick: () => fileInput.click() }, tr('Envoyer une sauvegarde…')), fileInput),
+        h('p.muted.small', tr('Pour passer sur un nouveau serveur : installez Nexis, créez le compte administrateur, puis envoyez ici la sauvegarde de l’ancien et restaurez-la.')),
+        v.backups.length ? h('div.backup-list', v.backups.map(row)) : h('p.muted', tr('Aucune sauvegarde pour l’instant.'))));
+  };
+  render(await get('/api/admin/backups'));
+}
+
+const PAGES = { dashboard: dashboardPage, backups: backupsPage, users: usersTab, update: updatePage, tasks: tasksTab, libraries: librariesTab,
   federation: federationPage, dlna: dlnaPage, shares: sharesTab, metadata: metadataPage, detection: detectionPage, requests: requestsTab, transcoding: transcodingPage,
   subtitles: subtitlesPage, downloads: downloadsPage, live: liveTab };
 

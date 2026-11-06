@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import threading
 import time
 
@@ -13,7 +14,7 @@ from ..auth import USERNAME, USERNAME_RULE, find_user, hash_password, normalize_
 from ..catalog import HEX, RK, SID
 from ..metadata import MetaError
 from ..scanner import like_prefix
-from ..transcoder import DOWNMIX_ALGOS, system_memory
+from ..transcoder import DOWNMIX_ALGOS, TONEMAPS, system_memory
 from ..web import HTTPError, Response
 
 log = logging.getLogger("seance.admin")
@@ -354,6 +355,7 @@ def register(app, ctx, x):
                 "downloads": db.setting("downloads", "1") == "1",
                 "downmix_algo": db.setting("downmix_algo", "none"),
                 "downmix_boost": float(db.setting("downmix_boost", "2") or 2),
+                "tonemap": db.setting("tonemap", "hable"), "tonemap_ok": media.has_filter("zscale") and media.has_filter("tonemap"),
                 "subs_queue": len(ctx.subtitles.urgent) + len(ctx.subtitles.idle),
                 "webhook_path": f"/api/hooks/scan?token={db.setting('webhook_token')}",
                 "watch_events": [dict(e, text=i18n.tr(e["text"])) for e in ctx.watcher.events[:8]],"tmdb_set": bool(db.setting("tmdb_key")),
@@ -388,6 +390,10 @@ def register(app, ctx, x):
                 raise HTTPError(400, "Langue invalide")
             db.set_setting("default_language", b["default_language"])
             i18n.set_server_default(b["default_language"])
+        if "tonemap" in b:
+            if b["tonemap"] not in TONEMAPS:
+                raise HTTPError(400, "Conversion HDR inconnue")
+            db.set_setting("tonemap", b["tonemap"])
         if "downmix_algo" in b:
             if b["downmix_algo"] not in DOWNMIX_ALGOS:
                 raise HTTPError(400, "Algorithme de mixage inconnu")
@@ -491,6 +497,115 @@ def register(app, ctx, x):
                "ON CONFLICT(rating_key,kind) DO UPDATE SET start_ms=excluded.start_ms, end_ms=excluded.end_ms, "
                "source='manual'", (rk, kind, start, end))
         return {"ok": True}
+
+    # ---------------------------------------------------- sauvegardes
+    BK = r"(?P<name>nexis-[0-9a-z-]{15,40}\.tar\.gz)"
+
+    def backups_view():
+        from .. import backup
+        d = backup.directory(ctx)
+        try:
+            free = shutil.disk_usage(d if os.path.isdir(d) else ctx.data_dir).free
+        except OSError:
+            free = None
+        last = ctx.tasks.last("backup")
+        conf = ctx.tasks.conf("backup")
+        return {"backups": backup.listing(ctx), "dir": d, "custom_dir": bool(db.setting("backup_dir")),
+                "default_dir": os.path.join(ctx.data_dir, "backups"), "free": free, "last": last,
+                "schedule": conf["schedule"], "keep": conf["options"].get("keep", 7),
+                "restored": ctx.restored and {"version": ctx.restored.get("version"), "created": ctx.restored.get("created")},
+                "can_restart": bool(ctx.restart)}
+
+    def backup_error(e):
+        return HTTPError(400, str(e))
+
+    @app.route("GET", "/api/admin/backups", auth="admin")
+    def admin_backups(req):
+        return backups_view()
+
+    @app.route("POST", "/api/admin/backups", auth="admin")
+    def admin_backup_now(req):
+        from .. import backup
+        try:
+            b = backup.create(ctx)
+        except backup.BackupError as e:
+            raise backup_error(e)
+        return {"backup": b, **backups_view()}
+
+    @app.route("PUT", "/api/admin/backups/settings", auth="admin")
+    def admin_backup_settings(req):
+        from .. import backup
+        b = req.json()
+        if "dir" in b:
+            if not b["dir"]:
+                db.set_setting("backup_dir", None)
+            else:
+                try:
+                    db.set_setting("backup_dir", backup.check_directory(b["dir"]))
+                except backup.BackupError as e:
+                    raise backup_error(e)
+        if "schedule" in b or "keep" in b:
+            try:
+                ctx.tasks.update("backup", schedule=b.get("schedule"),
+                                 options={"keep": b["keep"]} if "keep" in b else None)
+            except ValueError as e:
+                raise HTTPError(400, str(e))
+        return backups_view()
+
+    @app.route("GET", f"/api/admin/backups/{BK}", auth="admin")
+    def admin_backup_download(req):
+        from .. import backup
+        try:
+            path = backup.path_of(ctx, req.params["name"])
+        except backup.BackupError as e:
+            raise HTTPError(404, str(e))
+        size = os.path.getsize(path)
+        f = open(path, "rb")
+        db.release()
+
+        def gen():
+            while True:
+                chunk = f.read(256 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        return Response(stream=gen(), content_type="application/gzip", length=size, on_close=f.close,
+                        headers={"Content-Disposition": f'attachment; filename="{req.params["name"]}"',
+                                 "Cache-Control": "no-store"})
+
+    @app.route("DELETE", f"/api/admin/backups/{BK}", auth="admin")
+    def admin_backup_delete(req):
+        from .. import backup
+        try:
+            os.remove(backup.path_of(ctx, req.params["name"]))
+        except backup.BackupError as e:
+            raise HTTPError(404, str(e))
+        return backups_view()
+
+    @app.route("POST", "/api/admin/backups/upload", auth="admin")
+    def admin_backup_upload(req):
+        """Archive d'un autre serveur (ou d'avant une réinstallation), ajoutée à la liste pour la restaurer."""
+        from .. import backup
+        db.release()
+        try:
+            b = backup.receive(ctx, req)
+        except backup.BackupError as e:
+            raise backup_error(e)
+        return {"backup": b, **backups_view()}
+
+    @app.route("POST", f"/api/admin/backups/{BK}/restore", auth="admin")
+    def admin_backup_restore(req):
+        """Prépare la restauration, puis redémarre Nexis (la base ne peut pas être remplacée en marche)."""
+        from .. import backup
+        try:
+            man = backup.stage(ctx.data_dir, backup.path_of(ctx, req.params["name"]))
+        except backup.BackupError as e:
+            raise backup_error(e)
+        log.warning("Restauration de %s demandée par %s", req.params["name"], req.user["username"])
+        restarting = bool(ctx.restart)
+        if restarting:
+            threading.Timer(1.5, ctx.restart).start()  # le temps d'envoyer la réponse
+        return {"ok": True, "restarting": restarting, "version": man.get("version"), "created": man.get("created")}
 
     # ---------------------------------------------------- mise à jour de Nexis
     @app.route("GET", "/api/admin/update", auth="admin")

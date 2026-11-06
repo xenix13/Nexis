@@ -38,7 +38,7 @@ Au lancement, le lecteur indique au serveur les codecs que le navigateur sait d�
 |---|---|---|
 | **Lecture directe** | MP4 dont la vidéo et le son sont lisibles par le navigateur | nul |
 | **Remux** | Vidéo lisible par le navigateur dans un MKV, ou piste audio à convertir (DTS, TrueHD, 5.1…) | très faible : seule la piste audio est convertie |
-| **Transcodage** | Vidéo non décodable par le navigateur (HEVC sur Firefox, H.264 10 bits…), sous-titres VobSub, qualité réduite | 1 à 2 cœurs par lecture en 1080p sans carte graphique |
+| **Transcodage** | Vidéo non décodable par le navigateur (HEVC sur Firefox, H.264 10 bits…), sous-titres VobSub, qualité réduite ; le HDR est alors converti en SDR | 1 à 2 cœurs par lecture en 1080p sans carte graphique |
 
 Le lecteur reçoit une playlist couvrant toute la vidéo, découpée en segments de 6 s (calés sur les images clés en remux). Les segments sont produits à la demande au format fMP4, avec les horodatages d'origine : la position affichée est toujours exacte et un saut ne recrée pas le flux. Si le lecteur demande un segment éloigné, ffmpeg est relancé à cet endroit.
 
@@ -413,6 +413,7 @@ Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et u
 | Préparer les sous-titres et les aperçus | chaque nuit | |
 | Actualiser les chaînes et le guide TV | toutes les 12 h | vérification des chaînes |
 | Nettoyer les caches | chaque nuit | ancienneté des images conservées |
+| Sauvegarder le serveur | chaque nuit à 4 h 30 | nombre de sauvegardes automatiques gardées |
 
 Une seule tâche s'exécute à la fois. Celles qui lisent les fichiers du partage réseau se mettent **en pause pendant les lectures**.
 
@@ -583,7 +584,19 @@ Sur la fiche d'un film, d'un épisode ou d'une série, l'audio et les sous-titre
 
 **Sous-titres « forcés »** (« FR Forced », « Signs & Songs »…) : ils ne traduisent que les panneaux, inscriptions et chansons. Nexis ne les propose que si l'audio est dans leur langue, et les sélectionne alors automatiquement ; avec un autre audio, la piste complète est utilisée.
 
+**Films HDR.** Quand un film HDR (HDR10, HDR10+, HLG, Dolby Vision avec base HDR10) doit être transcodé, ses couleurs sont converties en SDR (BT.709) pour un écran ordinaire ; sans cela, l'image paraît délavée et grise. La lecture directe et le remux d'un fichier HDR ne sont pas touchés. Méthode réglable dans *Paramètres → Lecture → Transcodage* : Hable (par défaut), Mobius, Reinhard ou désactivée. La conversion passe par le processeur (filtre `zscale` d'ffmpeg, présent dans l'image Docker) et coûte environ un cœur de plus en 1080p, même avec une carte graphique.
+
 Les pistes 5.1 / 7.1 (AC3, E-AC3, DTS, TrueHD, AAC 5.1…) sont mixées en stéréo selon le réglage de *Paramètres → Lecture → Sous-titres et son* (ffmpeg, Dave750, Dialogues (nuit), RFC 7845 ou AC-4), suivi d'un gain réglable. Un limiteur empêche toute saturation.
+
+## Sauvegarde et restauration
+
+*Paramètres → Serveur → Sauvegardes* :
+
+- **Contenu.** L'archive (`.tar.gz`) contient la base (comptes et mots de passe chiffrés, double authentification, historique, notes, playlists, réglages, bibliothèques et métadonnées), l'identité des serveurs liés, la clé des notifications et les images de profil. Les vidéos et les photos n'y sont pas ; les caches (images redimensionnées, sous-titres extraits, aperçus) se refont tout seuls.
+- **Automatique.** Chaque nuit à 4 h 30 par défaut (réglable, ou chaque semaine), en gardant les 7 dernières. Les sauvegardes faites à la main ne sont jamais supprimées.
+- **Où.** Dans `data/backups` par défaut. Mieux vaut un autre disque ou un NAS : avec Docker, monter le dossier (`- /mnt/nas/nexis:/backups`) et l'indiquer comme *Dossier des sauvegardes*. Les archives ne sont lisibles que par Nexis (droits 600) : elles contiennent les mots de passe chiffrés et les clés.
+- **Restaurer.** *Restaurer* sur une sauvegarde de la liste. Nexis vérifie l'archive, redémarre et la met en place avant d'ouvrir la base ; l'état d'avant est gardé dans `data/before-restore-<date>`. Une sauvegarde d'une version plus récente de Nexis est refusée (mettre Nexis à jour d'abord) ; une plus ancienne est mise à niveau au démarrage.
+- **Nouveau serveur.** Installer Nexis, créer le compte administrateur, *Envoyer une sauvegarde…* puis *Restaurer*. Les serveurs liés reconnaissent le nouveau serveur, qui garde l'identité de l'ancien. En console, Nexis arrêté : `python3 -m seance --data /var/lib/seance restore archive.tar.gz` (avec Docker : `docker compose run --rm nexis python3 -m seance --data /data restore /data/archive.tar.gz`), puis démarrer Nexis.
 
 ## Sécurité
 

@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from . import __version__, catalog, collections_api, discover, dlna, federation, i18n, push, remote, livetv, media, notify, photos, suggest, syncplay, tasks, update
+from . import __version__, backup, catalog, collections_api, discover, dlna, federation, i18n, push, remote, livetv, media, notify, photos, suggest, syncplay, tasks, update
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
@@ -39,6 +39,8 @@ class Ctx:
         self.trust_proxy = trust_proxy
         for d in ("cache/img", "cache/orig", "cache/subs"):
             os.makedirs(os.path.join(data_dir, d), exist_ok=True)
+        self.restored = backup.apply_pending(data_dir)  # restauration préparée avant l'arrêt : avant d'ouvrir la base
+        self.restart = None  # fourni par __main__ : arrêt avec un code qui fait relancer Nexis par son superviseur
         self.db = DB(os.path.join(data_dir, "seance.db"))
         self.throttle = Throttle()
         self.lock = threading.Lock()

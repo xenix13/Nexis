@@ -67,6 +67,20 @@ def has_option(name):
     return _options[name]
 
 
+_filters = {}
+
+
+def has_filter(name):
+    """ffmpeg a-t-il ce filtre ? (zscale, pour convertir le HDR, dépend de la compilation)"""
+    if name not in _filters:
+        try:
+            out = subprocess.run([FFMPEG, "-hide_banner", "-filters"], capture_output=True, timeout=20).stdout
+            _filters[name] = re.search(rb"^\s*\S+\s+" + re.escape(name.encode()) + rb"\s", out, re.M) is not None
+        except (OSError, subprocess.SubprocessError):
+            _filters[name] = False
+    return _filters[name]
+
+
 _version = []
 
 

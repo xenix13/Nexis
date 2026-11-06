@@ -428,7 +428,30 @@ class CleanupTask(Task):
         return f"{removed} élément(s) supprimé(s), {freed / 1e6:.1f} Mo libérés"
 
 
-TASKS = [ScanTask(), MetadataTask(), ChapterImagesTask(), IntroTask(), SubtitlesTask(), LiveTask(), CleanupTask()]
+class BackupTask(Task):
+    id = "backup"
+    name = "Sauvegarder le serveur"
+    description = ("Copie la base (comptes, historique, notes, playlists, réglages, bibliothèques), les clés des "
+                   "serveurs liés et des notifications, et les images de profil dans une archive. Les vidéos et les "
+                   "photos n'y sont pas.")
+    category = "Maintenance"
+    default = {"mode": "daily", "time": "04:30"}
+    options = [opt_int("keep", "Garder les", 7, 1, 90, "dernières sauvegardes automatiques")]
+
+    def run(self, ctx, job, opts):
+        from . import backup
+        try:
+            b = backup.create(ctx, "auto", keep=int(opts.get("keep", 7)))
+        except backup.BackupError as e:
+            raise RuntimeError(str(e))
+        finally:
+            ctx.db.release()
+        job.progress = 1
+        return f"{b['name']} ({b['size'] / 1e6:.1f} Mo)"
+
+
+TASKS = [ScanTask(), MetadataTask(), ChapterImagesTask(), IntroTask(), SubtitlesTask(), LiveTask(), CleanupTask(),
+         BackupTask()]
 
 
 # ------------------------------------------------------------------ planification
