@@ -13,8 +13,15 @@ jobs:
         with:
           python-version: "3.12"
       - name: ffmpeg
-        timeout-minutes: 10  # dépôt apt bloqué : échec rapide plutôt qu'une heure d'attente
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+        timeout-minutes: 14
+        # le miroir apt des machines GitHub se fige parfois : délais courts, et jusqu'à trois essais de 4 minutes
+        run: |
+          for i in 1 2 3; do
+            timeout 240 sh -c 'sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update -qq &&
+              sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y -qq ffmpeg' && exit 0
+            echo "apt bloqué (essai $i), nouvel essai"
+          done
+          exit 1
       - run: pip install pillow
       - run: python -m unittest discover -s tests -t . -v
       - run: for f in deploy/*.sh; do bash -n "$f"; done
