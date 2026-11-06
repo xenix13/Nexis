@@ -248,7 +248,7 @@ async function libraryForm(lib) {
   const isNew = !lib || !lib.id;
   lib = lib || { name: '', kind: 'movie', paths: [] };
   const name = h('input', { value: lib.name, maxlength: 40, placeholder: tr('Films, Séries, Animes…') });
-  const kind = select([['movie', tr('Films')], ['show', tr('Séries (et animes)')], ['photo', tr('Photos')]], lib.kind);
+  const kind = select([['movie', tr('Films')], ['show', tr('Séries (et animes)')], ['photo', tr('Photos')], ['audiobook', tr('Livres audio')]], lib.kind);
   const paths = h('div.paths');
   const addPath = (value = '') => {
     const input = h('input', { value, placeholder: '/mnt/films' });
@@ -312,11 +312,12 @@ async function librariesTab(body, ctx) {
         h('button.btn.primary', { onclick: async () => { if (await libraryForm(null)) { await refreshMe(); toast(tr('Bibliothèque créée, scan en cours'), 'ok'); reload(); } } }, tr('+ Ajouter')))),
     scanBox(data.scan),
     data.libraries.length ? h('div.user-list', data.libraries.map((l) => h('div.user-row',
-      h('div.lib-icon', l.kind === 'movie' ? '🎬' : l.kind === 'photo' ? '🖼️' : '📺'),
+      h('div.lib-icon', l.kind === 'movie' ? '🎬' : l.kind === 'photo' ? '🖼️' : l.kind === 'audiobook' ? '🎧' : '📺'),
       h('div.grow', h('strong', l.name),
         h('div.muted.small', l.kind === 'movie' ? plural(c(l, 'movie'), '{n} film', '{n} films')
           : l.kind === 'photo' ? tr('{p1} photos · {p2} albums', { p1: c(l, 'photo'), p2: c(l, 'album') })
-            : tr('{p1} séries · {p2} épisodes', { p1: c(l, 'show'), p2: c(l, 'episode') }),
+            : l.kind === 'audiobook' ? plural(c(l, 'book'), '{n} livre', '{n} livres')
+              : tr('{p1} séries · {p2} épisodes', { p1: c(l, 'show'), p2: c(l, 'episode') }),
           l.unmatched ? h('span', tr(' · {unmatched} non identifié(s)', { unmatched: l.unmatched })) : null,
           tr(' · scanné {p1}', { p1: since(l.scanned_at) })),
         h('div.small', l.paths.map((p, i) => h('code', { class: l.paths_ok[i] ? '' : 'bad-path', title: l.paths_ok[i] ? '' : tr('Dossier inaccessible') }, p))),

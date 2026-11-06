@@ -580,6 +580,21 @@ class TraktTask(Task):
         return f"{done} compte(s) synchronisé(s)" + (f", {len(errors)} en échec" if errors else "")
 
 
+class PodcastTask(Task):
+    id = "podcasts"
+    name = "Actualiser les podcasts"
+    description = "Lit les flux des podcasts suivis et signale les nouveaux épisodes à leurs abonnés."
+    category = "Bibliothèques"
+    default = {"mode": "interval", "hours": 2}
+
+    def run(self, ctx, job, opts):
+        new, errors, total = ctx.podcasts.refresh_all(job)
+        job.progress = 1
+        if not total:
+            return "Aucun podcast suivi"
+        return f"{new} nouvel(s) épisode(s) dans {total} podcast(s)" + (f", {errors} flux en erreur" if errors else "")
+
+
 class BackupTask(Task):
     id = "backup"
     name = "Sauvegarder le serveur"
@@ -602,7 +617,7 @@ class BackupTask(Task):
         return f"{b['name']} ({b['size'] / 1e6:.1f} Mo)"
 
 
-TASKS = [ScanTask(), MetadataTask(), TraktTask(), ChapterImagesTask(), IntroTask(), SubtitlesTask(), OpenSubtitlesTask(), WhisperTask(), LiveTask(),
+TASKS = [ScanTask(), MetadataTask(), TraktTask(), PodcastTask(), ChapterImagesTask(), IntroTask(), SubtitlesTask(), OpenSubtitlesTask(), WhisperTask(), LiveTask(),
          CleanupTask(), BackupTask()]
 
 

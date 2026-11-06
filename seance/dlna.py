@@ -104,7 +104,8 @@ class DLNA:
     def library_ids(self):
         """Bibliothèques partagées (celles de ce serveur ; toutes si l'administrateur n'a rien choisi)."""
         db = self.ctx.db
-        local = [r["id"] for r in db.all("SELECT id FROM libraries WHERE peer_id IS NULL ORDER BY position, name")]
+        local = [r["id"] for r in db.all("SELECT id FROM libraries WHERE peer_id IS NULL AND kind<>'audiobook' "
+                                         "ORDER BY position, name")]
         try:
             chosen = json.loads(db.setting("dlna_libraries") or "null")
         except ValueError:

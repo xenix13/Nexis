@@ -6,7 +6,7 @@ import os
 import threading
 import time
 
-from . import media, photos
+from . import books, media, photos
 from .opensubs import keep_downloaded
 from .names import (IMAGE_NAMES, SUB_EXT, VIDEO_EXT, clean_title, fold, parse_episode, parse_movie,
                     sort_title, sub_language)
@@ -213,6 +213,8 @@ class Scanner:
         """Scan complet, ou partiel si `scope` (dossiers modifiés, ajoutés ou supprimés) est donné."""
         if lib["kind"] == "photo":
             return photos.scan(self, lib)
+        if lib["kind"] == "audiobook":
+            return books.scan(self, lib)
         db = self.ctx.db
         paths = [p for p in json.loads(lib["paths"]) if p]
         self._set(phase="Recherche des fichiers", done=0, total=0)

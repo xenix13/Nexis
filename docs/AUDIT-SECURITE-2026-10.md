@@ -114,6 +114,14 @@ Les actions tierces (`docker/build-push-action@v6`, `gradle/actions/setup-gradle
 - **Flux lisible sans session.** Un flux lancé pour une TV (Chromecast, AirPlay) est servi à quiconque connaît son adresse : la TV la demande sans le cookie du navigateur. Cette adresse contient l'identifiant aléatoire du flux (96 bits) et cesse de fonctionner à l'arrêt de la lecture. Les autres flux demandent toujours la session de leur propriétaire. Ces flux portent `Access-Control-Allow-Origin: *`, sans cookies, pour le lecteur du Chromecast.
 - **Script tiers.** La politique de sécurité du contenu autorise `https://www.gstatic.com` dans `script-src` pour le SDK Cast de Google. Ce SDK n'est chargé que dans Chrome et Edge, à l'ouverture du lecteur. C'est le seul code tiers de l'interface.
 
+## 11. Sauvegardes, services externes, podcasts (nouveau, 3.32.0 à 3.37.0)
+
+- **Archives de sauvegarde.** Elles contiennent les empreintes des mots de passe, les secrets de double authentification, l'identité des serveurs liés et les jetons des services reliés : droits 600, téléchargement réservé aux administrateurs. À la restauration, l'archive est refusée si elle contient autre chose que la base et les dossiers attendus (pas de chemin absolu, pas de `..`, pas de lien), si sa base est plus récente que la version installée ou si l'intégrité de la base échoue. Elle n'est mise en place qu'au démarrage suivant ; l'état d'avant est gardé.
+- **Identifiants de services.** Le mot de passe OpenSubtitles, la clé du service Whisper et le secret de l'application Trakt sont dans la base (nécessaires pour appeler ces services) et jamais renvoyés à l'interface. Les comptes Trakt sont reliés par code d'appareil (OAuth) : Nexis ne voit pas le mot de passe Trakt, seulement un jeton révocable, retiré quand on délie le compte.
+- **Podcasts (SSRF).** Le serveur lit les flux RSS, l'audio et les images à la place des appareils. Une adresse donnée par un utilisateur ordinaire est refusée si elle désigne une adresse privée, de bouclage, locale au lien ou réservée, et chaque redirection est vérifiée de même. Seul un administrateur peut ajouter un flux du réseau local. Les images ne sont relayées que si elles appartiennent à un podcast connu ou à un résultat de recherche récent ; l'audio n'est relayé qu'aux abonnés du podcast, et seulement s'il s'annonce comme de l'audio.
+- **Fichiers envoyés.** Archive de sauvegarde (8 Go au plus) et export Letterboxd (20 Mo au plus) sont lus par morceaux, sans passer par la limite des requêtes ordinaires (1 Mo) ; un envoi incomplet ferme la connexion.
+- **Limites et temps d'écran.** Appliqués par le serveur au lancement de chaque lecture et à chaque compte rendu de lecture, pas seulement par l'interface.
+
 ## Recommandations par priorité
 
 1. Sécuriser le compte GitHub et la branche `main` ; mettre à jour vers des versions publiées et signées (§ 1).

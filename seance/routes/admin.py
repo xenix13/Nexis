@@ -189,7 +189,7 @@ def register(app, ctx, x):
         name = str(b.get("name") or "").strip()
         if not 1 <= len(name) <= 40:
             raise HTTPError(400, "Nom : 1 à 40 caractères")
-        if b.get("kind") not in ("movie", "show", "photo"):
+        if b.get("kind") not in ("movie", "show", "photo", "audiobook"):
             raise HTTPError(400, "Type invalide")
         paths = b.get("paths")
         if not isinstance(paths, list) or not paths or len(paths) > 20:

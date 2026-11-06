@@ -25,6 +25,7 @@ Serveur multimédia auto-hébergé pour films, séries et animes. Nexis analyse 
 | **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou externes : `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. ASS rendus par libass (positionnement, karaoké, polices jointes), PGS rendus par le navigateur, VobSub incrustés |
 | **Applications** | Web app installable (Windows, macOS, Linux, Android, iPhone, iPad), téléchargements hors ligne, application Android TV native |
 | **Paramètres** | Un seul espace, organisé en Mon compte, Serveur, Médiathèque et Lecture, avec recherche |
+| **Livres audio et podcasts** | Bibliothèque de livres audio (chapitres, couvertures, reprise), abonnements aux podcasts (recherche, nouveaux épisodes notifiés), lecteur audio en bas de l'écran (vitesse, minuterie, écran verrouillé) |
 | **Photothèque** | Bibliothèque de photos : albums (les sous-dossiers), toutes les photos par mois, carte des lieux (GPS), visionneuse plein écran avec diaporama, date et orientation lues dans les données EXIF |
 | **Serveur DLNA** | Téléviseurs, consoles et box du réseau local trouvent Nexis dans leurs sources et lisent films, séries et photos sans application |
 | **Serveurs liés** | Plusieurs serveurs Nexis reliés par une liaison chiffrée qui leur est propre : comptes communs, bibliothèques de chacun visibles et lisibles depuis l'autre (ajoutées ou fusionnées : un titre une seule fois, meilleure copie choisie automatiquement, serveur le moins occupé en priorité), progression partagée, clé TMDB et Seerr partagés, Regarder ensemble d'un serveur à l'autre. Un seul des deux doit être joignable |
@@ -426,6 +427,7 @@ Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et u
 |---|---|---|
 | Analyser les bibliothèques | toutes les 24 h | bibliothèques concernées |
 | Synchroniser avec Trakt | toutes les 6 h (application Trakt enregistrée) | |
+| Actualiser les podcasts | toutes les 2 h | |
 | Actualiser les métadonnées | le dimanche à 4 h | fiches incomplètes / non actualisées depuis N jours / toutes ; bibliothèques |
 | Extraire les images des chapitres | chaque nuit et après chaque ajout | pause pendant les lectures, bibliothèques |
 | Détecter les intros et génériques | chaque nuit et après chaque ajout | zones analysées, durées min. et max., générique de fin, épisodes à chapitres nommés |
@@ -463,6 +465,28 @@ Dans *Paramètres → Bibliothèques*, **+ Ajouter** avec le type **Photos**, pu
 - **Carte.** L'onglet *Carte* place les photos et vidéos d'après leur position GPS (enregistrée par la plupart des téléphones) ; les photos proches sont regroupées en une pastille qui donne leur nombre. Un clic sur une pastille affiche ses photos sous la carte. Le fond de carte vient d'OpenStreetMap : le navigateur télécharge les tuiles de la zone affichée chez OpenStreetMap, sans que les positions des photos ne quittent le serveur. Les photos ajoutées avant cette version sont relues une fois au scan suivant.
 - **Partager un album.** Dans un album, *Partager l'album* crée un lien valable de 1 jour à 3 mois. Il donne accès à cet album et à ses sous-albums, sans compte, et rien d'autre de la photothèque. La page du lien n'affiche pas les positions GPS (le fichier d'origine téléchargé garde ses données EXIF). Les liens se copient et se révoquent depuis la même fenêtre.
 - **Accès et partage.** L'accès se règle par compte comme pour les autres bibliothèques. Les photothèques ne sont pas partagées avec les serveurs liés, et pas encore affichées dans l'appli Android TV : sur un téléviseur, passer par le DLNA.
+
+## Livres audio
+
+Dans *Paramètres → Bibliothèques*, **+ Ajouter** avec le type **Livres audio**, puis le dossier des livres.
+
+- **Rangement.** Un dossier par livre (`Auteur/Titre/01.mp3, 02.mp3…`, ou `Titre/`), lus à la suite ; ou un fichier `.m4b` seul, avec ses chapitres. Formats : MP3, M4B, M4A, AAC, FLAC, OGG, Opus.
+- **Fiche.** Titre, auteur, narrateur, année et résumé viennent des étiquettes des fichiers (album, artiste, compositeur…), à défaut des noms de dossiers. Couverture : `cover.jpg` ou `folder.jpg` à côté, sinon l'image intégrée au fichier. Chapitres : ceux du fichier, ou un par fichier.
+- **Écoute.** Dans le lecteur audio de l'application (voir plus bas) ; la position est gardée pour chacun, et *En cours* regroupe les livres commencés. *Recommencer* et *Marquer comme terminé* depuis la fiche.
+- Les livres audio ne sont pas partagés avec les serveurs liés ni en DLNA, et ne s'affichent pas dans l'appli Android TV.
+
+## Podcasts
+
+*Podcasts* dans la barre du haut (masquable dans *Paramètres → Accueil et menu*). Chaque compte a ses abonnements.
+
+- **S'abonner.** Chercher par nom (annuaire d'Apple Podcasts), ou coller l'adresse du flux RSS.
+- **Écouter.** *À reprendre*, *Derniers épisodes* et la page de chaque podcast ; un épisode se marque comme écouté (ou non) d'un clic.
+- **Nouveaux épisodes.** Les flux sont relus toutes les 2 heures (tâche *Actualiser les podcasts*) ; un nouvel épisode est signalé par notification push.
+- **Vie privée et sécurité.** L'audio et les images passent par le serveur : les appareils ne contactent pas l'hébergeur du podcast, et un épisode en HTTP s'écoute aussi sur un Nexis en HTTPS. Une adresse de flux donnée par un utilisateur ne peut pas viser le réseau local du serveur, même après une redirection (un administrateur peut ajouter un flux local).
+
+## Lecteur audio
+
+Livres audio et podcasts se lisent dans une barre en bas de l'écran, qui reste pendant qu'on navigue dans l'application : lecture/pause, −30 / +30 s, barre de progression, **vitesse** (×0,8 à ×2, gardée séparément pour les livres et les podcasts), **minuterie** (15 à 60 min, ou fin du chapitre), **chapitres**. Sur téléphone, les commandes de l'écran verrouillé et du casque fonctionnent (précédent / suivant = chapitre). La position est enregistrée toutes les 15 secondes et à la pause.
 
 ## Serveur DLNA
 
@@ -720,3 +744,8 @@ L'interface (`static/`) est en JavaScript, sans étape de compilation.
 - Photothèque (albums, chronologie, visionneuse, EXIF) et serveur DLNA / UPnP
 - Serveurs liés : jumelage par invitation, liaison TLS à certificats épinglés, tunnel inverse, comptes répliqués, bibliothèques partagées ou fusionnées (un titre une seule fois, meilleure copie choisie automatiquement), lecture relayée, répartition des lectures selon la charge, clé TMDB et Seerr partagés, Regarder ensemble entre serveurs
 - Web app installable, téléchargements hors ligne, navigation à la télécommande et à la manette, application Android TV native (lecture directe des MKV, son multicanal transmis à l'ampli)
+- Sauvegarde automatique et restauration (y compris sur un nouveau serveur), conversion HDR → SDR au transcodage
+- Sous-titres manquants : OpenSubtitles intégré (sans Bazarr), et transcription Whisper
+- Alertes pour les administrateurs, limites par compte, temps d'écran des profils
+- Trakt (synchronisation dans les deux sens) et Letterboxd (export et import)
+- Livres audio, podcasts et lecteur audio persistant

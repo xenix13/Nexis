@@ -4,6 +4,7 @@ import { clear, fmtDuration, h, icon, img, posterCard, progressBar, select, spin
 import { pinButton } from '../pins.js';
 import { tr, plural } from '../i18n.js';
 import { renderPhotos } from './photos.js';
+import { renderBooks } from './books.js';
 
 const PAGE = 60;
 // filtres de la page (paramètres de l'adresse, transmis tels quels au serveur et épinglables sur l'accueil)
@@ -14,6 +15,7 @@ export async function renderLibrary(main, sid, ctx) {
   const lib = state.me.libraries.find((l) => l.id === sid);
   if (!lib) { clear(main, h('div.empty', tr('Bibliothèque introuvable.'))); return; }
   if (lib.type === 'photo') { await renderPhotos(main, lib, ctx); return; }
+  if (lib.type === 'audiobook') { await renderBooks(main, lib, ctx); return; }
   document.title = `${lib.title} · Nexis`;
   const sort = ctx.query.get('sort') || 'title';
   const genre = ctx.query.get('genre') || '';

@@ -230,7 +230,7 @@ def register(app, ctx, x):
         allowed = allowed_set(user)
         rows = []
         for lib in libraries_all():
-            if lib["id"] not in allowed or lib["id"] in prefs["hidden_libraries"] or lib["type"] == "photo":
+            if lib["id"] not in allowed or lib["id"] in prefs["hidden_libraries"] or lib["type"] in ("photo", "audiobook"):
                 continue
             items = attach_state(user["id"], recent_row(lib, user))
             if items:
@@ -527,7 +527,7 @@ def register(app, ctx, x):
         sid = req.arg("library") or ""
         require_section(req.user, sid)
         lib = db.one("SELECT kind FROM libraries WHERE id=?", (int(sid),))
-        if not lib or lib["kind"] == "photo":
+        if not lib or lib["kind"] in ("photo", "audiobook"):
             raise HTTPError(404, "Introuvable")
         kind = "movie" if lib["kind"] == "movie" else "show"
         where, args = "WHERE i.library_id=? AND i.type=?", [int(sid), kind]

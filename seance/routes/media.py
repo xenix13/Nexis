@@ -491,7 +491,7 @@ def register(app, ctx, x):
             raise HTTPError(404, "Fichier introuvable")
         return cast_cors(st, file_response(req, r["key"]))
 
-    def file_response(req, path):
+    def file_response(req, path, ctype=None):
         size = os.path.getsize(path)
         start, end, status = 0, size - 1, 200
         rng = (req.headers.get("Range") or "").strip()
@@ -523,8 +523,8 @@ def register(app, ctx, x):
         if status == 206:
             headers["Content-Range"] = f"bytes {start}-{end}/{size}"
         low = path.lower()
-        ctype = ("video/mp4" if low.endswith((".mp4", ".m4v", ".mov")) else "video/x-matroska"
-                 if low.endswith((".mkv", ".mk3d")) else "video/mp2t" if low.endswith((".ts", ".m2ts")) else "video/webm")
+        ctype = ctype or ("video/mp4" if low.endswith((".mp4", ".m4v", ".mov")) else "video/x-matroska"
+                          if low.endswith((".mkv", ".mk3d")) else "video/mp2t" if low.endswith((".ts", ".m2ts")) else "video/webm")
         return Response(stream=gen(), status=status, content_type=ctype, length=length, headers=headers,
                         on_close=f.close)
 

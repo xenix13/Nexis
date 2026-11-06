@@ -583,6 +583,53 @@ MIGRATIONS = [
         last_result TEXT
     );
     """,
+    # 24 : podcasts (flux, épisodes, abonnements et écoute de chacun)
+    """
+    CREATE TABLE podcasts(
+        id INTEGER PRIMARY KEY,
+        url TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        author TEXT NOT NULL DEFAULT '',
+        image TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        link TEXT NOT NULL DEFAULT '',
+        etag TEXT,
+        private INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        checked_at INTEGER,
+        created_at INTEGER NOT NULL
+    );
+    CREATE TABLE podcast_episodes(
+        id INTEGER PRIMARY KEY,
+        podcast_id INTEGER NOT NULL REFERENCES podcasts(id) ON DELETE CASCADE,
+        guid TEXT NOT NULL,
+        title TEXT NOT NULL,
+        published INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER,
+        url TEXT NOT NULL,
+        mime TEXT NOT NULL DEFAULT 'audio/mpeg',
+        image TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        added_at INTEGER NOT NULL,
+        UNIQUE(podcast_id, guid)
+    );
+    CREATE INDEX podcast_episodes_pub ON podcast_episodes(podcast_id, published DESC);
+    CREATE TABLE podcast_subs(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        podcast_id INTEGER NOT NULL REFERENCES podcasts(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, podcast_id)
+    );
+    CREATE TABLE podcast_progress(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        episode_id INTEGER NOT NULL REFERENCES podcast_episodes(id) ON DELETE CASCADE,
+        position_ms INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        played INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, episode_id)
+    );
+    """,
 ]
 
 

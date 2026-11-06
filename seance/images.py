@@ -107,6 +107,9 @@ class Images:
         if item["type"] in ("photo", "album"):  # photothèque : la photo elle-même (celle de l'album : la plus récente)
             photo = item if item["type"] == "photo" else photos.cover(self.ctx.db, item["id"])
             return photos.render(self.ctx, photo, w, h, crop=True) if photo else None
+        if item["type"] == "book":  # livre audio : sa couverture (fichier à côté, ou image intégrée)
+            from . import books
+            return books.cover_path(self.ctx, item, w, h)
         src = self.resolve(item, kind)
         if not src:
             return None
