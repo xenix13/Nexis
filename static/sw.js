@@ -44,3 +44,27 @@ async function networkFirst(req) {
     throw err;
   }
 }
+
+// Notifications push : le message arrive vide (rien à chiffrer côté serveur) ; on demande à Nexis quoi afficher.
+self.addEventListener('push', (event) => {
+  event.waitUntil((async () => {
+    let msgs = [];
+    try {
+      const r = await fetch('/api/push/pending', { credentials: 'same-origin', cache: 'no-store' });
+      if (r.ok) msgs = (await r.json()).messages || [];
+    } catch { /* serveur injoignable : message générique */ }
+    const m = msgs[msgs.length - 1] || { title: 'Nexis', body: '', url: '#/', tag: 'nexis' };
+    await self.registration.showNotification(m.title, { body: m.body, tag: m.tag, icon: '/icons/icon-192.png',
+      badge: '/icons/maskable-192.png', data: { url: m.url || '#/' } });
+  })());
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = `/${(event.notification.data && event.notification.data.url) || '#/'}`;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    const open = list.find((c) => new URL(c.url).origin === self.location.origin);
+    if (open) return open.focus().then((c) => (c && c.navigate ? c.navigate(url) : c));
+    return self.clients.openWindow(url);
+  }));
+});

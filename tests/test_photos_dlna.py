@@ -3,6 +3,8 @@
 python3 -m unittest tests.test_photos_dlna
 """
 import http.client
+import urllib.parse
+import json
 import os
 import re
 import shutil
@@ -78,6 +80,9 @@ class PhotosDlnaTest(unittest.TestCase):
         make_jpeg(os.path.join(p, "Vacances 2024", "Plage", "IMG_0003.jpg"), 48, 48, 1, "2024:07:16 09:00:00")
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=green:s=40x30", "-frames:v", "1",
                         os.path.join(p, "capture.png")], check=True)
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=10", "-t", "2",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-metadata", "creation_time=2024-07-15T12:00:00Z",
+                        os.path.join(p, "Vacances 2024", "VID_0001.mp4")], check=True)
         open(os.path.join(p, "notes.txt"), "w").close()
         os.makedirs(os.path.join(p, "Vide"))
         old = time.time() - 3600
@@ -112,18 +117,18 @@ class PhotosDlnaTest(unittest.TestCase):
         self.assertEqual(lib["type"], "photo")
         st, r = self.admin.call("GET", f"/api/libraries/{lib['id']}/photos")
         self.assertEqual(st, 200, r)
-        self.assertEqual([(a["title"], a["count"]) for a in r["albums"]], [("Vacances 2024", 3)])  # « Vide » écarté
+        self.assertEqual([(a["title"], a["count"]) for a in r["albums"]], [("Vacances 2024", 4)])  # « Vide » écarté
         self.assertEqual([p["title"] for p in r["photos"]], ["capture"])
         self.assertEqual((r["photos"][0]["w"], r["photos"][0]["h"]), (40, 30))
         st, a = self.admin.call("GET", f"/api/libraries/{lib['id']}/photos?album={r['albums'][0]['id']}")
         self.assertEqual([x["title"] for x in a["albums"]], ["Plage"])
-        self.assertEqual([x["title"] for x in a["photos"]], ["IMG_0001", "IMG_0002"])  # par date de prise de vue
+        self.assertEqual([x["title"] for x in a["photos"]], ["IMG_0001", "VID_0001", "IMG_0002"])  # par date de prise de vue
         p1 = a["photos"][0]
         self.assertEqual((p1["taken"], p1["w"], p1["h"], p1["camera"]), ("2024-07-14T10:30:00", 32, 64, "Pixel 8"))
         self.assertEqual([x["title"] for x in a["path"]], ["Vacances 2024"])
         st, t = self.admin.call("GET", f"/api/libraries/{lib['id']}/photos?view=timeline")
-        self.assertEqual(t["total"], 4)
-        self.assertEqual([x["title"] for x in t["photos"]], ["capture", "IMG_0003", "IMG_0002", "IMG_0001"])  # sans EXIF : date du fichier
+        self.assertEqual(t["total"], 5)
+        self.assertEqual([x["title"] for x in t["photos"]], ["capture", "IMG_0003", "IMG_0002", "VID_0001", "IMG_0001"])  # sans EXIF : date du fichier
         # vignettes (photo, album) et image de la visionneuse remise à l'endroit
         st, data, _ = self.admin.call("GET", f"/api/img?p={p1['thumb']}&w=100&h=100", raw=True)
         self.assertEqual((st, data[:2]), (200, b"\xff\xd8"))
@@ -243,7 +248,10 @@ class PhotosDlnaTest(unittest.TestCase):
         self.assertEqual([c.find(DC + "title").text for c in didl.findall(DIDL + "item")], ["capture"])
         album = didl.find(DIDL + "container").get("id")
         st, didl, total = self.browse(album)
-        self.assertEqual(total, 3)
+        self.assertEqual(total, 4)  # sous-album, 2 photos, 1 vidéo
+        clip = next(c for c in didl.findall(DIDL + "item") if c.find(DC + "title").text == "VID_0001")
+        self.assertEqual(clip.find("{urn:schemas-upnp-org:metadata-1-0/upnp/}class").text, "object.item.videoItem")
+        self.assertIn("video/mp4", clip.find(DIDL + "res").get("protocolInfo"))
         photo = didl.findall(DIDL + "item")[0]
         self.assertEqual(photo.find("{urn:schemas-upnp-org:metadata-1-0/upnp/}class").text, "object.item.imageItem.photo")
         jpg = photo.findall(DIDL + "res")[0].text
@@ -336,6 +344,111 @@ class PhotosDlnaTest(unittest.TestCase):
             for major, ok in ((6, True), (5, True), (7, False), (8, False), (0, False)):
                 with mock.patch.object(media, "ffmpeg_major", return_value=major):
                     self.assertEqual(media.readrate_ok(), ok, major)
+
+    def test_04_videos_favorites_and_share_links(self):
+        lib = self.libs["Photos"]
+        st, r = self.admin.call("GET", f"/api/libraries/{lib['id']}/photos")
+        album = r["albums"][0]
+        st, a = self.admin.call("GET", f"/api/libraries/{lib['id']}/photos?album={album['id']}")
+        clip = next(p for p in a["photos"] if p["title"] == "VID_0001")
+        self.assertEqual((clip["video"], clip["w"], clip["h"], clip["taken"]), (True, 160, 90, "2024-07-15T12:00:00"))
+        self.assertGreater(clip["duration"], 1500)
+        st, data, h = self.admin.call("GET", f"/api/photos/{clip['id']}/stream", headers={"Range": "bytes=0-99"}, raw=True)
+        self.assertEqual((st, len(data), h["Content-Type"]), (206, 100, "video/mp4"))
+        st, data, _ = self.admin.call("GET", f"/api/img?p={clip['thumb']}&w=100&h=100", raw=True)
+        self.assertEqual((st, data[:2]), (200, b"\xff\xd8"))  # vignette : une image de la vidéo
+        photo = next(p for p in a["photos"] if p["title"] == "IMG_0001")
+        self.assertEqual(self.admin.call("GET", f"/api/photos/{photo['id']}/stream")[0], 404)
+        # favoris
+        st, r = self.admin.call("PUT", f"/api/photos/{photo['id']}/favorite", {"on": True})
+        self.assertEqual((st, r["fav"]), (200, True))
+        st, f = self.admin.call("GET", f"/api/libraries/{lib['id']}/photos?view=favorites")
+        self.assertEqual([p["id"] for p in f["photos"]], [photo["id"]])
+        self.assertTrue(f["photos"][0]["fav"])
+        self.admin.call("PUT", f"/api/photos/{photo['id']}/favorite", {"on": False})
+        # lien de partage de l'album « Plage » : sans compte, rien en dehors de l'album
+        st, sub = self.admin.call("GET", f"/api/libraries/{lib['id']}/photos?album={album['id']}")
+        plage = sub["albums"][0]
+        st, share = self.admin.call("POST", f"/api/photos/albums/{plage['id']}/shares", {"days": 7})
+        self.assertEqual(st, 200, share)
+        token = share["token"]
+        anon = Client(self.base)
+        st, pub = anon.call("GET", f"/api/share/{token}")
+        self.assertEqual((st, pub["title"], [p["title"] for p in pub["photos"]]), (200, "Plage", ["IMG_0003"]))
+        pid = pub["photos"][0]["id"]
+        st, data, _ = anon.call("GET", pub["photos"][0]["thumb_url"] + "&w=120", raw=True)
+        self.assertEqual((st, data[:2]), (200, b"\xff\xd8"))
+        self.assertEqual(anon.call("GET", f"/api/share/{token}/original/{pid}", raw=True)[0], 200)
+        self.assertEqual(anon.call("GET", f"/api/share/{token}/img/{photo['id']}?k=view", raw=True)[0], 404)  # hors de l'album
+        self.assertEqual(anon.call("GET", f"/api/share/{token}?album={album['id']}")[0], 404)  # pas au-dessus
+        self.assertEqual(anon.call("GET", f"/api/photos/{pid}/view")[0], 401)  # l'API normale demande un compte
+        st, lst = self.admin.call("GET", f"/api/photos/albums/{plage['id']}/shares")
+        self.assertEqual([s["token"] for s in lst], [token])
+        self.assertEqual(self.admin.call("POST", f"/api/photos/albums/{plage['id']}/shares", {"days": 365})[0], 400)
+        self.admin.call("DELETE", f"/api/photos/shares/{token}")
+        self.assertEqual(anon.call("GET", f"/api/share/{token}")[0], 404)  # révoqué
+
+    def test_30_remote_control(self):
+        """Télécommande : le lecteur s'annonce, envoie son état ; un autre appareil le voit et lui envoie des commandes."""
+        cookie = "; ".join(f"{c.name}={c.value}" for c in self.admin.jar)
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        conn.request("GET", "/api/remote/events?device=salon0001&name=TV%20du%20salon", headers={"Cookie": cookie})
+        resp = conn.getresponse()
+        self.assertEqual(resp.status, 200)
+        resp.fp.readline()
+        st, r = self.admin.call("POST", "/api/remote/state", {"device": "salon0001", "state": {
+            "title": "Brume", "position": 1000, "duration": 20000, "playing": True, "audio": [], "subtitles": []}})
+        self.assertEqual((st, r["ok"]), (200, True))
+        st, devs = self.admin.call("GET", "/api/remote/devices?exclude=telephone01")
+        self.assertEqual([(d["id"], d["name"], d["state"]["title"]) for d in devs], [("salon0001", "TV du salon", "Brume")])
+        st, r = self.admin.call("POST", "/api/remote/salon0001/cmd", {"action": "seekby", "value": 30000})
+        self.assertEqual(st, 200, r)
+        line = b""
+        while not line.startswith(b"data: "):
+            line = resp.fp.readline()
+        self.assertEqual(json.loads(line[6:]), {"action": "seekby", "value": 30000})
+        self.assertEqual(self.admin.call("POST", "/api/remote/salon0001/cmd", {"action": "rm -rf"})[0], 400)
+        self.assertEqual(self.admin.call("POST", "/api/remote/inconnu01/cmd", {"action": "pause"})[0], 404)
+        # un autre compte ne voit pas les appareils de celui-ci
+        st, r = self.admin.call("POST", "/api/admin/users", {"username": "zoe", "password": "motdepasseZ"})
+        zoe = Client(self.base)
+        zoe.call("POST", "/api/login", {"username": "zoe", "password": "motdepasseZ"})
+        self.assertEqual(zoe.call("GET", "/api/remote/devices")[1], [])
+        self.assertEqual(zoe.call("POST", "/api/remote/salon0001/cmd", {"action": "pause"})[0], 404)
+        conn.close()
+
+    def test_31_push_notifications(self):
+        from seance import push as push_mod
+        st, k = self.admin.call("GET", "/api/push/key")
+        self.assertEqual(st, 200)
+        self.assertEqual(len(push_mod.base64.urlsafe_b64decode(k["key"] + "=")), 65)  # point P-256 non compressé
+        # seuls les services push des navigateurs sont acceptés (pas d'adresse du réseau local)
+        self.assertEqual(self.admin.call("POST", "/api/push/subscribe", {"endpoint": "https://192.168.1.10/x"})[0], 400)
+        self.assertEqual(self.admin.call("POST", "/api/push/subscribe", {"endpoint": "http://fcm.googleapis.com/x"})[0], 400)
+        st, r = self.admin.call("POST", "/api/push/subscribe", {"endpoint": "https://fcm.googleapis.com/fcm/send/abc"})
+        self.assertEqual(st, 200, r)
+        st, k = self.admin.call("GET", "/api/push/key?endpoint=" + urllib.parse.quote("https://fcm.googleapis.com/fcm/send/abc"))
+        self.assertTrue(k["subscribed"])
+        # signature du jeton : vérifiée avec la clé publique (ES256)
+        jwt = self.ctx.push._jwt("https://fcm.googleapis.com/fcm/send/abc")
+        head, body, sig = jwt.split(".")
+        self.assertEqual(len(push_mod.base64.urlsafe_b64decode(sig + "==")), 64)
+        claims = json.loads(push_mod.base64.urlsafe_b64decode(body + "=="))
+        self.assertEqual(claims["aud"], "https://fcm.googleapis.com")
+        # le message attend l'appareil réveillé
+        sent = []
+        self.ctx.push._send_one = lambda sub: sent.append(sub["endpoint"]) or True
+        st, r = self.admin.call("POST", "/api/push/test")
+        self.assertEqual((st, r["sent"]), (200, 1))
+        st, p = self.admin.call("GET", "/api/push/pending")
+        self.assertEqual(p["messages"][-1]["tag"], "test")
+        for _ in range(50):
+            if sent:
+                break
+            time.sleep(0.05)
+        self.assertEqual(sent, ["https://fcm.googleapis.com/fcm/send/abc"])
+        self.admin.call("POST", "/api/push/unsubscribe", {"endpoint": "https://fcm.googleapis.com/fcm/send/abc"})
+        self.assertEqual(self.admin.call("POST", "/api/push/test")[0], 409)
 
     def test_12_local_only(self):
         for ip, ok in (("192.168.1.20", True), ("10.0.0.5", True), ("127.0.0.1", True), ("::ffff:192.168.0.3", True),

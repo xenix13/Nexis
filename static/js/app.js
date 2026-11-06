@@ -13,6 +13,8 @@ import { renderSettingsArea } from './views/settings.js';
 import { renderPlayer } from './player.js';
 import { renderTogether } from './views/together.js';
 import { renderPerson } from './views/person.js';
+import { renderRemote } from './views/remote.js';
+import { renderShared } from './views/photos.js';
 import './remote.js'; // télécommande, clavier et manette
 import { aboutDialog } from './about.js';
 import { applyDevice } from './device.js';
@@ -222,6 +224,7 @@ function shell(active) {
     me.user.home ? h('a', { href: '#/profiles' }, tr('Changer de profil')) : null,
     h('a', { href: '#/playlists' }, tr('Mes playlists')),
     h('a', { href: '#/together' }, tr('Regarder ensemble')),
+    h('a', { href: '#/remote' }, tr('Télécommande')),
     h('a', { href: '#/history' }, tr('Historique')),
     me.features && me.features.downloads && offlineSupported() ? h('a', { href: '#/downloads' }, tr('Téléchargements')) : null,
     h('a', { href: '#/settings' }, tr('Paramètres')),
@@ -316,6 +319,15 @@ async function route() {
     }
     if (await resumeUpdate(state.status)) return;
   }
+  if (page === 'share' && parts[1]) {
+    // album photo partagé par lien : consultable sans compte
+    document.body.classList.remove('playing');
+    const main = h('main.main.share-page');
+    clear(root, h('header.share-head', h('span.logo', h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis')), main);
+    const ctx = { query, parts, isCurrent: () => token === renderToken, setCleanup: (fn) => { cleanup = fn; } };
+    try { await renderShared(main, parts[1], ctx); } catch (e) { clear(main, h('div.empty', e.message)); }
+    return;
+  }
   if (state.status.setup) {
     document.title = tr('Installation · Nexis');
     return renderSetup(root, () => { state.status = null; state.me = null; location.hash = '#/admin/libraries'; route(); });
@@ -382,6 +394,7 @@ async function route() {
       case 'library': await renderLibrary(main, parts[1], ctx); break;
       case 'item': await renderItem(main, parts[1], ctx); break;
       case 'person': await renderPerson(main, decodeURIComponent(parts.slice(1).join('/')), ctx); break;
+      case 'remote': await renderRemote(main, ctx); break;
       case 'search': await renderSearch(main, query.get('q') || '', ctx); break;
       case 'collection': await renderCollection(main, parts[1], ctx); break;
       case 'watchlist': await renderWatchlist(main, ctx); break;

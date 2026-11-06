@@ -103,6 +103,12 @@ Les actions tierces (`docker/build-push-action@v6`, `gradle/actions/setup-gradle
 - **SOAP.** Les corps de requête sont limités à 64 Ko et lus avec le parseur XML de la bibliothèque standard (expat protège des entités récursives).
 - **Photothèque.** Lecture seule : les miniatures et images redimensionnées vont dans le cache de Nexis. L'accès aux photos (vignettes, visionneuse, fichier d'origine) vérifie l'accès du compte à la bibliothèque. Les photothèques ne sont pas recopiées chez les serveurs liés.
 
+## 9. Télécommande, notifications push, albums partagés (nouveau, 3.29.0)
+
+- **Télécommande.** Un appareil n'est visible et pilotable que par le compte qui l'utilise. Les commandes font partie d'une liste fermée (lecture, pause, position, volume, pistes, vitesse, arrêt), avec des valeurs courtes.
+- **Notifications push.** Le serveur n'appelle que les services push des navigateurs (Google, Mozilla, Apple, Microsoft), en HTTPS et sans port ni identifiants dans l'adresse : une adresse d'abonnement arbitraire ne peut pas lui faire appeler une machine du réseau local. Les messages sont vides ; l'appareil réveillé demande leur contenu avec sa session. La clé VAPID est créée par openssl dans `push/` (droits 600).
+- **Albums partagés par lien.** Jeton aléatoire de 144 bits, durée de 1 à 90 jours, révocable. Seuls l'album et ses sous-albums sont accessibles, vérifiés à chaque photo, et les essais de jetons au hasard sont freinés comme les mots de passe. Le reste de l'API demande toujours un compte.
+
 ## Recommandations par priorité
 
 1. Sécuriser le compte GitHub et la branche `main` ; mettre à jour vers des versions publiées et signées (§ 1).

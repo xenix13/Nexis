@@ -306,6 +306,10 @@ class Metadata:
         for w in db.all("SELECT user_id, added_at FROM wishlist WHERE media_type=? AND tmdb_id=?", (media_type, tid)):
             db.run("INSERT OR IGNORE INTO watchlist(user_id,item_id,added_at) VALUES(?,?,?)",
                    (w["user_id"], item["id"], w["added_at"]))
+            push = getattr(self.ctx, "push", None)
+            if push:  # titre demandé (Découvrir) arrivé : prévenir la personne
+                from .i18n import tr
+                push.notify(w["user_id"], tr("Disponible sur Nexis"), item["title"], f"#/item/{item['id']}", f"item-{item['id']}")
         db.run("DELETE FROM wishlist WHERE media_type=? AND tmdb_id=?", (media_type, tid))
 
     def _trailer(self, item, d, tmdb):

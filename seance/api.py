@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from . import __version__, catalog, collections_api, discover, dlna, federation, i18n, livetv, media, notify, photos, suggest, syncplay, tasks, update
+from . import __version__, catalog, collections_api, discover, dlna, federation, i18n, push, remote, livetv, media, notify, photos, suggest, syncplay, tasks, update
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
@@ -56,6 +56,8 @@ class Ctx:
         self.together = syncplay.Groups(self)
         self.fed = federation.Federation(self)
         self.dlna = dlna.DLNA(self)
+        self.remote = remote.Remote()
+        self.push = push.Push(self)
         for r in self.db.all("SELECT id, content_rating FROM items WHERE content_rating IS NOT NULL AND age IS NULL"):
             age = age_of(r["content_rating"])
             if age is not None:
@@ -121,6 +123,11 @@ class Ctx:
             self.tasks.after_scan(self.scanner.status().get("added", 0))
         except Exception:
             log.exception("Tâches après le scan")
+        try:
+            if self.scanner.status().get("added", 0):
+                self.push.after_scan(self.x)  # nouveaux épisodes des séries suivies : notification push
+        except Exception:
+            log.exception("Notifications push après le scan")
 
     def prefetch_missing_subtitles(self):
         """Au démarrage : met en file les fichiers dont les sous-titres internes ne sont pas encore prêts."""
@@ -145,7 +152,7 @@ class Ctx:
 
 def build_app(ctx):
     """Assemble l'application : contrôles d'accès communs, catalogue partagé, puis les routes par thème."""
-    x = types.SimpleNamespace()  # outils partagés entre les modules de routes
+    x = ctx.x = types.SimpleNamespace()  # outils partagés entre les modules de routes (ctx.x : pour les tâches de fond)
     app = App()
     app.static_dir = ctx.static_dir
     db = ctx.db
@@ -208,7 +215,7 @@ def build_app(ctx):
     app.before.append(before)
 
     catalog.install(ctx, x)
-    for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify, photos, dlna,
+    for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify, photos, dlna, remote, push,
                    federation):
         module.register(app, ctx, x)
     return app

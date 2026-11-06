@@ -435,6 +435,9 @@ Dans *Paramètres → Bibliothèques*, **+ Ajouter** avec le type **Photos**, pu
 - **Visionneuse.** Elle s'ouvre en plein écran : flèches du clavier ou balayage pour passer d'une photo à l'autre, Espace pour le diaporama, Échap pour fermer. Le bouton d'informations affiche la date, les dimensions et l'appareil ; le fichier d'origine se télécharge d'un clic.
 - **Formats.** JPEG, PNG, WebP, GIF (animés tels quels), HEIC/HEIF (selon la version d'ffmpeg du serveur), TIFF et BMP.
 - **Détection.** Les nouvelles photos sont repérées comme les films, et rien n'est écrit dans les dossiers de photos.
+- **Vidéos.** Les vidéos du téléphone (MP4, MOV, 3GP, WebM, MKV…) placées dans les albums y apparaissent, à leur date de tournage, et se lisent dans la visionneuse (telles quelles : le navigateur doit connaître le format, sinon on les télécharge).
+- **Favoris.** L'étoile de la visionneuse ajoute la photo à l'onglet *Favoris*, propre à chaque compte.
+- **Partager un album.** Dans un album, *Partager l'album* crée un lien valable de 1 jour à 3 mois. Il donne accès à cet album et à ses sous-albums, sans compte, et rien d'autre de la photothèque. Les liens se copient et se révoquent depuis la même fenêtre.
 - **Accès et partage.** L'accès se règle par compte comme pour les autres bibliothèques. Les photothèques ne sont pas partagées avec les serveurs liés, et pas encore affichées dans l'appli Android TV : sur un téléviseur, passer par le DLNA.
 
 ## Serveur DLNA
@@ -495,6 +498,10 @@ Chaque utilisateur règle son interface dans *Paramètres → Mon compte* :
 **Playlists partagées** : sur sa playlist, *Partager avec le foyer* la rend visible par tous les comptes du serveur, qui peuvent la compléter et la réordonner. Seule la personne qui l'a créée peut la renommer, arrêter le partage ou la supprimer, et chacun n'y voit que les titres auxquels il a accès.
 
 **Raccourcis clavier** : la touche `?` affiche l'aide partout dans Nexis, et `/` place le curseur dans la recherche. Les touches du lecteur se changent dans *Paramètres → Cet appareil*.
+
+**Télécommande** (menu du profil → *Télécommande*) : depuis le téléphone, on pilote la vidéo qui passe sur un autre appareil du même compte (ordinateur, TV, tablette) : lecture et pause, position, ±10/30 s, épisode suivant, volume, langue audio, sous-titres, vitesse, arrêt. L'appareil s'y affiche dès qu'il lit quelque chose, sous le nom choisi dans *Paramètres → Cet appareil*.
+
+**Notifications push** (*Paramètres → Cet appareil → Notifications*) : un nouvel épisode d'une série suivie, ou un titre demandé dans *Découvrir* qui arrive, déclenche une notification sur l'appareil, même Nexis fermé. Elles demandent HTTPS ; sur iPhone et iPad, Nexis doit être installé sur l'écran d'accueil (iOS 16.4 ou plus récent). Le serveur ne contacte que les services push des navigateurs (Google, Mozilla, Apple, Microsoft), avec des messages vides : le contenu est demandé à Nexis par l'appareil.
 
 **Avis** : sur la fiche d'un film ou d'une série, *J'aime* et *Je n'aime pas* orientent les suggestions (les titres proches d'un titre non aimé reculent) ; *Ne plus suggérer* (menu ⋯) l'exclut des suggestions et des titres similaires.
 

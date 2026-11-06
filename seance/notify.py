@@ -61,6 +61,7 @@ def register(app, ctx, x):
         seen = db.scalar("SELECT notif_seen FROM users WHERE id=?", (user["id"],)) or 0
         return sum(1 for _, eps in new_episodes(user) if max(e["added_at"] or 0 for e in eps) > seen)
     x.unread_notifications = unread_count
+    x.new_episodes = new_episodes
 
     @app.route("GET", "/api/notifications")
     def notifications(req):

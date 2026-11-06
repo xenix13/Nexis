@@ -316,6 +316,13 @@ class DLNA:
         key = r["key"] or ""
         if not key or media.is_strm(key):
             return ""
+        if t == "photo" and photos.is_clip(key):  # vidéo d'un album photo : lue telle quelle
+            info = json.loads(r["probe"] or "{}")
+            url = f'{escape(base)}/dlna/media/{r["id"]}{escape(os.path.splitext(key)[1].lower())}'
+            dur = f' duration="{hms(info["dur"])}"' if info.get("dur") else ""
+            return (f'<item id="{oid}" parentID="{pid}" restricted="1"><dc:title>{escape(r["title"])}</dc:title>'
+                    f'<upnp:class>object.item.videoItem</upnp:class><dc:date>{escape((r["released"] or "")[:19])}</dc:date>{art}'
+                    f'<res protocolInfo="http-get:*:{photos.mime(key)}:{VIDEO_FLAGS}" size="{r["file_size"] or 0}"{dur}>{url}</res></item>')
         if t == "photo":
             info = json.loads(r["probe"] or "{}")
             res = f'{escape(base)}/dlna/photo/{r["id"]}.jpg'
@@ -617,6 +624,8 @@ def register(app, ctx, x):
         r = exposed_item(req.params["rk"], ("movie", "episode", "photo"))
         if media.is_strm(r["key"]):
             raise HTTPError(404, "Introuvable")
+        if r["type"] == "photo" and photos.is_clip(r["key"]):
+            return send_file(req, r["key"], photos.mime(r["key"]), VIDEO_FLAGS, "Streaming")
         if r["type"] == "photo":
             return send_file(req, r["key"], photos.mime(r["key"]), IMAGE_FLAGS, "Interactive")
         return send_file(req, r["key"], video_mime(r["key"]), VIDEO_FLAGS, "Streaming")

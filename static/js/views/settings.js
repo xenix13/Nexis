@@ -6,8 +6,38 @@ import { PIN_LABELS, pins, removePin } from '../pins.js';
 import { SUB_BGS, SUB_COLORS, SUB_EDGES, SUB_FONTS, SUB_POSITIONS, applySubStyle } from '../substyle.js';
 import { arrange, avatar, clear, field, h, icon, modal, select, spinner, toast, toggle } from '../ui.js';
 import { ART, BACKGROUNDS, CATEGORIES, DEFAULT_BG, artDataUrl, artSvg } from '../avatar-art.js';
-import { device, setDevice } from '../device.js';
+import { device, deviceName, setDevice } from '../device.js';
 import { shortcutsPanel } from '../keys.js';
+import { disablePush, enablePush, pushState, pushSupported } from '../push.js';
+
+// notifications push : nouvel épisode d'une série suivie, titre demandé arrivé
+function pushPanel() {
+  const box = h('div');
+  const panel = h('section.panel', h('h2', tr('Notifications')),
+    h('p.muted.small', tr('Un nouvel épisode d’une série que vous suivez, ou un titre demandé qui arrive : une notification sur cet appareil, même Nexis fermé.')), box);
+  const paint = async () => {
+    const st = await pushState().catch(() => 'off');
+    if (st === 'unsupported') {
+      clear(box, h('p.small', /iphone|ipad/i.test(navigator.userAgent) ? tr('Sur iPhone et iPad : installez d’abord Nexis sur l’écran d’accueil (iOS 16.4 ou plus récent), puis ouvrez ce réglage depuis l’application.')
+        : tr('Ce navigateur ne gère pas les notifications push, ou Nexis n’est pas ouvert en HTTPS.')));
+      return;
+    }
+    if (st === 'denied') { clear(box, h('p.small', tr('Notifications bloquées pour ce site : autorisez-les dans les réglages du navigateur.'))); return; }
+    const sw = toggle(tr('Recevoir les notifications sur cet appareil'), st === 'on', { onchange: async (e) => {
+      e.target.disabled = true;
+      try {
+        if (e.target.checked) { await enablePush(); toast(tr('Notifications activées sur cet appareil'), 'ok'); }
+        else { await disablePush(); toast(tr('Notifications désactivées sur cet appareil'), 'ok'); }
+      } catch (ex) { toast(ex.message, 'bad'); }
+      paint();
+    } });
+    clear(box, sw, st === 'on' ? h('div.actions-row', h('button.btn.small', { type: 'button', onclick: async () => {
+      try { await post('/api/push/test'); toast(tr('Notification d’essai envoyée'), 'ok'); } catch (ex) { toast(ex.message, 'bad'); }
+    } }, tr('Envoyer une notification d’essai'))) : null);
+  };
+  paint();
+  return panel;
+}
 import { LANGUAGES, lang, locale, tr, useLanguage } from '../i18n.js';
 
 const LANGS = [['fra', tr('Français')], ['eng', tr('Anglais')], ['jpn', tr('Japonais')], ['spa', tr('Espagnol')], ['deu', tr('Allemand')],
@@ -410,6 +440,11 @@ function accountPage(id, body, rerender) {
           field(tr('Animations'), pick('motion', [['', tr('Selon le système')], ['reduced', tr('Réduites')]])),
           field(tr('Navigation à la télécommande'), pick('remote', [['', tr('Automatique')], ['on', tr('Toujours activée')], ['off', tr('Désactivée')]]),
             tr('Repères de sélection visibles et déplacement aux flèches, comme sur une TV.')))),
+      pushPanel(),
+      h('section.panel', h('h2', tr('Télécommande')),
+        field(tr('Nom de cet appareil'), h('input', { value: d.name || '', maxlength: 60, placeholder: deviceName(),
+          onchange: (e) => set({ name: e.target.value.trim() || undefined }) }),
+        tr('Nom affiché dans la page Télécommande des autres appareils quand celui-ci lit une vidéo (ex. « TV du salon »).'))),
       shortcutsPanel(),
       h('p.muted.small', tr('Ces réglages sont enregistrés dans ce navigateur uniquement.')));
     return;

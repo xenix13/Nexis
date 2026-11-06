@@ -34,3 +34,28 @@ export function applyDevice() {
   if (d.remote === 'on') r.classList.add('remote');
   else if (d.remote === 'off') r.classList.remove('remote');
 }
+
+// Identifiant de cet appareil (télécommande) : tiré au hasard une fois, gardé dans le navigateur
+export function deviceId() {
+  try {
+    let id = localStorage.getItem('nexis-device-id');
+    if (!id) {
+      id = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('');
+      localStorage.setItem('nexis-device-id', id);
+    }
+    return id;
+  } catch { return 'session' + Math.random().toString(16).slice(2, 14); }
+}
+
+// Nom de l'appareil montré dans la télécommande : choisi dans Cet appareil, sinon navigateur et système
+export function deviceName() {
+  const set = device().name;
+  if (set) return set;
+  const ua = navigator.userAgent;
+  const browser = /edg\//i.test(ua) ? 'Edge' : /firefox|fxios/i.test(ua) ? 'Firefox' : /chrome|crios/i.test(ua) ? 'Chrome'
+    : /safari/i.test(ua) ? 'Safari' : 'Navigateur';
+  const os = /android/i.test(ua) ? (/mobile/i.test(ua) ? 'Android' : 'Android (tablette)') : /iphone/i.test(ua) ? 'iPhone'
+    : /ipad/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ? 'iPad'
+      : /windows/i.test(ua) ? 'Windows' : /mac os/i.test(ua) ? 'Mac' : /linux|cros/i.test(ua) ? 'Linux' : '';
+  return os ? `${browser} · ${os}` : browser;
+}

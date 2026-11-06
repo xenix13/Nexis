@@ -500,6 +500,31 @@ MIGRATIONS = [
     );
     ALTER TABLE playlists ADD COLUMN shared INTEGER NOT NULL DEFAULT 0;
     """,
+    # 20 : notifications push (appareils inscrits, épisodes déjà signalés) ; photothèque : favoris, albums partagés par lien
+    """
+    CREATE TABLE push_subs(
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        endpoint TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        last_ok INTEGER,
+        failures INTEGER NOT NULL DEFAULT 0
+    );
+    ALTER TABLE users ADD COLUMN push_seen INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE photo_favs(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, item_id)
+    );
+    CREATE TABLE photo_shares(
+        token TEXT PRIMARY KEY,
+        album_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+    );
+    """,
 ]
 
 

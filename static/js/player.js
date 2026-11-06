@@ -1,7 +1,7 @@
 // Web player: HLS stream proxied through Nexis, custom controls, resume,
 // per-user track preferences, "skip intro" banner and next-episode countdown.
 import { applySubStyle } from './substyle.js';
-import { deviceOverrides } from './device.js';
+import { deviceId, deviceName, deviceOverrides } from './device.js';
 import { get, post, put } from './api.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from './tracks.js';
 import { state } from './app.js';
@@ -1096,8 +1096,67 @@ export async function renderPlayer(root, rk, ctx) {
     togglePlay();
   });
   video.addEventListener('dblclick', toggleFull);
-  video.addEventListener('play', () => { paintPlay(); wake(); });
-  video.addEventListener('pause', () => { paintPlay(); wake(); if (!rebuffering) report('paused', true); });
+  video.addEventListener('play', () => { paintPlay(); wake(); remoteState(); });
+  video.addEventListener('pause', () => { paintPlay(); wake(); if (!rebuffering) report('paused', true); remoteState(); });
+  video.addEventListener('seeked', () => remoteState());
+
+  // ------------------------------------------------------------ télécommande (un autre appareil du compte pilote celui-ci)
+  let remoteEs = null, remoteTimer = null, remoteLast = 0;
+  const myDevice = deviceId();
+  function remoteState(force = false) {
+    if (offline || destroyed || !item || !session) return;
+    const now = Date.now();
+    if (!force && now - remoteLast < 800) return;
+    remoteLast = now;
+    const audio = session.audio || [], subs = session.subtitles || [];
+    post('/api/remote/state', { device: myDevice, state: {
+      item: String(item.id), title: item.type === 'episode' ? item.show : item.title,
+      subtitle: item.type === 'episode' ? `${episodeCode(item)} · ${item.title}` : (item.year ? String(item.year) : ''),
+      thumb: item.type === 'episode' ? (item.thumb || item.show_thumb) : (item.art || item.thumb),
+      position: pos(), duration: duration(), playing: !video.paused, has_next: !!session.next,
+      audio: audio.map((a) => ({ id: a.id, title: a.title })), subtitles: subs.map((t) => ({ id: t.id, title: t.title })),
+      audio_selected: audioSel ? audioSel.id : null, subtitle_selected: subSel ? subSel.id : 0,
+      volume: Math.round(video.volume * 100) / 100, muted: video.muted, speed } }).catch(() => {});
+  }
+  function remoteCommand(c) {
+    const v = c.value;
+    switch (c.action) {
+      case 'play': if (video.paused) togglePlay(); break;
+      case 'pause': if (!video.paused) togglePlay(); break;
+      case 'toggle': togglePlay(); break;
+      case 'seek': if (typeof v === 'number') seekTo(Math.max(0, v)); break;
+      case 'seekby': if (typeof v === 'number') seekBy(v); break;
+      case 'next': if (session && session.next) playNext(); break;
+      case 'volume': if (typeof v === 'number') { video.muted = false; video.volume = Math.min(1, Math.max(0, v)); } break;
+      case 'mute': video.muted = !video.muted; break;
+      case 'speed': if (SPEEDS.includes(v)) setSpeed(v); break;
+      case 'audio': {
+        const a = (session.audio || []).find((x) => x.id === v);
+        if (a && (!audioSel || a.id !== audioSel.id)) { audioSel = a; subSel = fixForced(subSel, a, session.subtitles || []); rememberTracks(); start(pos()); }
+        break;
+      }
+      case 'subtitle': {
+        const s = v ? (session.subtitles || []).find((x) => x.id === v) || null : null;
+        if (v && !s) break;
+        subSel = s;
+        rememberTracks();
+        start(pos()); // (piste choisie à distance : on recharge, sans chercher si elle peut s'afficher sans relancer)
+        break;
+      }
+      case 'stop': goBack(); break;
+      default:
+    }
+    toast(tr('Télécommande : {action}', { action: ({ play: tr('lecture'), pause: tr('pause'), toggle: tr('lecture / pause'),
+      seek: tr('position'), seekby: tr('position'), next: tr('épisode suivant'), volume: tr('volume'), mute: tr('son'),
+      speed: tr('vitesse'), audio: tr('langue audio'), subtitle: tr('sous-titres'), stop: tr('arrêt') })[c.action] || c.action }));
+    setTimeout(() => remoteState(true), 400);
+  }
+  if (!offline) {
+    remoteEs = new EventSource(`/api/remote/events?device=${myDevice}&name=${encodeURIComponent(deviceName())}`);
+    remoteEs.onmessage = (ev) => { try { remoteCommand(JSON.parse(ev.data)); } catch { /* commande illisible */ } };
+    remoteEs.onopen = () => remoteState(true);
+    remoteTimer = setInterval(() => remoteState(true), 5000);
+  }
   video.addEventListener('waiting', () => { loader.hidden = false; onStall(); });
   video.addEventListener('playing', () => { loader.hidden = true; switching = false; everPlayed = true; syncJassub(); });
   video.addEventListener('canplay', () => { if (!rebuffering && !switching) loader.hidden = true; });
@@ -1295,6 +1354,8 @@ export async function renderPlayer(root, rk, ctx) {
     }
     clearInterval(nextTimer);
     clearInterval(sleepTimer);
+    clearInterval(remoteTimer);
+    if (remoteEs) { remoteEs.close(); post('/api/remote/state', { device: myDevice, state: null }, { keepalive: true }).catch(() => {}); }
     // minuterie : elle suit l'enchaînement des épisodes, pas un retour à la navigation
     if (!/^#\/(play|offline)\//.test(location.hash)) Object.assign(sleep, { at: 0, endOfItem: false });
     clearTimeout(idleTimer);
