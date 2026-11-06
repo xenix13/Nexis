@@ -272,7 +272,11 @@ Nexis s'installe comme une application, sans magasin d'applications : icône, fe
 
 - **Windows, macOS, Linux (Chrome ou Edge)** : menu du profil → **Installer l'application**, ou icône d'installation de la barre d'adresse.
 - **Android (Chrome)** : menu du profil → **Installer l'application**.
-- **iPhone et iPad (Safari)** : bouton **Partager** → **Sur l'écran d'accueil**.
+- **iPhone et iPad (Safari, et Firefox ou Chrome depuis iOS 16.4)** : bouton **Partager** → **Sur l'écran d'accueil**.
+- **Firefox** : il ne permet pas à un site de lancer l'installation. Le bouton **Installer l'application** affiche donc le chemin propre à l'appareil :
+  - Android : menu **⋮** → **Ajouter à l'écran d'accueil** ;
+  - Windows (Firefox 143 ou plus récent) : icône **Ajouter à la barre des tâches** de la barre d'adresse ;
+  - macOS et Linux : Firefox n'installe pas encore d'application web, il faut passer par Chrome, Edge ou Chromium.
 
 L'application se met à jour avec le serveur : le code de l'interface est chargé depuis des adresses propres à chaque version, aucun cache (navigateur ou proxy) ne peut resservir une version précédente. Si le serveur est injoignable, l'application s'ouvre sur les téléchargements de l'appareil.
 
