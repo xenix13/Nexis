@@ -1442,4 +1442,13 @@ export default {
   "vitesse": "speed",
   "volume": "volume",
   "épisode suivant": "next episode",
+  "Arrêter la diffusion": "Stop casting",
+  "Aucun appareil de diffusion connecté": "No casting device connected",
+  "Diffuser avec AirPlay": "AirPlay",
+  "Diffuser sur un Chromecast": "Cast to a Chromecast",
+  "Diffusion annulée": "Casting cancelled",
+  "Diffusion impossible": "Casting failed",
+  "Diffusion sur {name}": "Casting to {name}",
+  "Lecture de retour sur cet appareil": "Playback back on this device",
+  "Lecture sur l’Apple TV": "Playing on the Apple TV",
 };

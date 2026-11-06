@@ -450,6 +450,28 @@ class PhotosDlnaTest(unittest.TestCase):
         self.admin.call("POST", "/api/push/unsubscribe", {"endpoint": "https://fcm.googleapis.com/fcm/send/abc"})
         self.assertEqual(self.admin.call("POST", "/api/push/test")[0], 409)
 
+    def test_32_cast_streams(self):
+        """Flux pour une TV (Chromecast, AirPlay) : lisible sans session, avec CORS ; les autres flux demandent un compte."""
+        movie = self.ctx.db.scalar("SELECT id FROM items WHERE type='movie' ORDER BY id LIMIT 1")
+        caps = {"video": ["h264"], "audio": ["aac"], "containers": ["mp4"]}
+        st, normal = self.admin.call("POST", "/api/play", {"id": str(movie), "caps": caps, "no_direct": True})
+        st, cast = self.admin.call("POST", "/api/play", {"id": str(movie), "caps": caps, "no_direct": True, "cast": True})
+        self.assertEqual(st, 200, cast)
+        tv = Client(self.base)  # la TV : pas de cookie
+        st, body, h = tv.call("GET", cast["url"], raw=True)
+        self.assertEqual(st, 200)
+        self.assertIn(b"#EXTM3U", body)
+        self.assertEqual(h.get("Access-Control-Allow-Origin"), "*")
+        st, init, h = tv.call("GET", cast["url"].replace("main.m3u8", "init.mp4"), raw=True)
+        self.assertEqual(st, 200)
+        self.assertEqual(tv.call("GET", normal["url"], raw=True)[0], 404)  # flux ordinaire : seulement avec sa session
+        st, body, h = self.admin.call("GET", normal["url"], raw=True)
+        self.assertEqual(st, 200)
+        self.assertIsNone(h.get("Access-Control-Allow-Origin"))
+        for sid in (normal["stream"], cast["stream"]):
+            self.admin.call("POST", "/api/stop", {"stream": sid})
+        self.assertEqual(tv.call("GET", cast["url"], raw=True)[0], 404)  # arrêté : l'adresse ne sert plus
+
     def test_12_local_only(self):
         for ip, ok in (("192.168.1.20", True), ("10.0.0.5", True), ("127.0.0.1", True), ("::ffff:192.168.0.3", True),
                        ("fe80::1", True), ("8.8.8.8", False), ("2a01:e0a::1", False), ("x", False)):

@@ -328,6 +328,8 @@ def register(app, ctx, x):
                  float(db.setting("downmix_boost", "2") or 2))
         if requested == "auto" and p["mode"] == "transcode" and quality != "original" and kbps:
             p["reasons"].append(f"connexion à {kbps / 1000:.1f} Mbit/s")
+        if b.get("cast"):
+            p["cast"] = True  # lu par une TV (Chromecast, AirPlay) : adresse du flux utilisable sans session
         if p["mode"] == "direct" and (b.get("no_direct") or media.is_strm(r["key"])):
             p["mode"] = "copy"  # le navigateur a refusé la lecture directe, ou flux distant (.strm) relayé par Nexis
         sid = secrets.token_urlsafe(12)
@@ -397,7 +399,15 @@ def register(app, ctx, x):
         return kf_cache[key]
 
     def own_stream(req, sid):
-        st = db.one("SELECT * FROM streams WHERE id=? AND user_id=?", (sid, req.user["id"]))
+        """Flux de la personne connectée ; ou, sans session, un flux lancé pour une TV (Chromecast, AirPlay) : la TV
+        va chercher la vidéo elle-même, sans le cookie du navigateur. Son adresse (identifiant aléatoire de 96 bits,
+        valable le temps de la lecture) suffit alors."""
+        if req.user:
+            st = db.one("SELECT * FROM streams WHERE id=? AND user_id=?", (sid, req.user["id"]))
+        else:
+            st = db.one("SELECT * FROM streams WHERE id=?", (sid,))
+            if st and not json.loads(st["params"] or "{}").get("cast"):
+                st = None
         if not st:
             raise HTTPError(404, "Flux expiré")
         now = int(time.time())
@@ -405,38 +415,45 @@ def register(app, ctx, x):
             db.run("UPDATE streams SET last_seen=? WHERE id=?", (now, sid))
         return st
 
-    @app.route("GET", f"/api/stream/{SID}/main.m3u8")
+    @app.route("GET", f"/api/stream/{SID}/main.m3u8", auth=None)
     def stream_playlist(req):
         sid = req.params["sid"]
-        own_stream(req, sid)
+        st = own_stream(req, sid)
         try:
             text = ctx.transcoder.playlist(sid)
         except StreamError as e:
             raise HTTPError(404, str(e))
-        return Response(text, 200, "application/vnd.apple.mpegurl", {"Cache-Control": "no-store"})
+        return cast_cors(st, Response(text, 200, "application/vnd.apple.mpegurl", {"Cache-Control": "no-store"}))
+
+    def cast_cors(st, resp):
+        """Flux lancé pour une TV : le lecteur du Chromecast le lit depuis une page de Google (autre origine)."""
+        if json.loads(st["params"] or "{}").get("cast"):
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            resp.headers["Access-Control-Expose-Headers"] = "Content-Length, Content-Range"
+        return resp
 
     def segment_response(path, ctype):
         with open(path, "rb") as f:
             data = f.read()
         return Response(data, 200, ctype, {"Cache-Control": "no-store"})
 
-    @app.route("GET", f"/api/stream/{SID}/init.mp4")
+    @app.route("GET", f"/api/stream/{SID}/init.mp4", auth=None)
     def stream_init(req):
         sid = req.params["sid"]
-        own_stream(req, sid)
+        st = own_stream(req, sid)
         db.release()  # l'attente peut durer : on ne garde pas la connexion SQLite
         try:
-            return segment_response(ctx.transcoder.init(sid), "video/mp4")
+            return cast_cors(st, segment_response(ctx.transcoder.init(sid), "video/mp4"))
         except StreamError as e:
             raise HTTPError(502, str(e))
 
-    @app.route("GET", f"/api/stream/{SID}/(?P<seg>\\d{{1,6}}\\.m4s)")
+    @app.route("GET", f"/api/stream/{SID}/(?P<seg>\\d{{1,6}}\\.m4s)", auth=None)
     def stream_segment(req):
         sid = req.params["sid"]
-        own_stream(req, sid)
+        st = own_stream(req, sid)
         db.release()
         try:
-            return segment_response(ctx.transcoder.segment(sid, req.params["seg"]), "video/iso.segment")
+            return cast_cors(st, segment_response(ctx.transcoder.segment(sid, req.params["seg"]), "video/iso.segment"))
         except StreamError as e:
             raise HTTPError(404, str(e))
 
@@ -451,13 +468,13 @@ def register(app, ctx, x):
             data, until = part
         return Response(data, 200, "application/octet-stream", until_headers(until))
 
-    @app.route("GET", f"/api/stream/{SID}/file")
+    @app.route("GET", f"/api/stream/{SID}/file", auth=None)
     def stream_file(req):
         st = own_stream(req, req.params["sid"])
         r = db.one("SELECT key FROM items WHERE id=?", (int(st["rating_key"]),))
         if not r or not os.path.isfile(r["key"]) or media.is_strm(r["key"]):
             raise HTTPError(404, "Fichier introuvable")
-        return file_response(req, r["key"])
+        return cast_cors(st, file_response(req, r["key"]))
 
     def file_response(req, path):
         size = os.path.getsize(path)

@@ -1237,3 +1237,8 @@ kbd { display: inline-block; min-width: 26px; padding: 2px 7px; border-radius: 6
 .share-row code { word-break: break-all; }
 .share-head { padding: 18px var(--gutter); }
 .share-page { padding: 0 var(--gutter) 40px; }
+.cast-layer { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.85); z-index: 5; }
+.cast-layer[hidden] { display: none; }
+.cast-box { display: grid; justify-items: center; gap: 14px; text-align: center; color: #fff; padding: 24px; }
+.cast-box > svg { width: 56px; height: 56px; color: var(--accent); }
+.cast-ctl { display: flex; gap: 12px; }

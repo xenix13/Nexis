@@ -499,6 +499,13 @@ Chaque utilisateur règle son interface dans *Paramètres → Mon compte* :
 
 **Raccourcis clavier** : la touche `?` affiche l'aide partout dans Nexis, et `/` place le curseur dans la recherche. Les touches du lecteur se changent dans *Paramètres → Cet appareil*.
 
+**Diffuser sur une TV** : dans le lecteur, le bouton **AirPlay** (Safari sur Mac, iPhone, iPad) envoie la vidéo vers une Apple TV, et le bouton **Chromecast** (Chrome ou Edge) vers un Chromecast ou une Google TV. Ils n'apparaissent que si un appareil est trouvé sur le réseau.
+- C'est la TV qui lit la vidéo : le serveur lui prépare un flux qu'elle sait lire (Chromecast : H.264 et AAC, converti si besoin ; Apple TV : H.264 ou HEVC, son Dolby transmis).
+- La progression du compte suit la lecture sur la TV, et arrêter la diffusion reprend la vidéo sur l'appareil.
+- Ce flux se lit sans la session du navigateur, par son adresse secrète (aléatoire, valable le temps de la lecture). La TV doit pouvoir joindre le serveur à la même adresse que le navigateur.
+- Le bouton Chromecast charge le SDK Cast de Google (www.gstatic.com) à l'ouverture du lecteur, dans Chrome et Edge seulement.
+- Pas encore de sous-titres sur la TV.
+
 **Télécommande** (menu du profil → *Télécommande*) : depuis le téléphone, on pilote la vidéo qui passe sur un autre appareil du même compte (ordinateur, TV, tablette) : lecture et pause, position, ±10/30 s, épisode suivant, volume, langue audio, sous-titres, vitesse, arrêt. L'appareil s'y affiche dès qu'il lit quelque chose, sous le nom choisi dans *Paramètres → Cet appareil*.
 
 **Notifications push** (*Paramètres → Cet appareil → Notifications*) : un nouvel épisode d'une série suivie, ou un titre demandé dans *Découvrir* qui arrive, déclenche une notification sur l'appareil, même Nexis fermé. Elles demandent HTTPS ; sur iPhone et iPad, Nexis doit être installé sur l'écran d'accueil (iOS 16.4 ou plus récent). Le serveur ne contacte que les services push des navigateurs (Google, Mozilla, Apple, Microsoft), avec des messages vides : le contenu est demandé à Nexis par l'appareil.

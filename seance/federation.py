@@ -1377,7 +1377,19 @@ class Federation:
     def intercept(self, req):
         """Requête d'un appareil connecté à ce serveur, portant sur un élément d'un serveur lié : relayée.
         -> Response, ou None si la route locale s'en charge (éventuellement après avoir prévenu le serveur lié)."""
-        if not req.user or not self.has_peers():
+        if not self.has_peers():
+            return None
+        if not req.user:
+            # flux d'un serveur lié lu par une TV (sans session) : relayé si ce flux a été lancé pour elle
+            m = STREAM.match(req.path) if req.method == "GET" else None
+            entry = self.proxied.get(m.group("sid")) if m else None
+            row = self.ctx.db.one("SELECT params FROM streams WHERE id=?", (m.group("sid"),)) if entry else None
+            if row and json.loads(row["params"] or "{}").get("cast"):
+                req.user = self.ctx.db.one("SELECT * FROM users WHERE id=?", (entry[1],))
+                resp = self.relay(req, entry[0], req.path)
+                req.user = None
+                resp.headers["Access-Control-Allow-Origin"] = "*"
+                return resp
             return None
         path, x = req.path, self.x
         m = DOWNLOAD_JOB.match(path)
@@ -1655,7 +1667,7 @@ class Federation:
         data["next"] = x.card(nxt) if nxt else None
         now = int(time.time())
         title = card["title"] if card["type"] == "movie" else f"{card.get('show')} · S{card.get('season')}E{card.get('episode')}"
-        params = {"mode": data.get("mode"), "reasons": data.get("reasons") or [], "peer": peer["name"]}
+        params = {"mode": data.get("mode"), "reasons": data.get("reasons") or [], "peer": peer["name"], "cast": bool(body.get("cast"))}
         db.run("INSERT OR REPLACE INTO streams(id,user_id,plex_session,rating_key,params,title,quality,position_ms,"
                "created_at,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?)",
                (sid, uid, sid, rk, json.dumps(params), title, data.get("quality"), int(data.get("offset") or 0), now, now))

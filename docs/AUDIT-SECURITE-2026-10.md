@@ -109,6 +109,11 @@ Les actions tierces (`docker/build-push-action@v6`, `gradle/actions/setup-gradle
 - **Notifications push.** Le serveur n'appelle que les services push des navigateurs (Google, Mozilla, Apple, Microsoft), en HTTPS et sans port ni identifiants dans l'adresse : une adresse d'abonnement arbitraire ne peut pas lui faire appeler une machine du réseau local. Les messages sont vides ; l'appareil réveillé demande leur contenu avec sa session. La clé VAPID est créée par openssl dans `push/` (droits 600).
 - **Albums partagés par lien.** Jeton aléatoire de 144 bits, durée de 1 à 90 jours, révocable. Seuls l'album et ses sous-albums sont accessibles, vérifiés à chaque photo, et les essais de jetons au hasard sont freinés comme les mots de passe. Le reste de l'API demande toujours un compte.
 
+## 10. Diffusion sur une TV (nouveau, 3.30.0)
+
+- **Flux lisible sans session.** Un flux lancé pour une TV (Chromecast, AirPlay) est servi à quiconque connaît son adresse : la TV la demande sans le cookie du navigateur. Cette adresse contient l'identifiant aléatoire du flux (96 bits) et cesse de fonctionner à l'arrêt de la lecture. Les autres flux demandent toujours la session de leur propriétaire. Ces flux portent `Access-Control-Allow-Origin: *`, sans cookies, pour le lecteur du Chromecast.
+- **Script tiers.** La politique de sécurité du contenu autorise `https://www.gstatic.com` dans `script-src` pour le SDK Cast de Google. Ce SDK n'est chargé que dans Chrome et Edge, à l'ouverture du lecteur. C'est le seul code tiers de l'interface.
+
 ## Recommandations par priorité
 
 1. Sécuriser le compte GitHub et la branche `main` ; mettre à jour vers des versions publiées et signées (§ 1).

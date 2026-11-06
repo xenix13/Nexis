@@ -13,6 +13,7 @@ import { avatar, clear, episodeCode, errorBox, fmtTime, h, icon, img, loadHls, s
 import { tr } from './i18n.js';
 import { measureBandwidth, saveBandwidth } from './bandwidth.js';
 import { actionFor } from './keys.js';
+import { AIRPLAY_CAPS, CHROMECAST_CAPS, castDeviceName, castLoad, loadCastSdk, watchAirplay } from './cast.js';
 
 const REPORT_EVERY = 10000;
 const HIDE_AFTER = 3000;
@@ -36,7 +37,7 @@ export async function renderPlayer(root, rk, ctx) {
   const hlsReady = loadHls(); // en parallèle du chargement de la fiche
   const prefs = { ...state.me.prefs, ...deviceOverrides() }; // réglages de l'appareil prioritaires
   const isAdmin = state.me.user.is_admin;
-  const video = h('video.video', { playsinline: true, preload: 'auto' });
+  const video = h('video.video', { playsinline: true, preload: 'auto', 'x-webkit-airplay': 'allow' });
   const subLayer = h('div.sub-layer', { style: { fontSize: `${(prefs.sub_size / 100) * 2.4}vmin` } });
   const subTop = h('div.sub-layer.sub-top', { style: { fontSize: `${(prefs.sub_size / 100) * 2.4}vmin` } });
   const subsPending = h('div.subs-pending', { hidden: true }, tr('Sous-titres en préparation…'));
@@ -64,6 +65,9 @@ export async function renderPlayer(root, rk, ctx) {
   const groupBtn = h('button.ctl', { 'aria-label': tr('Regarder ensemble'), title: tr('Regarder ensemble') }, icon('group'), groupCount);
   const cogBtn = h('button.ctl', { 'aria-label': tr('Qualité') }, icon('cog'));
   const fullBtn = h('button.ctl', { 'aria-label': tr('Plein écran') }, icon('full'));
+  const castBtn = h('button.ctl', { 'aria-label': tr('Diffuser sur un Chromecast'), title: tr('Diffuser sur un Chromecast'), hidden: true }, icon('cast'));
+  const airplayBtn = h('button.ctl', { 'aria-label': tr('Diffuser avec AirPlay'), title: tr('Diffuser avec AirPlay'), hidden: true }, icon('airplay'));
+  const castLayer = h('div.cast-layer', { hidden: true });
   const menu = h('div.player-menu', { hidden: true });
   const chapterPanel = h('div.chapter-panel', { hidden: true });
   const groupBanner = h('div.group-banner', { hidden: true });
@@ -83,9 +87,9 @@ export async function renderPlayer(root, rk, ctx) {
       playBtn,
       h('button.ctl', { 'aria-label': tr('Reculer de 10 secondes'), onclick: () => seekBy(-10000) }, icon('rewind')),
       h('button.ctl', { 'aria-label': tr('Avancer de 30 secondes'), onclick: () => seekBy(30000) }, icon('forward')),
-      h('div.vol', muteBtn, volume), timeEl, h('div.grow'), nextBtn, groupBtn, chaptersBtn, subsBtn, cogBtn, fullBtn));
+      h('div.vol', muteBtn, volume), timeEl, h('div.grow'), nextBtn, groupBtn, chaptersBtn, subsBtn, castBtn, airplayBtn, cogBtn, fullBtn));
   const top = h('div.player-top', backBtn, titleEl, h('div.grow'), miniBtn);
-  const player = h('div.player', video, subLayer, subTop, subsPending, loader, errorLayer, top, groupBanner, skipBtn, nextCard,
+  const player = h('div.player', video, subLayer, subTop, subsPending, loader, errorLayer, castLayer, top, groupBanner, skipBtn, nextCard,
     menu, chapterPanel, controls, miniBar);
   applySubStyle(player, prefs);
   clear(root, player);
@@ -102,6 +106,7 @@ export async function renderPlayer(root, rk, ctx) {
   let switching = true, finished = false; // no progress reports while a stream is (re)starting or after the end
   let rebuffering = false, stalls = [], lowerHinted = false, everPlayed = false;
   let bandwidth = null; // débit mesuré (kbit/s), pour la qualité automatique
+  let airplay = false; // la vidéo passe sur une Apple TV : flux natif, lisible sans la session du navigateur
 
   // téléchargement lu hors ligne (#/offline/…) : fichier gardé sur l'appareil, rien ne passe par le serveur
   const offline = !!ctx.offline;
@@ -226,7 +231,7 @@ export async function renderPlayer(root, rk, ctx) {
       if (destroyed || seq !== startSeq) return;
       s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality, bandwidth: bandwidth || undefined,
         no_direct: forceHls || undefined,
-        caps: browserCaps(),
+        caps: airplay ? AIRPLAY_CAPS : browserCaps(), cast: airplay || undefined,
         playlist: ctx.query.get('playlist') || undefined, shuffle: ctx.query.get('shuffle') || undefined,
         audio: audioSel ? audioSel.id : null, subtitle: subSel ? subSel.id : 0, replace: previous || undefined });
     } catch (e) { if (seq === startSeq) showError(e.message, true); return; }
@@ -277,7 +282,7 @@ export async function renderPlayer(root, rk, ctx) {
           start(Math.max(session.offset, pos()));
         }
       }, { once: true });
-    } else if (window.Hls && window.Hls.isSupported()) {
+    } else if (window.Hls && window.Hls.isSupported() && !airplay) {
       hls = new window.Hls({ ...HLS_CONFIG, startPosition: session.offset / 1000 });
       hls.on(window.Hls.Events.ERROR, (_, data) => {
         if (!data.fatal || seq !== startSeq) return;
@@ -1151,6 +1156,97 @@ export async function renderPlayer(root, rk, ctx) {
       speed: tr('vitesse'), audio: tr('langue audio'), subtitle: tr('sous-titres'), stop: tr('arrêt') })[c.action] || c.action }));
     setTimeout(() => remoteState(true), 400);
   }
+  // ------------------------------------------------------------ diffusion sur une TV (AirPlay, Chromecast)
+  // AirPlay : Safari envoie à l'Apple TV l'adresse de la vidéo ; on la remplace par un flux natif « pour TV »
+  const stopAirplay = watchAirplay(video, (on) => { airplayBtn.hidden = !on || offline; }, (wireless) => {
+    if (wireless === airplay) return;
+    airplay = wireless;
+    toast(wireless ? tr('Lecture sur l’Apple TV') : tr('Lecture de retour sur cet appareil'));
+    start(pos());
+  });
+  airplayBtn.addEventListener('click', () => { if (video.webkitShowPlaybackTargetPicker) video.webkitShowPlaybackTargetPicker(); });
+
+  // Chromecast : le SDK de Google (Chrome, Edge) trouve les appareils ; le serveur prépare un flux qu'il sait lire
+  let castFw = null, castStream = null, castRemote = null, castCtl = null, castTimer = null, castAt = 0;
+  const castPos = () => (castRemote ? Math.round(castRemote.currentTime * 1000) : castAt);
+  function paintCast() {
+    if (!castRemote || !castStream) { castLayer.hidden = true; return; }
+    const d = duration();
+    clear(castLayer, h('div.cast-box', icon('cast'),
+      h('div', h('div.muted.small', tr('Diffusion sur {name}', { name: castDeviceName(castFw) || 'Chromecast' })),
+        h('strong', item.type === 'episode' ? `${item.show} · ${episodeCode(item)}` : item.title),
+        h('div.muted.small', `${fmtTime(castPos(), d >= 3600000)} / ${fmtTime(d, d >= 3600000)}`)),
+      h('div.cast-ctl',
+        h('button.ctl', { 'aria-label': tr('Reculer de 10 secondes'), onclick: () => castSeek(castPos() - 10000) }, icon('rewind')),
+        h('button.ctl', { 'aria-label': tr('Lecture/Pause'), onclick: () => castCtl.playOrPause() }, icon(castRemote.isPaused ? 'play' : 'pause')),
+        h('button.ctl', { 'aria-label': tr('Avancer de 30 secondes'), onclick: () => castSeek(castPos() + 30000) }, icon('forward'))),
+      h('button.btn.small', { type: 'button', onclick: () => castFw.CastContext.getInstance().endCurrentSession(true) }, tr('Arrêter la diffusion'))));
+    castLayer.hidden = false;
+  }
+  function castSeek(ms) {
+    castRemote.currentTime = Math.max(0, Math.min(duration() / 1000, ms / 1000));
+    castCtl.seek();
+  }
+  async function startCast() {
+    const at = pos();
+    video.pause();
+    loader.hidden = false;
+    try {
+      const s = await post('/api/play', { id: item.id, offset: Math.round(at), quality: 'original', caps: CHROMECAST_CAPS, cast: true,
+        audio: audioSel ? audioSel.id : null, subtitle: 0 });
+      castStream = s.stream;
+      // la lecture d'ici s'arrête (le serveur ne prépare plus qu'un flux, celui de la TV)
+      if (session && session.stream) post('/api/stop', { stream: session.stream }).catch(() => {});
+      if (hls) { hls.destroy(); hls = null; }
+      await castLoad(castFw, { url: s.url, mode: s.mode, offset: s.offset, title: item.type === 'episode' ? item.show : item.title,
+        subtitle: item.type === 'episode' ? `${episodeCode(item)} · ${item.title}` : '' });
+      castRemote = new castFw.RemotePlayer();
+      castCtl = new castFw.RemotePlayerController(castRemote);
+      castCtl.addEventListener(castFw.RemotePlayerEventType.ANY_CHANGE, paintCast);
+      clearInterval(castTimer);
+      castTimer = setInterval(() => {  // progression du compte, comme une lecture ici
+        if (!castRemote || !castRemote.isConnected) return;
+        castAt = castPos();
+        paintCast();
+        post('/api/progress', { id: item.id, position: castAt, duration: duration(), stream: castStream,
+          state: castRemote.isPaused ? 'paused' : 'playing' }).catch(() => {});
+      }, 5000);
+      paintCast();
+    } catch (e) {
+      toast(e.message || tr('Diffusion impossible'), 'bad');
+      castFw.CastContext.getInstance().endCurrentSession(true);
+    } finally { loader.hidden = true; }
+  }
+  function endCast() {
+    if (!castStream) return;
+    const at = castPos() || castAt;
+    post('/api/stop', { stream: castStream }).catch(() => {});
+    castStream = null;
+    castRemote = null;
+    clearInterval(castTimer);
+    castLayer.hidden = true;
+    if (!destroyed) { toast(tr('Lecture de retour sur cet appareil')); start(at); }
+  }
+  if (!offline) {
+    loadCastSdk().then((fw) => {
+      if (!fw || destroyed) return;
+      castFw = fw;
+      const ctxCast = fw.CastContext.getInstance();
+      const paintBtn = () => { castBtn.hidden = ctxCast.getCastState() === fw.CastState.NO_DEVICES_AVAILABLE; };
+      ctxCast.addEventListener(fw.CastContextEventType.CAST_STATE_CHANGED, paintBtn);
+      ctxCast.addEventListener(fw.CastContextEventType.SESSION_STATE_CHANGED, (e) => {
+        if (e.sessionState === fw.SessionState.SESSION_ENDED) endCast();
+      });
+      paintBtn();
+      castBtn.addEventListener('click', async () => {
+        if (castStream) { ctxCast.endCurrentSession(true); return; }
+        try {
+          if (!ctxCast.getCurrentSession()) await ctxCast.requestSession();
+          await startCast();
+        } catch (e) { if (e !== 'cancel') toast(tr('Diffusion annulée')); }
+      });
+    });
+  }
   if (!offline) {
     remoteEs = new EventSource(`/api/remote/events?device=${myDevice}&name=${encodeURIComponent(deviceName())}`);
     remoteEs.onmessage = (ev) => { try { remoteCommand(JSON.parse(ev.data)); } catch { /* commande illisible */ } };
@@ -1355,6 +1451,8 @@ export async function renderPlayer(root, rk, ctx) {
     clearInterval(nextTimer);
     clearInterval(sleepTimer);
     clearInterval(remoteTimer);
+    stopAirplay();
+    clearInterval(castTimer); // la diffusion continue sur la TV si l'on quitte le lecteur
     if (remoteEs) { remoteEs.close(); post('/api/remote/state', { device: myDevice, state: null }, { keepalive: true }).catch(() => {}); }
     // minuterie : elle suit l'enchaînement des épisodes, pas un retour à la navigation
     if (!/^#\/(play|offline)\//.test(location.hash)) Object.assign(sleep, { at: 0, endOfItem: false });
