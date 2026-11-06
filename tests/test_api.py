@@ -1192,6 +1192,24 @@ class SeanceTest(unittest.TestCase):
         self.assertIn("short", home)
         self.assertIn("unfinished", home)
 
+    def test_wallpaper_and_recap_marker(self):
+        """Fond d'écran du profil (l'arrière-plan d'un titre) et repère de récapitulatif posé à la main."""
+        polar = self.movie("Nuit polaire")
+        art = f"/library/metadata/{polar['id']}/art/1"
+        st, r = self.lea.call("PUT", "/api/me/prefs", {"wallpaper": art})
+        self.assertEqual((st, r["wallpaper"]), (200, art))
+        for bad in (f"/library/metadata/{polar['id']}/thumb/1", "https://exemple.org/a.jpg", 3):
+            self.assertEqual(self.lea.call("PUT", "/api/me/prefs", {"wallpaper": bad})[0], 400)
+        self.assertEqual(self.lea.call("GET", "/api/me")[1]["prefs"]["wallpaper"], art)
+        self.assertEqual(self.lea.call("PUT", "/api/me/prefs", {"wallpaper": ""})[1]["wallpaper"], "")
+        st, r = self.admin.call("PUT", f"/api/admin/markers/{polar['id']}", {"kind": "recap", "start": 0, "end": 45000})
+        self.assertEqual(st, 200, r)
+        st, d = self.admin.call("GET", f"/api/items/{polar['id']}")
+        self.assertEqual(d["markers"]["recap"], {"start": 0, "end": 45000, "source": "manual"})
+        self.admin.call("PUT", f"/api/admin/markers/{polar['id']}", {"kind": "recap", "clear": True})
+        self.assertNotIn("recap", self.admin.call("GET", f"/api/items/{polar['id']}")[1]["markers"])
+        self.assertEqual(self.admin.call("PUT", f"/api/admin/markers/{polar['id']}", {"kind": "outro", "start": 0, "end": 5})[0], 400)
+
     def test_stars_hidden_and_shared_playlists(self):
         """Note en étoiles (et avis qui en découle), titre masqué pour soi, playlist partagée avec le foyer."""
         polar, voyage = self.movie("Nuit polaire"), self.movie("Le Grand Voyage")

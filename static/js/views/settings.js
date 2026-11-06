@@ -4,7 +4,7 @@ import { ADMIN_ALIASES, ADMIN_GROUPS, renderAdminSection } from './admin.js';
 import { applyPrefs, navItems, refreshMe, repaintNav, repaintUser, state } from '../app.js';
 import { PIN_LABELS, pins, removePin } from '../pins.js';
 import { SUB_BGS, SUB_COLORS, SUB_EDGES, SUB_FONTS, SUB_POSITIONS, applySubStyle } from '../substyle.js';
-import { arrange, avatar, clear, field, h, icon, modal, select, spinner, toast, toggle } from '../ui.js';
+import { arrange, avatar, clear, field, h, icon, img, modal, select, spinner, toast, toggle } from '../ui.js';
 import { ART, BACKGROUNDS, CATEGORIES, DEFAULT_BG, artDataUrl, artSvg } from '../avatar-art.js';
 import { device, deviceName, setDevice } from '../device.js';
 import { shortcutsPanel } from '../keys.js';
@@ -210,8 +210,8 @@ export const ACCOUNT_GROUP = { title: tr('Mon compte'), items: [
     keys: tr('nom avatar photo couleur langue language pin code mot de passe sécurité double authentification 2fa totp codes de secours') },
   { id: 'playback', label: tr('Lecture'), icon: 'play', lead: tr('Qualité, langues, sous-titres et enchaînement des épisodes.'),
     keys: tr('qualité langue audio sous-titres taille police couleur style épisode suivant générique intro automatique spoiler anti-spoiler résumé') },
-  { id: 'appearance', label: tr('Apparence'), icon: 'palette', lead: tr('Thème, couleur d’accent et taille des affiches.'),
-    keys: tr('thème sombre clair oled couleur accent affiches taille') },
+  { id: 'appearance', label: tr('Apparence'), icon: 'palette', lead: tr('Thème, couleur d’accent, affiches et fond d’écran.'),
+    keys: tr('thème sombre clair oled couleur accent affiches taille fond d’écran') },
   { id: 'device', label: tr('Cet appareil'), icon: 'tv', lead: tr('Réglages propres à ce navigateur ou à cette TV, prioritaires sur ceux du profil.'),
     keys: tr('appareil tv téléphone qualité sous-titres taille animations mouvement télécommande manette navigateur') },
   { id: 'layout', label: tr('Accueil et menu'), icon: 'home', lead: tr('Ordre et affichage des rangées de l’accueil et des liens de la barre du haut.'),
@@ -418,6 +418,7 @@ function accountPage(id, body, rerender) {
         field(tr('Délai avant l’épisode suivant'), bindSelect('next_delay', [0, 3, 5, 10, 15, 20, 30].map((n) => [String(n), n ? tr('{n} secondes', { n }) : tr('Immédiatement')]), Number),
           tr('Un compte à rebours s’affiche à la fin de l’épisode, avec « Lire maintenant » et « Annuler ». Pendant le générique, l’épisode suivant est seulement proposé.')),
         bindToggle('auto_skip_intro', tr('Passer les génériques d’ouverture automatiquement')),
+        bindToggle('auto_skip_recap', tr('Passer les récapitulatifs (« Précédemment… ») automatiquement')),
         bindToggle('hide_spoilers', tr('Anti-spoiler : flouter les vignettes et masquer les résumés des épisodes non vus')),
         h('p.field-hint.toggle-hint', tr('Un clic sur un résumé masqué l’affiche.'))));
     return;
@@ -455,7 +456,13 @@ function accountPage(id, body, rerender) {
       field(tr('Couleur d’accent'), swatches(p.accent, (c) => save({ accent: c }, tr('Couleur appliquée')))),
       h('div.grid2',
         field(tr('Thème'), bindSelect('theme', [['dark', tr('Sombre')], ['oled', tr('Noir profond (OLED)')], ['light', tr('Clair')]])),
-        field(tr('Taille des affiches'), bindSelect('poster_size', [['s', tr('Petites')], ['m', tr('Moyennes')], ['l', tr('Grandes')]])))));
+        field(tr('Taille des affiches'), bindSelect('poster_size', [['s', tr('Petites')], ['m', tr('Moyennes')], ['l', tr('Grandes')]])))),
+    h('section.panel', h('h2', tr('Fond d’écran')),
+      p.wallpaper ? h('div.wallpaper-preview', { style: `background-image: url("${img(p.wallpaper, 480, 270)}")` }) : null,
+      h('p.muted', p.wallpaper ? tr('L’image apparaît, estompée, derrière toutes les pages.')
+        : tr('Sur la fiche d’un film ou d’une série, menu ⋯ puis « Utiliser comme fond d’écran ».')),
+      p.wallpaper ? h('button.btn', { type: 'button', onclick: async () => { await save({ wallpaper: '' }, tr('Fond d’écran retiré')); rerender(); } },
+        tr('Retirer le fond d’écran')) : null));
     return;
   }
 

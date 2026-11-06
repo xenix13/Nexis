@@ -48,6 +48,28 @@ def exif_block(orientation, taken, model):
     return b"\xff\xe1" + struct.pack(">H", len(payload) + 2) + payload
 
 
+def gps_block(lat, lon):
+    """Segment APP1 EXIF avec seulement les coordonnées GPS (IFD0 -> IFD GPS, degrés/minutes/secondes)."""
+    def dms(v):
+        v = abs(v)
+        d = int(v)
+        m = int((v - d) * 60)
+        sec = round(((v - d) * 60 - m) * 60 * 100)
+        return struct.pack("<IIIIII", d, 1, m, 1, sec, 100)
+    gps_off = 8 + 2 + 12 + 4                 # IFD0 : une entrée (pointeur GPS)
+    data_off = gps_off + 2 + 4 * 12 + 4      # IFD GPS : 4 entrées
+    t = b"II\x2a\x00" + struct.pack("<I", 8)
+    t += struct.pack("<H", 1) + struct.pack("<HHII", 0x8825, 4, 1, gps_off) + struct.pack("<I", 0)
+    t += struct.pack("<H", 4)
+    t += struct.pack("<HHI", 1, 2, 2) + (b"N" if lat >= 0 else b"S") + b"\0\0\0"
+    t += struct.pack("<HHII", 2, 5, 3, data_off)
+    t += struct.pack("<HHI", 3, 2, 2) + (b"E" if lon >= 0 else b"W") + b"\0\0\0"
+    t += struct.pack("<HHII", 4, 5, 3, data_off + 24)
+    t += struct.pack("<I", 0) + dms(lat) + dms(lon)
+    payload = b"Exif\0\0" + t
+    return b"\xff\xe1" + struct.pack(">H", len(payload) + 2) + payload
+
+
 def make_jpeg(path, w, h, orientation=None, taken=None, model="Pixel 8", color="red"):
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"color=c={color}:s={w}x{h}", "-frames:v", "1",
                     path], check=True)
@@ -387,6 +409,59 @@ class PhotosDlnaTest(unittest.TestCase):
         self.assertEqual(self.admin.call("POST", f"/api/photos/albums/{plage['id']}/shares", {"days": 365})[0], 400)
         self.admin.call("DELETE", f"/api/photos/shares/{token}")
         self.assertEqual(anon.call("GET", f"/api/share/{token}")[0], 404)  # révoqué
+
+    def test_40_photo_map(self):
+        """Coordonnées GPS (EXIF des photos, métadonnées des vidéos), carte, photos d'un lieu ; jamais dans un lien."""
+        lib = self.libs["Photos"]
+        folder = os.path.join(self.pics, "Voyage")
+        os.makedirs(folder)
+        try:
+            jpg = os.path.join(folder, "IMG_GPS.jpg")
+            make_jpeg(jpg, 32, 32)
+            with open(jpg, "rb") as f:
+                data = f.read()
+            with open(jpg, "wb") as f:
+                f.write(data[:2] + gps_block(-33.8568, 151.2153) + data[2:])
+            info = read_info(jpg)
+            self.assertAlmostEqual(info["lat"], -33.8568, places=3)
+            self.assertAlmostEqual(info["lon"], 151.2153, places=3)
+            clip = os.path.join(folder, "VID_GPS.mp4")
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=s=64x36:r=5", "-t", "1",
+                            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-metadata", "location=+48.8584+002.2945/", clip], check=True)
+            self.assertAlmostEqual(read_info(clip)["lat"], 48.8584, places=3)
+            old = time.time() - 3600
+            for f in (jpg, clip):
+                os.utime(f, (old, old))
+            self.admin.call("POST", "/api/admin/scan", {"library": lib["id"]})
+            wait_scan(self.admin)
+            st, r = self.admin.call("GET", f"/api/libraries/{lib['id']}/photos?view=map")
+            self.assertEqual(st, 200, r)
+            pts = {p[0]: p[1:] for p in r["points"]}
+            self.assertEqual(len(pts), 2)
+            st, r = self.admin.call("GET", f"/api/libraries/{lib['id']}/photos?ids={','.join(pts)},999999")
+            self.assertEqual(sorted(p["title"] for p in r["photos"]), ["IMG_GPS", "VID_GPS"])
+            self.assertTrue(all(p["lat"] is not None for p in r["photos"]))
+            # photo analysée avant la lecture du GPS : relue une fois au scan suivant, sans changer de fichier
+            gid = next(k for k, v in pts.items() if v[0] < 0)
+            self.ctx.db.run("UPDATE items SET probe='{\"w\":32,\"h\":32}' WHERE id=?", (int(gid),))
+            self.assertEqual(len(self.admin.call("GET", f"/api/libraries/{lib['id']}/photos?view=map")[1]["points"]), 1)
+            self.admin.call("POST", "/api/admin/scan", {"library": lib["id"]})
+            wait_scan(self.admin)
+            self.assertEqual(len(self.admin.call("GET", f"/api/libraries/{lib['id']}/photos?view=map")[1]["points"]), 2)
+            # album partagé par lien : pas de position
+            st, root = self.admin.call("GET", f"/api/libraries/{lib['id']}/photos")
+            voyage = next(a for a in root["albums"] if a["title"] == "Voyage")
+            st, share = self.admin.call("POST", f"/api/photos/albums/{voyage['id']}/shares", {"days": 1})
+            st, pub = Client(self.base).call("GET", f"/api/share/{share['token']}")
+            self.assertEqual(len(pub["photos"]), 2)
+            self.assertFalse(any("lat" in p for p in pub["photos"]))
+            self.admin.call("DELETE", f"/api/photos/shares/{share['token']}")
+            # une autre personne sans accès à la photothèque : rien
+            self.assertNotEqual(Client(self.base).call("GET", f"/api/libraries/{lib['id']}/photos?view=map")[0], 200)
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+            self.admin.call("POST", "/api/admin/scan", {"library": lib["id"]})
+            wait_scan(self.admin)
 
     def test_30_remote_control(self):
         """Télécommande : le lecteur s'annonce, envoie son état ; un autre appareil le voit et lui envoie des commandes."""

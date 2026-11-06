@@ -476,7 +476,7 @@ def register(app, ctx, x):
         rk = req.params["rk"]
         b = req.json()
         kind = b.get("kind")
-        if kind not in ("intro", "credits"):
+        if kind not in ("intro", "recap", "credits"):
             raise HTTPError(400, "Type de marqueur invalide")
         if b.get("clear"):
             db.run("DELETE FROM markers WHERE rating_key=? AND kind=?", (rk, kind))

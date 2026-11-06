@@ -62,6 +62,10 @@ export function applyPrefs(prefs) {
   r.classList.toggle('kids', kids); // interface enfant : grandes vignettes, menu simplifié
   r.dataset.poster = kids ? 'l' : prefs.poster_size;
   r.classList.toggle('no-spoilers', !!prefs.hide_spoilers);
+  // fond d'écran du profil (l'arrière-plan d'un titre choisi depuis sa fiche), estompé derrière l'interface
+  r.classList.toggle('has-wallpaper', !!prefs.wallpaper);
+  if (prefs.wallpaper) r.style.setProperty('--wallpaper', `url("${img(prefs.wallpaper, 1280, 720)}")`);
+  else r.style.removeProperty('--wallpaper');
   // barre d'état du téléphone / de la fenêtre installée à la couleur du thème
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = getComputedStyle(r).getPropertyValue('--bg').trim() || '#0b0b0e';

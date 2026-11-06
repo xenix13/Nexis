@@ -315,7 +315,7 @@ SECURITY_HEADERS = {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
     "Content-Security-Policy": (
-        "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
+        "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org; media-src 'self' blob:; "
         "script-src 'self' https://www.gstatic.com; style-src 'self' 'unsafe-inline'; connect-src 'self'; "
         "worker-src 'self' blob:; frame-src https://www.youtube-nocookie.com; frame-ancestors 'none'; "
         "base-uri 'none'; form-action 'self'; object-src 'none'"

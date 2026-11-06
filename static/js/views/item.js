@@ -1,5 +1,5 @@
 import { del, get, post, put } from '../api.js';
-import { state } from '../app.js';
+import { applyPrefs, state } from '../app.js';
 import { launchableGroups } from '../groups.js';
 import { deviceCaps, download as offlineDownload, find as findDownload, onDownloads, supported as offlineSupported } from '../offline.js';
 import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from '../tracks.js';
@@ -53,6 +53,7 @@ function fileInfo(d) {
     row(tr('Sous-titres'), (d.subtitles || []).map((x) => x.title).join(' · ')),
     row(tr('Chapitres'), d.chapters && d.chapters.length ? `${d.chapters.length}` : tr('aucun')),
     row(tr('Intro'), mk.intro ? `${fmtTime(mk.intro.start)} → ${fmtTime(mk.intro.end)} (${src[mk.intro.source] || mk.intro.source})` : tr('non détectée')),
+    mk.recap ? row(tr('Récap'), `${fmtTime(mk.recap.start)} → ${fmtTime(mk.recap.end)} (${src[mk.recap.source] || mk.recap.source})`) : null,
     row(tr('Générique de fin'), mk.credits ? `${fmtTime(mk.credits.start)} (${src[mk.credits.source] || mk.credits.source})` : tr('non détecté')),
     row(tr('Métadonnées'), { done: 'TMDB', local: tr('fichiers locaux'), nomatch: tr('non identifié'), error: tr('erreur'), pending: tr('en attente') }[d.meta_state] || d.meta_state),
   ), []);
@@ -121,6 +122,18 @@ function itemMenu(d, rerender) {
       if (setOpinion) await setOpinion(0);
       d.opinion = d.opinion === 0 ? null : 0;
       rerender();
+    } });
+  }
+  const art = d.type === 'episode' ? (d.show_art || d.art) : d.art;
+  if (art && /\/art\//.test(art) && state.me && state.me.prefs) {
+    const current = state.me.prefs.wallpaper === art;
+    items.push({ label: current ? tr('Retirer le fond d’écran') : tr('Utiliser comme fond d’écran'), onClick: async () => {
+      try {
+        const r = await put('/api/me/prefs', { wallpaper: current ? '' : art });
+        Object.assign(state.me.prefs, r);
+        applyPrefs(state.me.prefs);
+        toast(current ? tr('Fond d’écran retiré') : tr('Fond d’écran appliqué'), 'ok');
+      } catch (e) { toast(e.message, 'bad'); }
     } });
   }
   if (['movie', 'show'].includes(d.type)) {

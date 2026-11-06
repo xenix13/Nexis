@@ -48,13 +48,14 @@ export async function renderPlayer(root, rk, ctx) {
   const played = h('div.tl-played');
   const buffered = h('div.tl-buffered');
   const introMark = h('div.tl-intro', { hidden: true });
+  const recapMark = h('div.tl-intro.tl-recap', { hidden: true });
   const previewImg = h('div.tl-preview-img', { hidden: true });
   const previewChapter = h('div.tl-preview-chapter');
   const previewTime = h('div.tl-preview-time');
   const hoverTip = h('div.tl-tip', { hidden: true }, previewImg, previewChapter, previewTime);
   const chapterMarks = h('div.tl-chapters');
   const timeline = h('div.timeline', { role: 'slider', 'aria-label': tr('Position'), tabindex: 0 },
-    h('div.tl-track', buffered, introMark, chapterMarks, played, h('div.tl-thumb')), hoverTip);
+    h('div.tl-track', buffered, recapMark, introMark, chapterMarks, played, h('div.tl-thumb')), hoverTip);
   const playBtn = h('button.ctl', { 'aria-label': tr('Lecture/Pause') }, icon('play'));
   const muteBtn = h('button.ctl', { 'aria-label': tr('Couper le son') }, icon('volume'));
   const volume = h('input.volume', { type: 'range', min: 0, max: 1, step: 0.05, 'aria-label': tr('Volume') });
@@ -71,7 +72,9 @@ export async function renderPlayer(root, rk, ctx) {
   const menu = h('div.player-menu', { hidden: true });
   const chapterPanel = h('div.chapter-panel', { hidden: true });
   const groupBanner = h('div.group-banner', { hidden: true });
-  const skipBtn = h('button.skip-btn', { hidden: true }, icon('skip'), tr('Passer l’intro'));
+  const skipLabel = h('span', tr('Passer l’intro'));
+  const skipBtn = h('button.skip-btn', { hidden: true }, icon('skip'), skipLabel);
+  let skipping = null; // repère que le bouton « Passer » fait sauter (intro ou récap)
   const nextCard = h('div.next-card', { hidden: true });
   const backBtn = h('button.ctl.back', { 'aria-label': tr('Retour') }, icon('back'));
   const miniBtn = h('button.ctl', { 'aria-label': tr('Réduire le lecteur'), title: tr('Réduire (i) : continuer à naviguer') }, icon('pip'));
@@ -101,7 +104,7 @@ export async function renderPlayer(root, rk, ctx) {
   let subsUntil = null, subsRefresh = null;
   const SUBS_REFRESH = 20000;
   let audioSel = null, subSel = null, quality = prefs.quality;
-  let lastReport = 0, introSkipped = false, nextTimer = null, nextDismissed = false, nextAtEnd = false, destroyed = false;
+  let lastReport = 0, introSkipped = false, recapSkipped = false, nextTimer = null, nextDismissed = false, nextAtEnd = false, destroyed = false;
   let idleTimer = null, scrubbing = false, startedAt = 0;
   let switching = true, finished = false; // no progress reports while a stream is (re)starting or after the end
   let rebuffering = false, stalls = [], lowerHinted = false, everPlayed = false;
@@ -243,6 +246,7 @@ export async function renderPlayer(root, rk, ctx) {
     session = s;
     base = 0;
     introSkipped = false;
+    recapSkipped = false;
     nextBtn.hidden = !session.next;
     updateIntroMark();
     // la lecture ne démarre qu'une fois les sous-titres prêts (pas de trou au début de l'épisode)
@@ -654,12 +658,14 @@ export async function renderPlayer(root, rk, ctx) {
   }
 
   function updateIntroMark() {
-    const intro = session && session.markers && session.markers.intro;
     const d = duration();
-    introMark.hidden = !(intro && d);
-    if (intro && d) {
-      introMark.style.left = `${(intro.start / d) * 100}%`;
-      introMark.style.width = `${((intro.end - intro.start) / d) * 100}%`;
+    for (const [mark, kind] of [[introMark, 'intro'], [recapMark, 'recap']]) {
+      const m = session && session.markers && session.markers[kind];
+      mark.hidden = !(m && d);
+      if (m && d) {
+        mark.style.left = `${(m.start / d) * 100}%`;
+        mark.style.width = `${((m.end - m.start) / d) * 100}%`;
+      }
     }
   }
 
@@ -684,15 +690,24 @@ export async function renderPlayer(root, rk, ctx) {
   function paintMarkers(p) {
     if (switching) return;
     const m = (session && session.markers) || {};
-    const intro = m.intro;
+    const intro = m.intro, recap = m.recap;
     const inIntro = intro && p >= intro.start && p < intro.end - 1000;
+    const inRecap = !inIntro && recap && p >= recap.start && p < recap.end - 1000;
     if (inIntro && prefs.auto_skip_intro && !introSkipped) {
       introSkipped = true;
       toast(tr('Intro passée'));
       seekTo(intro.end);
       return;
     }
-    skipBtn.hidden = !inIntro;
+    if (inRecap && prefs.auto_skip_recap && !recapSkipped) {
+      recapSkipped = true;
+      toast(tr('Récap passé'));
+      seekTo(recap.end);
+      return;
+    }
+    skipping = inIntro ? intro : inRecap ? recap : null;
+    if (skipping) skipLabel.textContent = inIntro ? tr('Passer l’intro') : tr('Passer le récap');
+    skipBtn.hidden = !skipping;
     // next episode countdown
     const next = session && session.next;
     const d = duration();
@@ -831,29 +846,35 @@ export async function renderPlayer(root, rk, ctx) {
         [15, 30, 45, 60, 90].map((m) => opt(tr('{n} min', { n: m }), false, () => setSleep(m))),
         sleep.at ? h('p.menu-info', tr('Pause dans {n} min', { n: left })) : null));
       if (isAdmin && item.type === 'episode') {
-        const setMarker = async (which) => {
-          const cur = (session.markers && session.markers.intro) || {};
+        const NAMES = { intro: [tr('Intro'), tr('Placez la lecture à la fin de l’intro.')], recap: [tr('Récap'), tr('Placez la lecture à la fin du récap.')] };
+        const setMarker = async (kind, which) => {
+          const cur = (session.markers && session.markers[kind]) || {};
           const draft = { start: cur.start ?? 0, end: cur.end ?? 0, [which]: pos() };
           if (draft.end <= draft.start) {
-            session.markers = { ...session.markers, intro: { ...draft, end: draft.start + 1 } };
-            toast(which === 'start' ? tr('Début enregistré. Placez la lecture à la fin de l’intro.') : tr('La fin doit être après le début'), which === 'start' ? 'info' : 'bad');
+            session.markers = { ...session.markers, [kind]: { ...draft, end: draft.start + 1 } };
+            toast(which === 'start' ? `${tr('Début enregistré.')} ${NAMES[kind][1]}` : tr('La fin doit être après le début'), which === 'start' ? 'info' : 'bad');
             return;
           }
           try {
-            await put(`/api/admin/markers/${item.id}`, { kind: 'intro', start: draft.start, end: draft.end });
-            session.markers = { ...session.markers, intro: { ...draft, source: 'manual' } };
+            await put(`/api/admin/markers/${item.id}`, { kind, start: draft.start, end: draft.end });
+            session.markers = { ...session.markers, [kind]: { ...draft, source: 'manual' } };
             updateIntroMark();
-            toast(tr('Intro : {p1} → {p2}', { p1: fmtTime(draft.start), p2: fmtTime(draft.end) }), 'ok');
+            toast(`${NAMES[kind][0]} : ${fmtTime(draft.start)} → ${fmtTime(draft.end)}`, 'ok');
           } catch (e) { toast(e.message, 'bad'); }
         };
+        const clearMarker = async (kind) => {
+          await put(`/api/admin/markers/${item.id}`, { kind, clear: true });
+          session.markers = { ...session.markers, [kind]: undefined };
+          updateIntroMark();
+        };
         cols.push(h('div.menu-col', h('h4', tr('Intro (admin)')),
-          opt(tr('Début de l’intro ici'), false, () => setMarker('start')),
-          opt(tr('Fin de l’intro ici'), false, () => setMarker('end')),
-          opt(tr('Effacer le marqueur'), false, async () => {
-            await put(`/api/admin/markers/${item.id}`, { kind: 'intro', clear: true });
-            session.markers = { ...session.markers, intro: undefined };
-            updateIntroMark();
-          })));
+          opt(tr('Début de l’intro ici'), false, () => setMarker('intro', 'start')),
+          opt(tr('Fin de l’intro ici'), false, () => setMarker('intro', 'end')),
+          opt(tr('Effacer le marqueur'), false, () => clearMarker('intro')),
+          h('h4', tr('Récap (admin)')),
+          opt(tr('Début du récap ici'), false, () => setMarker('recap', 'start')),
+          opt(tr('Fin du récap ici'), false, () => setMarker('recap', 'end')),
+          opt(tr('Effacer le marqueur'), false, () => clearMarker('recap'))));
       }
       clear(menu, cols);
     }
@@ -1087,7 +1108,12 @@ export async function renderPlayer(root, rk, ctx) {
   chaptersBtn.addEventListener('click', (e) => { e.stopPropagation(); openChapters(); });
   groupBtn.addEventListener('click', (e) => { e.stopPropagation(); openMenu('group'); });
   cogBtn.addEventListener('click', (e) => { e.stopPropagation(); openMenu('settings'); });
-  skipBtn.addEventListener('click', () => { const i = session.markers.intro; introSkipped = true; skipBtn.hidden = true; seekTo(i.end); });
+  skipBtn.addEventListener('click', () => {
+    if (!skipping) return;
+    if (skipping === session.markers.intro) introSkipped = true; else recapSkipped = true;
+    skipBtn.hidden = true;
+    seekTo(skipping.end);
+  });
   muteBtn.addEventListener('click', () => { video.muted = !video.muted; });
   volume.addEventListener('input', () => { video.volume = Number(volume.value); video.muted = video.volume === 0; });
   video.addEventListener('volumechange', () => {

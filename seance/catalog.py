@@ -47,10 +47,12 @@ DEFAULT_PREFS = {
     "sub_position": "bottom",
     "autoplay_next": True,
     "auto_skip_intro": False,
+    "auto_skip_recap": False,
     "next_delay": 5,
     "accent": "#ffa43a",
     "theme": "dark",
     "poster_size": "m",
+    "wallpaper": "",
     "hidden_libraries": [],
     "show_continue": True,
     "hide_spoilers": False,
@@ -128,7 +130,7 @@ def validate_prefs(data):
             ok = v in ("bottom", "high")
         elif k == "next_delay":
             ok = v in (0, 3, 5, 10, 15, 20, 30)
-        elif k in ("autoplay_next", "auto_skip_intro", "show_continue", "hide_spoilers"):
+        elif k in ("autoplay_next", "auto_skip_intro", "auto_skip_recap", "show_continue", "hide_spoilers"):
             ok = isinstance(v, bool)
         elif k == "accent":
             ok = isinstance(v, str) and HEX.match(v)
@@ -136,6 +138,8 @@ def validate_prefs(data):
             ok = v in ("dark", "oled", "light")
         elif k == "poster_size":
             ok = v in ("s", "m", "l")
+        elif k == "wallpaper":  # image de fond du profil : l'arrière-plan d'un film ou d'une série
+            ok = v == "" or isinstance(v, str) and bool(IMG_PATH.match(v)) and IMG_PATH.match(v).group(2) == "art"
         elif k == "hidden_libraries":
             ok = isinstance(v, list) and len(v) <= 100 and all(isinstance(x, str) and x.isdigit() for x in v)
         elif k in ("home_order", "home_hidden", "nav_order", "nav_hidden"):
