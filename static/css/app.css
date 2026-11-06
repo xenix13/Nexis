@@ -185,7 +185,7 @@ input[type="range"] { accent-color: var(--accent); }
 .content { padding: 8px var(--gutter) 80px; }
 .page-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; margin: 16px 0 24px; }
 .page-head h1 { font: 800 34px var(--display); letter-spacing: -0.02em; }
-.filters { display: flex; gap: 10px; margin-left: auto; }
+.filters { display: flex; gap: 10px; margin-left: auto; flex-wrap: wrap; align-items: center; }
 .filters select { width: auto; }
 
 /* ---------- hero ---------- */
@@ -1165,3 +1165,29 @@ body.viewer-open { overflow: hidden; }
 .viewer-info { position: absolute; right: 16px; bottom: 16px; background: rgba(20,20,24,.9); color: #fff; padding: 12px 16px;
   border-radius: var(--radius); font-size: 14px; line-height: 1.6; }
 @media (hover: none) { .viewer-nav { display: none; } }
+
+/* ------------------------------------------------------------ filtres et affichage des bibliothèques */
+.filter-panel { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; padding: 14px 16px; margin: -6px 0 20px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.filter-panel[hidden] { display: none; }
+.filter { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.filter select { width: auto; min-width: 130px; }
+.count-badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px;
+  border-radius: 9px; background: var(--accent); color: var(--ink-on-accent); font-size: 11px; font-weight: 700; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.seg-btn { border: 0; background: none; color: var(--muted); padding: 6px 10px; cursor: pointer; display: grid; place-items: center; }
+.seg-btn svg { width: 18px; height: 18px; }
+.seg-btn[aria-pressed="true"] { background: var(--surface-2); color: var(--text); }
+.lib-list { display: grid; gap: 6px; }
+.lib-row { display: flex; align-items: center; gap: 14px; padding: 8px 10px; border-radius: var(--radius); color: inherit;
+  text-decoration: none; background: var(--surface); }
+.lib-row:hover, .lib-row:focus-visible { background: var(--surface-2); }
+.lib-row-img { width: 40px; height: 60px; border-radius: 4px; overflow: hidden; background: var(--surface-2); flex: none; }
+.lib-row-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.lib-row-main { flex: 1; min-width: 0; }
+.lib-row-main strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-row-main .progress { margin-top: 6px; max-width: 240px; }
+.lib-row-state { color: var(--ok); }
+@media (max-width: 700px) { .filters { margin-left: 0; width: 100%; } }
+.link-chip { color: inherit; text-decoration: none; }
+.link-chip:hover, .link-chip:focus-visible { background: var(--accent); color: var(--ink-on-accent); }

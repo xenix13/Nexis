@@ -47,7 +47,7 @@ export function pinButton(pin) {
   return btn;
 }
 
-export const PIN_LABELS = { collection: 'collection', playlist: 'playlist', genre: 'genre' };
+export const PIN_LABELS = { collection: 'collection', playlist: 'playlist', genre: 'genre', filter: 'filtres' };
 
 // Rangée de l'accueil pour une épingle (null si la source n'existe plus ou est vide)
 export async function pinRow(p) {
@@ -62,6 +62,14 @@ export async function pinRow(p) {
     }
     const lib = (state.me.libraries || []).find((l) => String(l.id) === String(p.lib));
     if (!lib) return null;
+    if (p.type === 'filter') { // combinaison de filtres d'une bibliothèque
+      const q = new URLSearchParams(p.ref);
+      if (!q.get('sort')) q.set('sort', 'added');
+      q.set('start', 0);
+      q.set('size', 24);
+      const r = await get(`/api/libraries/${p.lib}/items?${q}`);
+      return row(p.title, r.items, (x) => posterCard(x), { href: `#/library/${p.lib}?${p.ref}` });
+    }
     const q = new URLSearchParams({ start: 0, size: 24, sort: 'added', genre: p.ref });
     const r = await get(`/api/libraries/${p.lib}/items?${q}`);
     return row(`${p.ref} · ${lib.title}`, r.items, (x) => posterCard(x), { href: `#/library/${p.lib}?genre=${encodeURIComponent(p.ref)}` });

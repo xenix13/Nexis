@@ -23,7 +23,7 @@ EXTERNAL_BASE = 1000  # identifiants des sous-titres externes
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 LANG = re.compile(r"^[a-z]{2,3}$")
 # rangées de l'accueil et liens de la barre du haut : ordre et masquage propres à chaque utilisateur
-LAYOUT_KEY = re.compile(r"^(together|continue|watchlist|suggest|because|home|discover|live|lib:\d{1,9}|pin:\d{1,6})$")
+LAYOUT_KEY = re.compile(r"^(together|continue|watchlist|suggest|because|short|unfinished|home|discover|live|lib:\d{1,9}|pin:\d{1,6})$")
 IMG_PATH = re.compile(r"^/library/metadata/(\d{1,12})/(thumb|art)/\d{1,14}$")
 LANG_NAMES = {"fra": "Français", "eng": "Anglais", "jpn": "Japonais", "deu": "Allemand", "spa": "Espagnol",
               "ita": "Italien", "por": "Portugais", "kor": "Coréen", "zho": "Chinois", "rus": "Russe",
@@ -63,7 +63,20 @@ DEFAULT_PREFS = {
 }
 
 
-PIN_TYPES = ("collection", "playlist", "genre")
+PIN_TYPES = ("collection", "playlist", "genre", "filter")
+FILTER_KEYS = {"genre", "watched", "decade", "duration", "res", "hdr", "audio", "subs", "rating", "sort"}
+
+
+def valid_filter_ref(ref):
+    """Filtres d'une bibliothèque épinglés sur l'accueil : « watched=unwatched&decade=1990 »."""
+    import urllib.parse
+    if not isinstance(ref, str) or not 1 <= len(ref) <= 300:
+        return False
+    try:
+        pairs = urllib.parse.parse_qsl(ref, strict_parsing=True)
+    except ValueError:
+        return False
+    return bool(pairs) and all(k in FILTER_KEYS and 1 <= len(v) <= 80 for k, v in pairs)
 
 
 def valid_pins(v):
@@ -80,8 +93,9 @@ def valid_pins(v):
         if p.get("type") not in PIN_TYPES or not (isinstance(p.get("title"), str) and 1 <= len(p["title"]) <= 100):
             return False
         ref = p.get("ref")
-        if p["type"] == "genre":
-            if not (isinstance(ref, str) and 1 <= len(ref) <= 80 and isinstance(p.get("lib"), str) and p["lib"].isdigit()):
+        if p["type"] in ("genre", "filter"):
+            ok_ref = valid_filter_ref(ref) if p["type"] == "filter" else isinstance(ref, str) and 1 <= len(ref) <= 80
+            if not (ok_ref and isinstance(p.get("lib"), str) and p["lib"].isdigit()):
                 return False
         elif not (isinstance(ref, str) and ref.isdigit() and len(ref) <= 10):
             return False

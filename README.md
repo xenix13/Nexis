@@ -480,6 +480,14 @@ Chaque utilisateur règle son interface dans *Paramètres → Mon compte* :
 - **Cet appareil** : qualité et taille des sous-titres propres à ce navigateur ou à cette TV, animations réduites, navigation à la télécommande forcée ou désactivée. Ces réglages restent sur l'appareil et priment sur ceux du profil.
 - **Accueil et menu** : **page d'ouverture** (accueil, « À regarder », Découvrir, TV en direct ou une bibliothèque), ordre et affichage des rangées et des liens. Une collection, une playlist ou un genre d'une bibliothèque s'**épingle sur l'accueil** avec le bouton *Épingler à l'accueil* de sa page (20 rangées au plus).
 
+**Bibliothèques** : bouton **Filtres** pour trier par visionnage (non vus, en cours, vus), décennie, durée, définition (4K, 1080p…), HDR, langue audio, sous-titres et note ; une combinaison de filtres s'épingle sur l'accueil. Affichage en affiches, vignettes larges ou liste détaillée (retenu par bibliothèque). **Au hasard** lance un film (ou ouvre une série) pas encore vu, selon le genre choisi.
+
+**Recherche** : titres, épisodes, mais aussi personnes (distribution, réalisation), genres et année (« 1994 ») ; sans résultat exact, les titres les plus proches sont proposés (faute de frappe). Les noms de la distribution sont cliquables : la fiche d'une personne liste ses films et séries du serveur.
+
+**Lecteur** : vitesse (0,75× à 2×, touches `<` et `>`), minuterie de mise en veille (fin de l'épisode ou du film, 15 à 90 min), lecture **aléatoire** des épisodes d'une série.
+
+**Accueil** : rangées « Pour une soirée courte » (films de moins de 1 h 30 pas encore vus) et « Séries à reprendre » (commencées puis laissées de côté depuis 2 mois), à afficher ou masquer comme les autres.
+
 **Avis** : sur la fiche d'un film ou d'une série, *J'aime* et *Je n'aime pas* orientent les suggestions (les titres proches d'un titre non aimé reculent) ; *Ne plus suggérer* (menu ⋯) l'exclut des suggestions et des titres similaires.
 
 **Notifications** : la cloche de la barre du haut signale les épisodes ajoutés depuis moins de 30 jours, et pas encore vus, des séries suivies (dont un épisode a été regardé, ou présentes dans « À regarder »).

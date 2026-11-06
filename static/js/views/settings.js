@@ -431,6 +431,8 @@ function accountPage(id, body, rerender) {
     { key: 'watchlist', label: tr('À regarder') },
     { key: 'suggest', label: tr('Suggestions'), hint: tr('selon vos visionnages récents') },
     { key: 'because', label: tr('Parce que vous avez regardé…'), hint: tr('titres proches de vos derniers visionnages') },
+    { key: 'short', label: tr('Pour une soirée courte'), hint: tr('films de moins de 1 h 30 pas encore vus') },
+    { key: 'unfinished', label: tr('Séries à reprendre'), hint: tr('commencées puis laissées de côté depuis 2 mois') },
     ...me.libraries.map((l) => ({ key: `lib:${l.id}`, label: l.title, hint: l.type === 'show' ? tr('nouveaux épisodes') : tr('ajoutés récemment') })),
     ...pins().map((pn) => ({ key: `pin:${pn.id}`, label: pn.title, hint: tr('rangée épinglée ({p1})', { p1: PIN_LABELS[pn.type] }),
       remove: async () => { try { await removePin(pn.id); rerender(); } catch (e) { toast(e.message, 'bad'); } } })),

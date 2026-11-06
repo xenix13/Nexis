@@ -73,6 +73,8 @@ export async function renderHome(main, ctx) {
   const because = (data.because || []).map((b) => row(tr(b.seed.type === 'show' ? 'Parce que vous avez regardé la série {title}' : 'Parce que vous avez regardé {title}', { title: b.seed.title }),
     b.items, (c) => posterCard(c)));
   sections.set('because', because.length ? h('div.row-group', because) : null);
+  sections.set('short', row(tr('Pour une soirée courte'), data.short || [], (c) => posterCard(c)));
+  sections.set('unfinished', row(tr('Séries à reprendre'), data.unfinished || [], (c) => wideCard(c), { wide: true }));
   for (const r of data.rows) {
     const title = r.library.type === 'show' ? tr('Nouveaux épisodes · {title}', { title: r.library.title }) : tr('Ajoutés récemment · {title}', { title: r.library.title });
     sections.set(`lib:${r.library.id}`, row(title, r.items, (c) => posterCard(c), { href: `#/library/${r.library.id}` }));

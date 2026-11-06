@@ -2,8 +2,8 @@
 import json
 import time
 
-from .. import collections_api
-from ..catalog import CARD_SQL, EPISODE_ORDER, IMG_PATH, LANG, MIN_RESUME_MS, RK, SORTS, WATCHED_RATIO, stream_lists
+from .. import collections_api, i18n
+from ..catalog import CARD_SQL, EPISODE_ORDER, IMG_PATH, LANG, LANG_NAMES, MIN_RESUME_MS, RK, SORTS, WATCHED_RATIO, stream_lists
 from ..names import fold
 from ..web import HTTPError, Response
 
@@ -22,6 +22,102 @@ def register(app, ctx, x):
         allowed = allowed_set(req.user)
         return [l for l in libraries_all() if l["id"] in allowed]
 
+    # ------------------------------------------------------------ filtres de bibliothèque
+    HEIGHT = "CAST(json_extract({a}.probe, '$.video.height') AS INTEGER)"
+    RES = {"4k": HEIGHT + " >= 1800", "1080p": HEIGHT + " BETWEEN 900 AND 1799", "720p": HEIGHT + " BETWEEN 650 AND 899",
+           "sd": HEIGHT + " < 650"}
+    DURATION = {"short": "i.duration_ms < 5400000", "medium": "i.duration_ms BETWEEN 5400000 AND 8999999",
+                "long": "i.duration_ms >= 9000000"}
+
+    def media_cond(kind, expr):
+        """Condition sur le fichier : celui du film, ou au moins un épisode de la série."""
+        if kind == "movie":
+            return expr.format(a="i")
+        return f"EXISTS (SELECT 1 FROM items e WHERE e.show_id=i.id AND e.type='episode' AND {expr.format(a='e')})"
+
+    def library_filters(req, kind):
+        """Filtres de la page d'une bibliothèque (paramètres de l'adresse) -> (SQL, arguments)."""
+        sql, args = "", []
+        uid = req.user["id"]
+        genre = req.arg("genre")
+        if genre:
+            if len(genre) > 80:
+                raise HTTPError(400, "Genre invalide")
+            sql += " AND EXISTS (SELECT 1 FROM json_each(i.genres) g WHERE g.value=?)"
+            args.append(genre)
+        seen = ("EXISTS (SELECT 1 FROM progress pr WHERE pr.user_id=? AND pr.rating_key=CAST({a}.id AS TEXT) "
+                "AND pr.watched=1)")
+        watched = req.arg("watched")
+        if watched in ("unwatched", "watched", "inprogress"):
+            if kind == "movie":
+                started = ("EXISTS (SELECT 1 FROM progress pr WHERE pr.user_id=? AND pr.rating_key=CAST(i.id AS TEXT) "
+                           f"AND pr.watched=0 AND pr.position_ms>={MIN_RESUME_MS})")
+                sql += {"unwatched": f" AND NOT {seen.format(a='i')}", "watched": f" AND {seen.format(a='i')}",
+                        "inprogress": f" AND {started}"}[watched]
+                args.append(uid)
+            else:
+                left = f"EXISTS (SELECT 1 FROM items e WHERE e.show_id=i.id AND e.type='episode' AND NOT {seen.format(a='e')})"
+                done = f"EXISTS (SELECT 1 FROM items e WHERE e.show_id=i.id AND e.type='episode' AND {seen.format(a='e')})"
+                sql += {"unwatched": f" AND NOT {done}", "watched": f" AND NOT {left}",
+                        "inprogress": f" AND {done} AND {left}"}[watched]
+                args += [uid] if watched != "inprogress" else [uid, uid]
+        decade = req.int_arg("decade", 0, 0, 2100)
+        if decade >= 1900:
+            sql += " AND i.year BETWEEN ? AND ?"
+            args += [decade - decade % 10, decade - decade % 10 + 9]
+        if kind == "movie" and req.arg("duration") in DURATION:
+            sql += " AND " + DURATION[req.arg("duration")]
+        if req.arg("res") in RES:
+            sql += " AND " + media_cond(kind, RES[req.arg("res")])
+        if req.arg("hdr") == "1":
+            sql += " AND " + media_cond(kind, "json_extract({a}.probe, '$.video.transfer') IN ('smpte2084', 'arib-std-b67')")
+        for key, path in (("audio", "audio"), ("subs", "subs")):
+            lang = req.arg(key)
+            if lang:
+                if not LANG.match(lang):
+                    raise HTTPError(400, "Langue invalide")
+                expr = (f"EXISTS (SELECT 1 FROM json_each(json_extract({{a}}.probe, '$.{path}')) t "
+                        "WHERE json_extract(t.value, '$.lang') = ?)")
+                if key == "subs":  # sous-titres externes aussi (Film.fr.srt)
+                    expr = ("(" + expr + " OR EXISTS (SELECT 1 FROM json_each(json_extract({a}.probe, '$.external')) t "
+                            "WHERE json_extract(t.value, '$.lang') = ?))")
+                sql += " AND " + media_cond(kind, expr)
+                args += [lang] * (2 if key == "subs" else 1)
+        rating = req.int_arg("rating", 0, 0, 10)
+        if rating:
+            sql += " AND i.rating >= ?"
+            args.append(rating)
+        return sql, args
+
+    facets_cache = {}
+
+    @app.route("GET", r"/api/libraries/(?P<sid>\d{1,6})/facets")
+    def library_facets(req):
+        """Valeurs proposées par les filtres : décennies, langues audio et de sous-titres présentes."""
+        sid = req.params["sid"]
+        require_section(req.user, sid)
+        lib = db.one("SELECT kind, scanned_at FROM libraries WHERE id=?", (int(sid),))
+        key = (sid, lib["scanned_at"], db.scalar("SELECT COUNT(*) FROM items WHERE library_id=?", (int(sid),)))
+        hit = facets_cache.get(sid)
+        if hit and hit[0] == key:
+            return hit[1]
+        media_type = "movie" if lib["kind"] == "movie" else "episode"
+        root = "movie" if lib["kind"] == "movie" else "show"
+        decades = [r["d"] for r in db.all("SELECT DISTINCT (year / 10) * 10 AS d FROM items WHERE library_id=? AND type=? "
+                                          "AND year IS NOT NULL ORDER BY d DESC", (int(sid), root))]
+
+        def langs(path):
+            return [r["l"] for r in db.all(
+                f"SELECT json_extract(t.value, '$.lang') AS l, COUNT(*) AS n FROM items i, json_each(json_extract(i.probe, '$.{path}')) t "
+                "WHERE i.library_id=? AND i.type=? GROUP BY l HAVING l IS NOT NULL AND l<>'' ORDER BY n DESC LIMIT 30",
+                (int(sid), media_type)) if LANG.match(r["l"] or "")]
+        subs = langs("subs")
+        subs += [l for l in langs("external") if l not in subs]
+        out = {"decades": decades, "audio": [{"id": l, "title": i18n.tr(LANG_NAMES.get(l, l.upper()))} for l in langs("audio")],
+               "subs": [{"id": l, "title": i18n.tr(LANG_NAMES.get(l, l.upper()))} for l in subs]}
+        facets_cache[sid] = (key, out)
+        return out
+
     @app.route("GET", r"/api/libraries/(?P<sid>\d{1,6})/items")
     def library_items(req):
         sid = req.params["sid"]
@@ -30,12 +126,9 @@ def register(app, ctx, x):
         kind = "movie" if lib["kind"] == "movie" else "show"
         where = "WHERE i.library_id=? AND i.type=?"
         args = [int(sid), kind]
-        genre = req.arg("genre")
-        if genre:
-            if len(genre) > 80:
-                raise HTTPError(400, "Genre invalide")
-            where += " AND EXISTS (SELECT 1 FROM json_each(i.genres) g WHERE g.value=?)"
-            args.append(genre)
+        fsql, fargs = library_filters(req, kind)
+        where += fsql
+        args += fargs
         start = req.int_arg("start", 0, 0)
         size = req.int_arg("size", 60, 1, 200)
         order = SORTS.get(req.arg("sort", "title"), SORTS["title"])
@@ -140,8 +233,49 @@ def register(app, ctx, x):
         cont = continue_row(user, allowed) if prefs["show_continue"] else []
         hero = rows[0]["items"][0] if rows and rows[0]["items"] else None
         sugg = x.suggestions(user) if not {"suggest", "because"} <= set(prefs["home_hidden"]) else {"suggestions": [], "because": []}
+        hidden_rows = set(prefs["home_hidden"])
         return {"continue": cont, "rows": rows, "hero": hero, "watchlist": x.watchlist_items(user, 24),
-                "suggestions": sugg["suggestions"], "because": sugg["because"]}
+                "suggestions": sugg["suggestions"], "because": sugg["because"],
+                "short": short_row(user, allowed) if "short" not in hidden_rows else [],
+                "unfinished": unfinished_row(user, allowed) if "unfinished" not in hidden_rows else []}
+
+    def movie_libs(allowed):
+        return [int(l["id"]) for l in libraries_all() if l["id"] in allowed and l["type"] == "movie"]
+
+    def short_row(user, allowed):
+        """Films de moins de 1 h 30 pas encore vus, les mieux notés d'abord (renouvelés chaque jour)."""
+        libs = movie_libs(allowed)
+        if not libs:
+            return []
+        af, aa = age_filter(user)
+        rows = db.all(CARD_SQL + f"WHERE i.type='movie' AND i.library_id IN ({','.join('?' * len(libs))}) AND i.duration_ms "
+                      "BETWEEN 1200000 AND 5399999 AND NOT EXISTS (SELECT 1 FROM progress pr WHERE pr.user_id=? AND "
+                      "pr.rating_key=CAST(i.id AS TEXT) AND pr.watched=1)" + af +
+                      " ORDER BY (COALESCE(i.rating, 5) >= 6.5) DESC, (i.id * 2654435761 + ?) % 1000003 LIMIT 24",
+                      [*libs, user["id"], *aa, int(time.time() // 86400)])
+        return attach_state(user["id"], [card(r) for r in rows])
+
+    def unfinished_row(user, allowed):
+        """Séries commencées puis laissées de côté (rien de regardé depuis 2 mois, au-delà de « Reprendre et à
+        suivre ») : l'épisode où reprendre."""
+        uid, now = user["id"], int(time.time())
+        recent = db.all("SELECT show_key, MAX(last_watched_at) AS t FROM progress WHERE user_id=? AND watched=1 AND "
+                        "show_key IS NOT NULL GROUP BY show_key HAVING t BETWEEN ? AND ? ORDER BY t DESC LIMIT 40",
+                        (uid, now - 365 * 86400, now - 60 * 86400))
+        out = []
+        for r in recent:
+            if not str(r["show_key"]).isdigit():
+                continue
+            seen = {w["rating_key"] for w in db.all("SELECT rating_key FROM progress WHERE user_id=? AND show_key=? AND watched=1",
+                                                     (uid, r["show_key"]))}
+            eps = leaves(r["show_key"])
+            nxt = next((e for e in eps if str(e["id"]) not in seen), None)
+            if not nxt or str(nxt["library_id"]) not in allowed or not visible(user, nxt):
+                continue
+            out.append(card(nxt))
+            if len(out) >= 24:
+                break
+        return attach_state(uid, out)
 
     @app.route("GET", "/api/search")
     def search(req):
@@ -154,12 +288,48 @@ def register(app, ctx, x):
             return out
         like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         marks = ",".join("?" * len(allowed))
+        af, aa = age_filter(req.user)
+        year = int(q) if q.isdigit() and len(q) == 4 and 1900 <= int(q) <= 2100 else None
         for typ, bucket, limit in (("movie", "movies", 30), ("show", "shows", 30), ("episode", "episodes", 20)):
-            af, aa = age_filter(req.user)
-            rows = db.all(CARD_SQL + f"WHERE i.type=? AND i.library_id IN ({marks}) AND i.search LIKE ? ESCAPE '\\'"
+            match = "i.search LIKE ? ESCAPE '\\'" + (" OR i.year=?" if year and typ != "episode" else "")
+            rows = db.all(CARD_SQL + f"WHERE i.type=? AND i.library_id IN ({marks}) AND ({match})"
                           + af + f" ORDER BY (i.search LIKE ? ESCAPE '\\') DESC, i.sort_title LIMIT ?",
-                          [typ, *allowed, like, *aa, q + "%", limit])
+                          [typ, *allowed, like, *([year] if year and typ != "episode" else []), *aa, q + "%", limit])
             out[bucket] = attach_state(req.user["id"], [card(r) for r in rows])
+        # personnes (distribution, réalisation) et genres dont le nom correspond
+        people = {}
+        for r in db.all("SELECT DISTINCT json_extract(c.value, '$.name') AS n FROM items i, "
+                        "json_each(json_extract(i.people, '$.cast')) c WHERE i.type IN ('movie','show') "
+                        f"AND i.library_id IN ({marks}) LIMIT 20000", allowed):
+            if r["n"] and q in fold(r["n"]):
+                people[r["n"]] = None
+        for r in db.all("SELECT DISTINCT d.value AS n FROM items i, json_each(json_extract(i.people, '$.directors')) d "
+                        f"WHERE i.type IN ('movie','show') AND i.library_id IN ({marks}) LIMIT 5000", allowed):
+            if r["n"] and q in fold(r["n"]):
+                people[r["n"]] = None
+        out["people"] = sorted(people, key=lambda n: (not fold(n).startswith(q), n))[:12]
+        out["genres"] = [{"genre": r["g"], "library": str(r["library_id"]), "count": r["n"]} for r in db.all(
+            "SELECT g.value AS g, i.library_id, COUNT(*) AS n FROM items i, json_each(i.genres) g WHERE i.type IN "
+            f"('movie','show') AND i.library_id IN ({marks}) GROUP BY g.value, i.library_id ORDER BY n DESC", allowed)
+            if q in fold(r["g"] or "")][:8]
+        if not (out["movies"] or out["shows"] or out["episodes"] or out["people"]):
+            # rien d'exact : titres proches (faute de frappe, lettre en trop ou en moins)
+            import difflib
+            pool = db.all(CARD_SQL.replace("SELECT i.id,", "SELECT i.search, i.id,", 1) +
+                          f"WHERE i.type IN ('movie','show') AND i.library_id IN ({marks})" + af, [*allowed, *aa])
+            scored = []
+            for r in pool:
+                words = (r["search"] or "").split()
+                best = max([difflib.SequenceMatcher(None, q, r["search"] or "").ratio()] +
+                           [difflib.SequenceMatcher(None, q, " ".join(words[k:k + len(q.split())])).ratio()
+                            for k in range(len(words))])
+                if best >= 0.75:
+                    scored.append((best, r))
+            scored.sort(key=lambda s: -s[0])
+            near = [card(r) for _, r in scored[:20]]
+            out["movies"] = attach_state(req.user["id"], [c for c in near if c["type"] == "movie"])
+            out["shows"] = attach_state(req.user["id"], [c for c in near if c["type"] == "show"])
+            out["approximate"] = bool(near)
         return out
 
     @app.route("GET", f"/api/items/{RK}")

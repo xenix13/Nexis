@@ -87,6 +87,8 @@ export function icon(name) {
   const paths = {
     play: 'M8 5v14l11-7z',
     chevleft: 'M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z',
+    grid: 'M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z',
+    wide: 'M3 5h18v6H3zm0 8h18v6H3z',
     shuffle: 'M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z',
     chevright: 'M8.6 7.4 10 6l6 6-6 6-1.4-1.4 4.6-4.6z',
     download: 'M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z',

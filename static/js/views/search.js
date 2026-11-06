@@ -12,6 +12,16 @@ export async function renderSearch(main, q, ctx) {
   const r = await get(`/api/search?q=${encodeURIComponent(q)}`);
   if (!ctx.isCurrent()) return;
   const sections = [h('div.page-head', h('h1', tr('Résultats pour « {q} »', { q })))];
+  if (r.approximate) sections.push(h('p.muted', tr('Rien d’exact : voici les titres les plus proches.')));
+  if (r.people && r.people.length) {
+    sections.push(h('section.block', h('h2', tr('Personnes')), h('div.chips', r.people.map((n) =>
+      h('a.chip.link-chip', { href: `#/person/${encodeURIComponent(n)}` }, n)))));
+  }
+  if (r.genres && r.genres.length) {
+    const libName = (id) => ((state.me.libraries || []).find((l) => l.id === id) || {}).title || '';
+    sections.push(h('section.block', h('h2', tr('Genres')), h('div.chips', r.genres.map((g) =>
+      h('a.chip.link-chip', { href: `#/library/${g.library}?genre=${encodeURIComponent(g.genre)}` }, `${g.genre} · ${libName(g.library)}`)))));
+  }
   if (r.movies.length) sections.push(h('section.block', h('h2', tr('Films')), h('div.grid', r.movies.map((c) => posterCard(c)))));
   if (r.shows.length) sections.push(h('section.block', h('h2', tr('Séries')), h('div.grid', r.shows.map((c) => posterCard(c)))));
   if (r.episodes.length) sections.push(h('section.block', h('h2', tr('Épisodes')), h('div.grid.wide', r.episodes.map((c) => wideCard(c)))));

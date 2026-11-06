@@ -1136,6 +1136,62 @@ class SeanceTest(unittest.TestCase):
         self.assertTrue(p["next"] and p["next"]["show_id"] == c["id"] and p["next"]["id"] != ep["id"], p["next"])
         self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
 
+    def test_library_filters_and_search(self):
+        """Filtres d'une bibliothèque (vus, décennie, durée, définition, langues), rangée de filtres épinglée,
+        recherche par personne, année et avec une faute de frappe."""
+        lib = self.libs["Films"]
+
+        def titles(q):
+            st, r = self.admin.call("GET", f"/api/libraries/{lib}/items?size=100&{q}")
+            self.assertEqual(st, 200, r)
+            return sorted(c["title"] for c in r["items"])
+        everything = titles("")
+        self.assertIn("Nuit polaire", everything)
+        self.assertEqual(titles("decade=2010"), ["Le Grand Voyage"])
+        self.assertEqual(titles("decade=2020"), [t for t in everything if t in ("Nuit polaire", "Brume")])
+        self.assertEqual(titles("duration=short"), everything)  # films de test : quelques secondes
+        self.assertEqual(titles("duration=long"), [])
+        self.assertEqual(titles("res=sd"), everything)          # 320x180
+        self.assertEqual(titles("res=4k"), [])
+        self.assertIn("Nuit polaire", titles("audio=jpn"))
+        self.assertNotIn("Le Grand Voyage", titles("audio=jpn"))
+        self.assertIn("Nuit polaire", titles("subs=fra"))
+        self.assertEqual(self.admin.call("GET", f"/api/libraries/{lib}/items?audio=x%27")[0], 400)
+        polar = self.movie("Nuit polaire")
+        self.admin.call("POST", f"/api/items/{polar['id']}/watched", {"watched": True})
+        try:
+            self.assertEqual(titles("watched=watched"), ["Nuit polaire"])
+            self.assertNotIn("Nuit polaire", titles("watched=unwatched"))
+        finally:  # « annuler » : la vue ajoutée à l'historique est retirée aussi
+            self.admin.call("POST", f"/api/items/{polar['id']}/watched", {"watched": False, "undo": True, "position": 0})
+        st, f = self.admin.call("GET", f"/api/libraries/{lib}/facets")
+        self.assertIn(2020, f["decades"])
+        self.assertIn("jpn", [l["id"] for l in f["audio"]])
+        # séries : « terminées » = tous les épisodes vus
+        st, r = self.admin.call("GET", f"/api/libraries/{self.libs['Séries']}/items?watched=watched")
+        self.assertEqual((st, r["items"]), (200, []))
+        # rangée épinglée d'une combinaison de filtres ; une clé inconnue est refusée
+        pin = {"id": 1, "type": "filter", "ref": "decade=2020&audio=jpn", "lib": lib, "title": "Années 2020 · Japonais"}
+        st, r = self.admin.call("PUT", "/api/me/prefs", {"home_pins": [pin]})
+        self.assertEqual(st, 200, r)
+        bad = dict(pin, ref="decade=2020&sql=1")
+        self.assertEqual(self.admin.call("PUT", "/api/me/prefs", {"home_pins": [bad]})[0], 400)
+        self.admin.call("PUT", "/api/me/prefs", {"home_pins": []})
+        # recherche : une personne, une année, une faute de frappe
+        st, r = self.admin.call("GET", "/api/search?q=actrice")
+        self.assertIn("Actrice Une", r["people"])
+        st, r = self.admin.call("GET", "/api/search?q=2019")
+        self.assertIn("Le Grand Voyage", [c["title"] for c in r["movies"]])
+        st, r = self.admin.call("GET", "/api/search?q=nuit%20polair")  # préfixe : correspondance exacte
+        self.assertIn("Nuit polaire", [c["title"] for c in r["movies"]])
+        st, r = self.admin.call("GET", "/api/search?q=nuitt%20polaira")
+        self.assertTrue(r.get("approximate"), r)
+        self.assertIn("Nuit polaire", [c["title"] for c in r["movies"]])
+        # accueil : nouvelles rangées
+        st, home = self.admin.call("GET", "/api/home")
+        self.assertIn("short", home)
+        self.assertIn("unfinished", home)
+
     def test_discover_and_requests_through_seerr(self):
         seerr = FakeSeerr()
         try:
