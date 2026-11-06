@@ -483,6 +483,23 @@ MIGRATIONS = [
             WHERE peer_id IS NOT NULL AND library_id=OLD.id;
     END;
     """,
+    # 19 : notes personnelles (1 à 5 étoiles), titres masqués pour soi, playlists partagées avec tout le foyer
+    """
+    CREATE TABLE stars(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        stars INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, item_id)
+    );
+    CREATE TABLE hidden_items(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, item_id)
+    );
+    ALTER TABLE playlists ADD COLUMN shared INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 

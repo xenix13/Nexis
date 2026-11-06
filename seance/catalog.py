@@ -250,12 +250,21 @@ def install(ctx, x):
             raise HTTPError(404, "Introuvable")
         return row
 
-    def age_filter(user):
-        """Clause SQL du contrôle parental (profil limité à un âge)."""
-        if user.get("max_age") is None:
-            return "", []
-        return (f" AND ({AGE_EXPR} <= ? OR ({AGE_EXPR} IS NULL AND ?=1))",
-                [user["max_age"], 1 if user.get("allow_unrated") else 0])
+    def age_filter(user, hidden=True):
+        """Clause SQL des listes : contrôle parental (profil limité à un âge) et titres que la personne a masqués
+        pour elle (hidden=False : on les garde, ex. pour savoir qu'un titre est déjà sur le serveur)."""
+        sql, args = "", []
+        if user.get("max_age") is not None:
+            sql, args = (f" AND ({AGE_EXPR} <= ? OR ({AGE_EXPR} IS NULL AND ?=1))",
+                         [user["max_age"], 1 if user.get("allow_unrated") else 0])
+        if hidden and hidden_ids(user):
+            sql += " AND COALESCE(i.show_id, i.id) NOT IN (SELECT item_id FROM hidden_items WHERE user_id=?)"
+            args = [*args, user["id"]]
+        return sql, args
+
+    def hidden_ids(user):
+        """Films et séries masqués par cette personne (dans les listes ; leur fiche reste accessible)."""
+        return {r["item_id"] for r in db.all("SELECT item_id FROM hidden_items WHERE user_id=?", (user["id"],))}
 
     def visible(user, row):
         if user.get("max_age") is None:
@@ -428,7 +437,7 @@ def install(ctx, x):
                 for n, c in enumerate(chapters)]
 
     for name in (
-        "age_filter", "allowed_ids", "allowed_set", "attach_state", "card", "chapters_for", "get_prefs",
+        "age_filter", "hidden_ids", "allowed_ids", "allowed_set", "attach_state", "card", "chapters_for", "get_prefs",
         "item_row", "leaves", "libraries_all", "markers_for", "next_episode", "require_item",
         "require_section", "set_watched", "undo_watched", "show_of", "track_prefs", "track_scope", "upsert_meta", "visible",
     ):

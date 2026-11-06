@@ -48,7 +48,7 @@ export async function renderLibrary(main, sid, ctx) {
   const pick = (key, options, label) => select(options, ctx.query.get(key) || '',
     { onchange: (e) => setQuery(key, e.target.value), 'aria-label': label });
   const sortSel = select([['title', tr('Titre')], ['added', tr('Date d’ajout')], ['year', tr('Année')], ['release', tr('Date de sortie')],
-    ['rating', tr('Note')]], sort, { onchange: (e) => setQuery('sort', e.target.value), 'aria-label': tr('Trier') });
+    ['rating', tr('Note')], ['mine', tr('Ma note')]], sort, { onchange: (e) => setQuery('sort', e.target.value), 'aria-label': tr('Trier') });
   const genreSel = pick('genre', [['', tr('Tous les genres')], ...genres.map((g) => [g.id, g.title])], tr('Genre'));
 
   // panneau des autres filtres (ouvert d'office si l'un d'eux est actif)

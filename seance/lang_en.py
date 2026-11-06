@@ -500,4 +500,7 @@ EN = {
     "Ce n'est pas une série": "This is not a show",
     "Aucun épisode": "No episodes",
     "Rien ici pour ce filtre.": "Nothing here for this filter.",
+    "Note invalide (1 à 5)": "Invalid rating (1 to 5)",
+    "Seuls un film ou une série se masquent": "Only a movie or a show can be hidden",
+    "Seule la personne qui l'a créée peut le faire": "Only the person who created it can do that",
 }

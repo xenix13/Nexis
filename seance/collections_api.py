@@ -146,10 +146,14 @@ def register(app, ctx, x):
         return {"ok": True}
 
     # -------------------------------------------------------------- playlists
-    def own_playlist(req, pid):
-        p = db.one("SELECT * FROM playlists WHERE id=? AND user_id=?", (int(pid), req.user["id"]))
+    def own_playlist(req, pid, owner=False):
+        """Playlist de la personne, ou partagée par quelqu'un du foyer (owner=True : seulement la sienne, pour la
+        renommer, la partager ou la supprimer ; une playlist partagée se complète et se réordonne à plusieurs)."""
+        p = db.one("SELECT p.*, u.display_name AS owner_name FROM playlists p JOIN users u ON u.id=p.user_id "
+                   "WHERE p.id=? AND (p.user_id=? OR (p.shared=1 AND ?=0))", (int(pid), req.user["id"], 1 if owner else 0))
         if not p:
-            raise HTTPError(404, "Playlist introuvable")
+            raise HTTPError(404 if not owner or not db.scalar("SELECT 1 FROM playlists WHERE id=? AND shared=1", (int(pid),))
+                            else 403, "Playlist introuvable" if not owner else "Seule la personne qui l'a créée peut le faire")
         return p
 
     def playlist_entries(user, pid):
@@ -162,7 +166,8 @@ def register(app, ctx, x):
 
     def playlist_view(user, p, with_items=False):
         entries = playlist_entries(user, p["id"])
-        v = {"id": str(p["id"]), "title": p["title"], "count": len(entries),
+        v = {"id": str(p["id"]), "title": p["title"], "count": len(entries), "shared": bool(p["shared"]),
+             "mine": p["user_id"] == user["id"], "owner": p.get("owner_name"),
              "duration": sum(e["duration_ms"] or 0 for e in entries), "updated_at": p["updated_at"],
              "thumbs": [x.card(e).get("show_thumb") or x.card(e)["thumb"] for e in entries[:4]]}
         if with_items:
@@ -176,8 +181,9 @@ def register(app, ctx, x):
 
     @app.route("GET", "/api/playlists")
     def playlists(req):
-        return [playlist_view(req.user, p) for p in
-                db.all("SELECT * FROM playlists WHERE user_id=? ORDER BY updated_at DESC", (req.user["id"],))]
+        return [playlist_view(req.user, p) for p in db.all(
+            "SELECT p.*, u.display_name AS owner_name FROM playlists p JOIN users u ON u.id=p.user_id "
+            "WHERE p.user_id=? OR p.shared=1 ORDER BY p.user_id<>?, p.updated_at DESC", (req.user["id"], req.user["id"]))]
 
     @app.route("POST", "/api/playlists")
     def playlist_create(req):
@@ -200,8 +206,10 @@ def register(app, ctx, x):
 
     @app.route("PUT", f"/api/playlists/{PID}")
     def playlist_update(req):
-        p = own_playlist(req, req.params["pid"])
         b = req.json()
+        p = own_playlist(req, req.params["pid"], owner=bool({"title", "shared"} & set(b)))
+        if "shared" in b:
+            db.run("UPDATE playlists SET shared=?, updated_at=? WHERE id=?", (1 if b["shared"] else 0, int(time.time()), p["id"]))
         if "title" in b:
             title = str(b.get("title") or "").strip()
             if not 1 <= len(title) <= 100:
@@ -220,7 +228,7 @@ def register(app, ctx, x):
 
     @app.route("DELETE", f"/api/playlists/{PID}")
     def playlist_delete(req):
-        p = own_playlist(req, req.params["pid"])
+        p = own_playlist(req, req.params["pid"], owner=True)
         db.run("DELETE FROM playlists WHERE id=?", (p["id"],))
         return {"ok": True}
 
@@ -259,7 +267,7 @@ def register(app, ctx, x):
 
     def playlist_next(user, pid, item_id):
         """Élément suivant dans une playlist (pour l'enchaînement dans le lecteur)."""
-        p = db.one("SELECT id FROM playlists WHERE id=? AND user_id=?", (int(pid), user["id"]))
+        p = db.one("SELECT id FROM playlists WHERE id=? AND (user_id=? OR shared=1)", (int(pid), user["id"]))
         if not p:
             return None
         entries = playlist_entries(user, p["id"])

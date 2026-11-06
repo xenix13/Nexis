@@ -123,6 +123,17 @@ function itemMenu(d, rerender) {
       rerender();
     } });
   }
+  if (['movie', 'show'].includes(d.type)) {
+    // masqué pour soi : disparaît des listes (bibliothèques, accueil, recherche), la fiche reste accessible
+    items.push({ label: d.hidden ? tr('Ne plus masquer') : tr('Masquer pour moi'), onClick: async () => {
+      try {
+        const r = await put(`/api/items/${d.id}/hidden`, { hidden: !d.hidden });
+        d.hidden = r.hidden;
+        toast(r.hidden ? tr('Masqué : il n’apparaîtra plus dans vos listes') : tr('Titre de nouveau visible'), 'ok');
+        rerender();
+      } catch (e) { toast(e.message, 'bad'); }
+    } });
+  }
   if (state.me.user.is_admin) {
     items.push({ divider: true }, { heading: tr('Administration') },
       { label: tr('Identifier…'), onClick: () => identify(d, rerender) },
@@ -163,7 +174,33 @@ function opinionButtons(d) {
   };
   paint();
   setOpinion = set;
+  syncOpinion = (v) => { value = v ?? null; paint(); };
   return [up, down];
+}
+let syncOpinion = null;
+
+// Note personnelle de 1 à 5 étoiles (un clic sur la note actuelle la retire) ; elle oriente aussi les suggestions
+function starButtons(d) {
+  if (!['movie', 'show'].includes(d.type)) return null;
+  let value = d.stars || 0;
+  const stars = [1, 2, 3, 4, 5].map((n) => h('button.star', { type: 'button', 'aria-label': tr('{n} sur 5', { n }),
+    onclick: async () => {
+      const next = value === n ? null : n;
+      try {
+        const r = await put(`/api/items/${d.id}/stars`, { stars: next });
+        value = r.stars || 0;
+        d.stars = r.stars;
+        paint();
+        if (syncOpinion) syncOpinion(r.opinion);
+        toast(next ? tr('Votre note : {n}/5', { n: next }) : tr('Note retirée'), 'ok');
+      } catch (e) { toast(e.message, 'bad'); }
+    } }, '★'));
+  const box = h('div.stars', { role: 'group', 'aria-label': tr('Ma note') }, stars);
+  const paint = () => stars.forEach((s, i) => { s.classList.toggle('on', i < value); s.setAttribute('aria-pressed', String(i + 1 === value)); });
+  box.addEventListener('mouseover', (e) => { const i = stars.indexOf(e.target); if (i >= 0) stars.forEach((s, j) => s.classList.toggle('hover', j <= i)); });
+  box.addEventListener('mouseleave', () => stars.forEach((s) => s.classList.remove('hover')));
+  paint();
+  return box;
 }
 
 function watchlistButton(d) {
@@ -475,7 +512,7 @@ export async function renderItem(main, rk, ctx) {
   }
   const together = d.type === 'show' ? togetherButton(d.play_target ? { ...d.play_target, show: d.title } : null)
     : (['movie', 'episode'].includes(d.type) ? togetherButton(d) : null);
-  actions.append(...[watchlistButton(d), ...(opinionButtons(d) || []), together, downloadButton(d), trailerButton(d)].filter(Boolean), itemMenu(d, rerender));
+  actions.append(...[watchlistButton(d), ...(opinionButtons(d) || []), starButtons(d), together, downloadButton(d), trailerButton(d)].filter(Boolean), itemMenu(d, rerender));
   const chooser = trackChooser(d, d.type === 'show' ? d.play_target : null, (au, su) => {
     for (const l of playLinks) l.setAttribute('href', withTracks(l.dataset.base, au, su));
   });

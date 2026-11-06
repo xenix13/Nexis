@@ -12,6 +12,7 @@ import { chapterStrip, chapterTitle } from './chapters.js';
 import { avatar, clear, episodeCode, errorBox, fmtTime, h, icon, img, loadHls, spinner, store, toast } from './ui.js';
 import { tr } from './i18n.js';
 import { measureBandwidth, saveBandwidth } from './bandwidth.js';
+import { actionFor } from './keys.js';
 
 const REPORT_EVERY = 10000;
 const HIDE_AFTER = 3000;
@@ -1243,26 +1244,24 @@ export async function renderPlayer(root, rk, ctx) {
       playBtn.focus(); // comme sur une TV : haut / bas font apparaître les commandes
       return;
     }
+    // touches réglables (Paramètres → Cet appareil) ; les touches média et Échap restent fixes
+    const action = actionFor(e.key);
+    if (action && !(e.key === 'Enter') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const run = { play: togglePlay, back: () => seekBy(-10000), forward: () => seekBy(10000),
+        volup: () => { video.volume = Math.min(1, video.volume + 0.1); }, voldown: () => { video.volume = Math.max(0, video.volume - 0.1); },
+        full: toggleFull, mute: () => { video.muted = !video.muted; }, skip: () => { if (!skipBtn.hidden) skipBtn.click(); },
+        next: () => { if (session && session.next) playNext(); }, chapters: () => { if (chapters.length > 1) openChapters(); },
+        mini: minimize, slower: () => stepSpeed(-1), faster: () => stepSpeed(1) }[action];
+      if (run) { e.preventDefault(); run(); return; }
+    }
     switch (e.key) {
-      case ' ': case 'k': case 'MediaPlayPause': e.preventDefault(); togglePlay(); break;
+      case 'MediaPlayPause': e.preventDefault(); togglePlay(); break;
       case 'Enter': if (!inControls) { e.preventDefault(); togglePlay(); } break;
       case 'MediaPlay': if (video.paused) togglePlay(); break;
       case 'MediaPause': if (!video.paused) togglePlay(); break;
       case 'MediaFastForward': seekBy(30000); break;
       case 'MediaRewind': seekBy(-10000); break;
       case 'MediaTrackNext': if (session && session.next) playNext(); break;
-      case 'ArrowLeft': e.preventDefault(); seekBy(-10000); break;
-      case 'ArrowRight': e.preventDefault(); seekBy(10000); break;
-      case 'ArrowUp': e.preventDefault(); video.volume = Math.min(1, video.volume + 0.1); break;
-      case 'ArrowDown': e.preventDefault(); video.volume = Math.max(0, video.volume - 0.1); break;
-      case 'f': toggleFull(); break;
-      case 'm': video.muted = !video.muted; break;
-      case 's': if (!skipBtn.hidden) skipBtn.click(); break;
-      case 'n': if (session && session.next) playNext(); break;
-      case 'c': if (chapters.length > 1) openChapters(); break;
-      case 'i': minimize(); break;
-      case '>': stepSpeed(1); break;
-      case '<': stepSpeed(-1); break;
       case 'Escape': case 'BrowserBack': case 'GoBack':
         if (!chapterPanel.hidden) chapterPanel.hidden = true;
         else if (!menu.hidden) menu.hidden = true;

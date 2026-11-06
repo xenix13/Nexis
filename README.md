@@ -488,6 +488,14 @@ Chaque utilisateur règle son interface dans *Paramètres → Mon compte* :
 
 **Accueil** : rangées « Pour une soirée courte » (films de moins de 1 h 30 pas encore vus) et « Séries à reprendre » (commencées puis laissées de côté depuis 2 mois), à afficher ou masquer comme les autres.
 
+**Ma note** : sur la fiche d'un film ou d'une série, une note de 1 à 5 étoiles, à soi. Elle oriente aussi les suggestions (4 ou 5 = j'aime, 1 ou 2 = je n'aime pas) et sert de tri dans les bibliothèques (« Ma note »).
+
+**Masquer pour moi** (menu ⋯ d'une fiche) : le titre disparaît de ses propres bibliothèques, de l'accueil, de la recherche et des suggestions. Les autres comptes le voient toujours, et la liste des titres masqués se trouve dans *Paramètres → Accueil et menu*.
+
+**Playlists partagées** : sur sa playlist, *Partager avec le foyer* la rend visible par tous les comptes du serveur, qui peuvent la compléter et la réordonner. Seule la personne qui l'a créée peut la renommer, arrêter le partage ou la supprimer, et chacun n'y voit que les titres auxquels il a accès.
+
+**Raccourcis clavier** : la touche `?` affiche l'aide partout dans Nexis, et `/` place le curseur dans la recherche. Les touches du lecteur se changent dans *Paramètres → Cet appareil*.
+
 **Avis** : sur la fiche d'un film ou d'une série, *J'aime* et *Je n'aime pas* orientent les suggestions (les titres proches d'un titre non aimé reculent) ; *Ne plus suggérer* (menu ⋯) l'exclut des suggestions et des titres similaires.
 
 **Notifications** : la cloche de la barre du haut signale les épisodes ajoutés depuis moins de 30 jours, et pas encore vus, des séries suivies (dont un épisode a été regardé, ou présentes dans « À regarder »).

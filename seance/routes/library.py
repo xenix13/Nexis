@@ -132,11 +132,14 @@ def register(app, ctx, x):
         start = req.int_arg("start", 0, 0)
         size = req.int_arg("size", 60, 1, 200)
         order = SORTS.get(req.arg("sort", "title"), SORTS["title"])
+        if req.arg("sort") == "mine":  # ma note (étoiles), les titres notés d'abord
+            order = "(SELECT st.stars FROM stars st WHERE st.user_id=? AND st.item_id=i.id) DESC NULLS LAST, i.sort_title"
         af, aa = age_filter(req.user)
         where += af
         args += aa
         total = db.scalar(f"SELECT COUNT(*) FROM items i LEFT JOIN items sh ON sh.id=i.show_id {where}", args)
-        rows = db.all(CARD_SQL + where + f" ORDER BY {order} LIMIT ? OFFSET ?", [*args, size, start])
+        order_args = [req.user["id"]] if req.arg("sort") == "mine" else []
+        rows = db.all(CARD_SQL + where + f" ORDER BY {order} LIMIT ? OFFSET ?", [*args, *order_args, size, start])
         items = attach_state(req.user["id"], [card(r) for r in rows])
         return {"total": total, "items": items}
 
@@ -155,6 +158,7 @@ def register(app, ctx, x):
             rows = db.all(CARD_SQL + "WHERE i.library_id=? AND i.type='movie'" + af +
                           " ORDER BY i.added_at DESC, i.id DESC LIMIT 24", (int(lib["id"]), *aa))
             return [card(r) for r in rows]
+        hidden = x.hidden_ids(user)
         latest = db.all("SELECT show_id, MAX(added_at) AS t FROM items WHERE library_id=? AND type='episode' "
                         "GROUP BY show_id ORDER BY t DESC LIMIT 24", (int(lib["id"]),))
         ids = [l["show_id"] for l in latest]
@@ -162,7 +166,7 @@ def register(app, ctx, x):
         out = []
         for l in latest:
             show = shows.get(l["show_id"])
-            if not show or not visible(user, show):
+            if not show or not visible(user, show) or show["id"] in hidden:
                 continue
             c = card(show)
             ep = db.one(CARD_SQL + "WHERE i.show_id=? AND i.type='episode' ORDER BY i.added_at DESC, p.idx DESC, "
@@ -178,11 +182,12 @@ def register(app, ctx, x):
                       "WHERE user_id=? AND position_ms>=? AND (duration_ms=0 OR position_ms < duration_ms*?) "
                       "ORDER BY updated_at DESC LIMIT 30", (uid, MIN_RESUME_MS, WATCHED_RATIO))
         items, shows_in_progress = [], set()
+        hidden = x.hidden_ids(user)
         for r in rows:
             if r["section_id"] not in allowed:
                 continue
             row = db.one(CARD_SQL + "WHERE i.id=?", (int(r["rating_key"]),))
-            if not row or not visible(user, row):
+            if not row or not visible(user, row) or (row["show_id"] or row["id"]) in hidden:
                 continue
             c = json.loads(r["meta"])
             c.update(position=r["position_ms"], duration=r["duration_ms"] or c.get("duration"),
@@ -195,7 +200,7 @@ def register(app, ctx, x):
             "AND show_key IS NOT NULL AND last_watched_at > ? GROUP BY show_key ORDER BY t DESC LIMIT 12",
             (uid, int(time.time()) - 60 * 86400))
         for r in recent_shows:
-            if r["show_key"] in shows_in_progress or not r["show_key"].isdigit():
+            if r["show_key"] in shows_in_progress or not r["show_key"].isdigit() or int(r["show_key"]) in hidden:
                 continue
             watched = {w["rating_key"]: w["last_watched_at"] or 0 for w in db.all(
                 "SELECT rating_key,last_watched_at FROM progress WHERE user_id=? AND show_key=? AND watched=1",
@@ -259,6 +264,7 @@ def register(app, ctx, x):
         """Séries commencées puis laissées de côté (rien de regardé depuis 2 mois, au-delà de « Reprendre et à
         suivre ») : l'épisode où reprendre."""
         uid, now = user["id"], int(time.time())
+        hidden = x.hidden_ids(user)
         recent = db.all("SELECT show_key, MAX(last_watched_at) AS t FROM progress WHERE user_id=? AND watched=1 AND "
                         "show_key IS NOT NULL GROUP BY show_key HAVING t BETWEEN ? AND ? ORDER BY t DESC LIMIT 40",
                         (uid, now - 365 * 86400, now - 60 * 86400))
@@ -270,7 +276,7 @@ def register(app, ctx, x):
                                                      (uid, r["show_key"]))}
             eps = leaves(r["show_key"])
             nxt = next((e for e in eps if str(e["id"]) not in seen), None)
-            if not nxt or str(nxt["library_id"]) not in allowed or not visible(user, nxt):
+            if not nxt or str(nxt["library_id"]) not in allowed or not visible(user, nxt) or int(r["show_key"]) in hidden:
                 continue
             out.append(card(nxt))
             if len(out) >= 24:
@@ -348,6 +354,7 @@ def register(app, ctx, x):
         attach_state(uid, [d])
         d["in_watchlist"] = x.in_watchlist(req.user, r)
         d["opinion"] = x.my_opinion(req.user, r)
+        d["stars"], d["hidden"] = x.my_stars(req.user, r), x.is_hidden(req.user, r)
         d["trailer"] = r["trailer"]
         if d["type"] in ("movie", "show"):
             extras = db.all(CARD_SQL + "WHERE i.parent_id=? AND i.type='extra' ORDER BY i.extra_kind!='trailer', i.sort_title",

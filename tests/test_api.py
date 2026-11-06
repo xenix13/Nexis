@@ -1192,6 +1192,54 @@ class SeanceTest(unittest.TestCase):
         self.assertIn("short", home)
         self.assertIn("unfinished", home)
 
+    def test_stars_hidden_and_shared_playlists(self):
+        """Note en étoiles (et avis qui en découle), titre masqué pour soi, playlist partagée avec le foyer."""
+        polar, voyage = self.movie("Nuit polaire"), self.movie("Le Grand Voyage")
+        lib = self.libs["Films"]
+        st, r = self.lea.call("PUT", f"/api/items/{polar['id']}/stars", {"stars": 5})
+        self.assertEqual((st, r["stars"], r["opinion"]), (200, 5, 1))
+        st, r = self.lea.call("PUT", f"/api/items/{polar['id']}/stars", {"stars": 2})
+        self.assertEqual(r["opinion"], -1)
+        self.assertEqual(self.lea.call("PUT", f"/api/items/{polar['id']}/stars", {"stars": 9})[0], 400)
+        st, d = self.lea.call("GET", f"/api/items/{polar['id']}")
+        self.assertEqual((d["stars"], d["hidden"]), (2, False))
+        st, r = self.lea.call("GET", f"/api/libraries/{lib}/items?sort=mine")
+        self.assertEqual(r["items"][0]["id"], polar["id"])  # les titres notés d'abord
+        self.lea.call("PUT", f"/api/items/{polar['id']}/stars", {"stars": None})
+        self.lea.call("PUT", f"/api/items/{polar['id']}/opinion", {"value": None})
+        # masqué pour Léa seulement : absent de sa bibliothèque et de sa recherche, fiche toujours ouverte
+        st, r = self.lea.call("PUT", f"/api/items/{voyage['id']}/hidden", {"hidden": True})
+        self.assertEqual((st, r["hidden"]), (200, True))
+        try:
+            st, r = self.lea.call("GET", f"/api/libraries/{lib}/items?size=100")
+            self.assertNotIn(voyage["id"], [c["id"] for c in r["items"]])
+            st, r = self.lea.call("GET", "/api/search?q=grand%20voyage")
+            self.assertNotIn(voyage["id"], [c["id"] for c in r["movies"]])
+            self.assertEqual(self.lea.call("GET", f"/api/items/{voyage['id']}")[1]["hidden"], True)
+            self.assertEqual([c["id"] for c in self.lea.call("GET", "/api/me/hidden")[1]], [voyage["id"]])
+            st, r = self.admin.call("GET", f"/api/libraries/{lib}/items?size=100")
+            self.assertIn(voyage["id"], [c["id"] for c in r["items"]])  # pas pour les autres
+        finally:
+            self.lea.call("PUT", f"/api/items/{voyage['id']}/hidden", {"hidden": False})
+        # playlist partagée : visible et complétée par Léa, renommée seulement par sa créatrice
+        st, pl = self.admin.call("POST", "/api/playlists", {"title": "Soirées en famille", "item_id": voyage["id"]})
+        pid = pl["id"]
+        try:
+            self.assertEqual(self.lea.call("GET", f"/api/playlists/{pid}")[0], 404)  # pas encore partagée
+            self.assertEqual(self.admin.call("PUT", f"/api/playlists/{pid}", {"shared": True})[0], 200)
+            st, lists = self.lea.call("GET", "/api/playlists")
+            mine = next(p for p in lists if p["id"] == pid)
+            self.assertEqual((mine["shared"], mine["mine"]), (True, False))
+            st, r = self.lea.call("POST", f"/api/playlists/{pid}/items", {"item_id": polar["id"]})
+            self.assertEqual(st, 200, r)
+            st, p = self.admin.call("GET", f"/api/playlists/{pid}")
+            self.assertEqual(sorted(c["id"] for c in p["items"]), sorted([voyage["id"], polar["id"]]))
+            self.assertEqual(self.lea.call("PUT", f"/api/playlists/{pid}", {"title": "À moi"})[0], 403)
+            self.assertEqual(self.lea.call("DELETE", f"/api/playlists/{pid}")[0], 403)
+            self.assertEqual(self.lea.call("PUT", f"/api/playlists/{pid}", {"shared": False})[0], 403)
+        finally:
+            self.admin.call("DELETE", f"/api/playlists/{pid}")
+
     def test_discover_and_requests_through_seerr(self):
         seerr = FakeSeerr()
         try:

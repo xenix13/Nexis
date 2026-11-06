@@ -7,6 +7,7 @@ import { SUB_BGS, SUB_COLORS, SUB_EDGES, SUB_FONTS, SUB_POSITIONS, applySubStyle
 import { arrange, avatar, clear, field, h, icon, modal, select, spinner, toast, toggle } from '../ui.js';
 import { ART, BACKGROUNDS, CATEGORIES, DEFAULT_BG, artDataUrl, artSvg } from '../avatar-art.js';
 import { device, setDevice } from '../device.js';
+import { shortcutsPanel } from '../keys.js';
 import { LANGUAGES, lang, locale, tr, useLanguage } from '../i18n.js';
 
 const LANGS = [['fra', tr('Français')], ['eng', tr('Anglais')], ['jpn', tr('Japonais')], ['spa', tr('Espagnol')], ['deu', tr('Allemand')],
@@ -409,6 +410,7 @@ function accountPage(id, body, rerender) {
           field(tr('Animations'), pick('motion', [['', tr('Selon le système')], ['reduced', tr('Réduites')]])),
           field(tr('Navigation à la télécommande'), pick('remote', [['', tr('Automatique')], ['on', tr('Toujours activée')], ['off', tr('Désactivée')]]),
             tr('Repères de sélection visibles et déplacement aux flèches, comme sur une TV.')))),
+      shortcutsPanel(),
       h('p.muted.small', tr('Ces réglages sont enregistrés dans ce navigateur uniquement.')));
     return;
   }
@@ -466,7 +468,20 @@ function accountPage(id, body, rerender) {
     { onchange: (e) => save({ start_page: e.target.value }, tr('Page d’ouverture enregistrée')) });
   const startPanel = h('section.panel', h('h2', tr('Page d’ouverture')),
     field(tr('Page affichée à l’ouverture de Nexis'), startSel, tr('Les liens directs (fiche, lecture) s’ouvrent toujours à leur adresse.')));
-  clear(body, startPanel, homePanel, navPanel);
+  // titres masqués pour soi (menu ⋯ d'une fiche) : la liste, pour les rendre de nouveau visibles
+  const hiddenList = h('div.user-list');
+  const hiddenPanel = h('section.panel', h('h2', tr('Titres masqués')),
+    h('p.muted.small', tr('Masqués par vous seul (menu ⋯ d’une fiche → Masquer pour moi) : ils n’apparaissent plus dans vos bibliothèques, l’accueil, la recherche ni les suggestions.')),
+    hiddenList);
+  const paintHidden = async () => {
+    const list = await get('/api/me/hidden').catch(() => []);
+    clear(hiddenList, list.length ? list.map((c) => h('div.user-row', h('a.grow', { href: `#/item/${c.id}` }, h('strong', c.title),
+      c.year ? h('span.muted', ` (${c.year})`) : null),
+    h('button.btn.small', { onclick: async () => { await put(`/api/items/${c.id}/hidden`, { hidden: false }); paintHidden(); } }, tr('Ne plus masquer'))))
+      : h('p.muted.small', tr('Aucun titre masqué.')));
+  };
+  paintHidden();
+  clear(body, startPanel, homePanel, navPanel, hiddenPanel);
 }
 
 // ---------------------------------------------------------------- l'espace Paramètres

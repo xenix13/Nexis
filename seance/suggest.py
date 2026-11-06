@@ -265,6 +265,66 @@ def register(app, ctx, x):
             cache.pop(req.user["id"], None)  # suggestions recalculées avec ce nouvel avis
         return {"value": v}
 
+    # notes personnelles et titres masqués ------------------------------------------------------------
+    def my_stars(user, row):
+        tid = title_of(row)
+        return db.scalar("SELECT stars FROM stars WHERE user_id=? AND item_id=?", (user["id"], tid)) if tid else None
+    x.my_stars = my_stars
+
+    def is_hidden(user, row):
+        tid = title_of(row)
+        return bool(tid and db.scalar("SELECT 1 FROM hidden_items WHERE user_id=? AND item_id=?", (user["id"], tid)))
+    x.is_hidden = is_hidden
+
+    @app.route("PUT", f"/api/items/{RK}/stars")
+    def item_stars(req):
+        """Note de 1 à 5 étoiles (null : retirée). Elle oriente aussi les suggestions : 4 ou 5 = j'aime,
+        1 ou 2 = je n'aime pas, 3 = sans avis."""
+        row = x.require_item(req.user, req.params["rk"])
+        tid = title_of(row)
+        if not tid:
+            raise HTTPError(400, "Avis possible sur un film ou une série uniquement")
+        v = req.json().get("stars")
+        uid, now = req.user["id"], int(time.time())
+        if v is None:
+            db.run("DELETE FROM stars WHERE user_id=? AND item_id=?", (uid, tid))
+        elif isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 5:
+            db.run("INSERT INTO stars(user_id,item_id,stars,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id,item_id) "
+                   "DO UPDATE SET stars=excluded.stars, updated_at=excluded.updated_at", (uid, tid, v, now))
+            opinion = 1 if v >= 4 else -1 if v <= 2 else None
+            if opinion is None:
+                db.run("DELETE FROM ratings WHERE user_id=? AND item_id=? AND value<>0", (uid, tid))
+            else:
+                db.run("INSERT INTO ratings(user_id,item_id,value,updated_at) VALUES(?,?,?,?) ON CONFLICT(user_id,item_id) "
+                       "DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at", (uid, tid, opinion, now))
+        else:
+            raise HTTPError(400, "Note invalide (1 à 5)")
+        with lock:
+            cache.pop(uid, None)
+        return {"stars": v, "opinion": my_opinion(req.user, row)}
+
+    @app.route("PUT", f"/api/items/{RK}/hidden")
+    def item_hidden(req):
+        """Masquer un titre pour soi : il disparaît de ses listes (bibliothèques, accueil, recherche, suggestions)."""
+        row = x.require_item(req.user, req.params["rk"])
+        tid = title_of(row)
+        if not tid:
+            raise HTTPError(400, "Seuls un film ou une série se masquent")
+        if req.json().get("hidden"):
+            db.run("INSERT OR IGNORE INTO hidden_items(user_id,item_id,added_at) VALUES(?,?,?)",
+                   (req.user["id"], tid, int(time.time())))
+        else:
+            db.run("DELETE FROM hidden_items WHERE user_id=? AND item_id=?", (req.user["id"], tid))
+        with lock:
+            cache.pop(req.user["id"], None)
+        return {"hidden": is_hidden(req.user, row)}
+
+    @app.route("GET", "/api/me/hidden")
+    def my_hidden(req):
+        rows = db.all(CARD_SQL + "JOIN hidden_items hd ON hd.item_id=i.id WHERE hd.user_id=? ORDER BY hd.added_at DESC",
+                      (req.user["id"],))
+        return [card(r) for r in rows]
+
     @app.route("GET", f"/api/items/{RK}/similar")
     def item_similar(req):
         return {"items": similar_to(req.user, x.require_item(req.user, req.params["rk"]))}

@@ -174,7 +174,7 @@ def register(app, ctx, x):
         allowed = sorted(x.allowed_set(user), key=int)
         if not allowed:
             return {}
-        age_sql, age_args = x.age_filter(user)
+        age_sql, age_args = x.age_filter(user, hidden=False)  # titre masqué : il est quand même sur le serveur
         rows = db.all(x.ITEM_SQL + f"WHERE i.type IN ('movie','show') AND i.tmdb_id IN ({','.join('?' * len(ids))}) "
                       f"AND i.library_id IN ({','.join('?' * len(allowed))})" + age_sql,
                       ids + [int(a) for a in allowed] + age_args)

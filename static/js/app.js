@@ -18,6 +18,7 @@ import { aboutDialog } from './about.js';
 import { applyDevice } from './device.js';
 import { createGroupDialog, currentGroups, isFreshFeed, onGroups, startGroupsFeed, stopGroupsFeed } from './groups.js';
 import { canInstall, install, onInstallChange, setupInstall } from './install.js';
+import { shortcutsHelp } from './keys.js';
 import { forgetMe, list as listDownloads, pump, rememberMe, rememberedMe, supported as offlineSupported, syncProgress } from './offline.js';
 import { renderDownloads } from './views/downloads.js';
 import { followUpdate, resumeUpdate, updatePending } from './updater.js';
@@ -437,6 +438,16 @@ new MutationObserver((records) => {
 }).observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
 
 setupInstall();
+// raccourcis partout : « ? » affiche l'aide, « / » place le curseur dans la recherche
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || (e.target.closest && e.target.closest('input, select, textarea, [contenteditable]'))) return;
+  if (document.querySelector('.modal-overlay')) return;
+  if (e.key === '?') { e.preventDefault(); shortcutsHelp(); }
+  else if (e.key === '/' && !location.hash.startsWith('#/play')) {
+    const s = document.querySelector('.search-input');
+    if (s) { e.preventDefault(); s.focus(); s.select(); }
+  }
+});
 onInstallChange(() => document.querySelectorAll('.install-app').forEach((b) => { b.hidden = !canInstall(); }));
 
 window.addEventListener('hashchange', route);
