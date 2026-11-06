@@ -348,6 +348,12 @@ def register(app, ctx, x):
         nxt = next_episode(r)
         if b.get("playlist"):
             nxt = x.playlist_next(req.user, b["playlist"], r["id"]) if str(b["playlist"]).isdigit() else None
+        elif b.get("shuffle") and r["type"] == "episode" and str(b["shuffle"]) == str(r["show_id"]):
+            # lecture aléatoire d'une série : un autre épisode au hasard, de préférence pas encore vu
+            pick = x.ITEM_SQL + "WHERE i.show_id=? AND i.type='episode' AND i.id<>? {} ORDER BY random() LIMIT 1"
+            nxt = db.one(pick.format("AND NOT EXISTS (SELECT 1 FROM progress pr WHERE pr.user_id=? AND "
+                                     "pr.rating_key=CAST(i.id AS TEXT) AND pr.watched=1)"), (r["show_id"], r["id"], uid)) \
+                or db.one(pick.format(""), (r["show_id"], r["id"]))
         if ctx.subtitles.missing(r):
             ctx.subtitles.ensure_now(r)
         elif ctx.subtitles.needs_trick(r):

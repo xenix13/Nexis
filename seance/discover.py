@@ -32,7 +32,7 @@ FEATURED = [8, 119, 337, 381, 1899, 350, 531, 283, 415]
 FALLBACK_NAMES = {8: "Netflix", 119: "Prime Video", 337: "Disney+", 381: "Canal+", 1899: "Max", 350: "Apple TV+",
                   531: "Paramount+", 283: "Crunchyroll", 415: "ADN"}
 IMG_PATH = re.compile(r"^/[A-Za-z0-9_-]{4,80}\.(?:jpg|jpeg|png|svg)$")
-IMG_SIZES = {"poster": "w342", "backdrop": "w1280", "logo": "w154", "still": "w300"}
+IMG_SIZES = {"poster": "w342", "backdrop": "w1280", "logo": "w154", "still": "w300", "profile": "w185"}
 STATUS = {2: "pending", 3: "processing", 4: "partial", 5: "available", 6: "blocked", 7: "deleted"}
 SORTS = {
     "movie": {"popular": "popularity.desc", "recent": "primary_release_date.desc", "rating": "vote_average.desc"},

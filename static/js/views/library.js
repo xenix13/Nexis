@@ -1,6 +1,6 @@
 import { get } from '../api.js';
 import { state } from '../app.js';
-import { clear, h, icon, posterCard, select, spinner } from '../ui.js';
+import { clear, h, icon, posterCard, select, spinner, toast } from '../ui.js';
 import { pinButton } from '../pins.js';
 import { tr, plural } from '../i18n.js';
 import { renderPhotos } from './photos.js';
@@ -43,9 +43,19 @@ export async function renderLibrary(main, sid, ctx) {
   const grid = h('div.grid');
   const sentinel = h('div.sentinel');
   const pin = genre ? pinButton({ type: 'genre', ref: genre, lib: sid, title: `${genre} · ${lib.title}` }) : null;
+  // au hasard : un film (lancé tout de suite, de préférence pas encore vu) ou une série (sa fiche), selon le genre choisi
+  const random = h('button.btn.small', { type: 'button', title: lib.type === 'show' ? tr('Une série au hasard') : tr('Un film au hasard'),
+    onclick: async () => {
+      try {
+        const q = new URLSearchParams({ library: sid });
+        if (genre) q.set('genre', genre);
+        const c = await get(`/api/random?${q}`);
+        location.hash = c.type === 'movie' ? `#/play/${c.id}` : `#/item/${c.id}`;
+      } catch (e) { toast(e.message, 'bad'); }
+    } }, icon('shuffle'), tr('Au hasard'));
   // bibliothèque d'un serveur lié : un simple badge, elle s'utilise comme les autres
   const server = lib.server ? h('span.server-badge', { title: tr('Bibliothèque du serveur lié « {server} »', { server: lib.server }) }, icon('link'), lib.server) : null;
-  clear(main, h('div.page-head', h('h1', lib.title), server, count, h('div.filters', sortSel, genreSel, pin)), viewTabs, grid, sentinel);
+  clear(main, h('div.page-head', h('h1', lib.title), server, count, h('div.filters', sortSel, genreSel, random, pin)), viewTabs, grid, sentinel);
 
   let start = 0, total = Infinity, loading = false;
   async function more() {

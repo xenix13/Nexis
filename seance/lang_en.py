@@ -497,4 +497,7 @@ EN = {
     "Analyse des photos": "Reading photos",
     "Annonce DLNA impossible (port UDP {}) : {}": "Cannot announce DLNA (UDP port {}): {}",
     "connexion à {} Mbit/s": "connection at {} Mbit/s",
+    "Ce n'est pas une série": "This is not a show",
+    "Aucun épisode": "No episodes",
+    "Rien ici pour ce filtre.": "Nothing here for this filter.",
 }

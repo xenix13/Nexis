@@ -16,6 +16,7 @@ import types
 import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1109,6 +1110,32 @@ class SeanceTest(unittest.TestCase):
         c.call("POST", f"/api/items/{show['id']}/watchlist", {"on": False})
 
     # ------------------------------------------------ Découvrir et demandes (Seerr)
+    def test_person_and_random(self):
+        """Fiche d'une personne (distribution, réalisation) ; un titre au hasard ; épisodes dans le désordre."""
+        st, r = self.lea.call("GET", "/api/person?name=" + urllib.parse.quote("Actrice Une"))
+        self.assertEqual(st, 200, r)
+        self.assertTrue(r["items"], r)
+        self.assertTrue(all(c["type"] in ("movie", "show") for c in r["items"]))
+        self.assertTrue(any(c.get("role") == "Héroïne" for c in r["items"]), r["items"])
+        st, r = self.lea.call("GET", "/api/person?name=R%C3%A9alisatrice")
+        self.assertTrue(r["items"] and all(c.get("director") for c in r["items"]), r)
+        self.assertEqual(self.lea.call("GET", "/api/person?name=Personne%20Inconnue")[1]["items"], [])
+        self.assertEqual(self.lea.call("GET", "/api/person?name=")[0], 400)
+        # au hasard : un film de la bibliothèque, une série, un épisode d'une série
+        st, c = self.lea.call("GET", f"/api/random?library={self.libs['Films']}")
+        self.assertEqual((st, c["type"], c["section"]), (200, "movie", self.libs["Films"]))
+        self.assertEqual(self.lea.call("GET", f"/api/random?library={self.libs['Séries']}")[0], 404)  # sans accès
+        st, c = self.admin.call("GET", f"/api/random?library={self.libs['Séries']}")
+        self.assertEqual((st, c["type"]), (200, "show"))
+        st, ep = self.admin.call("GET", f"/api/random?show={c['id']}")
+        self.assertEqual((st, ep["type"], ep["show_id"]), (200, "episode", c["id"]))
+        self.assertEqual(self.lea.call("GET", f"/api/random?library={self.libs['Films']}&genre=Inexistant")[0], 404)
+        # lecture aléatoire : l'épisode suivant est un autre épisode de la série
+        st, p = self.admin.call("POST", "/api/play", {"id": ep["id"], "shuffle": c["id"]})
+        self.assertEqual(st, 200, p)
+        self.assertTrue(p["next"] and p["next"]["show_id"] == c["id"] and p["next"]["id"] != ep["id"], p["next"])
+        self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
+
     def test_discover_and_requests_through_seerr(self):
         seerr = FakeSeerr()
         try:

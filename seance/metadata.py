@@ -280,7 +280,8 @@ class Metadata:
             if c.get("iso_3166_1") == tmdb.country:
                 cert = next((x.get("certification") for x in c.get("release_dates", []) if x.get("certification")), None)
         crew = (d.get("credits") or {}).get("crew", [])
-        cast = [{"name": c.get("name"), "role": c.get("character")} for c in (d.get("credits") or {}).get("cast", [])[:20]]
+        cast = [{"name": c.get("name"), "role": c.get("character"), "photo": c.get("profile_path")}
+                for c in (d.get("credits") or {}).get("cast", [])[:20]]
         date = d.get("release_date") or ""
         self._update(item["id"], {
             "tmdb_id": tid, "imdb_id": d.get("imdb_id") or None,
@@ -359,7 +360,8 @@ class Metadata:
             overview = tmdb.get(f"/tv/{tid}", lang="en-US").get("overview")
         cert = next((c.get("rating") for c in (d.get("content_ratings") or {}).get("results", [])
                      if c.get("iso_3166_1") == tmdb.country), None)
-        cast = [{"name": c.get("name"), "role": c.get("character")} for c in (d.get("credits") or {}).get("cast", [])[:20]]
+        cast = [{"name": c.get("name"), "role": c.get("character"), "photo": c.get("profile_path")}
+                for c in (d.get("credits") or {}).get("cast", [])[:20]]
         date = d.get("first_air_date") or ""
         self._update(item["id"], {
             "tmdb_id": tid, "imdb_id": (d.get("external_ids") or {}).get("imdb_id") or None,

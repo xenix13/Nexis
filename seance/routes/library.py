@@ -295,6 +295,76 @@ def register(app, ctx, x):
         with open(path, "rb") as f:
             return Response(f.read(), 200, "image/jpeg", {"Cache-Control": "private, max-age=604800, immutable"})
 
+    # ------------------------------------------------------------ personnes (acteurs, réalisation)
+    PEOPLE_MATCH = ("(EXISTS (SELECT 1 FROM json_each(json_extract(i.people, '$.cast')) c "
+                    "WHERE json_extract(c.value, '$.name') = ?) OR EXISTS (SELECT 1 FROM "
+                    "json_each(json_extract(i.people, '$.directors')) d WHERE d.value = ?))")
+
+    @app.route("GET", "/api/person")
+    def person(req):
+        """Films et séries du serveur où joue (ou que réalise) cette personne."""
+        name = (req.arg("name") or "").strip()
+        if not 1 <= len(name) <= 120:
+            raise HTTPError(400, "Nom invalide")
+        allowed = sorted(int(i) for i in allowed_set(req.user))
+        if not allowed:
+            return {"name": name, "photo": None, "items": []}
+        af, aa = age_filter(req.user)
+        rows = db.all(CARD_SQL.replace("SELECT i.id,", "SELECT i.people, i.id,", 1) + "WHERE i.type IN ('movie','show') "
+                      f"AND i.library_id IN ({','.join('?' * len(allowed))}) AND " + PEOPLE_MATCH + af +
+                      " ORDER BY COALESCE(i.year, 0) DESC, i.sort_title LIMIT 200", [*allowed, name, name, *aa])
+        photo, items = None, []
+        for r in rows:
+            c = card(r)
+            people = json.loads(r["people"] or "{}")
+            role = next((p for p in people.get("cast", []) if p.get("name") == name), None)
+            if role:
+                c["role"] = role.get("role") or ""
+                photo = photo or role.get("photo")
+            if name in people.get("directors", []):
+                c["director"] = True
+            items.append(c)
+        return {"name": name, "photo": photo, "items": attach_state(req.user["id"], items)}
+
+    # ------------------------------------------------------------ au hasard
+    @app.route("GET", "/api/random")
+    def random_pick(req):
+        """Un titre au hasard : un épisode d'une série (?show=), ou un film / une série d'une bibliothèque
+        (?library=, ?genre=), de préférence pas encore vu."""
+        uid = req.user["id"]
+        af, aa = age_filter(req.user)
+        unseen = ("NOT EXISTS (SELECT 1 FROM progress pr WHERE pr.user_id=? AND pr.rating_key=CAST(i.id AS TEXT) "
+                  "AND pr.watched=1)")
+        show = req.arg("show")
+        if show:
+            s = require_item(req.user, show)
+            if s["type"] != "show":
+                raise HTTPError(400, "Ce n'est pas une série")
+            exclude = req.int_arg("not", 0, 0)
+            for cond in (unseen, "1"):
+                r = db.one(CARD_SQL + f"WHERE i.show_id=? AND i.type='episode' AND i.id<>? AND {cond} ORDER BY random() LIMIT 1",
+                           [s["id"], exclude, *([uid] if cond == unseen else [])])
+                if r:
+                    return card(r)
+            raise HTTPError(404, "Aucun épisode")
+        sid = req.arg("library") or ""
+        require_section(req.user, sid)
+        lib = db.one("SELECT kind FROM libraries WHERE id=?", (int(sid),))
+        if not lib or lib["kind"] == "photo":
+            raise HTTPError(404, "Introuvable")
+        kind = "movie" if lib["kind"] == "movie" else "show"
+        where, args = "WHERE i.library_id=? AND i.type=?", [int(sid), kind]
+        genre = req.arg("genre")
+        if genre:
+            where += " AND EXISTS (SELECT 1 FROM json_each(i.genres) g WHERE g.value=?)"
+            args.append(genre)
+        for cond in ((unseen,) if kind == "movie" else ()) + ("1",):
+            r = db.one(CARD_SQL + where + af + f" AND {cond} ORDER BY random() LIMIT 1",
+                       [*args, *aa, *([uid] if cond == unseen else [])])
+            if r:
+                return card(r)
+        raise HTTPError(404, "Rien ici pour ce filtre.")
+
     # ------------------------------------------------------------ history
     @app.route("GET", "/api/history")
     def history(req):

@@ -12,6 +12,7 @@ import { renderHistory } from './views/history.js';
 import { renderSettingsArea } from './views/settings.js';
 import { renderPlayer } from './player.js';
 import { renderTogether } from './views/together.js';
+import { renderPerson } from './views/person.js';
 import './remote.js'; // télécommande, clavier et manette
 import { aboutDialog } from './about.js';
 import { applyDevice } from './device.js';
@@ -379,6 +380,7 @@ async function route() {
       case '': await renderHome(main, ctx); break;
       case 'library': await renderLibrary(main, parts[1], ctx); break;
       case 'item': await renderItem(main, parts[1], ctx); break;
+      case 'person': await renderPerson(main, decodeURIComponent(parts.slice(1).join('/')), ctx); break;
       case 'search': await renderSearch(main, query.get('q') || '', ctx); break;
       case 'collection': await renderCollection(main, parts[1], ctx); break;
       case 'watchlist': await renderWatchlist(main, ctx); break;

@@ -26,6 +26,11 @@ const clock = { offset: 0, at: 0 };
 const CLOCK_TTL = 10 * 60 * 1000;
 
 
+// Vitesse de lecture et minuterie de mise en veille : gardées d'un épisode à l'autre (le lecteur est recréé)
+const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
+let speed = 1;
+const sleep = { at: 0, endOfItem: false }; // at : instant de la mise en pause (ms) ; endOfItem : à la fin de la vidéo
+
 export async function renderPlayer(root, rk, ctx) {
   const hlsReady = loadHls(); // en parallèle du chargement de la fiche
   const prefs = { ...state.me.prefs, ...deviceOverrides() }; // réglages de l'appareil prioritaires
@@ -221,7 +226,7 @@ export async function renderPlayer(root, rk, ctx) {
       s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality, bandwidth: bandwidth || undefined,
         no_direct: forceHls || undefined,
         caps: browserCaps(),
-        playlist: ctx.query.get('playlist') || undefined,
+        playlist: ctx.query.get('playlist') || undefined, shuffle: ctx.query.get('shuffle') || undefined,
         audio: audioSel ? audioSel.id : null, subtitle: subSel ? subSel.id : 0, replace: previous || undefined });
     } catch (e) { if (seq === startSeq) showError(e.message, true); return; }
     if (destroyed || seq !== startSeq) {
@@ -734,7 +739,8 @@ export async function renderPlayer(root, rk, ctx) {
       return;
     }
     if (offline) { location.replace(`#/offline/${session.next.id}`); return; }
-    location.replace(`#/play/${session.next.id}${ctx.query.get('playlist') ? `?playlist=${ctx.query.get('playlist')}` : ''}`);
+    const keep = ctx.query.get('playlist') ? `?playlist=${ctx.query.get('playlist')}` : ctx.query.get('shuffle') ? `?shuffle=${ctx.query.get('shuffle')}` : '';
+    location.replace(`#/play/${session.next.id}${keep}`);
   }
 
   // ------------------------------------------------------------ lecteur réduit
@@ -808,6 +814,16 @@ export async function renderPlayer(root, rk, ctx) {
       const cols = [h('div.menu-col', h('h4', tr('Qualité')), q.map(([v, l]) => opt(l, quality === v, () => { quality = v; if (v === 'auto') bandwidth = null; restart(); })),
         h('p.menu-info', h('strong', modeLabel), session.reasons && session.reasons.length ? ` — ${session.reasons.join(', ')}` : '',
           session.mode === 'transcode' ? h('br') : null, session.mode === 'transcode' ? tr('Le processeur du serveur travaille pour cette lecture.') : null))];
+      if (!group) {
+        cols.push(h('div.menu-col', h('h4', tr('Vitesse')),
+          SPEEDS.map((v) => opt(v === 1 ? tr('Normale') : `×${String(v).replace('.', ',')}`, speed === v, () => setSpeed(v)))));
+      }
+      const left = sleep.at ? Math.max(1, Math.round((sleep.at - Date.now()) / 60000)) : 0;
+      cols.push(h('div.menu-col', h('h4', tr('Minuterie')),
+        opt(tr('Désactivée'), !sleep.at && !sleep.endOfItem, () => setSleep(0)),
+        opt(item.type === 'episode' ? tr('Fin de l’épisode') : tr('Fin du film'), sleep.endOfItem, () => setSleep(-1)),
+        [15, 30, 45, 60, 90].map((m) => opt(tr('{n} min', { n: m }), false, () => setSleep(m))),
+        sleep.at ? h('p.menu-info', tr('Pause dans {n} min', { n: left })) : null));
       if (isAdmin && item.type === 'episode') {
         const setMarker = async (which) => {
           const cur = (session.markers && session.markers.intro) || {};
@@ -1104,12 +1120,41 @@ export async function renderPlayer(root, rk, ctx) {
     };
     video.requestVideoFrameCallback(onFrame);
   }
+  // vitesse choisie : remise après chaque chargement (un nouveau flux la remet à 1), pas en groupe (la
+  // synchronisation se sert de la vitesse pour rattraper les écarts)
+  const applySpeed = () => { if (!group) { video.defaultPlaybackRate = speed; video.playbackRate = speed; } };
+  video.addEventListener('loadedmetadata', applySpeed);
+  const setSpeed = (v) => { speed = v; applySpeed(); toast(tr('Vitesse ×{v}', { v: String(v).replace('.', ',') })); };
+  const stepSpeed = (dir) => {
+    if (group) { toast(tr('Vitesse fixe en groupe')); return; }
+    const i = SPEEDS.indexOf(speed);
+    setSpeed(SPEEDS[Math.min(SPEEDS.length - 1, Math.max(0, (i < 0 ? 1 : i) + dir))]);
+  };
+  // minuterie : vérifiée chaque seconde, la lecture est mise en pause à l'heure dite
+  const sleepTimer = setInterval(() => {
+    if (sleep.at && Date.now() >= sleep.at) {
+      sleep.at = 0;
+      if (!video.paused) togglePlay();
+      toast(tr('Minuterie : lecture mise en pause'));
+    }
+  }, 1000);
+  const setSleep = (min) => {
+    sleep.at = min > 0 ? Date.now() + min * 60000 : 0;
+    sleep.endOfItem = min === -1;
+    toast(min === 0 ? tr('Minuterie désactivée') : min === -1 ? tr('Arrêt à la fin de cette vidéo')
+      : tr('Pause dans {n} min', { n: min }));
+  };
   video.addEventListener('ended', () => {
     // the transcoded stream can be a little shorter than the file: treat as finished
     report('stopped', true, { ended: true });
     finished = true;
     paintPlay();
     player.classList.remove('idle');
+    if (sleep.endOfItem) { // minuterie « fin de la vidéo » : pas d'épisode suivant
+      sleep.endOfItem = false;
+      toast(tr('Minuterie : fin de la lecture'));
+      return;
+    }
     if (session.next) {
       nextAtEnd = true;
       showNextCard(session.next, prefs.autoplay_next && !mini); // réduit : on propose sans interrompre la navigation
@@ -1216,6 +1261,8 @@ export async function renderPlayer(root, rk, ctx) {
       case 'n': if (session && session.next) playNext(); break;
       case 'c': if (chapters.length > 1) openChapters(); break;
       case 'i': minimize(); break;
+      case '>': stepSpeed(1); break;
+      case '<': stepSpeed(-1); break;
       case 'Escape': case 'BrowserBack': case 'GoBack':
         if (!chapterPanel.hidden) chapterPanel.hidden = true;
         else if (!menu.hidden) menu.hidden = true;
@@ -1248,6 +1295,9 @@ export async function renderPlayer(root, rk, ctx) {
       if (!location.hash.includes(`group=${group.id}`)) post(`/api/together/${group.id}/leave`, {}, { keepalive: true }).catch(() => {});
     }
     clearInterval(nextTimer);
+    clearInterval(sleepTimer);
+    // minuterie : elle suit l'enchaînement des épisodes, pas un retour à la navigation
+    if (!/^#\/(play|offline)\//.test(location.hash)) Object.assign(sleep, { at: 0, endOfItem: false });
     clearTimeout(idleTimer);
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('visibilitychange', onHide);

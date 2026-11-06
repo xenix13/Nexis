@@ -7,6 +7,8 @@ import { chapterStrip } from '../chapters.js';
 import { clear, episodeCode, field, fmtDuration, fmtTime, h, icon, img, modal, moreMenu, posterCard, progressBar, select, spinner, toast, toggle } from '../ui.js';
 import { tr, plural, locale } from '../i18n.js';
 
+const personHref = (name) => `#/person/${encodeURIComponent(name)}`;
+
 async function identify(d, onDone) {
   const q = h('input', { value: d.type === 'episode' ? d.show : d.title });
   const year = h('input', { type: 'number', value: d.type === 'episode' ? '' : (d.year || ''), placeholder: tr('Année') });
@@ -455,6 +457,15 @@ export async function renderItem(main, rk, ctx) {
       playLinks.push(link);
       actions.append(link);
     }
+    if (d.leaves > 1) {
+      // épisodes dans le désordre (sitcoms) : un au hasard, puis un autre à la fin de chacun
+      actions.append(h('button.btn', { type: 'button', title: tr('Lecture aléatoire'), onclick: async () => {
+        try {
+          const ep = await get(`/api/random?show=${d.id}`);
+          location.hash = `#/play/${ep.id}?shuffle=${d.id}`;
+        } catch (e) { toast(e.message, 'bad'); }
+      } }, icon('shuffle'), tr('Aléatoire')));
+    }
   } else {
     for (const link of playButtons(d)) {
       link.dataset.base = link.getAttribute('href');
@@ -479,7 +490,8 @@ export async function renderItem(main, rk, ctx) {
     d.summary ? h('p.summary', { class: d.type === 'episode' && !d.watched ? 'summary spoiler' : 'summary' }, d.summary) : null,
     d.genres && d.genres.length ? h('div.chips', d.genres.map((g) => h('span.chip', g))) : null,
     h('dl.facts',
-      d.directors && d.directors.length ? [h('dt', tr('Réalisation')), h('dd', d.directors.join(', '))] : null,
+      d.directors && d.directors.length ? [h('dt', tr('Réalisation')), h('dd', d.directors.flatMap((n, i) =>
+        [i ? ', ' : null, h('a.person-link', { href: personHref(n) }, n)]))] : null,
       d.studio ? [h('dt', tr('Studio')), h('dd', d.studio)] : null,
       null));
 
@@ -522,7 +534,9 @@ export async function renderItem(main, rk, ctx) {
   }
   if (d.cast && d.cast.length) {
     parts.push(h('section.block', h('h2', tr('Distribution')),
-      h('div.cast', d.cast.map((p) => h('div.person', h('span.person-init', p.name.charAt(0)),
+      h('div.cast', d.cast.map((p) => h('a.person', { href: personHref(p.name) },
+        p.photo ? h('img.person-init', { src: `/api/discover/img?p=${encodeURIComponent(p.photo)}&k=profile`, alt: '', loading: 'lazy' })
+          : h('span.person-init', p.name.charAt(0)),
         h('div', h('strong', p.name), p.role ? h('div.muted', p.role) : null))))));
   }
 
