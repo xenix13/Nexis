@@ -78,6 +78,24 @@ async function userForm(user, libraries, defaultLang = 'fr') {
   const age = select(AGE_LIMITS, user.max_age == null ? '' : String(user.max_age));
   const unrated = toggle(tr('Autoriser les contenus sans classification'), user.allow_unrated);
   const kids = toggle(tr('Interface enfant : grandes vignettes, menu simplifié'), user.kids);
+  // temps d'écran et limites du compte
+  const minutes = select([['', tr('Illimité')], ['30', tr('30 min')], ['45', tr('45 min')], ['60', tr('1 h')], ['90', tr('1 h 30')],
+    ['120', tr('2 h')], ['180', tr('3 h')], ['240', tr('4 h')], ['360', tr('6 h')]],
+  user.daily_minutes ? String(user.daily_minutes) : '');
+  if (user.daily_minutes && !minutes.querySelector(`option[value="${user.daily_minutes}"]`)) {
+    minutes.append(h('option', { value: String(user.daily_minutes), selected: true }, tr('{n} min', { n: user.daily_minutes })));
+  }
+  const [bedFrom, bedTo] = (user.bedtime || '-').split('-');
+  const bedOn = toggle(tr('Heure du coucher : pas de lecture la nuit'), !!user.bedtime);
+  const bedStart = h('input', { type: 'time', value: bedFrom || '21:00' });
+  const bedEnd = h('input', { type: 'time', value: bedTo || '07:00' });
+  const bedFields = h('div.grid2', field(tr('À partir de'), bedStart), field(tr('Jusqu’à'), bedEnd));
+  const streams = h('input', { type: 'number', min: 1, max: 20, value: user.max_streams || '', placeholder: tr('Illimité') });
+  const remote = select([['', tr('Illimité')], ['2000', '2 Mbit/s'], ['4000', '4 Mbit/s'], ['8000', '8 Mbit/s'], ['12000', '12 Mbit/s'],
+    ['20000', '20 Mbit/s'], ['40000', '40 Mbit/s']], user.remote_kbps ? String(user.remote_kbps) : '');
+  if (user.remote_kbps && !remote.querySelector(`option[value="${user.remote_kbps}"]`)) {
+    remote.append(h('option', { value: String(user.remote_kbps), selected: true }, `${(user.remote_kbps / 1000).toLocaleString(locale())} Mbit/s`));
+  }
   const admin = toggle(tr('Administrateur'), user.is_admin);
   const disabled = toggle(tr('Compte désactivé'), user.disabled);
   const all = toggle(tr('Accès à toutes les bibliothèques (y compris les futures)'), user.all_libraries);
@@ -94,8 +112,9 @@ async function userForm(user, libraries, defaultLang = 'fr') {
     passField.hidden = isManaged;
     admin.hidden = isManaged;
     unrated.hidden = !age.value;
+    bedFields.hidden = !bedOn.querySelector('input').checked;
   };
-  [all, managed].forEach((t) => t.querySelector('input').addEventListener('change', sync));
+  [all, managed, bedOn].forEach((t) => t.querySelector('input').addEventListener('change', sync));
   age.addEventListener('change', sync);
   sync();
   const err = h('p.form-error');
@@ -121,6 +140,11 @@ async function userForm(user, libraries, defaultLang = 'fr') {
     home,
     h('div.grid2', field(tr('Code PIN du profil'), pin), field(tr('Restriction d’âge'), age, tr('D’après la classification (TMDB ou .nfo).'))),
     clearPin, unrated, kids,
+    h('h4.form-sub', tr('Temps d’écran et limites')),
+    h('div.grid2', field(tr('Temps d’écran par jour'), minutes, user.screen_used != null ? tr('{n} min regardées aujourd’hui.', { n: user.screen_used }) : null),
+      field(tr('Lectures simultanées (max.)'), streams, tr('Sur tous les appareils du compte.'))),
+    bedOn, bedFields,
+    field(tr('Débit maximum hors de la maison'), remote, tr('Depuis l’extérieur, la qualité est réduite pour tenir dans ce débit. À la maison, rien ne change.')),
     h('h4.form-sub', tr('Droits et bibliothèques')),
     admin, isNew ? null : disabled, all, libBox, err);
   return modal(isNew ? tr('Nouvel utilisateur') : tr('Modifier {display_name}', { display_name: user.display_name }), body, [
@@ -138,6 +162,10 @@ async function userForm(user, libraries, defaultLang = 'fr') {
         allow_unrated: unrated.querySelector('input').checked,
         kids: kids.querySelector('input').checked,
         language: language.value,
+        daily_minutes: minutes.value ? Number(minutes.value) : null,
+        bedtime: bedOn.querySelector('input').checked ? `${bedStart.value || '21:00'}-${bedEnd.value || '07:00'}` : null,
+        max_streams: streams.value ? Number(streams.value) : null,
+        remote_kbps: remote.value ? Number(remote.value) : null,
       };
       if (pass.value && !isManaged) payload.password = pass.value;
       if (pin.value) payload.pin = pin.value;
@@ -955,9 +983,42 @@ async function dashboardPage(body, ctx) {
   const versionCard = h('div.panel.scan', h('strong', `Nexis ${version}`), latest
     ? h('div.small', h('span.tag.accent', tr('Mise à jour')), tr(' Nexis {latest} est disponible · ', { latest }), h('a', { href: '#/admin/update' }, tr('Mettre à jour')))
     : h('div.muted.small', tr('À jour (vérification automatique toutes les 6 heures) · '), h('a', { href: '#/admin/update' }, tr('Détails'))));
+  const alertsBox = h('div');
+  const paintAlerts = (v) => {
+    const c = v.conf;
+    const sw = (k, label) => {
+      const t = toggle(label, c[k]);
+      t.querySelector('input').addEventListener('change', async (e) => {
+        try { paintAlerts(await put('/api/admin/alerts', { [k]: e.target.checked })); } catch (ex) { toast(ex.message, 'bad'); }
+      });
+      return t;
+    };
+    const gbInput = h('input', { type: 'number', min: 1, max: 5000, value: c.disk_gb, onchange: async () => {
+      try { paintAlerts(await put('/api/admin/alerts', { disk_gb: Number(gbInput.value) })); toast(tr('Enregistré'), 'ok'); } catch (ex) { toast(ex.message, 'bad'); }
+    } });
+    clear(alertsBox,
+      v.alerts.length ? h('div.alert-list', v.alerts.map((a) => h('a.alert-row', { href: a.url },
+        h('strong', a.title), h('div.small', a.body), h('div.muted.small', new Date(a.created_at * 1000).toLocaleString(locale(), { dateStyle: 'short', timeStyle: 'short' })))))
+        : h('div.status-box.ok', tr('Aucune alerte : tout va bien.')),
+      h('details.alert-conf', h('summary.small', tr('Alertes envoyées aux administrateurs')),
+        h('p.muted.small', tr('Chaque alerte part en notification push sur les appareils où vous l’avez activée (Paramètres → Profil → Notifications), une fois, puis une fois par jour tant que le problème dure.')),
+        sw('disk', tr('Disque presque plein (données de Nexis, sauvegardes)')),
+        field(tr('Seuil d’espace libre (Go)'), gbInput),
+        sw('folder', tr('Dossier de bibliothèque inaccessible (partage réseau démonté)')),
+        sw('peer', tr('Serveur lié injoignable depuis 15 minutes')),
+        sw('task', tr('Tâche planifiée en échec')),
+        h('div.actions-row',
+          h('button.btn.small', { onclick: async () => { try { paintAlerts(await post('/api/admin/alerts/check')); toast(tr('Vérification faite'), 'ok'); } catch (ex) { toast(ex.message, 'bad'); } } }, tr('Vérifier maintenant')),
+          h('button.btn.small', { onclick: async () => {
+            const r = await post('/api/admin/alerts/test');
+            toast(r.sent ? tr('Alerte de test envoyée') : tr('Aucun appareil inscrit aux notifications pour ce compte'), r.sent ? 'ok' : 'bad');
+          } }, tr('Envoyer une alerte de test')))));
+  };
   const load = async () => {
-    const [list, sys] = await Promise.all([get('/api/admin/streams'), get('/api/admin/system').catch(() => null)]);
+    const [list, sys, alerts] = await Promise.all([get('/api/admin/streams'), get('/api/admin/system').catch(() => null),
+      get('/api/admin/alerts').catch(() => null)]);
     if (!ctx.isCurrent()) return;
+    if (alerts && !alertsBox.querySelector('details[open]')) paintAlerts(alerts);
     const gb = (mb) => tr('{n} Go', { n: (mb / 1024).toLocaleString(locale(), { maximumFractionDigits: 1, minimumFractionDigits: 1 }) });
     const swapHigh = sys && sys.swap_total && sys.swap_used > sys.swap_total * 0.25;
     const server = sys && sys.mem_total ? h('div.panel.scan', h('strong', tr('Serveur')), h('div.muted.small',
@@ -975,7 +1036,7 @@ async function dashboardPage(body, ctx) {
       secLine(sec.admins_2fa === sec.admins, tr('Double authentification : {admins_2fa} administrateur(s) sur {admins}', { admins_2fa: sec.admins_2fa, admins: sec.admins }),
         sec.admins_2fa === sec.admins ? null : tr('à activer dans Paramètres → Profil par chaque administrateur')),
       h('li.muted', tr('Adresse vue par le serveur pour cette session : {client_ip}', { client_ip: sec.client_ip })))) : null;
-    clear(body, versionCard, server, security, h('h3.sub', tr('Lectures en cours')), list.length ? h('div.user-list', list.map((s) => h('div.user-row',
+    clear(body, versionCard, h('section.panel', h('h2', tr('Alertes')), alertsBox), server, security, h('h3.sub', tr('Lectures en cours')), list.length ? h('div.user-list', list.map((s) => h('div.user-row',
       h('div.grow', h('strong', s.title), h('div.muted.small',
         tr(s.state === 'paused' ? '{user} · en pause à {time} · {mode}' : '{user} · en lecture à {time} · {mode}', { user: s.user, time: fmtTime(s.position_ms), mode: MODES[s.mode] || s.mode }),
         s.hw ? tr(' · carte graphique ({p1})', { p1: s.hw === 'nvenc' ? 'NVIDIA' : 'VAAPI' }) : '',

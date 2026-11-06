@@ -483,8 +483,22 @@ Plusieurs personnes regardent la même vidéo en même temps, chacune sur son ap
 - **Code PIN** : protège un profil (*Paramètres → Profil*). Sans code, l'accès à un compte complet ou administrateur demande son mot de passe.
 - **Photo de profil** : image au choix (JPEG, PNG ou WebP), recadrée en carré, ou avatar de la galerie (Cinéma, Séries et TV, Musique, Personnages, Motifs) avec le fond de son choix. Les métadonnées des photos (EXIF, position) sont supprimées par le serveur.
 - **Restriction d'âge** par profil (7, 10, 12 ou 16 ans), d'après la classification TMDB ou `.nfo`. Les contenus au-delà de la limite sont masqués partout : bibliothèques, accueil, recherche, fiches et lecture. Les contenus sans classification peuvent être autorisés ou non.
+- **Temps d'écran** par profil : minutes par jour (30 min à 6 h), et **heure du coucher** (ex. 21 h – 7 h) pendant laquelle rien ne se lance. Le temps est compté pendant la lecture, sur tous les appareils du compte ; le lecteur prévient 5 minutes avant la fin, puis s'arrête avec un message. Le compteur repart chaque jour à minuit. Les profils limités ne peuvent pas lancer de lecture une fois la limite atteinte (l'appli Android TV le respecte au lancement, sans l'arrêt en cours de lecture).
+- **Lectures simultanées** par compte : au-delà de la limite, une nouvelle lecture est refusée, avec un message qui invite à en arrêter une autre.
+- **Débit maximum hors de la maison** par compte : depuis l'extérieur, la qualité est réduite (720p, 480p…) pour tenir dans ce débit, par exemple pour ménager l'envoi de la box ou pour un compte prêté. Sur le réseau local, rien ne change.
 
-Configuration : *Paramètres → Serveur → Utilisateurs*.
+Configuration : *Paramètres → Serveur → Utilisateurs*. Les limites suivent le compte sur les serveurs liés.
+
+## Alertes pour les administrateurs
+
+*Paramètres → Serveur → Vue d'ensemble → Alertes* : Nexis vérifie toutes les 5 minutes que tout va bien, et prévient les administrateurs par **notification push** (sur les appareils où elles sont activées, *Paramètres → Profil*) :
+
+- **disque presque plein** pour les données de Nexis ou les sauvegardes (moins de 10 Go libres par défaut, ou moins de 3 %) ;
+- **dossier de bibliothèque inaccessible**, ou vide alors qu'il contenait des titres (partage réseau démonté) ;
+- **serveur lié injoignable** depuis plus de 15 minutes ;
+- **tâche planifiée en échec** (scan, sauvegarde, sous-titres…).
+
+Une alerte est envoyée une fois, rappelée une fois par jour si le problème dure, et disparaît d'elle-même une fois réglé. Chaque type d'alerte se coupe séparément ; *Envoyer une alerte de test* vérifie la réception.
 
 ## Personnalisation
 

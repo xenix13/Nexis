@@ -632,7 +632,25 @@ export async function renderPlayer(root, rk, ctx) {
     if (p < 1000 && st !== 'stopped' && !extra.ended) return;
     if (offline) { saveProgress(state.me.user.id, item, p, duration(), extra.ended); return; }
     post('/api/progress', { id: item.id, position: p, duration: duration(), stream: session.stream, state: st, ...extra },
-      { keepalive: st === 'stopped' }).catch(() => {});
+      { keepalive: st === 'stopped' }).then((r) => { if (r && r.screen) screenTime(r.screen); }).catch(() => {});
+  }
+
+  // temps d'écran (profil limité par un administrateur) : prévenu quelques minutes avant, arrêt à la limite
+  let screenWarned = false;
+  function screenTime(sc) {
+    if (sc.blocked) {
+      video.pause();
+      report('paused', true);
+      if (session && session.stream) post('/api/stop', { stream: session.stream }).catch(() => {});
+      showError(sc.reason === 'bedtime'
+        ? tr('C’est l’heure d’aller dormir : la lecture reprendra demain matin.')
+        : tr('Temps d’écran du jour écoulé : à demain !'));
+      return;
+    }
+    if (sc.left != null && sc.left <= 5 && !screenWarned) {
+      screenWarned = true;
+      toast(tr('Plus que {n} min de temps d’écran aujourd’hui', { n: Math.max(1, sc.left) }));
+    }
   }
 
   // ------------------------------------------------------------ UI updates

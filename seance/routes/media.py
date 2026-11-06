@@ -10,6 +10,7 @@ import time
 from .. import i18n, media
 from ..catalog import EXTERNAL_BASE, PREPARE_WINDOW_MS, RK, SID, WATCHED_RATIO, stream_lists
 from ..keyframes import mkv_keyframes
+from ..limits import LimitError, cap_quality
 from ..subtitles import parse_subtitles
 from ..downloads import DownloadError
 from ..transcoder import Busy, QUALITIES, QUALITY, StreamError, auto_quality, plan, source_kbps
@@ -303,9 +304,18 @@ def register(app, ctx, x):
         quality = b.get("quality") or prefs["quality"]
         if quality not in QUALITIES:
             raise HTTPError(400, "Qualité invalide")
+        try:
+            ctx.account_limits.check_play(req.user, b.get("replace"))  # temps d'écran, lectures simultanées du compte
+        except LimitError as e:
+            raise HTTPError(e.status, e.message.format(**e.values))
         requested, kbps = quality, measured_bandwidth(req, b)
+        cap = ctx.account_limits.remote_cap(req.user, req)  # débit maximum de ce compte hors du réseau local
+        if cap:
+            kbps = min(kbps, cap) if kbps else cap
         if quality == "auto":
             quality = auto_quality(probe, kbps, r["file_size"] or 0, r["duration_ms"] or 0)
+        if cap:
+            quality = cap_quality(quality, probe, cap, r["file_size"] or 0, r["duration_ms"] or 0)
         duration = int(r["duration_ms"] or 0)
         try:
             offset = max(0, int(b.get("offset") or 0))
@@ -329,7 +339,9 @@ def register(app, ctx, x):
             stop_stream(str(b["replace"]), uid)
         p = plan(probe, audio_id, burn, quality, caps, db.setting("downmix_algo", "none"),
                  float(db.setting("downmix_boost", "2") or 2), db.setting("tonemap", "hable"))
-        if requested == "auto" and p["mode"] == "transcode" and quality != "original" and kbps:
+        if cap and p["mode"] == "transcode" and quality != "original":
+            p["reasons"].append(f"débit limité à {cap / 1000:.1f} Mbit/s hors de la maison")
+        elif requested == "auto" and p["mode"] == "transcode" and quality != "original" and kbps:
             p["reasons"].append(f"connexion à {kbps / 1000:.1f} Mbit/s")
         if b.get("cast"):
             p["cast"] = True  # lu par une TV (Chromecast, AirPlay) : adresse du flux utilisable sans session
@@ -566,7 +578,13 @@ def register(app, ctx, x):
         state = b.get("state") if b.get("state") in ("playing", "paused", "stopped") else "playing"
         r = require_item(req.user, rk)
         watched = record_progress(req.user, r, pos, dur, state, str(b.get("stream") or ""), b.get("ended"))
-        return {"ok": True, "watched": watched}
+        out = {"ok": True, "watched": watched}
+        screen = ctx.account_limits.count(req.user, str(b.get("stream") or ""), state)
+        if screen:
+            # temps d'écran : le lecteur prévient quelques minutes avant, puis s'arrête
+            out["screen"] = {"left": screen["left"], "blocked": screen["blocked"], "reason": screen["reason"],
+                             "bedtime": screen["bedtime"]}
+        return out
 
     # ------------------------------------------------------------ téléchargements (hors ligne)
     JID = r"(?P<jid>[A-Za-z0-9_-]{8,20})"

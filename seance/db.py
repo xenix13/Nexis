@@ -535,6 +535,40 @@ MIGRATIONS = [
         PRIMARY KEY(item_id, lang)
     );
     """,
+    # 22 : alertes pour les administrateurs ; limites par compte (lectures simultanées, débit hors du réseau local) ;
+    # temps d'écran des profils (minutes par jour, heure du coucher) et temps regardé par jour
+    """
+    CREATE TABLE alerts(
+        key TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        url TEXT NOT NULL DEFAULT '#/admin/dashboard',
+        created_at INTEGER NOT NULL,
+        notified_at INTEGER NOT NULL,
+        resolved_at INTEGER
+    );
+    ALTER TABLE users ADD COLUMN max_streams INTEGER;
+    ALTER TABLE users ADD COLUMN remote_kbps INTEGER;
+    ALTER TABLE users ADD COLUMN daily_minutes INTEGER;
+    ALTER TABLE users ADD COLUMN bedtime TEXT;
+    CREATE TABLE screen_time(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        day TEXT NOT NULL,
+        seconds INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(user_id, day)
+    );
+    DROP TRIGGER users_fed_upd;
+    CREATE TRIGGER users_fed_upd AFTER UPDATE OF username, display_name, password_hash, is_admin, all_libraries,
+        disabled, avatar_color, pin_hash, managed, home, max_age, allow_unrated, avatar_ver, kids, totp_enabled,
+        totp_secret, totp_recovery, language, max_streams, remote_kbps, daily_minutes, bedtime, rev ON users
+        WHEN NEW.fseq IS OLD.fseq BEGIN
+        UPDATE fed_clock SET n=n+1;
+        UPDATE users SET fseq=(SELECT n FROM fed_clock),
+            rev=CASE WHEN NEW.rev IS OLD.rev THEN CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) ELSE NEW.rev END
+            WHERE id=NEW.id;
+    END;
+    """,
 ]
 
 

@@ -769,6 +769,10 @@ class TaskManager:
             ctx.db.set_setting(f"task_last:{task.id}", json.dumps({
                 "start": int(started), "end": int(time.time()), "status": status, "summary": summary[:300],
                 "reason": job.reason}))
+            try:
+                ctx.health.task_finished(task, status, tr(summary[:300]))
+            except Exception:
+                log.exception("Alerte de fin de tâche")
             ctx.db.release()
 
 

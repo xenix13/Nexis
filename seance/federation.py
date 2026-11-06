@@ -48,11 +48,13 @@ TUNNEL_TTL = 240         # s : une connexion de tunnel inutilis√©e est renouvel√
 CATALOG_PAGE = 400
 PROGRESS_PAGE = 1000
 HEX32 = re.compile(r"^[0-9a-f]{32}$")
+BEDTIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 ADDRESS = re.compile(r"^(\[[0-9a-fA-F:.]{2,45}\]|[A-Za-z0-9.-]{1,253})(:\d{1,5})?$")
 USER_FIELDS = ("username", "display_name", "password_hash", "is_admin", "all_libraries", "disabled", "avatar_color",
                "pin_hash", "managed", "home", "max_age", "allow_unrated", "avatar_ver", "kids", "totp_enabled",
-               "totp_secret", "totp_recovery", "language")
+               "totp_secret", "totp_recovery", "language", "max_streams", "remote_kbps", "daily_minutes", "bedtime")
+LIMIT_FIELDS = ("max_streams", "remote_kbps", "daily_minutes", "bedtime")  # depuis la 3.34 : absents chez un serveur plus ancien
 ITEM_LOCAL = {"id", "library_id", "parent_id", "show_id", "key", "fseq", "peer_id", "remote_id", "src_lib", "src_parent",
               "src_show", "alias_of"}
 ITEM_SUB = re.compile(r"^/api/items/(\d{1,12})/(prepare|subtitles/.+|fonts/.+|trickplay(?:/.+)?|chapters/.+)$")
@@ -964,6 +966,13 @@ class Federation:
                     fields["language"] = i18n.valid(fields["language"]) or None
                     if fields["max_age"] is not None and not isinstance(fields["max_age"], int):
                         fields["max_age"] = None
+                    for f in LIMIT_FIELDS:
+                        if f not in u:
+                            fields.pop(f)  # serveur d'une version plus ancienne : nos limites restent
+                        elif f == "bedtime":
+                            fields[f] = u[f] if isinstance(u[f], str) and BEDTIME.match(u[f]) else None
+                        elif not isinstance(u[f], int) or isinstance(u[f], bool) or u[f] <= 0:
+                            fields[f] = None
                     if local:
                         if mode == "adopt" and local["is_admin"]:
                             fields["is_admin"] = 1  # on ne perd pas l'administration de ce serveur en le liant

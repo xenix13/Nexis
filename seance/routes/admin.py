@@ -10,6 +10,7 @@ import threading
 import time
 
 from .. import __version__ as VERSION, i18n, media, mountd, transcoder, twofa, update
+from ..limits import valid_limits
 from ..auth import USERNAME, USERNAME_RULE, find_user, hash_password, normalize_username, validate_password
 from ..catalog import HEX, RK, SID
 from ..metadata import MetaError
@@ -31,6 +32,9 @@ def register(app, ctx, x):
         v = user_view(u)
         v.update(all_libraries=bool(u["all_libraries"]), disabled=bool(u["disabled"]), created_at=u["created_at"],
                  allow_unrated=bool(u["allow_unrated"]),
+                 max_streams=u["max_streams"], remote_kbps=u["remote_kbps"], daily_minutes=u["daily_minutes"],
+                 bedtime=u["bedtime"],
+                 screen_used=(ctx.account_limits.used_today(u["id"]) // 60) if u["daily_minutes"] else None,
                  libraries=[r["section_id"] for r in db.all(
                      "SELECT section_id FROM user_libraries WHERE user_id=?", (u["id"],))],
                  last_seen=db.scalar("SELECT MAX(last_seen) FROM sessions WHERE user_id=?", (u["id"],)))
@@ -66,6 +70,13 @@ def register(app, ctx, x):
             fields["max_age"] = b["max_age"]
         if "pin" in b:
             fields["pin_hash"] = hash_pin(b["pin"])
+        try:
+            fields.update(valid_limits(b))  # lectures simultanées, débit hors de la maison, temps d'écran
+        except ValueError as e:
+            raise HTTPError(400, {"max_streams": "Lectures simultanées : de 1 à 20",
+                                  "remote_kbps": "Débit hors de la maison : de 0,5 à 200 Mbit/s",
+                                  "daily_minutes": "Temps d'écran : de 10 minutes à 24 heures par jour",
+                                  "bedtime": "Heure du coucher invalide (ex. 21:00-07:00)"}.get(str(e), "Limite invalide"))
         if "language" in b:
             if b["language"] is not None and not i18n.valid(b["language"]):
                 raise HTTPError(400, "Langue invalide")
