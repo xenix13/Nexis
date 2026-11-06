@@ -122,6 +122,12 @@ Les actions tierces (`docker/build-push-action@v6`, `gradle/actions/setup-gradle
 - **Fichiers envoyés.** Archive de sauvegarde (8 Go au plus) et export Letterboxd (20 Mo au plus) sont lus par morceaux, sans passer par la limite des requêtes ordinaires (1 Mo) ; un envoi incomplet ferme la connexion.
 - **Limites et temps d'écran.** Appliqués par le serveur au lancement de chaque lecture et à chaque compte rendu de lecture, pas seulement par l'interface.
 
+## 12. Administration des serveurs liés depuis l'un d'eux (nouveau, 3.38.0)
+
+- **Principe.** Une requête d'administration (`/api/admin/…`) faite depuis la page d'un serveur, avec le serveur lié choisi dans le sélecteur, lui est transmise par la liaison TLS à certificats épinglés, signée par la clé du jumelage et au nom du compte (même identifiant sur les deux serveurs). Le serveur réglé vérifie lui-même que ce compte, chez lui, est administrateur et actif : un compte ordinaire d'un serveur ne devient pas administrateur de l'autre.
+- **Niveau de confiance.** Il ne change pas : des serveurs liés se répliquent déjà leurs comptes, droits compris. Un serveur compromis pouvait donc déjà se donner un administrateur sur l'autre. L'administration à distance peut être refusée par chaque serveur, réglage modifiable seulement sur place (jamais par un serveur lié), et chaque action reçue est notée dans son journal avec le compte et le serveur d'origine.
+- **Périmètre.** Seules les routes `/api/admin/…` sont acceptées à ce titre ; le reste de l'API (profil, préférences, historique) reste fermé aux requêtes entre serveurs au nom d'un compte. La liste des serveurs administrables n'est jamais relayée.
+
 ## Recommandations par priorité
 
 1. Sécuriser le compte GitHub et la branche `main` ; mettre à jour vers des versions publiées et signées (§ 1).

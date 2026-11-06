@@ -1683,4 +1683,12 @@ export default {
   "À reprendre": "Continue listening",
   "Écouter": "Listen",
   "écouté": "played",
+  "Administration depuis les serveurs liés": "Administration from linked servers",
+  "Les administrateurs peuvent régler ce serveur depuis un serveur lié": "Administrators can manage this server from a linked server",
+  "Les réglages de ces pages s’appliquent à « {name} », relayés par ce serveur. Vos préférences (Mon compte) restent celles de ce serveur.": "Settings on these pages apply to “{name}”, relayed by this server. Your preferences (My account) stay those of this server.",
+  "Mise à jour lancée sur « {name} » : il redémarre dans une à deux minutes": "Update started on “{name}”: it restarts in one to two minutes",
+  "Serveur administré": "Managed server",
+  "Un administrateur connecté à un autre serveur de la liste choisit ce serveur en haut des pages d’administration et règle tout comme s’il était connecté ici, avec son propre compte (le même sur tous les serveurs). Chaque action est notée dans le journal de ce serveur. Ce réglage ne se change que sur place.": "An administrator signed in to another server in the list picks this server at the top of the administration pages and manages everything as if signed in here, with their own account (the same on every server). Each action is written to this server's log. This setting can only be changed here.",
+  "{name} (ce serveur)": "{name} (this server)",
+  "{name} (injoignable)": "{name} (unreachable)",
 };

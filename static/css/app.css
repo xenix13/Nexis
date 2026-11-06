@@ -1371,3 +1371,10 @@ html.has-audio body { padding-bottom: 96px; }
   .book-cover.big { width: 60vw; }
   .book-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
 }
+
+/* administration d'un serveur lié : sélecteur en haut des pages d'administration */
+.server-pick { margin-bottom: 18px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
+.server-pick label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-weight: 600; }
+.server-pick select { flex: 1; min-width: 200px; max-width: 420px; }
+.server-pick.remote { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.server-pick p { margin: 8px 0 0; }

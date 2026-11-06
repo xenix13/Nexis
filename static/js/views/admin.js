@@ -1,4 +1,4 @@
-import { del, get, post, put } from '../api.js';
+import { adminTarget, adminUrl, del, get, post, put } from '../api.js';
 import { refreshMe, state } from '../app.js';
 import { followUpdate } from '../updater.js';
 import { avatar, clear, confirmDialog, field, fmtTime, h, icon, modal, select, toast, toggle } from '../ui.js';
@@ -690,8 +690,9 @@ const downloadsPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
 
 // --------------------------------------------------------------- mise à jour
 // La vérification interroge GitHub (résultat gardé 30 min côté serveur) ; le bouton force une nouvelle vérification.
-function updatePage(body) {
-  const version = state.status.version;
+async function updatePage(body) {
+  // serveur lié choisi dans le sélecteur : sa version, pas celle de ce serveur
+  const version = adminTarget() ? (await get('/api/admin/update')).current : state.status.version;
   const box = h('div');
   const checkBtn = h('button.btn', { onclick: () => load(true) }, tr('Rechercher une mise à jour'));
   const checked = h('span.muted.small');
@@ -759,6 +760,8 @@ function updatePage(body) {
 async function runUpdate(version) {
   if (!await confirmDialog(tr('Mettre à jour Nexis ?'), tr('Le serveur télécharge la nouvelle version puis redémarre (une à deux minutes). Les lectures en cours seront interrompues.'), tr('Mettre à jour'), false)) return;
   try { await post('/api/admin/update'); } catch (e) { toast(e.message, 'bad'); return; }
+  const remote = adminTarget();
+  if (remote) { toast(tr('Mise à jour lancée sur « {name} » : il redémarre dans une à deux minutes', { name: remote.name }), 'ok'); return; }
   followUpdate(version);
 }
 
@@ -1030,8 +1033,9 @@ async function liveTab(body, ctx) {
 const MODES = { direct: tr('Lecture directe'), copy: tr('Remux (vidéo copiée)'), transcode: tr('Transcodage') };
 
 async function dashboardPage(body, ctx) {
-  const version = state.status.version;
-  const latest = state.me.update;
+  const remote = adminTarget();
+  const version = remote ? (await get('/api/admin/settings')).version : state.status.version;
+  const latest = remote ? null : state.me.update;
   const versionCard = h('div.panel.scan', h('strong', `Nexis ${version}`), latest
     ? h('div.small', h('span.tag.accent', tr('Mise à jour')), tr(' Nexis {latest} est disponible · ', { latest }), h('a', { href: '#/admin/update' }, tr('Mettre à jour')))
     : h('div.muted.small', tr('À jour (vérification automatique toutes les 6 heures) · '), h('a', { href: '#/admin/update' }, tr('Détails'))));
@@ -1181,6 +1185,20 @@ async function joinDialog() {
 
 const shortPrint = (fp) => (fp ? fp.slice(0, 32).toUpperCase().match(/.{4}/g).join(' ') : '—');
 
+// Accepter ou non d'être administré depuis un serveur lié (réglé sur place : jamais depuis un autre serveur)
+function remoteAdminPanel() {
+  if (adminTarget()) return null;
+  const box = h('section.panel', h('h2', tr('Administration depuis les serveurs liés')));
+  get('/api/admin/servers').then((sv) => {
+    const t = toggle(tr('Les administrateurs peuvent régler ce serveur depuis un serveur lié'), sv.remote_admin);
+    t.querySelector('input').addEventListener('change', async (e) => {
+      try { await put('/api/admin/servers', { remote_admin: e.target.checked }); toast(tr('Enregistré'), 'ok'); } catch (ex) { toast(ex.message, 'bad'); }
+    });
+    box.append(h('p.muted.small', tr('Un administrateur connecté à un autre serveur de la liste choisit ce serveur en haut des pages d’administration et règle tout comme s’il était connecté ici, avec son propre compte (le même sur tous les serveurs). Chaque action est notée dans le journal de ce serveur. Ce réglage ne se change que sur place.')), t);
+  }).catch(() => {});
+  return box;
+}
+
 async function federationPage(body, ctx) {
   const render = (v) => {
     if (!ctx.isCurrent()) return;
@@ -1249,7 +1267,7 @@ async function federationPage(body, ctx) {
       h('div.toolbar', h('div.actions-row',
           h('button.btn', { onclick: async () => { const r = await joinDialog(); if (r) { toast(tr('Serveurs liés'), 'ok'); await refreshMe(); render(r); } } }, tr('Rejoindre un serveur')),
           h('button.btn.primary', { onclick: async () => { await inviteDialog(v); load(); } }, tr('+ Inviter un serveur')))),
-      peers, me,
+      peers, me, remoteAdminPanel(),
       h('section.panel', h('h2', tr('Comment ça marche')), h('ul.small.muted',
         h('li', tr('Les deux serveurs se reconnaissent par leur certificat, échangé à l’invitation, et chiffrent tout ce qu’ils s’envoient (TLS). Pas besoin de VPN ni de nom de domaine, et cela marche aussi en HTTP sur le réseau local.')),
         h('li', tr('Un seul des deux doit pouvoir joindre l’autre : celui qui ne l’est pas ouvre lui-même un tunnel vers lui. Rien à ouvrir sur sa box.')),
@@ -1332,7 +1350,7 @@ async function backupsPage(body, ctx) {
       if (!f) return;
       toast(tr('Envoi de la sauvegarde…'));
       try {
-        const r = await fetch('/api/admin/backups/upload', { method: 'POST', body: f, credentials: 'same-origin',
+        const r = await fetch(adminUrl('/api/admin/backups/upload'), { method: 'POST', body: f, credentials: 'same-origin',
           headers: { 'X-Seance': '1', 'Content-Type': 'application/gzip' } });
         const j = await r.json();
         if (!r.ok) throw new Error(j.error || r.statusText);
@@ -1347,7 +1365,7 @@ async function backupsPage(body, ctx) {
           b.name.includes('-envoi') ? tr('envoyée') : b.auto ? tr('automatique') : tr('manuelle')].filter(Boolean).join(' · '),
         b.broken ? h('span.bad', ` · ${tr('illisible')}`) : null)),
       h('div.actions-row',
-        h('a.btn.small', { href: `/api/admin/backups/${b.name}`, download: b.name }, icon('download'), tr('Télécharger')),
+        h('a.btn.small', { href: adminUrl(`/api/admin/backups/${b.name}`), download: b.name }, icon('download'), tr('Télécharger')),
         h('button.btn.small', { disabled: !!b.broken, onclick: async () => {
           if (!await confirmDialog(tr('Restaurer cette sauvegarde ?'), tr('Comptes, historique, réglages et bibliothèques reviennent à leur état du {date}. Ce qui a changé depuis est perdu (l’état actuel reste gardé dans le dossier de données, sous « before-restore »). Nexis redémarre.', { date: when(b.created) }), tr('Restaurer'))) return;
           try {

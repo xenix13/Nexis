@@ -35,7 +35,7 @@ from .names import fold
 from .catalog import CARD_SQL, SID, stream_lists
 from .discover import Seerr, SeerrError
 from .metadata import TMDB, MetaError
-from .web import HTTPError, Response, TLSServer, json_response, make_handler
+from .web import MAX_BODY, HTTPError, Response, TLSServer, json_response, make_handler
 
 log = logging.getLogger("seance.fed")
 
@@ -72,6 +72,24 @@ SEERR_ALLOWED = (("GET", re.compile(r"^/media\?[A-Za-z0-9=&_.-]{0,200}$")),
 PEER_USER_PATHS = re.compile(r"^/api/(play|progress|stop|stream/.+|downloads(/options|/[A-Za-z0-9_-]{8,20}(/file)?)?|"
                              r"items/\d{1,12}/(prepare|subtitles/.+|fonts/.+|"
                              r"trickplay(/.+)?|chapters/.+|watched))$")
+# administration à distance : un administrateur connecté à un serveur lié règle celui-ci (même compte, répliqué)
+PEER_ADMIN_PATHS = re.compile(r"^/api/admin/.+$")
+LOCAL_ADMIN_ONLY = re.compile(r"^/api/admin/servers$")  # la liste des serveurs administrables : toujours d'ici
+STREAMED_UPLOAD = re.compile(r"^/api/admin/backups/upload$")
+
+
+class _Limited:
+    """Corps d'une requête lu au fur et à mesure (au plus `left` octets), pour le relayer sans le copier en mémoire."""
+
+    def __init__(self, f, left):
+        self.f, self.left = f, left
+
+    def read(self, n=65536):
+        if self.left <= 0:
+            return b""
+        chunk = self.f.read(min(n, self.left, 1024 * 1024))
+        self.left -= len(chunk)
+        return chunk
 
 
 class FedError(Exception):
@@ -489,7 +507,7 @@ class Federation:
              "X-Lang": i18n.current()}
         if user:
             h["X-Fed-User"] = user["uid"]
-        if body is not None and not isinstance(body, bytes):
+        if isinstance(body, (dict, list)):
             body = json.dumps(body).encode()
             h["Content-Type"] = "application/json"
         h.update(headers or {})
@@ -1356,7 +1374,16 @@ class Federation:
         if qs:
             path += "?" + qs
         headers = {k: req.headers[k] for k in ("Range", "If-None-Match") if req.headers.get(k)}
-        body = req.body if req.method in ("POST", "PUT") else None
+        body = None
+        if req.method in ("POST", "PUT"):
+            length = int(req.headers.get("Content-Length") or 0) if str(req.headers.get("Content-Length") or "0").isdigit() else 0
+            if STREAMED_UPLOAD.match(path.split("?")[0]) and length > MAX_BODY:
+                # gros fichier (archive de sauvegarde) : transmis par morceaux, sans tout garder en mémoire
+                body = _Limited(req.handler.rfile, length)
+                headers["Content-Length"] = str(length)
+                req._body = b""
+            else:
+                body = req.body
         self.ctx.db.release()
         try:
             resp, close = self.request(peer, req.method, path, body, headers=headers, user=req.user, timeout=90)
@@ -1374,6 +1401,18 @@ class Federation:
                 yield chunk
         return Response(stream=gen(), status=resp.status, content_type=resp.getheader("Content-Type") or "application/octet-stream",
                         length=int(length) if length and length.isdigit() else None, headers=out, on_close=close)
+
+    def admin_relay(self, req, target):
+        """Paramètres d'un serveur lié, choisis dans le sélecteur de serveur : la requête d'administration lui est
+        transmise telle quelle, au nom du même administrateur (il vérifie lui-même ses droits)."""
+        try:
+            pid = int(target)
+            peer = self.peer(pid)
+        except (ValueError, FedError):
+            raise HTTPError(404, "Serveur lié introuvable")
+        req.query = {k: v for k, v in req.query.items() if k != "_server"}
+        log.info("Administration de %s par %s : %s %s", peer["name"], req.user["username"], req.method, req.path)
+        return self.relay(req, pid, req.path)
 
     def active_source(self, user_id, rk):
         """Copie d'un serveur lié en cours de lecture par ce compte pour cet élément (la plus récente)."""
@@ -1997,6 +2036,22 @@ def register(app, ctx, x):
             return fn(*args)
         except FedError as e:
             raise HTTPError(404 if "introuvable" in str(e) else 502, str(e))
+
+    # ------------------------------------------------------------ administration des serveurs liés depuis celui-ci
+    @app.route("GET", "/api/admin/servers", auth="admin")
+    def admin_servers(req):
+        """Serveurs que cet administrateur peut régler depuis ici : celui-ci, et les serveurs liés."""
+        return {"local": {"id": "", "name": fed.name(), "version": __version__},
+                "peers": [{"id": str(p["id"]), "name": p["name"], "online": bool(p["online"]), "version": p["version"]}
+                          for p in fed.peers()],
+                "remote_admin": db.setting("fed_remote_admin", "1") == "1"}
+
+    @app.route("PUT", "/api/admin/servers", auth="admin")
+    def admin_servers_put(req):
+        """Accepter ou non d'être administré depuis un serveur lié (réglage propre à chaque serveur, fait sur place)."""
+        if "remote_admin" in req.json():
+            db.set_setting("fed_remote_admin", "1" if req.json()["remote_admin"] else "0")
+        return admin_servers(req)
 
     @app.route("GET", "/api/admin/federation", auth="admin")
     def admin_federation(req):

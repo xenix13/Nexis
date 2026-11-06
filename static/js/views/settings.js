@@ -1,4 +1,4 @@
-import { del, get, post, put } from '../api.js';
+import { adminTarget, del, get, post, put, setAdminTarget } from '../api.js';
 import { qrSvg } from '../qr.js';
 import { ADMIN_ALIASES, ADMIN_GROUPS, renderAdminSection } from './admin.js';
 import { applyPrefs, navItems, refreshMe, repaintNav, repaintUser, state } from '../app.js';
@@ -668,10 +668,34 @@ export async function renderSettingsArea(main, area, section, ctx) {
   });
 
   const body = h('div.settings-body');
+  // administration des serveurs liés : choix du serveur réglé par les pages « Serveur », « Médiathèque », « Lecture »
+  const serverBar = h('div.server-pick', { hidden: true });
   const content = h('section.settings-content',
     h('a.settings-back', { href: `#/${area}` }, icon('back'), tr('Paramètres')),
+    current.area === 'admin' ? serverBar : null,
     h('header.settings-head', h('h2', current.label), h('p.muted', current.lead)),
     body);
+  if (current.area === 'admin') {
+    try {
+      const sv = await get('/api/admin/servers');
+      const t = adminTarget();
+      if (t && !sv.peers.some((p) => p.id === t.id)) setAdminTarget(null);  // serveur délié depuis
+      if (sv.peers.length) {
+        const sel = select([['', tr('{name} (ce serveur)', { name: sv.local.name })],
+          ...sv.peers.map((p) => [p.id, p.online ? p.name : tr('{name} (injoignable)', { name: p.name })])], (adminTarget() || {}).id || '');
+        sel.addEventListener('change', () => {
+          const p = sv.peers.find((x) => x.id === sel.value);
+          setAdminTarget(p ? { id: p.id, name: p.name } : null);
+          renderSettingsArea(main, area, section, ctx);
+        });
+        const remote = adminTarget();
+        serverBar.className = remote ? 'server-pick remote' : 'server-pick';
+        serverBar.replaceChildren(h('label', icon('link'), h('span', tr('Serveur administré')), sel),
+          remote ? h('p.small', tr('Les réglages de ces pages s’appliquent à « {name} », relayés par ce serveur. Vos préférences (Mon compte) restent celles de ce serveur.', { name: remote.name })) : null);
+        serverBar.hidden = false;
+      }
+    } catch { setAdminTarget(null); }
+  }
   clear(main, h('div.settings-page', { class: section ? 'settings-page' : 'settings-page no-section' },
     h('div.page-head', h('h1', tr('Paramètres'))), h('div.settings-layout', nav, content)));
   document.title = tr('{label} · Paramètres · Nexis', { label: current.label });

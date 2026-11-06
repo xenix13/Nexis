@@ -199,9 +199,15 @@ def build_app(ctx):
         if req.fed_peer:
             # requête d'un serveur lié au nom d'un compte (le même, répliqué) : la lecture d'un élément de ce
             # serveur depuis l'autre. Pas de cookie ni d'en-tête anti-CSRF : la requête est signée par le serveur.
-            if not federation.PEER_USER_PATHS.match(req.path):
+            remote_admin = federation.PEER_ADMIN_PATHS.match(req.path)
+            if not (federation.PEER_USER_PATHS.match(req.path) or remote_admin):
                 raise HTTPError(403, "Non autorisé entre serveurs liés")
+            if remote_admin and db.setting("fed_remote_admin", "1") != "1":
+                raise HTTPError(403, "Ce serveur n'accepte pas d'être administré depuis un serveur lié")
             req.user = ctx.fed.user_for(req)
+            if remote_admin and req.user:
+                log.info("Administration depuis %s par %s : %s %s", req.fed_peer["name"], req.user["username"],
+                         req.method, req.path)
         else:
             # protection CSRF : un autre site ne peut pas ajouter cet en-tête sans l'accord du serveur (CORS)
             if req.method != "GET" and req.headers.get("X-Seance") != "1":
@@ -218,6 +224,12 @@ def build_app(ctx):
                 ctx.throttle.fail("setup:" + req.client_ip)
                 raise HTTPError(403, "Code d'installation invalide")
         if not req.fed_peer:
+            # paramètres d'un serveur lié choisi dans le sélecteur : la requête d'administration lui est transmise
+            target = req.headers.get("X-Nexis-Server") or req.arg("_server")
+            if target and req.path.startswith("/api/admin/") and not federation.LOCAL_ADMIN_ONLY.match(req.path):
+                if not (req.user and req.user["is_admin"]):
+                    raise HTTPError(403, "Réservé aux administrateurs")
+                return ctx.fed.admin_relay(req, target)
             # élément d'un serveur lié : la requête lui est relayée (ou il est prévenu)
             return ctx.fed.intercept(req)
     app.before.append(before)

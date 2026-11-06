@@ -646,4 +646,5 @@ EN = {
     "{} nouvel(s) épisode(s) dans {} podcast(s), {} flux en erreur": "{} new episode(s) in {} podcast(s), {} feed(s) failing",
     "Recherche des livres audio": "Looking for audiobooks",
     "Analyse des livres audio": "Analyzing audiobooks",
+    "Ce serveur n'accepte pas d'être administré depuis un serveur lié": "This server does not accept being managed from a linked server",
 }
