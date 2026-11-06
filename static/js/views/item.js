@@ -191,6 +191,16 @@ function itemMenu(d, rerender) {
   if (['movie', 'episode'].includes(d.type) && state.me.features && state.me.features.opensubtitles) {
     items.push({ label: tr('Chercher des sous-titres…'), onClick: () => subtitleSearch(d, rerender) });
   }
+  if (['movie', 'episode'].includes(d.type) && state.me.features && state.me.features.whisper) {
+    const generated = (d.subtitles || []).some((s) => s.generated);
+    items.push({ label: generated ? tr('Retirer les sous-titres générés (Whisper)') : tr('Générer les sous-titres (Whisper)'), onClick: async () => {
+      try {
+        if (generated) { await del(`/api/items/${d.id}/whisper`); toast(tr('Sous-titres générés retirés'), 'ok'); rerender(); return; }
+        const r = await post(`/api/items/${d.id}/whisper`);
+        toast(r.queue.length > 1 ? tr('Ajouté à la file ({n} en attente)', { n: r.queue.length }) : tr('Génération lancée : les sous-titres apparaîtront une fois la transcription finie'), 'ok');
+      } catch (e) { toast(e.message, 'bad'); }
+    } });
+  }
   if (['movie', 'show'].includes(d.type)) {
     // masqué pour soi : disparaît des listes (bibliothèques, accueil, recherche), la fiche reste accessible
     items.push({ label: d.hidden ? tr('Ne plus masquer') : tr('Masquer pour moi'), onClick: async () => {

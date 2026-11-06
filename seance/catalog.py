@@ -213,9 +213,11 @@ def stream_lists(probe):
             bits.append(tr("forcés"))
         if e.get("sdh"):
             bits.append("SDH")
+        if e.get("dl") == "whisper":
+            bits.append(tr("généré"))
         subs.append({"id": EXTERNAL_BASE + n, "lang": lang, "title": f"{label} ({', '.join(bits)})",
                      "codec": e["codec"], "forced": e.get("forced", False), "external": True, "overlay": True,
-                     "ass": e["codec"] in ("ass", "ssa"), "selected": False})
+                     "ass": e["codec"] in ("ass", "ssa"), "selected": False, "generated": e.get("dl") == "whisper"})
     return audio, subs
 
 

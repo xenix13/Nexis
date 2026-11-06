@@ -496,6 +496,55 @@ class OpenSubtitlesTask(Task):
         return f"{got} sous-titre(s) téléchargé(s) pour {searched} titre(s)" if todo else "Rien à chercher"
 
 
+class WhisperTask(Task):
+    id = "whisper"
+    name = "Générer les sous-titres manquants (Whisper)"
+    description = ("Transcrit la voix des films et épisodes qui n'ont aucun sous-titre dans la langue parlée, une fois "
+                   "OpenSubtitles passé. Très long sans carte graphique ni service dédié : à réserver aux heures creuses.")
+    category = "Lecture"
+    heavy = True
+    default = {"mode": "off"}
+    options = [opt_int("per_run", "Au plus", 3, 1, 100, "titres par passage"), PAUSE, opt_libraries()]
+
+    def available(self, ctx):
+        return ctx.whisper.available()
+
+    def run(self, ctx, job, opts):
+        from .opensubs import FAIL_RETRY
+        clause, args = lib_clause(opts)
+        rows = ctx.db.all("SELECT i.* FROM items i WHERE i.type IN ('movie','episode') AND i.probe IS NOT NULL" + clause +
+                          " ORDER BY i.added_at DESC, i.id DESC", args)
+        tried = {(r["item_id"], r["lang"]): r for r in ctx.db.all("SELECT * FROM subs_attempts WHERE lang LIKE 'w:%'")}
+        ctx.db.release()
+        now = time.time()
+        todo = []
+        for r in rows:
+            lang = ctx.whisper.needs(json.loads(r["probe"] or "{}"))
+            t = tried.get((r["id"], f"w:{lang if lang != 'und' else ''}"))
+            if lang and not (t and (t["result"] == "removed" or now - t["at"] < FAIL_RETRY)):
+                todo.append(r)
+        todo = todo[:int(opts.get("per_run", 3))]
+        done = 0
+        for n, r in enumerate(todo):
+            job.message = r["title"]
+            base = n / max(1, len(todo))
+            try:
+                ctx.whisper.generate(r, progress=lambda p: setattr(job, "progress", base + p / len(todo)),
+                                     check=job.wait_idle)
+                done += 1
+            except Cancelled:
+                raise
+            except Exception as e:
+                log.warning("Whisper, %s : %s", r["title"], e)
+                lang = ctx.whisper.needs(json.loads(r["probe"] or "{}")) or ""
+                ctx.db.run("INSERT INTO subs_attempts(item_id, lang, at, result) VALUES(?,?,?, 'none') ON CONFLICT(item_id, lang) "
+                           "DO UPDATE SET at=excluded.at, result='none'", (r["id"], f"w:{lang if lang != 'und' else ''}", int(time.time())))
+            finally:
+                ctx.db.release()
+        job.progress = 1
+        return f"{done} sous-titre(s) généré(s) sur {len(todo)}" if todo else "Rien à transcrire"
+
+
 class BackupTask(Task):
     id = "backup"
     name = "Sauvegarder le serveur"
@@ -518,7 +567,7 @@ class BackupTask(Task):
         return f"{b['name']} ({b['size'] / 1e6:.1f} Mo)"
 
 
-TASKS = [ScanTask(), MetadataTask(), ChapterImagesTask(), IntroTask(), SubtitlesTask(), OpenSubtitlesTask(), LiveTask(),
+TASKS = [ScanTask(), MetadataTask(), ChapterImagesTask(), IntroTask(), SubtitlesTask(), OpenSubtitlesTask(), WhisperTask(), LiveTask(),
          CleanupTask(), BackupTask()]
 
 

@@ -265,6 +265,15 @@ Nexis télécharge lui-même les sous-titres qui manquent, sans Bazarr ni autre 
 - **À la main.** Sur la fiche d'un film ou d'un épisode, menu ⋯ → *Chercher des sous-titres…* liste les sous-titres trouvés (calés sur ce fichier, SDH, traduction automatique) ; un clic les ajoute. Un administrateur peut y retirer un sous-titre téléchargé : il n'est alors plus retéléchargé automatiquement.
 - **Stockage.** Les fichiers vont dans `data/subtitles/`, jamais à côté des vidéos (montées en lecture seule) ; ils font partie des sauvegardes et restent après un nouveau scan. Le mot de passe OpenSubtitles est enregistré dans la base de Nexis (nécessaire pour se connecter à l'API) et n'est jamais renvoyé à l'interface.
 
+### Sous-titres générés à partir de la voix : Whisper
+
+Pour une vidéo qui n'a aucun sous-titre dans la langue parlée, même après OpenSubtitles, Whisper écrit les sous-titres à partir de la voix. Ils sont **dans la langue parlée** (Whisper ne traduit que vers l'anglais) et marqués « généré » dans le lecteur. *Paramètres → Lecture → Sous-titres et son → Whisper*, au choix :
+
+- **Service de transcription** (recommandé, surtout avec l'image Docker) : tout service compatible avec l'API d'OpenAI (`/v1/audio/transcriptions`). Par exemple [Speaches](https://speaches-ai.github.io/speaches/) (faster-whisper) dans un conteneur à côté de Nexis, avec une carte graphique si possible, et le modèle `Systran/faster-whisper-small`. OpenAI fonctionne aussi (modèle `whisper-1`, clé d'API), mais l'audio des vidéos part alors sur Internet. Nexis envoie l'audio par morceaux de 10 minutes (MP3 mono).
+- **Sur le serveur** : avec ffmpeg 8 compilé avec whisper.cpp (filtre `whisper`) ou le programme `whisper-cli` de whisper.cpp. Nexis télécharge le modèle choisi (tiny, base, small, medium) dans `data/whisper`. L'image Docker ne contient ni l'un ni l'autre.
+
+C'est un calcul long (de quelques minutes à plus d'une heure par film sur un processeur). Il se fait une vidéo à la fois et se met en pause pendant les lectures. À la main : fiche d'un film ou d'un épisode, menu ⋯ → *Générer les sous-titres (Whisper)* (administrateurs). Automatique : tâche *Générer les sous-titres manquants (Whisper)*, désactivée par défaut, qui traite au plus 3 titres par passage.
+
 ### Sous-titres ASS
 
 Les sous-titres ASS (fansubs, plateformes d'animes) contiennent des panneaux positionnés, des dessins, du karaoké et des polices jointes au MKV. Nexis les fait rendre dans le navigateur par **libass**, compilé en WebAssembly via [JASSUB](https://github.com/ThaUnknown/jassub) (fourni dans `static/vendor/jassub`, licences dans ce dossier). Seules les polices utilisées par la piste sont téléchargées. Sur un navigateur trop ancien, un affichage texte simplifié est utilisé.
@@ -421,6 +430,7 @@ Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et u
 | Détecter les intros et génériques | chaque nuit et après chaque ajout | zones analysées, durées min. et max., générique de fin, épisodes à chapitres nommés |
 | Préparer les sous-titres et les aperçus | chaque nuit | |
 | Télécharger les sous-titres manquants | chaque nuit à 6 h 10 et après chaque ajout (OpenSubtitles configuré) | bibliothèques |
+| Générer les sous-titres manquants (Whisper) | désactivée | titres par passage, pause pendant les lectures, bibliothèques |
 | Actualiser les chaînes et le guide TV | toutes les 12 h | vérification des chaînes |
 | Nettoyer les caches | chaque nuit | ancienneté des images conservées |
 | Sauvegarder le serveur | chaque nuit à 4 h 30 | nombre de sauvegardes automatiques gardées |

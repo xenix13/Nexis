@@ -258,26 +258,11 @@ class OpenSubtitles:
     # ------------------------------------------------------------ enregistrement
     def save(self, row, result, data):
         """Écrit le sous-titre et l'ajoute aux sous-titres externes du titre -> entrée ajoutée."""
-        db = self.ctx.db
-        folder = os.path.join(self.ctx.data_dir, "subtitles", str(int(row["id"])))
-        os.makedirs(folder, exist_ok=True)
-        path = os.path.join(folder, f"{result['lang']}-{int(result['file_id'])}.srt")
-        with open(path + ".tmp", "wb") as f:
-            f.write(data)
-        os.replace(path + ".tmp", path)
-        entry = {"path": path, "codec": "subrip", "lang": result["lang"], "forced": False, "sdh": bool(result.get("hi")),
-                 "dl": "opensubtitles", "file_id": int(result["file_id"]), "release": result.get("release") or ""}
-        with db.tx():
-            cur = db.one("SELECT probe FROM items WHERE id=?", (row["id"],))
-            probe = json.loads((cur or {}).get("probe") or "{}")
-            ext = [e for e in probe.get("external", []) if e.get("path") != path]
-            ext.append(entry)
-            probe["external"] = ext
-            db.run("UPDATE items SET probe=? WHERE id=?", (json.dumps(probe), row["id"]))
-            db.run("DELETE FROM subs_attempts WHERE item_id=? AND lang=?", (row["id"], result["lang"]))
-        return entry
+        return attach(self.ctx, row, f"{result['lang']}-{int(result['file_id'])}.srt", data, result["lang"],
+                      {"sdh": bool(result.get("hi")), "dl": "opensubtitles", "file_id": int(result["file_id"]),
+                       "release": result.get("release") or ""})
 
-    def remove(self, row, path):
+    def remove(self, row, path, mark=None):
         db = self.ctx.db
         with db.tx():
             cur = db.one("SELECT probe FROM items WHERE id=?", (row["id"],))
@@ -289,7 +274,7 @@ class OpenSubtitles:
             probe["external"] = keep
             db.run("UPDATE items SET probe=? WHERE id=?", (json.dumps(probe), row["id"]))
             # pas de nouvelle recherche automatique pour cette langue : la personne n'en voulait pas
-            lang = next((e["lang"] for e in ext if e.get("path") == path), "")
+            lang = mark or next((e["lang"] for e in ext if e.get("path") == path), "")
             db.run("INSERT INTO subs_attempts(item_id, lang, at, result) VALUES(?,?,?, 'removed') ON CONFLICT(item_id, lang) "
                    "DO UPDATE SET at=excluded.at, result='removed'", (row["id"], lang, int(time.time())))
         try:
@@ -324,6 +309,28 @@ class OpenSubtitles:
             self.save(row, pick, self.download(pick["file_id"]))
             got += 1
         return got, len(want)
+
+
+def attach(ctx, row, name, data, lang, extra):
+    """Sous-titre obtenu par Nexis (OpenSubtitles, Whisper) : écrit dans data/subtitles/<titre>/ et ajouté aux
+    sous-titres externes du titre -> entrée ajoutée."""
+    db = ctx.db
+    folder = os.path.join(ctx.data_dir, "subtitles", str(int(row["id"])))
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, name)
+    with open(path + ".tmp", "wb") as f:
+        f.write(data)
+    os.replace(path + ".tmp", path)
+    entry = {"path": path, "codec": "subrip", "lang": lang, "forced": False, "sdh": False, **extra}
+    with db.tx():
+        cur = db.one("SELECT probe FROM items WHERE id=?", (row["id"],))
+        probe = json.loads((cur or {}).get("probe") or "{}")
+        ext = [e for e in probe.get("external", []) if e.get("path") != path]
+        ext.append(entry)
+        probe["external"] = ext
+        db.run("UPDATE items SET probe=? WHERE id=?", (json.dumps(probe), row["id"]))
+        db.run("DELETE FROM subs_attempts WHERE item_id=? AND lang=?", (row["id"], lang))
+    return entry
 
 
 def keep_downloaded(old_probe, new_external):

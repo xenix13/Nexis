@@ -140,7 +140,8 @@ def register(app, ctx, x):
                              "requests": bool(db.setting("seerr_url") and db.setting("seerr_key") or ctx.fed.provider("seerr")),
                              "live": x.live_available(req.user),
                              "downloads": db.setting("downloads", "1") == "1",
-                             "opensubtitles": ctx.opensubs.configured()},
+                             "opensubtitles": ctx.opensubs.configured(),
+                             "whisper": bool(req.user["is_admin"] and ctx.whisper.backend())},
                 "update": ctx.update_latest if req.user["is_admin"] else None,
                 "notifications": x.unread_notifications(req.user)}
 

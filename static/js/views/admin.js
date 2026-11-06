@@ -529,8 +529,10 @@ const subtitlesPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   const boost = select([['1', tr('× 1 (aucun)')], ['1.5', tr('× 1,5')], ['2', tr('× 2 (par défaut)')], ['2.5', tr('× 2,5')], ['3', '× 3']], String(s.downmix_boost));
   const osPanel = h('section.panel', h('h2', 'OpenSubtitles'), h('p.muted.small', tr('Chargement…')));
   openSubtitlesPanel(osPanel);
+  const wPanel = h('section.panel', h('h2', tr('Sous-titres générés (Whisper)')), h('p.muted.small', tr('Chargement…')));
+  whisperPanel(wPanel);
   return [
-    osPanel,
+    osPanel, wPanel,
     h('section.panel', h('h2', tr('Sous-titres intégrés')),
       h('p.muted.small', tr('Les sous-titres intégrés aux fichiers (MKV) ne peuvent être extraits qu’en lisant le fichier en entier. Nexis les prépare à l’avance, en dehors des lectures, pour qu’ils soient disponibles dès le début de la vidéo.')),
       prefetch,
@@ -584,6 +586,55 @@ async function openSubtitlesPanel(panel) {
     hi,
     v.last ? h('p.muted.small', tr('Dernier passage : {summary}', { summary: v.last.summary || v.last.status })) : null,
     h('div.actions-row', saveBtn, h('a.btn', { href: '#/admin/tasks' }, tr('Tâches planifiées'))));
+}
+
+// Whisper : transcription de la voix (service compatible OpenAI, ou whisper.cpp sur ce serveur)
+async function whisperPanel(panel) {
+  let v;
+  try { v = await get('/api/admin/whisper'); } catch (e) { clear(panel, h('h2', 'Whisper'), h('p.muted', e.message)); return; }
+  const url = h('input', { value: v.url, placeholder: 'http://192.168.1.20:8000', spellcheck: false });
+  const key = h('input', { type: 'password', autocomplete: 'off', placeholder: v.key_set ? tr('Clé enregistrée (laisser vide pour la garder)') : tr('Facultative') });
+  const modelHttp = h('input', { value: v.model_http, spellcheck: false });
+  const threads = h('input', { type: 'number', min: 1, max: 64, value: v.threads });
+  const local = v.filter || v.cli;
+  const save = async (patch, msg = tr('Enregistré')) => {
+    try { await put('/api/admin/whisper', patch); toast(msg, 'ok'); await refreshMe(); whisperPanel(panel); } catch (e) { toast(e.message, 'bad'); }
+  };
+  const status = v.available
+    ? h('div.status-box.ok', v.backend === 'http' ? tr('Prêt : service de transcription.') : tr('Prêt : whisper.cpp sur ce serveur (modèle {m}).', { m: v.model }))
+    : h('div.status-box', v.note);
+  const job = v.current ? h('p.small', tr('En cours : {title} ({p} %)', { title: v.current.title, p: Math.round((v.current.progress || 0) * 100) }),
+    v.queue.length ? tr(' · {n} en attente', { n: v.queue.length }) : '') : null;
+  const dl = v.download && !v.download.finished ? h('p.small', tr('Téléchargement du modèle {m} : {p} %', { m: v.download.model,
+    p: Math.round((v.download.done / Math.max(1, v.download.total)) * 100) })) : (v.download && v.download.error ? h('p.form-error.small', v.download.error) : null);
+  const modelRows = Object.entries(v.models).map(([m, info]) => h('div.os-row', h('div.os-info', h('strong', m),
+    h('div.muted.small', tr('{n} Mo', { n: info.size_mb }), m === 'base' ? tr(' · bon compromis') : m === 'small' ? tr(' · plus juste, 3 fois plus lent') : '')),
+    info.installed
+      ? (v.model === m ? h('span.os-badge.good', tr('utilisé')) : h('button.btn.small', { onclick: () => save({ model: m }) }, tr('Utiliser')))
+      : h('button.btn.small', { onclick: async () => {
+        try { await post('/api/admin/whisper/model', { model: m }); toast(tr('Téléchargement lancé'), 'ok'); setTimeout(() => whisperPanel(panel), 1500); } catch (e) { toast(e.message, 'bad'); }
+      } }, tr('Télécharger'))));
+  clear(panel, h('h2', tr('Sous-titres générés (Whisper)')),
+    h('p.muted.small', tr('Pour les vidéos sans aucun sous-titre dans la langue parlée, Whisper écrit les sous-titres à partir de la voix (dans cette langue : il ne traduit pas). C’est un calcul long ; il se fait une vidéo à la fois, en pause pendant les lectures.')),
+    status, job, dl,
+    h('h4.form-sub', tr('Service de transcription (recommandé)')),
+    h('p.muted.small', tr('Un service compatible avec l’API d’OpenAI, par exemple Speaches (faster-whisper) lancé dans un conteneur à côté de Nexis, avec une carte graphique s’il y en a une. OpenAI convient aussi, mais l’audio des vidéos part alors sur Internet.')),
+    h('div.grid2', field(tr('Adresse du service'), url), field(tr('Modèle'), modelHttp, tr('Ex. Systran/faster-whisper-small pour Speaches, whisper-1 pour OpenAI.'))),
+    h('div.grid2', field(tr('Clé d’API'), key), h('div')),
+    h('div.actions-row', h('button.btn.primary', { onclick: () => {
+      const patch = { url: url.value.trim(), model_http: modelHttp.value.trim() || 'whisper-1' };
+      if (key.value.trim()) patch.key = key.value.trim();
+      save(patch);
+    } }, tr('Enregistrer')),
+    v.key_set ? h('button.btn', { onclick: () => save({ clear_key: true }, tr('Clé retirée')) }, tr('Retirer la clé')) : null),
+    h('h4.form-sub', tr('Sur ce serveur (whisper.cpp)')),
+    local
+      ? [h('p.muted.small', v.filter ? tr('ffmpeg de ce serveur sait transcrire (filtre whisper). Choisissez un modèle : il est téléchargé dans le dossier de données.')
+        : tr('whisper-cli est installé. Choisissez un modèle : il est téléchargé dans le dossier de données.')),
+      h('div.os-results', modelRows), field(tr('Cœurs utilisés'), threads, tr('{n} cœur(s) sur ce serveur.', { n: v.cpus })),
+      h('button.btn', { onclick: () => save({ threads: Number(threads.value) }) }, tr('Enregistrer'))]
+      : h('p.muted.small', tr('Ni ffmpeg 8 avec le filtre whisper, ni whisper-cli n’est installé sur ce serveur (l’image Docker ne les contient pas) : utilisez un service de transcription.')),
+    h('p.muted.small', tr('Automatique : tâche « Générer les sous-titres manquants (Whisper) », désactivée par défaut. À la main : fiche d’un film ou d’un épisode, menu ⋯.')));
 }
 
 const transcodingPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
