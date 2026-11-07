@@ -866,7 +866,7 @@ class SeanceTest(unittest.TestCase):
         try:
             src = os.path.join(work, "in.mkv")
             subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=24:d=6", "-f", "lavfi",
-                            "-i", "anoisesrc=d=6:a=0.5:c=pink", "-f", "lavfi", "-i", "sine=f=180:d=6", "-filter_complex",
+                            "-i", "anoisesrc=d=6:a=0.5:c=pink:seed=20261107", "-f", "lavfi", "-i", "sine=f=180:d=6", "-filter_complex",
                             # dialogue + ambiance très forts, identiques sur les 6 canaux (cas réel le plus exigeant)
                             "[1][2]amix=inputs=2:normalize=0,volume=1.6,asplit=6[a][b][c][d][e][f];"
                             "[a][b][c][d][e][f]join=inputs=6:channel_layout=5.1[o]",
