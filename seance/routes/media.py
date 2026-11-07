@@ -337,7 +337,9 @@ def register(app, ctx, x):
         burn = sub["id"] if sub and not sub["overlay"] and not pgs_client else None
         if b.get("replace"):
             stop_stream(str(b["replace"]), uid)
-        p = plan(probe, audio_id, burn, quality, caps, db.setting("downmix_algo", "none"),
+        # son « nuit » choisi par la personne (dialogues renforcés, effets atténués), sinon le mixage du serveur
+        algo = "nightmode" if prefs.get("night_audio") else db.setting("downmix_algo", "none")
+        p = plan(probe, audio_id, burn, quality, caps, algo,
                  float(db.setting("downmix_boost", "2") or 2), db.setting("tonemap", "hable"))
         if cap and p["mode"] == "transcode" and quality != "original":
             p["reasons"].append(f"débit limité à {cap / 1000:.1f} Mbit/s hors de la maison")

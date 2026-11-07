@@ -700,7 +700,7 @@ class FederationTest(unittest.TestCase):
             "start_page": f"lib:{films_a['id']}", "nav_hidden": [f"lib:{films_a['id']}", "live"],
             "wallpaper": f"/library/metadata/{movie['id']}/art/1",
             "home_pins": [{"id": 3, "type": "genre", "ref": "Drame", "lib": films_a["id"], "title": "Drames"}],
-            "home_order": ["pin:3", "continue"]})
+            "home_order": ["pin:3", "continue"], "lib_langs": {films_a["id"]: {"audio_lang": "jpn"}}})
         self.assertEqual(st, 200, r)
         self.sync()
         p = colas_b.call("GET", "/api/me")[1]["prefs"]
@@ -710,6 +710,7 @@ class FederationTest(unittest.TestCase):
         self.assertEqual(p["nav_hidden"], [f"lib:{films_a_on_b['id']}", "live"])
         self.assertEqual(p["home_pins"][0]["lib"], films_a_on_b["id"])
         self.assertEqual(p["home_order"], ["pin:3", "continue"])
+        self.assertEqual(p["lib_langs"], {films_a_on_b["id"]: {"audio_lang": "jpn"}})
         wid = int(p["wallpaper"].split("/")[3])
         st, d = colas_b.call("GET", f"/api/items/{wid}")
         self.assertEqual((st, d["title"]), (200, movie["title"]))  # le même film, avec son numéro sur B

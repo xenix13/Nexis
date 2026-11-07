@@ -470,6 +470,32 @@ function accountPage(id, body, rerender) {
     return;
   }
 
+  // langues propres à une bibliothèque : par exemple les animes en VO sous-titrée, les films en VF
+  const libLangsPanel = () => {
+    const libs = me.libraries.filter((l) => ['movie', 'show'].includes(l.type));
+    if (!libs.length) return null;
+    const cur = { ...(p.lib_langs || {}) };
+    const rowFor = (l) => {
+      const o = cur[l.id] || {};
+      const set = (k, v) => {
+        const next = { ...(cur[l.id] || {}) };
+        if (v === '' || v == null) delete next[k]; else next[k] = v;
+        if (Object.keys(next).length) cur[l.id] = next; else delete cur[l.id];
+        save({ lib_langs: { ...cur } }, tr('Langues de « {name} » enregistrées', { name: l.title }));
+      };
+      const same = [['', tr('Comme ailleurs')]];
+      return h('div.lib-lang-row', h('strong', l.title),
+        h('div.grid3',
+          field(tr('Audio'), select([...same, ...LANGS.filter(([v]) => v)], o.audio_lang || '', { onchange: (e) => set('audio_lang', e.target.value) })),
+          field(tr('Sous-titres'), select([...same, ['foreign', tr('Si l’audio n’est pas dans ma langue')], ['always', tr('Toujours')], ['never', tr('Jamais')]],
+            o.sub_mode || '', { onchange: (e) => set('sub_mode', e.target.value) })),
+          field(tr('Langue des sous-titres'), select([...same, ...LANGS.filter(([v]) => v)], o.sub_lang || '', { onchange: (e) => set('sub_lang', e.target.value) }))));
+    };
+    return h('section.panel', h('h2', tr('Langues par bibliothèque')),
+      h('p.muted.small', tr('Pour une bibliothèque, d’autres langues que celles du profil : par exemple les animes en japonais sous-titré, les films en français. « Comme ailleurs » garde le réglage général. Le choix fait pour une série ou un film reste prioritaire.')),
+      libs.map(rowFor));
+  };
+
   if (id === 'playback') {
     // apparence des sous-titres, avec un aperçu qui suit chaque réglage
     const subStylePanel = () => {
@@ -525,7 +551,16 @@ function accountPage(id, body, rerender) {
         bindToggle('auto_skip_intro', tr('Passer les génériques d’ouverture automatiquement')),
         bindToggle('auto_skip_recap', tr('Passer les récapitulatifs (« Précédemment… ») automatiquement')),
         bindToggle('hide_spoilers', tr('Anti-spoiler : flouter les vignettes et masquer les résumés des épisodes non vus')),
-        h('p.field-hint.toggle-hint', tr('Un clic sur un résumé masqué l’affiche.'))));
+        h('p.field-hint.toggle-hint', tr('Un clic sur un résumé masqué l’affiche.'))),
+      h('section.panel', h('h2', tr('Lecteur')),
+        h('div.grid2',
+          field(tr('Bouton reculer'), bindSelect('skip_back', [5, 10, 15, 30].map((n) => [String(n), tr('{n} secondes', { n })]), Number),
+            tr('Aussi les flèches gauche et droite du clavier.')),
+          field(tr('Bouton avancer'), bindSelect('skip_forward', [10, 15, 30, 60, 90].map((n) => [String(n), tr('{n} secondes', { n })]), Number))),
+        field(tr('Vitesse de départ'), bindSelect('default_speed', [0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2].map((v) => [String(v), v === 1 ? tr('Normale') : `×${String(v).replace('.', ',')}`]), Number)),
+        bindToggle('remember_volume', tr('Garder le volume d’une lecture à l’autre')),
+        bindToggle('night_audio', tr('Son « nuit » : dialogues renforcés, explosions et musique atténuées (son 5.1 / 7.1 converti)'))),
+      libLangsPanel());
     return;
   }
 
@@ -690,7 +725,61 @@ function accountPage(id, body, rerender) {
       : h('p.muted.small', tr('Aucun titre masqué.')));
   };
   paintHidden();
-  clear(body, startPanel, homePanel, navPanel, hiddenPanel);
+  const heroPanel = h('section.panel', h('h2', tr('Grande bannière')),
+    field(tr('En haut de l’accueil'), bindSelect('home_hero', [['auto', tr('Reprise en cours, sinon un ajout récent')], ['resume', tr('Reprise en cours seulement')],
+      ['recent', tr('Un ajout récent')], ['random', tr('Un titre au hasard (change toutes les heures)')], ['watchlist', tr('Un titre de ma liste « À regarder »')],
+      ['none', tr('Pas de bannière')]])));
+  const rowsPanel = h('section.panel', h('h2', tr('Mes rangées')),
+    h('p.muted.small', tr('Des rangées à vous sur l’accueil : une bibliothèque, des filtres, un tri et un nom. Elles se réordonnent avec les autres ci-dessous.')),
+    pins().filter((pn) => ['filter', 'genre'].includes(pn.type)).map((pn) => h('div.user-row', h('div.grow', h('strong', pn.title),
+      h('div.muted.small', tr('{n} titres', { n: pn.count || 24 }))),
+    h('button.btn.small', { onclick: async () => { if (await rowDialog(pn)) rerender(); } }, tr('Modifier')),
+    h('button.icon-btn', { title: tr('Supprimer'), onclick: async () => { await removePin(pn.id); rerender(); } }, icon('trash')))),
+    h('button.btn', { onclick: async () => { if (await rowDialog(null)) rerender(); } }, tr('+ Nouvelle rangée')));
+  // création / modification d'une rangée : bibliothèque, filtres, tri, nombre de titres, nom
+  const rowDialog = async (pn) => {
+    const libs = me.libraries.filter((l) => ['movie', 'show'].includes(l.type));
+    if (!libs.length) { toast(tr('Aucune bibliothèque de films ou de séries'), 'bad'); return false; }
+    const q = new URLSearchParams(pn ? (pn.type === 'genre' ? `genre=${encodeURIComponent(pn.ref)}` : pn.ref) : '');
+    const libSel = select(libs.map((l) => [l.id, l.title]), pn ? pn.lib : libs[0].id);
+    const genre = select([['', tr('Tous les genres')]], q.get('genre') || '');
+    const loadGenres = async () => {
+      try {
+        const gs = await get(`/api/libraries/${libSel.value}/genres`);
+        genre.replaceChildren(...[['', tr('Tous les genres')], ...gs.map((g) => [g.id, g.title])]
+          .map(([v, l]) => h('option', { value: v, selected: v === (q.get('genre') || '') }, l)));
+      } catch { /* sans genres */ }
+    };
+    libSel.addEventListener('change', loadGenres);
+    loadGenres();
+    const watched = select([['', tr('Vus et non vus')], ['unwatched', tr('Pas encore vus')], ['watched', tr('Déjà vus')]], q.get('watched') || '');
+    const decade = select([['', tr('Toutes les années')], ...[2020, 2010, 2000, 1990, 1980, 1970, 1960].map((d) => [String(d), tr('Années {d}', { d })])], q.get('decade') || '');
+    const sort = select([['added', tr('Ajout récent')], ['title', tr('Titre')], ['year', tr('Année')], ['rating', tr('Note')], ['release', tr('Date de sortie')]], q.get('sort') || 'added');
+    const count = select([12, 24, 36, 48].map((n) => [String(n), String(n)]), String((pn && pn.count) || 24));
+    const name = h('input', { value: pn ? pn.title : '', maxlength: 100, placeholder: tr('Ex. Comédies des années 90 pas encore vues') });
+    const err = h('p.form-error');
+    return modal(pn ? tr('Modifier la rangée') : tr('Nouvelle rangée'), h('div.form',
+      field(tr('Nom'), name), h('div.grid2', field(tr('Bibliothèque'), libSel), field(tr('Genre'), genre)),
+      h('div.grid2', field(tr('Visionnage'), watched), field(tr('Années'), decade)),
+      h('div.grid2', field(tr('Tri'), sort), field(tr('Nombre de titres'), count)), err),
+    [{ label: tr('Annuler'), value: false }, { label: pn ? tr('Enregistrer') : tr('Ajouter'), primary: true, handler: async () => {
+      const f = new URLSearchParams();
+      for (const [k, el] of [['genre', genre], ['watched', watched], ['decade', decade], ['sort', sort]]) if (el.value) f.set(k, el.value);
+      const lib = libs.find((l) => String(l.id) === String(libSel.value));
+      const title = name.value.trim() || [genre.value, decade.value && tr('Années {d}', { d: decade.value }), lib.title].filter(Boolean).join(' · ');
+      const list = pins().filter((x) => !pn || x.id !== pn.id);
+      if (!pn && list.length >= 20) { err.textContent = tr('20 rangées épinglées au maximum'); return false; }
+      const id = pn ? pn.id : Math.max(0, ...pins().map((x) => x.id + 1));
+      const entry = { id, type: 'filter', ref: f.toString() || 'sort=added', lib: String(lib.id), title: title.slice(0, 100), count: Number(count.value) };
+      try {
+        const r = await put('/api/me/prefs', { home_pins: [...list, entry] });
+        Object.assign(me.prefs, r);
+        toast(pn ? tr('Rangée modifiée') : tr('Rangée ajoutée à l’accueil'), 'ok');
+        return true;
+      } catch (e) { err.textContent = e.message; return false; }
+    } }]);
+  };
+  clear(body, startPanel, heroPanel, rowsPanel, homePanel, navPanel, hiddenPanel);
 }
 
 // ---------------------------------------------------------------- l'espace Paramètres

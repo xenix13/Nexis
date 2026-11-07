@@ -237,9 +237,20 @@ def register(app, ctx, x):
                 rows.append({"library": lib, "items": items})
         cont = continue_row(user, allowed) if prefs["show_continue"] else []
         hero = rows[0]["items"][0] if rows and rows[0]["items"] else None
+        choice = prefs.get("home_hero") or "auto"
+        if choice == "random":  # un film ou une série au hasard (le même pendant une heure)
+            libs = [int(l["library"]["id"]) for l in rows] or [0]
+            af, aa = age_filter(user)
+            pick = db.one(CARD_SQL + f"WHERE i.type IN ('movie','show') AND i.library_id IN ({','.join('?' * len(libs))}) "
+                          "AND i.backdrop IS NOT NULL AND i.backdrop<>''" + af + " ORDER BY (i.id * 2654435761 + ?) % 1000003 LIMIT 1",
+                          [*libs, *aa, int(time.time() // 3600)])
+            hero = attach_state(user["id"], [card(pick)])[0] if pick else hero
+        elif choice == "watchlist":
+            wl = x.watchlist_items(user, 1)
+            hero = wl[0] if wl else hero
         sugg = x.suggestions(user) if not {"suggest", "because"} <= set(prefs["home_hidden"]) else {"suggestions": [], "because": []}
         hidden_rows = set(prefs["home_hidden"])
-        return {"continue": cont, "rows": rows, "hero": hero, "watchlist": x.watchlist_items(user, 24),
+        return {"continue": cont, "rows": rows, "hero": hero, "hero_mode": choice, "watchlist": x.watchlist_items(user, 24),
                 "suggestions": sugg["suggestions"], "because": sugg["because"],
                 "short": short_row(user, allowed) if "short" not in hidden_rows else [],
                 "unfinished": unfinished_row(user, allowed) if "unfinished" not in hidden_rows else []}

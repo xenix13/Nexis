@@ -69,6 +69,15 @@ DEFAULT_PREFS = {
     "show_continue": True,
     "hide_spoilers": False,
     "home_pins": [],
+    "home_hero": "auto",  # auto (reprise, sinon ajout récent), recent, resume, random, watchlist, none
+    # langues par bibliothèque : {id : {audio_lang, sub_mode, sub_lang}} (sinon les langues générales)
+    "lib_langs": {},
+    # lecteur
+    "skip_back": 10,
+    "skip_forward": 30,
+    "default_speed": 1,
+    "remember_volume": True,
+    "night_audio": False,
     "start_page": "home",
     "home_order": [],
     "home_hidden": [],
@@ -101,7 +110,9 @@ def valid_pins(v):
         return False
     ids = set()
     for p in v:
-        if not isinstance(p, dict) or set(p) - {"id", "type", "ref", "lib", "title"}:
+        if not isinstance(p, dict) or set(p) - {"id", "type", "ref", "lib", "title", "count"}:
+            return False
+        if "count" in p and not (isinstance(p["count"], int) and not isinstance(p["count"], bool) and 6 <= p["count"] <= 60):
             return False
         if not (isinstance(p.get("id"), int) and 0 <= p["id"] < 1_000_000) or p["id"] in ids:
             return False
@@ -147,6 +158,22 @@ def validate_prefs(data):
         elif k in ("autoplay_next", "auto_skip_intro", "auto_skip_recap", "show_continue", "hide_spoilers", "card_titles",
                    "card_progress", "card_watched", "card_quality", "card_new", "card_rating"):
             ok = isinstance(v, bool)
+        elif k == "home_hero":
+            ok = v in ("auto", "recent", "resume", "random", "watchlist", "none")
+        elif k == "skip_back":
+            ok = v in (5, 10, 15, 30)
+        elif k == "skip_forward":
+            ok = v in (10, 15, 30, 60, 90)
+        elif k == "default_speed":
+            ok = v in (0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2)
+        elif k in ("remember_volume", "night_audio"):
+            ok = isinstance(v, bool)
+        elif k == "lib_langs":
+            ok = isinstance(v, dict) and len(v) <= 100 and all(
+                isinstance(lk, str) and lk.isdigit() and isinstance(lv, dict) and set(lv) <= {"audio_lang", "sub_mode", "sub_lang"}
+                and (lv.get("audio_lang") in (None, "") or LANG.match(str(lv.get("audio_lang"))))
+                and (lv.get("sub_lang") in (None, "") or LANG.match(str(lv.get("sub_lang"))))
+                and lv.get("sub_mode") in (None, "never", "foreign", "always") for lk, lv in v.items())
         elif k == "text_size":
             ok = v in ("s", "m", "l", "xl")
         elif k == "density":

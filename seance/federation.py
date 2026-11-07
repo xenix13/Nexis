@@ -923,6 +923,7 @@ class Federation:
             return k
         out = dict(p)
         out["hidden_libraries"] = [uids[i] for i in p.get("hidden_libraries") or [] if i in uids]
+        out["lib_langs"] = {uids[k]: v for k, v in (p.get("lib_langs") or {}).items() if k in uids}
         out["home_pins"] = [dict(pin, lib=uids[str(pin["lib"])]) for pin in pins]
         for k in self.LIB_KEYS:
             if k in p:
@@ -975,6 +976,8 @@ class Federation:
                 return f"pin:{renum[n]}" if n in renum else None
             return k
         p["hidden_libraries"] = [ids[u] for u in incoming.get("hidden_libraries") or [] if u in ids]
+        if isinstance(incoming.get("lib_langs"), dict):
+            p["lib_langs"] = {ids[u]: v for u, v in incoming["lib_langs"].items() if u in ids}
         for k in self.LIB_KEYS:
             if isinstance(incoming.get(k), list):
                 lst = [v for v in (key(x) for x in incoming[k]) if v]

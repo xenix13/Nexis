@@ -3,7 +3,7 @@
 import { applySubStyle } from './substyle.js';
 import { deviceId, deviceName, deviceOverrides } from './device.js';
 import { get, post, put } from './api.js';
-import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from './tracks.js';
+import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload, withLibLangs } from './tracks.js';
 import { state } from './app.js';
 import { browserCaps } from './caps.js';
 import { moveFocus, remoteMode } from './remote.js';
@@ -31,11 +31,13 @@ const CLOCK_TTL = 10 * 60 * 1000;
 // Vitesse de lecture et minuterie de mise en veille : gardées d'un épisode à l'autre (le lecteur est recréé)
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2];
 let speed = 1;
+let speedChosen = false; // vitesse choisie dans le lecteur : gardée d'un épisode à l'autre, sinon celle du profil
 const sleep = { at: 0, endOfItem: false }; // at : instant de la mise en pause (ms) ; endOfItem : à la fin de la vidéo
 
 export async function renderPlayer(root, rk, ctx) {
   const hlsReady = loadHls(); // en parallèle du chargement de la fiche
   const prefs = { ...state.me.prefs, ...deviceOverrides() }; // réglages de l'appareil prioritaires
+  const BACK = (Number(prefs.skip_back) || 10) * 1000, FWD = (Number(prefs.skip_forward) || 30) * 1000; // sauts du profil
   const isAdmin = state.me.user.is_admin;
   const video = h('video.video', { playsinline: true, preload: 'auto', 'x-webkit-airplay': 'allow' });
   const subLayer = h('div.sub-layer', { style: { fontSize: `${(prefs.sub_size / 100) * 2.4}vmin` } });
@@ -88,8 +90,8 @@ export async function renderPlayer(root, rk, ctx) {
     timeline,
     h('div.ctl-row',
       playBtn,
-      h('button.ctl', { 'aria-label': tr('Reculer de 10 secondes'), onclick: () => seekBy(-10000) }, icon('rewind')),
-      h('button.ctl', { 'aria-label': tr('Avancer de 30 secondes'), onclick: () => seekBy(30000) }, icon('forward')),
+      h('button.ctl', { 'aria-label': tr('Reculer de {n} secondes', { n: BACK / 1000 }), onclick: () => seekBy(-BACK) }, icon('rewind')),
+      h('button.ctl', { 'aria-label': tr('Avancer de {n} secondes', { n: FWD / 1000 }), onclick: () => seekBy(FWD) }, icon('forward')),
       h('div.vol', muteBtn, volume), timeEl, h('div.grow'), nextBtn, groupBtn, chaptersBtn, subsBtn, castBtn, airplayBtn, cogBtn, fullBtn));
   const top = h('div.player-top', backBtn, titleEl, h('div.grow'), miniBtn);
   const player = h('div.player', video, subLayer, subTop, subsPending, loader, errorLayer, castLayer, top, groupBanner, skipBtn, nextCard,
@@ -147,8 +149,9 @@ export async function renderPlayer(root, rk, ctx) {
   else if (poster) video.poster = img(poster, 1280, 720);
   if (offline) { cogBtn.hidden = true; groupBtn.hidden = true; miniBtn.hidden = true; }
 
-  audioSel = pickAudio(item.audio || [], prefs, item.track_prefs);
-  subSel = pickSubtitle(item.subtitles || [], audioSel, prefs, item.track_prefs);
+  const lp = withLibLangs(prefs, item);
+  audioSel = pickAudio(item.audio || [], lp, item.track_prefs);
+  subSel = pickSubtitle(item.subtitles || [], audioSel, lp, item.track_prefs);
   // choix faits sur la fiche juste avant de lancer
   const qa = ctx.query.get('a'), qs = ctx.query.get('s');
   if (qa !== null) audioSel = (item.audio || []).find((a) => String(a.id) === qa) || audioSel;
@@ -192,8 +195,10 @@ export async function renderPlayer(root, rk, ctx) {
   paintGroup();
 
   const savedVol = Number(store('seance.volume'));
-  video.volume = Number.isFinite(savedVol) && store('seance.volume') !== null ? savedVol : 1;
-  video.muted = store('seance.muted') === '1';
+  const keepVol = prefs.remember_volume !== false; // volume et coupure du son gardés (réglage du profil)
+  video.volume = keepVol && Number.isFinite(savedVol) && store('seance.volume') !== null ? savedVol : 1;
+  video.muted = keepVol && store('seance.muted') === '1';
+  if (!speedChosen) speed = Number(prefs.default_speed) || 1;
   volume.value = video.volume;
 
   // ------------------------------------------------------------ streaming
@@ -1092,8 +1097,8 @@ export async function renderPlayer(root, rk, ctx) {
       artist: item.type === 'episode' ? item.show : String(item.year || ''),
       artwork: art ? [{ src: img(art, 300, 450), sizes: '300x450', type: 'image/jpeg' }] : [],
     });
-    navigator.mediaSession.setActionHandler('seekbackward', () => seekBy(-10000));
-    navigator.mediaSession.setActionHandler('seekforward', () => seekBy(30000));
+    navigator.mediaSession.setActionHandler('seekbackward', () => seekBy(-BACK));
+    navigator.mediaSession.setActionHandler('seekforward', () => seekBy(FWD));
     if (session.next) navigator.mediaSession.setActionHandler('nexttrack', playNext);
   }
 
@@ -1221,9 +1226,9 @@ export async function renderPlayer(root, rk, ctx) {
         h('strong', item.type === 'episode' ? `${item.show} · ${episodeCode(item)}` : item.title),
         h('div.muted.small', `${fmtTime(castPos(), d >= 3600000)} / ${fmtTime(d, d >= 3600000)}`)),
       h('div.cast-ctl',
-        h('button.ctl', { 'aria-label': tr('Reculer de 10 secondes'), onclick: () => castSeek(castPos() - 10000) }, icon('rewind')),
+        h('button.ctl', { 'aria-label': tr('Reculer de {n} secondes', { n: BACK / 1000 }), onclick: () => castSeek(castPos() - BACK) }, icon('rewind')),
         h('button.ctl', { 'aria-label': tr('Lecture/Pause'), onclick: () => castCtl.playOrPause() }, icon(castRemote.isPaused ? 'play' : 'pause')),
-        h('button.ctl', { 'aria-label': tr('Avancer de 30 secondes'), onclick: () => castSeek(castPos() + 30000) }, icon('forward'))),
+        h('button.ctl', { 'aria-label': tr('Avancer de {n} secondes', { n: FWD / 1000 }), onclick: () => castSeek(castPos() + FWD) }, icon('forward'))),
       h('button.btn.small', { type: 'button', onclick: () => castFw.CastContext.getInstance().endCurrentSession(true) }, tr('Arrêter la diffusion'))));
     castLayer.hidden = false;
   }
@@ -1324,7 +1329,7 @@ export async function renderPlayer(root, rk, ctx) {
   // synchronisation se sert de la vitesse pour rattraper les écarts)
   const applySpeed = () => { if (!group) { video.defaultPlaybackRate = speed; video.playbackRate = speed; } };
   video.addEventListener('loadedmetadata', applySpeed);
-  const setSpeed = (v) => { speed = v; applySpeed(); toast(tr('Vitesse ×{v}', { v: String(v).replace('.', ',') })); };
+  const setSpeed = (v) => { speed = v; speedChosen = true; applySpeed(); toast(tr('Vitesse ×{v}', { v: String(v).replace('.', ',') })); };
   const stepSpeed = (dir) => {
     if (group) { toast(tr('Vitesse fixe en groupe')); return; }
     const i = SPEEDS.indexOf(speed);
@@ -1408,8 +1413,8 @@ export async function renderPlayer(root, rk, ctx) {
   });
   timeline.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') e.stopPropagation();
-    if (e.key === 'ArrowLeft') seekBy(-10000);
-    if (e.key === 'ArrowRight') seekBy(10000);
+    if (e.key === 'ArrowLeft') seekBy(-BACK);
+    if (e.key === 'ArrowRight') seekBy(BACK);
   });
 
   player.addEventListener('pointermove', wake);
@@ -1446,7 +1451,7 @@ export async function renderPlayer(root, rk, ctx) {
     // touches réglables (Paramètres → Cet appareil) ; les touches média et Échap restent fixes
     const action = actionFor(e.key);
     if (action && !(e.key === 'Enter') && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      const run = { play: togglePlay, back: () => seekBy(-10000), forward: () => seekBy(10000),
+      const run = { play: togglePlay, back: () => seekBy(-BACK), forward: () => seekBy(BACK),
         volup: () => { video.volume = Math.min(1, video.volume + 0.1); }, voldown: () => { video.volume = Math.max(0, video.volume - 0.1); },
         full: toggleFull, mute: () => { video.muted = !video.muted; }, skip: () => { if (!skipBtn.hidden) skipBtn.click(); },
         next: () => { if (session && session.next) playNext(); }, chapters: () => { if (chapters.length > 1) openChapters(); },

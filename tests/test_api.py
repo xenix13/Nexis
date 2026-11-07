@@ -1232,6 +1232,34 @@ class SeanceTest(unittest.TestCase):
         c.call("DELETE", "/api/me/wallpaper")
         c.call("POST", "/api/me/prefs/reset")
 
+    def test_home_and_player_prefs(self):
+        """Bannière de l'accueil, rangée personnelle (nombre de titres), langues par bibliothèque, lecteur, son nuit."""
+        c, lib = self.lea, self.libs["Films"]
+        st, r = c.call("PUT", "/api/me/prefs", {"home_hero": "none", "skip_back": 15, "skip_forward": 60, "default_speed": 1.25,
+                                                "remember_volume": False, "lib_langs": {str(lib): {"audio_lang": "jpn", "sub_mode": "always"}},
+                                                "home_pins": [{"id": 1, "type": "filter", "ref": "watched=unwatched", "lib": str(lib),
+                                                               "title": "Pas vus", "count": 12}]})
+        self.assertEqual(st, 200, r)
+        self.assertEqual((r["home_hero"], r["skip_forward"], r["lib_langs"][str(lib)]["audio_lang"]), ("none", 60, "jpn"))
+        self.assertEqual(c.call("GET", "/api/home")[1]["hero_mode"], "none")
+        c.call("PUT", "/api/me/prefs", {"home_hero": "random"})
+        st, home = c.call("GET", "/api/home")
+        self.assertEqual(home["hero_mode"], "random")
+        for bad in ({"home_hero": "film"}, {"skip_back": 7}, {"default_speed": 3}, {"lib_langs": {"x": {}}},
+                    {"lib_langs": {str(lib): {"audio_lang": "japonais"}}}, {"lib_langs": {str(lib): {"sub_mode": "parfois"}}},
+                    {"home_pins": [{"id": 1, "type": "filter", "ref": "watched=unwatched", "lib": str(lib), "title": "x", "count": 500}]}):
+            self.assertEqual(c.call("PUT", "/api/me/prefs", bad)[0], 400, bad)
+        # son « nuit » : le mixage nuit est demandé pour ce compte, quel que soit celui du serveur
+        c.call("PUT", "/api/me/prefs", {"night_audio": True})
+        m = next(x for x in c.call("GET", f"/api/libraries/{lib}/items")[1]["items"] if x["title"] == "Brume")
+        st, r = c.call("POST", "/api/play", {"id": m["id"], "caps": {"video": ["h264"], "audio": ["aac"], "containers": ["mp4"]}})
+        self.assertEqual(st, 200, r)
+        params = json.loads(self.ctx.db.scalar("SELECT params FROM streams WHERE id=?", (r["stream"],)))
+        if params.get("audio_channels", 2) > 2 and not params.get("acopy"):
+            self.assertIn("pan=", params.get("audio_filter") or "")
+        c.call("POST", "/api/stop", {"stream": r["stream"]})
+        c.call("POST", "/api/me/prefs/reset")
+
     def test_wallpaper_and_recap_marker(self):
         """Fond d'écran du profil (l'arrière-plan d'un titre) et repère de récapitulatif posé à la main."""
         polar = self.movie("Nuit polaire")

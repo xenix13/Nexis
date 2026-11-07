@@ -1,6 +1,15 @@
 import { tr } from './i18n.js';
 // Choix des pistes audio / sous-titres : choix retenu pour le film ou la série, sinon préférences générales.
 
+// langues propres à une bibliothèque (Paramètres → Lecture), à la place des langues générales
+export function withLibLangs(prefs, item) {
+  const o = item && prefs.lib_langs && prefs.lib_langs[String(item.section)];
+  if (!o) return prefs;
+  const out = { ...prefs };
+  for (const k of ['audio_lang', 'sub_mode', 'sub_lang']) if (o[k] != null && o[k] !== '') out[k] = o[k];
+  return out;
+}
+
 export function pickAudio(audio, prefs, trackPrefs) {
   if (!audio || !audio.length) return null;
   const want = (trackPrefs && trackPrefs.audio_lang) || prefs.audio_lang;

@@ -2,7 +2,7 @@ import { del, get, post, put } from '../api.js';
 import { applyPrefs, state } from '../app.js';
 import { launchableGroups } from '../groups.js';
 import { deviceCaps, download as offlineDownload, find as findDownload, onDownloads, supported as offlineSupported } from '../offline.js';
-import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from '../tracks.js';
+import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload, withLibLangs } from '../tracks.js';
 import { chapterStrip } from '../chapters.js';
 import { clear, episodeCode, field, fmtDuration, fmtTime, h, icon, img, modal, moreMenu, posterCard, progressBar, select, spinner, toast, toggle } from '../ui.js';
 import { tr, plural, locale } from '../i18n.js';
@@ -320,7 +320,7 @@ function trackChooser(d, target, onChange) {
   const audio = d.audio || [];
   const subs = d.subtitles || [];
   if (!audio.length && !subs.length) return null;
-  const prefs = state.me.prefs;
+  const prefs = withLibLangs(state.me.prefs, d);
   let a = pickAudio(audio, prefs, d.track_prefs);
   let s = pickSubtitle(subs, a, prefs, d.track_prefs);
   const aSel = select(audio.map((x) => [x.id, x.title]), a ? a.id : '', { 'aria-label': tr('Langue audio') });
@@ -413,7 +413,7 @@ const canDownload = () => state.me.features && state.me.features.downloads && of
 
 // choix des pistes comme au lancement de la lecture (langues préférées, sous-titres forcés…)
 function defaultTracks(it) {
-  const prefs = state.me.prefs;
+  const prefs = withLibLangs(state.me.prefs, it);
   const audio = pickAudio(it.audio || [], prefs, it.track_prefs);
   const sub = fixForced(pickSubtitle(it.subtitles || [], audio, prefs, it.track_prefs), audio, it.subtitles || []);
   return { audio: audio ? audio.id : null, subs: sub && sub.overlay ? [sub.id] : [], burn: sub && !sub.overlay ? sub.id : null };

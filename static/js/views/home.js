@@ -11,7 +11,9 @@ export async function renderHome(main, ctx) {
   if (!ctx.isCurrent()) return;
   const parts = [];
   const sections = new Map(); // clé -> rangée ; affichées dans l'ordre choisi (Paramètres → Accueil et menu)
-  const hero = data.continue[0] || data.hero;
+  // bannière : choisie dans Paramètres → Accueil et menu (reprise, ajout récent, au hasard, liste, aucune)
+  const mode = data.hero_mode || 'auto';
+  const hero = mode === 'none' ? null : mode === 'resume' ? data.continue[0] : mode === 'auto' ? (data.continue[0] || data.hero) : data.hero;
   if (hero) {
     const art = hero.type === 'episode' ? (hero.show_art || hero.art) : hero.art;
     const resume = data.continue[0] === hero;
@@ -20,7 +22,8 @@ export async function renderHome(main, ctx) {
     parts.push(h('section.hero', art ? { style: { backgroundImage: `url("${img(art, 1600, 900)}")` } } : null,
       h('div.hero-shade'),
       h('div.hero-body',
-        h('div.hero-kicker', resume ? (hero.next_up ? tr('À suivre') : tr('Reprendre')) : tr('Ajouté récemment')),
+        h('div.hero-kicker', resume ? (hero.next_up ? tr('À suivre') : tr('Reprendre'))
+          : mode === 'random' ? tr('À découvrir') : mode === 'watchlist' ? tr('Dans votre liste') : tr('Ajouté récemment')),
         h('h1.hero-title', hero.type === 'episode' ? hero.show : hero.title),
         hero.type === 'episode'
           ? h('p.hero-sub', tr('Saison {season} · Épisode {episode} — {title}', { season: hero.season, episode: hero.episode, title: hero.title }))

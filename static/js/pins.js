@@ -66,11 +66,11 @@ export async function pinRow(p) {
       const q = new URLSearchParams(p.ref);
       if (!q.get('sort')) q.set('sort', 'added');
       q.set('start', 0);
-      q.set('size', 24);
+      q.set('size', p.count || 24);
       const r = await get(`/api/libraries/${p.lib}/items?${q}`);
       return row(p.title, r.items, (x) => posterCard(x), { href: `#/library/${p.lib}?${p.ref}` });
     }
-    const q = new URLSearchParams({ start: 0, size: 24, sort: 'added', genre: p.ref });
+    const q = new URLSearchParams({ start: 0, size: p.count || 24, sort: 'added', genre: p.ref });
     const r = await get(`/api/libraries/${p.lib}/items?${q}`);
     return row(`${p.ref} · ${lib.title}`, r.items, (x) => posterCard(x), { href: `#/library/${p.lib}?genre=${encodeURIComponent(p.ref)}` });
   } catch {

@@ -1445,3 +1445,7 @@ html.has-audio body { padding-bottom: 96px; }
 .color-input::-webkit-color-swatch { border: 0; border-radius: 5px; }
 .color-input::-moz-color-swatch { border: 0; border-radius: 5px; }
 .color-pick { white-space: nowrap; }
+.lib-lang-row { padding: 10px 0; border-top: 1px solid var(--line); }
+.lib-lang-row:first-of-type { border-top: 0; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 14px; }
+@media (max-width: 720px) { .grid3 { grid-template-columns: 1fr; } }
