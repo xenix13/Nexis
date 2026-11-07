@@ -1260,6 +1260,19 @@ class SeanceTest(unittest.TestCase):
         c.call("POST", "/api/stop", {"stream": r["stream"]})
         c.call("POST", "/api/me/prefs/reset")
 
+    def test_ui_style(self):
+        """Style de l'interface (mise en page) : « classique » par défaut, valeurs connues seulement."""
+        c = self.lea
+        self.assertEqual(c.call("GET", "/api/me")[1]["prefs"]["ui_style"], "classic")
+        for v in ("glass", "sidebar", "minimal", "cinema", "rounded", "classic"):
+            st, r = c.call("PUT", "/api/me/prefs", {"ui_style": v})
+            self.assertEqual((st, r["ui_style"]), (200, v))
+        for bad in ("ElegantFin", "", 3, None):
+            self.assertEqual(c.call("PUT", "/api/me/prefs", {"ui_style": bad})[0], 400, bad)
+        st, r = c.call("PUT", "/api/me/prefs", {"ui_style": "sidebar", "theme": "light"})
+        self.assertEqual((r["ui_style"], r["theme"]), ("sidebar", "light"))  # style et thème se combinent
+        c.call("POST", "/api/me/prefs/reset")
+
     def test_content_privacy_notifications(self):
         """Genres masqués, mode privé (pas d'historique, titre caché aux admins), choix des notifications, heures calmes."""
         from seance import push as pushmod

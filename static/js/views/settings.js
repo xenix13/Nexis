@@ -42,6 +42,15 @@ import { LANGUAGES, lang, locale, tr, useLanguage } from '../i18n.js';
 
 const LANGS = [['fra', tr('Français')], ['eng', tr('Anglais')], ['jpn', tr('Japonais')], ['spa', tr('Espagnol')], ['deu', tr('Allemand')],
   ['ita', tr('Italien')], ['por', tr('Portugais')], ['kor', tr('Coréen')], ['zho', tr('Chinois')], ['', tr('Pas de préférence')]];
+// styles d'interface : [valeur, nom, description]
+export const UI_STYLES = [
+  ['classic', tr('Classique'), tr('Barre en haut sur la grande image, affiches à coins doux.')],
+  ['glass', tr('Verre dépoli'), tr('Barre flottante et panneaux translucides, bannière en carte arrondie.')],
+  ['sidebar', tr('Barre latérale'), tr('Navigation à gauche avec icônes, recherche et profil en bas (sur grand écran).')],
+  ['minimal', tr('Épuré'), tr('Plat et sobre : pas d’ombres, angles droits, titres discrets.')],
+  ['cinema', tr('Cinéma plein écran'), tr('Bannière plein écran, titres sur les affiches au survol, fiche en grand.')],
+  ['rounded', tr('Arrondi'), tr('Formes très arrondies, menu en pastilles, boutons en dégradé.')],
+];
 const ACCENTS = ['#ffa43a', '#e0a84f', '#e5484d', '#3dd68c', '#4c9aff', '#a78bfa', '#f472b6', '#2dd4bf', '#f97316'];
 
 // Liste à réordonner (flèches ou glisser-déposer) avec un interrupteur par ligne.
@@ -210,8 +219,8 @@ export const ACCOUNT_GROUP = { title: tr('Mon compte'), items: [
     keys: tr('nom avatar photo couleur langue language pin code mot de passe sécurité double authentification 2fa totp codes de secours') },
   { id: 'playback', label: tr('Lecture'), icon: 'play', lead: tr('Qualité, langues, sous-titres et enchaînement des épisodes.'),
     keys: tr('qualité langue audio sous-titres taille police couleur style épisode suivant générique intro automatique spoiler anti-spoiler résumé') },
-  { id: 'appearance', label: tr('Apparence'), icon: 'palette', lead: tr('Thème, couleur d’accent, affiches et fond d’écran.'),
-    keys: tr('thème sombre clair oled couleur accent affiches taille fond d’écran') },
+  { id: 'appearance', label: tr('Apparence'), icon: 'palette', lead: tr('Style de l’interface, thème, couleur d’accent, affiches et fond d’écran.'),
+    keys: tr('style mise en page disposition barre latérale verre épuré cinéma arrondi thème sombre clair oled couleur accent affiches taille fond d’écran') },
   { id: 'device', label: tr('Cet appareil'), icon: 'tv', lead: tr('Réglages propres à ce navigateur ou à cette TV, prioritaires sur ceux du profil.'),
     keys: tr('appareil tv téléphone qualité sous-titres taille animations mouvement télécommande manette navigateur') },
   { id: 'services', label: tr('Trakt et Letterboxd'), icon: 'link', lead: tr('Ce que vous regardez, vos notes et votre liste « À regarder », partagés avec Trakt ou Letterboxd.'),
@@ -640,6 +649,9 @@ function accountPage(id, body, rerender) {
       h('section.panel', h('h2', tr('Affichage et navigation')),
         h('div.grid2',
           field(tr('Animations'), pick('motion', [['', tr('Selon le système')], ['reduced', tr('Réduites')]])),
+          field(tr('Style de l’interface'), select([['', tr('Selon le profil ({p1})', { p1: (UI_STYLES.find((x) => x[0] === (p.ui_style || 'classic')) || UI_STYLES[0])[1] })],
+            ...UI_STYLES.map(([v, l]) => [v, l])], d.ui_style || '', { onchange: (e) => { set({ ui_style: e.target.value }); applyPrefs(me.prefs); } }),
+          tr('Par exemple « Classique » sur la TV et « Barre latérale » sur l’ordinateur.')),
           field(tr('Navigation à la télécommande'), pick('remote', [['', tr('Automatique')], ['on', tr('Toujours activée')], ['off', tr('Désactivée')]]),
             tr('Repères de sélection visibles et déplacement aux flèches, comme sur une TV.')))),
       pushPanel(),
@@ -708,7 +720,19 @@ function accountPage(id, body, rerender) {
         h('div.actions-row', h('button.btn', { onclick: () => file.click() }, tr('Choisir une image…')), file),
         h('p.muted.small', tr('JPEG, PNG ou WebP, 8 Mo au plus. L’image reste sur ce serveur.')));
     }
+    // styles d'interface : la mise en page elle-même (navigation, cartes, panneaux, bannière), avec une maquette
+    const styleTiles = h('div.theme-tiles.style-tiles', UI_STYLES.map(([v, label, hint]) => h('button.theme-tile.style-tile', {
+      type: 'button', 'aria-pressed': String((p.ui_style || 'classic') === v), title: hint,
+      onclick: async () => { await save({ ui_style: v }, tr('Style appliqué')); rerender(); } },
+    h('span.style-preview', { dataset: { s: v } }, h('span.sp-bar', h('i'), h('i'), h('i')),
+      h('span.sp-main', h('span.sp-hero'), h('span.sp-row', h('b'), h('b'), h('b'), h('b')))),
+    h('span.theme-name', label), h('span.style-hint', hint))));
+    const devStyle = device().ui_style;
     clear(body,
+      h('section.panel', h('h2', tr('Style de l’interface')),
+        h('p.muted.small', tr('Change la disposition de Nexis (navigation, cartes, panneaux, grande bannière), et pas seulement les couleurs. Se combine avec n’importe quel thème.')),
+        styleTiles,
+        devStyle ? h('p.small.warn-text', tr('Cet appareil utilise son propre style ({s}) : voir « Cet appareil ».', { s: (UI_STYLES.find((x) => x[0] === devStyle) || [0, devStyle])[1] })) : null),
       h('section.panel', h('h2', tr('Thème')), themeTiles),
       h('section.panel', h('h2', tr('Couleur d’accent')),
         h('div.accent-row', swatches(p.accent, (c) => save({ accent: c }, tr('Couleur appliquée'))), h('label.color-pick', picker, tr('Autre couleur…'))),

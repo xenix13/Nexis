@@ -83,7 +83,7 @@ export function episodeCode(c) {
   return `S${String(c.season).padStart(2, '0')}E${String(c.episode).padStart(2, '0')}`;
 }
 
-export function icon(name) {
+export function icon(name, extra) {
   const paths = {
     play: 'M8 5v14l11-7z',
     chevleft: 'M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z',
@@ -153,6 +153,7 @@ export function icon(name) {
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
   svg.classList.add('icon');
+  if (extra) svg.classList.add(extra);
   const p = document.createElementNS(ns, 'path');
   p.setAttribute('d', paths[name] || '');
   svg.append(p);

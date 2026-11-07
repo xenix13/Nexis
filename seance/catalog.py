@@ -51,6 +51,7 @@ DEFAULT_PREFS = {
     "next_delay": 5,
     "accent": "#ffa43a",
     "theme": "dark",
+    "ui_style": "classic",  # mise en page : classique, verre, barre latérale, épuré, cinéma, arrondi
     "poster_size": "m",
     "text_size": "m",
     "density": "normal",
@@ -95,6 +96,8 @@ DEFAULT_PREFS = {
 
 
 THEMES = ("dark", "oled", "midnight", "light", "sepia", "contrast", "auto")
+# styles d'interface : changent la mise en page (barre de navigation, cartes, panneaux, bannière), pas seulement les couleurs
+UI_STYLES = ("classic", "glass", "sidebar", "minimal", "cinema", "rounded")
 GRADIENTS = ("aurora", "sunset", "ocean", "forest", "berry", "ember", "steel", "mint")
 PIN_TYPES = ("collection", "playlist", "genre", "filter")
 FILTER_KEYS = {"genre", "watched", "decade", "duration", "res", "hdr", "audio", "subs", "rating", "sort"}
@@ -202,6 +205,8 @@ def validate_prefs(data):
             ok = isinstance(v, str) and HEX.match(v)
         elif k == "theme":
             ok = v in THEMES
+        elif k == "ui_style":
+            ok = v in UI_STYLES
         elif k == "poster_size":
             ok = v in ("s", "m", "l")
         elif k == "wallpaper":  # image de fond du profil : l'arrière-plan d'un film ou d'une série

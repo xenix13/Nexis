@@ -550,6 +550,14 @@ Chaque utilisateur règle son interface dans *Paramètres → Mon compte* ; ces 
 - **Profil** : nom, photo (image envoyée ou avatar prédéfini), **langue de l'interface** (français ou anglais), code PIN, mot de passe.
 - **Lecture** : qualité, langues, enchaînement des épisodes, **apparence des sous-titres** (taille, police, couleur, fond, bordure, position, avec aperçu ; ne s'applique pas aux sous-titres ASS stylés ni aux PGS) et **anti-spoiler** (vignettes floutées et résumés masqués pour les épisodes non vus ; un clic affiche le résumé). **Langues par bibliothèque** : d'autres langues pour une bibliothèque (les animes en japonais sous-titré, les films en français…). **Lecteur** : durée des boutons reculer (5 à 30 s) et avancer (10 à 90 s), vitesse de départ, volume gardé d'une lecture à l'autre (par défaut), son « nuit » (dialogues renforcés, effets atténués, pour le son 5.1 / 7.1 converti).
 - **Apparence** :
+  - **style de l'interface**, qui change la disposition et pas seulement les couleurs (aperçu en maquette, se combine avec tous les thèmes) :
+    - *Classique* : barre en haut sur la grande image (par défaut) ;
+    - *Verre dépoli* : barre flottante et panneaux translucides, bannière en carte arrondie ;
+    - *Barre latérale* : navigation à gauche avec icônes, recherche et profil en bas (sur grand écran ; en haut sur téléphone) ;
+    - *Épuré* : plat, angles droits, pas d'ombres, titres discrets ;
+    - *Cinéma plein écran* : bannière sur tout l'écran, titre des affiches au survol, fiche en grand ;
+    - *Arrondi* : formes très arrondies, menu en pastilles, boutons en dégradé.
+    Un appareil peut garder son propre style (*Cet appareil*), par exemple *Classique* sur la TV et *Barre latérale* sur l'ordinateur. Ces styles sont écrits pour Nexis, dans l'esprit des thèmes connus des serveurs multimédia ; les thèmes CSS faits pour Jellyfin ne s'appliquent pas tels quels, car l'interface est différente ;
   - **thème** : sombre, noir profond (OLED), bleu nuit, clair, sépia, contraste élevé, ou automatique (clair ou sombre comme l'appareil, et suit son changement) ;
   - **couleur d'accent** : 9 proposées ou n'importe quelle autre ;
   - **taille du texte** (petite à très grande), **densité** (compacte, normale, aérée), taille des affiches ;

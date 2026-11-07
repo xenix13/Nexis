@@ -19,7 +19,7 @@ import { renderBook } from './views/books.js';
 import { renderPodcast, renderPodcasts } from './views/podcasts.js';
 import './remote.js'; // télécommande, clavier et manette
 import { aboutDialog } from './about.js';
-import { applyDevice } from './device.js';
+import { applyDevice, device } from './device.js';
 import { createGroupDialog, currentGroups, isFreshFeed, onGroups, startGroupsFeed, stopGroupsFeed } from './groups.js';
 import { canInstall, install, onInstallChange, setupInstall } from './install.js';
 import { shortcutsHelp } from './keys.js';
@@ -86,6 +86,8 @@ export function applyPrefs(prefs) {
   r.style.setProperty('--accent', prefs.accent);
   // thème automatique : clair ou sombre comme l'appareil (et suit son changement)
   r.dataset.theme = prefs.theme === 'auto' ? (systemLight && systemLight.matches ? 'light' : 'dark') : prefs.theme;
+  // style de l'interface (mise en page) : celui de cet appareil s'il en a un, sinon celui du profil
+  r.dataset.style = device().ui_style || prefs.ui_style || 'classic';
   r.dataset.text = prefs.text_size || 'm';
   r.dataset.density = prefs.density || 'normal';
   for (const [cls, on] of [['cards-no-titles', prefs.card_titles === false], ['cards-no-progress', prefs.card_progress === false],
@@ -183,28 +185,32 @@ function parseHash() {
   return { parts: path.split('/').filter(Boolean), query: new URLSearchParams(qs || '') };
 }
 
-function navLink(href, label, active) {
-  return h('a.nav-link', { href, class: active ? 'nav-link active' : 'nav-link' }, label);
+// icône affichée selon le style (barre latérale, arrondi) ; le texte reste le libellé du lien
+function navLink(href, label, active, ico) {
+  return h('a.nav-link', { href, class: active ? 'nav-link active' : 'nav-link', title: label },
+    icon(ico || 'folder', 'nav-ico'), h('span.nav-label', label));
 }
+const LIB_ICONS = { movie: 'film', show: 'tv', photo: 'folder', audiobook: 'headphones', music: 'headphones' };
 
 // Liens de la barre du haut, dans l'ordre choisi par l'utilisateur (Paramètres → Accueil et menu)
 let startPending = true;
 applyDevice(); // réglages propres à cet appareil (animations, télécommande)
 
 export function navItems(me) {
-  const items = [{ key: 'home', href: '#/', label: tr('Accueil'), fixed: true }, { key: 'watchlist', href: '#/watchlist', label: tr('À regarder') }];
+  const items = [{ key: 'home', href: '#/', label: tr('Accueil'), fixed: true, icon: 'home' },
+    { key: 'watchlist', href: '#/watchlist', label: tr('À regarder'), icon: 'bookmark' }];
   const kids = me.user && me.user.kids;
-  if (me.features && me.features.discover && !kids) items.push({ key: 'discover', href: '#/discover', label: tr('Découvrir') });
-  for (const l of me.libraries) items.push({ key: `lib:${l.id}`, href: `#/library/${l.id}`, label: l.title });
-  if (me.features && me.features.live && !kids) items.push({ key: 'live', href: '#/live', label: tr('TV en direct') });
-  if (!kids) items.push({ key: 'podcasts', href: '#/podcasts', label: tr('Podcasts') });
+  if (me.features && me.features.discover && !kids) items.push({ key: 'discover', href: '#/discover', label: tr('Découvrir'), icon: 'star' });
+  for (const l of me.libraries) items.push({ key: `lib:${l.id}`, href: `#/library/${l.id}`, label: l.title, icon: LIB_ICONS[l.type] || 'folder' });
+  if (me.features && me.features.live && !kids) items.push({ key: 'live', href: '#/live', label: tr('TV en direct'), icon: 'guide' });
+  if (!kids) items.push({ key: 'podcasts', href: '#/podcasts', label: tr('Podcasts'), icon: 'mic' });
   const byKey = new Map(items.map((i) => [i.key, i]));
   return arrange(items.map((i) => i.key), me.prefs.nav_order).map((k) => byKey.get(k));
 }
 
 function navLinks(me, active) {
   return navItems(me).filter((i) => i.fixed || !me.prefs.nav_hidden.includes(i.key))
-    .map((i) => navLink(i.href, i.label, active === i.key));
+    .map((i) => navLink(i.href, i.label, active === i.key, i.icon));
 }
 
 // après un changement dans Réglages : on redessine les liens sans recharger la page
