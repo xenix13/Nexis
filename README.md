@@ -565,7 +565,7 @@ Chaque utilisateur règle son interface dans *Paramètres → Mon compte* ; ces 
 
 *Paramètres → Magasin de thèmes* propose des thèmes complets : couleurs, fond en dégradé, police, arrondi des angles et effets (néon, lignes d'écran, grain de pellicule, ciel étoilé, vignettage, halo des affiches), avec un style d'interface conseillé.
 
-- **Fournis avec Nexis** : Ville néon (cyberpunk), Rétro 80 (synthwave), Terminal, Héros, Ville sombre, Galaxie, Désert, Forêt, Océan profond, Épouvante, Ciné-club, Film noir, Pastel et Givre.
+- **Fournis avec Nexis** : Ville néon (cyberpunk), Rétro 80 (synthwave), Vaporwave, Arcade, Terminal, Héros, Ville sombre, Galaxie, Aurore boréale, Désert, Western, Steampunk, Forêt, Océan profond, Épouvante, Halloween, Noël, Ciné-club, Film noir, Kawaii, Pastel et Givre.
 - **Proposés par la communauté** : chacun peut ajouter son thème au dépôt GitHub (dossier [`static/themes`](static/themes/README.md)). L'intégration continue vérifie chaque proposition, un responsable relit puis fusionne, et tous les serveurs le proposent ensuite (index relu toutes les 6 heures par le serveur ; les appareils ne contactent pas GitHub).
 - **Aperçu** essaie un thème sur toute l'interface sans rien changer ; **Installer** l'ajoute à *Mes thèmes* (20 au plus). Les thèmes installés suivent le compte sur les serveurs liés, et restent utilisables si le magasin est injoignable.
 - **Créer un thème** : éditeur avec aperçu en direct sur toute l'interface, puis *Enregistrer et utiliser*, *Exporter* (fichier `.json`, à réimporter ou partager) ou *Proposer sur GitHub* (GitHub s'ouvre avec le fichier déjà rempli : il reste à valider la demande de fusion).

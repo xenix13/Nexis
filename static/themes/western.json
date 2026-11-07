@@ -1,0 +1,42 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "western",
+ "name": {
+  "fr": "Western",
+  "en": "Western"
+ },
+ "description": {
+  "fr": "Cuir, poussière et soleil de plomb sur la grand-rue.",
+  "en": "Leather, dust and blazing sun over Main Street."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#1a100a",
+  "surface": "#271810",
+  "surface2": "#362216",
+  "text": "#f6e7d2",
+  "muted": "#cfae8a",
+  "line": "#4d3220",
+  "accent": "#d98c3a",
+  "accent2": "#a8442a",
+  "on_accent": "#221000"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 180,
+  "stops": [
+   "#3d2412",
+   "#1a100a",
+   "#120a05"
+  ]
+ },
+ "effects": [
+  "grain",
+  "vignette"
+ ],
+ "font": "serif",
+ "radius": 4,
+ "style": "cinema"
+}

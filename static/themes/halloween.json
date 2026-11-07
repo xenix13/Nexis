@@ -1,0 +1,43 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "halloween",
+ "name": {
+  "fr": "Halloween",
+  "en": "Halloween"
+ },
+ "description": {
+  "fr": "Citrouille et violet de nuit de fête, sous la lune.",
+  "en": "Pumpkin orange and party-night purple under the moon."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#0e0814",
+  "surface": "#1a1024",
+  "surface2": "#261735",
+  "text": "#fff3e6",
+  "muted": "#c6aecf",
+  "line": "#3a2550",
+  "accent": "#ff8a1f",
+  "accent2": "#9b5de5",
+  "on_accent": "#1f0d00"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 160,
+  "stops": [
+   "#2b1442",
+   "#0e0814",
+   "#2a1200"
+  ]
+ },
+ "effects": [
+  "neon",
+  "stars",
+  "vignette"
+ ],
+ "font": "rounded",
+ "radius": 14,
+ "style": "rounded"
+}

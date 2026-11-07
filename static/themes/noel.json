@@ -1,0 +1,42 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "noel",
+ "name": {
+  "fr": "Noël",
+  "en": "Christmas"
+ },
+ "description": {
+  "fr": "Rouge houx, vert sapin et or, sous une neige d'étoiles.",
+  "en": "Holly red, fir green and gold under starry snow."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#0b1410",
+  "surface": "#13221b",
+  "surface2": "#1c3127",
+  "text": "#fbf6ee",
+  "muted": "#bcc9b8",
+  "line": "#2a4536",
+  "accent": "#d42a36",
+  "accent2": "#e9c46a",
+  "on_accent": "#ffffff"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 180,
+  "stops": [
+   "#16281f",
+   "#0b1410",
+   "#2a0b10"
+  ]
+ },
+ "effects": [
+  "stars",
+  "glow"
+ ],
+ "font": "serif",
+ "radius": 12,
+ "style": "rounded"
+}

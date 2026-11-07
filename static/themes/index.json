@@ -3,6 +3,83 @@
  "themes": [
   {
    "author": "xenix13",
+   "colors": {
+    "accent": "#ffd23f",
+    "accent2": "#ff3864",
+    "bg": "#06040f",
+    "line": "#2b2257",
+    "muted": "#aaa2d1",
+    "on_accent": "#1a1200",
+    "surface": "#110c22",
+    "surface2": "#1b1436",
+    "text": "#f7f3ff"
+   },
+   "dark": true,
+   "description": {
+    "en": "80s game room: bold colours, monospace font and scanlines.",
+    "fr": "Salle de jeux des années 80 : couleurs franches, police pixel et lignes d'écran."
+   },
+   "effects": [
+    "neon",
+    "scanlines",
+    "glow"
+   ],
+   "font": "mono",
+   "id": "arcade",
+   "name": {
+    "en": "Arcade",
+    "fr": "Arcade"
+   },
+   "radius": 0,
+   "schema": 1,
+   "style": "minimal",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "background": {
+    "angle": 160,
+    "stops": [
+     "#0b3a33",
+     "#040b14",
+     "#22104a",
+     "#040b14"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#43e8a8",
+    "accent2": "#a77bff",
+    "bg": "#040b14",
+    "line": "#1c3650",
+    "muted": "#9ab8cc",
+    "on_accent": "#002416",
+    "surface": "#0a1724",
+    "surface2": "#112436",
+    "text": "#ecf7ff"
+   },
+   "dark": true,
+   "description": {
+    "en": "Polar sky, green and violet veils above the snow.",
+    "fr": "Ciel polaire, voiles verts et violets au-dessus de la neige."
+   },
+   "effects": [
+    "stars",
+    "glow"
+   ],
+   "font": "default",
+   "id": "aurore-boreale",
+   "name": {
+    "en": "Northern lights",
+    "fr": "Aurore boréale"
+   },
+   "radius": 16,
+   "schema": 1,
+   "style": "glass",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
    "background": {
     "angle": 180,
     "stops": [
@@ -248,6 +325,49 @@
   {
    "author": "xenix13",
    "background": {
+    "angle": 160,
+    "stops": [
+     "#2b1442",
+     "#0e0814",
+     "#2a1200"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#ff8a1f",
+    "accent2": "#9b5de5",
+    "bg": "#0e0814",
+    "line": "#3a2550",
+    "muted": "#c6aecf",
+    "on_accent": "#1f0d00",
+    "surface": "#1a1024",
+    "surface2": "#261735",
+    "text": "#fff3e6"
+   },
+   "dark": true,
+   "description": {
+    "en": "Pumpkin orange and party-night purple under the moon.",
+    "fr": "Citrouille et violet de nuit de fête, sous la lune."
+   },
+   "effects": [
+    "neon",
+    "stars",
+    "vignette"
+   ],
+   "font": "rounded",
+   "id": "halloween",
+   "name": {
+    "en": "Halloween",
+    "fr": "Halloween"
+   },
+   "radius": 14,
+   "schema": 1,
+   "style": "rounded",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "background": {
     "angle": 200,
     "stops": [
      "#0b1d42",
@@ -285,6 +405,89 @@
    "radius": 10,
    "schema": 1,
    "style": "cinema",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "background": {
+    "angle": 135,
+    "stops": [
+     "#ffe3f0",
+     "#fff5fa",
+     "#e3fff7"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#d6337e",
+    "accent2": "#2bb39a",
+    "bg": "#fff5fa",
+    "line": "#f5cfe2",
+    "muted": "#6f5068",
+    "on_accent": "#ffffff",
+    "surface": "#ffffff",
+    "surface2": "#ffe6f2",
+    "text": "#3b1f35"
+   },
+   "dark": false,
+   "description": {
+    "en": "Candy pink, mint and round shapes, for anime fans.",
+    "fr": "Rose bonbon, menthe et formes rondes, pour les fans d'anime."
+   },
+   "effects": [
+    "glow"
+   ],
+   "font": "rounded",
+   "id": "kawaii",
+   "name": {
+    "en": "Kawaii",
+    "fr": "Kawaii"
+   },
+   "radius": 24,
+   "schema": 1,
+   "style": "rounded",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "background": {
+    "angle": 180,
+    "stops": [
+     "#16281f",
+     "#0b1410",
+     "#2a0b10"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#d42a36",
+    "accent2": "#e9c46a",
+    "bg": "#0b1410",
+    "line": "#2a4536",
+    "muted": "#bcc9b8",
+    "on_accent": "#ffffff",
+    "surface": "#13221b",
+    "surface2": "#1c3127",
+    "text": "#fbf6ee"
+   },
+   "dark": true,
+   "description": {
+    "en": "Holly red, fir green and gold under starry snow.",
+    "fr": "Rouge houx, vert sapin et or, sous une neige d'étoiles."
+   },
+   "effects": [
+    "stars",
+    "glow"
+   ],
+   "font": "serif",
+   "id": "noel",
+   "name": {
+    "en": "Christmas",
+    "fr": "Noël"
+   },
+   "radius": 12,
+   "schema": 1,
+   "style": "rounded",
    "version": 1
   },
   {
@@ -401,6 +604,48 @@
   },
   {
    "author": "xenix13",
+   "background": {
+    "angle": 200,
+    "stops": [
+     "#2b2012",
+     "#14100b",
+     "#1b0f0a"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#c9a14a",
+    "accent2": "#b5653a",
+    "bg": "#14100b",
+    "line": "#4a3a28",
+    "muted": "#c4ab86",
+    "on_accent": "#1f1400",
+    "surface": "#211a12",
+    "surface2": "#2e241a",
+    "text": "#f3e6cf"
+   },
+   "dark": true,
+   "description": {
+    "en": "Brass, copper and steam in a Victorian workshop.",
+    "fr": "Laiton, cuivre et vapeur dans un atelier victorien."
+   },
+   "effects": [
+    "grain",
+    "vignette"
+   ],
+   "font": "serif",
+   "id": "steampunk",
+   "name": {
+    "en": "Steampunk",
+    "fr": "Steampunk"
+   },
+   "radius": 6,
+   "schema": 1,
+   "style": "classic",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
    "colors": {
     "accent": "#33ff66",
     "bg": "#020803",
@@ -430,6 +675,49 @@
    "radius": 0,
    "schema": 1,
    "style": "minimal",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "background": {
+    "angle": 180,
+    "stops": [
+     "#3a1458",
+     "#140c26",
+     "#06323f"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#ff71ce",
+    "accent2": "#01cdfe",
+    "bg": "#140c26",
+    "line": "#40296b",
+    "muted": "#cbb0dd",
+    "on_accent": "#2a0020",
+    "surface": "#20143a",
+    "surface2": "#2d1d4f",
+    "text": "#fff0fb"
+   },
+   "dark": true,
+   "description": {
+    "en": "Pastel pink and teal, a 90s digital sunset.",
+    "fr": "Rose et turquoise pastel, coucher de soleil numérique des années 90."
+   },
+   "effects": [
+    "neon",
+    "scanlines",
+    "stars"
+   ],
+   "font": "default",
+   "id": "vaporwave",
+   "name": {
+    "en": "Vaporwave",
+    "fr": "Vaporwave"
+   },
+   "radius": 10,
+   "schema": 1,
+   "style": "glass",
    "version": 1
   },
   {
@@ -500,6 +788,48 @@
    "name": {
     "en": "Dark city",
     "fr": "Ville sombre"
+   },
+   "radius": 4,
+   "schema": 1,
+   "style": "cinema",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "background": {
+    "angle": 180,
+    "stops": [
+     "#3d2412",
+     "#1a100a",
+     "#120a05"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#d98c3a",
+    "accent2": "#a8442a",
+    "bg": "#1a100a",
+    "line": "#4d3220",
+    "muted": "#cfae8a",
+    "on_accent": "#221000",
+    "surface": "#271810",
+    "surface2": "#362216",
+    "text": "#f6e7d2"
+   },
+   "dark": true,
+   "description": {
+    "en": "Leather, dust and blazing sun over Main Street.",
+    "fr": "Cuir, poussière et soleil de plomb sur la grand-rue."
+   },
+   "effects": [
+    "grain",
+    "vignette"
+   ],
+   "font": "serif",
+   "id": "western",
+   "name": {
+    "en": "Western",
+    "fr": "Western"
    },
    "radius": 4,
    "schema": 1,

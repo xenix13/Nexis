@@ -1,0 +1,43 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "aurore-boreale",
+ "name": {
+  "fr": "Aurore boréale",
+  "en": "Northern lights"
+ },
+ "description": {
+  "fr": "Ciel polaire, voiles verts et violets au-dessus de la neige.",
+  "en": "Polar sky, green and violet veils above the snow."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#040b14",
+  "surface": "#0a1724",
+  "surface2": "#112436",
+  "text": "#ecf7ff",
+  "muted": "#9ab8cc",
+  "line": "#1c3650",
+  "accent": "#43e8a8",
+  "accent2": "#a77bff",
+  "on_accent": "#002416"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 160,
+  "stops": [
+   "#0b3a33",
+   "#040b14",
+   "#22104a",
+   "#040b14"
+  ]
+ },
+ "effects": [
+  "stars",
+  "glow"
+ ],
+ "font": "default",
+ "radius": 16,
+ "style": "glass"
+}

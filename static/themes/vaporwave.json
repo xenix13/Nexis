@@ -1,0 +1,43 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "vaporwave",
+ "name": {
+  "fr": "Vaporwave",
+  "en": "Vaporwave"
+ },
+ "description": {
+  "fr": "Rose et turquoise pastel, coucher de soleil numérique des années 90.",
+  "en": "Pastel pink and teal, a 90s digital sunset."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#140c26",
+  "surface": "#20143a",
+  "surface2": "#2d1d4f",
+  "text": "#fff0fb",
+  "muted": "#cbb0dd",
+  "line": "#40296b",
+  "accent": "#ff71ce",
+  "accent2": "#01cdfe",
+  "on_accent": "#2a0020"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 180,
+  "stops": [
+   "#3a1458",
+   "#140c26",
+   "#06323f"
+  ]
+ },
+ "effects": [
+  "neon",
+  "scanlines",
+  "stars"
+ ],
+ "font": "default",
+ "radius": 10,
+ "style": "glass"
+}
