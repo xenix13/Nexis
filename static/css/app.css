@@ -1378,3 +1378,12 @@ html.has-audio body { padding-bottom: 96px; }
 .server-pick select { flex: 1; min-width: 200px; max-width: 420px; }
 .server-pick.remote { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
 .server-pick p { margin: 8px 0 0; }
+
+/* sauvegardes : stockages externes et recopies */
+.remote-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.remote-card { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.remote-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.remote-card .backup-list { margin-top: 10px; }
+.copy-status { margin: 10px 0 0; padding-left: 18px; }
+.copy-status .bad, .remote-card .bad { color: #ff6b6b; }
+.backup-name { display: block; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; margin-top: 2px; }

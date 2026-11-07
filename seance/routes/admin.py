@@ -510,10 +510,10 @@ def register(app, ctx, x):
         return {"ok": True}
 
     # ---------------------------------------------------- sauvegardes
-    BK = r"(?P<name>nexis-[0-9a-z-]{15,40}\.tar\.gz)"
+    BK = r"(?P<name>nexis-[0-9a-z_-]{15,70}\.tar\.gz)"
 
     def backups_view():
-        from .. import backup
+        from .. import backup  # noqa: F811
         d = backup.directory(ctx)
         try:
             free = shutil.disk_usage(d if os.path.isdir(d) else ctx.data_dir).free
@@ -524,8 +524,13 @@ def register(app, ctx, x):
         return {"backups": backup.listing(ctx), "dir": d, "custom_dir": bool(db.setting("backup_dir")),
                 "default_dir": os.path.join(ctx.data_dir, "backups"), "free": free, "last": last,
                 "schedule": conf["schedule"], "keep": conf["options"].get("keep", 7),
-                "restored": ctx.restored and {"version": ctx.restored.get("version"), "created": ctx.restored.get("created")},
-                "can_restart": bool(ctx.restart)}
+                "restored": ctx.restored and {"version": ctx.restored.get("version"), "created": ctx.restored.get("created"),
+                                              "server": ctx.restored.get("server")},
+                "can_restart": bool(ctx.restart), "server": ctx.fed.name(),
+                "passphrase_set": bool(db.setting("backup_passphrase")),
+                "to_peers": db.setting("backup_to_peers", "1") == "1", "from_peers": db.setting("backup_from_peers", "1") == "1",
+                "peers": [{"id": str(p["id"]), "name": p["name"], "online": bool(p["online"]),
+                           "last": backup.copies_status(ctx).get(f"peer:{p['id']}")} for p in ctx.fed.peers()]}
 
     def backup_error(e):
         return HTTPError(400, str(e))
@@ -555,6 +560,16 @@ def register(app, ctx, x):
                     db.set_setting("backup_dir", backup.check_directory(b["dir"]))
                 except backup.BackupError as e:
                     raise backup_error(e)
+        if b.get("passphrase"):
+            pw = str(b["passphrase"])
+            if len(pw) < 10 or len(pw) > 200:
+                raise HTTPError(400, "Phrase secrète : de 10 à 200 caractères")
+            db.set_setting("backup_passphrase", pw)
+        if b.get("clear_passphrase"):
+            db.set_setting("backup_passphrase", None)
+        for k, setting in (("to_peers", "backup_to_peers"), ("from_peers", "backup_from_peers")):
+            if k in b:
+                db.set_setting(setting, "1" if b[k] else "0")
         if "schedule" in b or "keep" in b:
             try:
                 ctx.tasks.update("backup", schedule=b.get("schedule"),

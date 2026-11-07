@@ -30,12 +30,25 @@ def admin_command(argv):
     sub.add_parser("list-users", help="lister les comptes")
     rs = sub.add_parser("restore", help="restaurer une sauvegarde (Nexis arrêté, ou redémarré ensuite)")
     rs.add_argument("archive")
+    rs.add_argument("--passphrase", help="phrase secrète d'une archive chiffrée (.enc)")
     args = ap.parse_args(argv)
     if args.cmd == "restore":
         from . import backup
         os.makedirs(args.data, mode=0o700, exist_ok=True)
         try:
-            man = backup.stage(args.data, args.archive)
+            archive, decrypted = args.archive, False
+            if backup.is_encrypted(archive):
+                if not args.passphrase:
+                    print("Archive chiffrée : ajoutez --passphrase", file=sys.stderr)
+                    return 1
+                archive = os.path.join(args.data, "restore-download.tar.gz")
+                backup.decrypt_file(args.archive, archive, args.passphrase)
+                decrypted = True
+            try:
+                man = backup.stage(args.data, archive)
+            finally:
+                if decrypted and os.path.exists(archive):
+                    os.remove(archive)
         except backup.BackupError as e:
             print(str(e), file=sys.stderr)
             return 1

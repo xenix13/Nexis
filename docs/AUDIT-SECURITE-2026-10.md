@@ -128,6 +128,12 @@ Les actions tierces (`docker/build-push-action@v6`, `gradle/actions/setup-gradle
 - **Niveau de confiance.** Il ne change pas : des serveurs liés se répliquent déjà leurs comptes, droits compris. Un serveur compromis pouvait donc déjà se donner un administrateur sur l'autre. L'administration à distance peut être refusée par chaque serveur, réglage modifiable seulement sur place (jamais par un serveur lié), et chaque action reçue est notée dans son journal avec le compte et le serveur d'origine.
 - **Périmètre.** Seules les routes `/api/admin/…` sont acceptées à ce titre ; le reste de l'API (profil, préférences, historique) reste fermé aux requêtes entre serveurs au nom d'un compte. La liste des serveurs administrables n'est jamais relayée.
 
+## 13. Copies des sauvegardes (nouveau, 3.39.0)
+
+- **Entre serveurs liés.** La copie passe par la liaison TLS signée. Le serveur qui la reçoit vérifie l'archive (contenu, base) et que son manifeste porte l'identité du serveur qui l'envoie : un serveur lié ne peut pas déposer une sauvegarde au nom d'un autre. Chaque serveur peut refuser d'en garder. Ces copies ne sont pas chiffrées : les serveurs liés partagent déjà comptes et clés.
+- **Stockages externes.** Les secrets (clé S3, secret OAuth, jetons de renouvellement) restent dans la base et ne sont jamais renvoyés à l'interface. Google Drive est relié avec la portée `drive.file` (seulement les fichiers créés par Nexis), OneDrive avec `Files.ReadWrite.AppFolder` (seulement le dossier de l'application). Avec une phrase secrète, les copies externes sont chiffrées : AES-256-CTR (openssl) puis HMAC-SHA256 sur l'ensemble, clés tirées de la phrase par PBKDF2-SHA256 (300 000 tours) ; une archive modifiée ou une mauvaise phrase est refusée avant tout déchiffrement. Sans phrase secrète, la copie externe contient en clair les empreintes des mots de passe et les clés : l'interface le signale.
+- **Restauration depuis un chemin du serveur.** Réservée aux administrateurs ; le fichier n'est lu que s'il est une archive de Nexis valide.
+
 ## Recommandations par priorité
 
 1. Sécuriser le compte GitHub et la branche `main` ; mettre à jour vers des versions publiées et signées (§ 1).

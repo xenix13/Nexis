@@ -638,6 +638,55 @@ class FederationTest(unittest.TestCase):
                                 user=self.a.db.one("SELECT * FROM users WHERE username='colas'"))
         self.assertEqual(st, 403)
 
+    def test_16_backups_copied_between_servers(self):
+        """Une sauvegarde de A est recopiée chez B, rangée sous le nom de A ; B garde celles de chaque serveur à part."""
+        from seance import backup
+        self.a.db.set_setting("server_name", "Serveur Salon")
+        self.b.db.set_setting("server_name", "Serveur Bureau")
+        b_a = backup.create(self.a, "auto", distribute=False)
+        self.assertTrue(b_a["name"].startswith("nexis-serveur-salon_"), b_a["name"])
+        res = backup.distribute(self.a, os.path.join(backup.directory(self.a), b_a["name"]))
+        self.assertTrue(res and all(ok for _, ok in res), res)
+        on_b = {b["name"]: b for b in backup.listing(self.b)}
+        self.assertIn(b_a["name"], on_b)
+        copy = on_b[b_a["name"]]
+        self.assertEqual((copy["mine"], copy["server"]), (False, "Serveur Salon"))
+        # depuis A, l'administration de B montre la copie, avec son serveur d'origine
+        st, v = self.admin_a.call("GET", "/api/admin/backups", headers={"X-Nexis-Server": str(self.peer_on_a)})
+        self.assertEqual(st, 200, v)
+        self.assertTrue(any(b["name"] == b_a["name"] and not b["mine"] for b in v["backups"]))
+        # B garde au plus N copies automatiques de A, sans toucher aux siennes
+        mine_b = backup.create(self.b, "auto", distribute=False)
+        self.b.tasks.update("backup", options={"keep": 1})
+        try:
+            import time as _t
+            _t.sleep(1.1)
+            b_a2 = backup.create(self.a, "auto", distribute=False)
+            backup.distribute(self.a, os.path.join(backup.directory(self.a), b_a2["name"]))
+            names = {b["name"] for b in backup.listing(self.b)}
+            self.assertIn(b_a2["name"], names)
+            self.assertNotIn(b_a["name"], names)
+            self.assertIn(mine_b["name"], names)
+        finally:
+            self.b.tasks.update("backup", options={"keep": 7})
+        # B peut refuser de garder les sauvegardes des autres
+        self.b.db.set_setting("backup_from_peers", "0")
+        try:
+            res = backup.distribute(self.a, os.path.join(backup.directory(self.a), b_a2["name"]))
+            self.assertFalse(res[0][1])
+            self.assertIn("ne garde pas", backup.copies_status(self.a)[f"peer:{self.peer_on_a}"]["error"])
+        finally:
+            self.b.db.set_setting("backup_from_peers", None)
+        # un serveur lié ne peut pas déposer une sauvegarde au nom d'un autre serveur
+        with open(os.path.join(backup.directory(self.a), b_a2["name"]), "rb") as f:
+            raw = f.read()
+        st, _ = fed_raw(self.a.fed.port, "POST", "/fed/backup", {"X-Fed-Peer": self.b.fed.uid(),
+                        "X-Fed-Key": self.a.db.scalar("SELECT secret FROM peers"), "X-Backup-Name": "nexis-pirate_20260101-000000-auto.tar.gz",
+                        "Content-Length": str(len(raw))}, raw)
+        self.assertEqual(st, 400)  # c'est une sauvegarde de A, pas de B
+        self.a.db.set_setting("server_name", None)
+        self.b.db.set_setting("server_name", None)
+
     def test_99_unlink(self):
         st, r = self.admin_b.call("DELETE", f"/api/admin/federation/peers/{self.peer_on_b}")
         self.assertEqual(st, 200, r)

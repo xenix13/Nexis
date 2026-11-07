@@ -236,7 +236,7 @@ def build_app(ctx):
 
     catalog.install(ctx, x)
     for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify, photos, dlna, remote, push,
-                   opensubs, health, whisper, tracking, books, podcasts, federation):
+                   opensubs, health, whisper, tracking, books, podcasts, backup, federation):
         module.register(app, ctx, x)
     return app
 
