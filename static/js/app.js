@@ -79,12 +79,60 @@ async function dailyWallpaper() {
   return daily.path;
 }
 
+// --- thèmes installés : uniquement des couleurs vérifiées (#rrggbb), des nombres et des mots d'une liste fixe,
+// posés en variables CSS ; jamais de CSS venu d'ailleurs
+const THEME_VARS = { bg: '--bg', surface: '--surface', surface2: '--surface-2', text: '--text', muted: '--muted', line: '--line',
+  on_accent: '--ink-on-accent', accent2: '--accent-2' };
+const OVERLAY_FX = ['scanlines', 'grain', 'vignette'];
+// ciel étoilé : petits points répétés (effet « stars »)
+const STARS = ['radial-gradient(1px 1px at 20px 30px, #fff9 50%, transparent 51%)', 'radial-gradient(1px 1px at 120px 80px, #fff7 50%, transparent 51%)',
+  'radial-gradient(1.5px 1.5px at 60px 150px, #fffa 50%, transparent 51%)', 'radial-gradient(1px 1px at 170px 200px, #fff6 50%, transparent 51%)',
+  'radial-gradient(1.5px 1.5px at 230px 40px, #fff8 50%, transparent 51%)'];
+
+export function customTheme(prefs) {
+  if (!prefs || typeof prefs.theme !== 'string' || !prefs.theme.startsWith('t:')) return null;
+  return (prefs.my_themes || []).find((t) => `t:${t.id}` === prefs.theme) || null;
+}
+
+export function paintTheme(t) {
+  const r = document.documentElement;
+  for (const v of Object.values(THEME_VARS)) r.style.removeProperty(v);
+  for (const v of ['--radius', '--theme-bg', '--theme-bg-size']) r.style.removeProperty(v);
+  r.style.removeProperty('color-scheme');
+  delete r.dataset.fx;
+  delete r.dataset.overlay;
+  delete r.dataset.font;
+  r.classList.remove('has-theme-bg');
+  if (!t) return;
+  for (const [k, v] of Object.entries(THEME_VARS)) if (t.colors[k]) r.style.setProperty(v, t.colors[k]);
+  if (!t.colors.line) r.style.setProperty('--line', `color-mix(in srgb, ${t.colors.text} 10%, transparent)`);
+  if (!t.colors.accent2) r.style.setProperty('--accent-2', 'var(--accent)');
+  r.style.setProperty('--radius', `${t.radius}px`);
+  r.style.setProperty('color-scheme', t.dark ? 'dark' : 'light');
+  if (t.font && t.font !== 'default') r.dataset.font = t.font;
+  const fx = t.effects || [];
+  if (fx.length) r.dataset.fx = fx.join(' ');
+  if (fx.some((f) => OVERLAY_FX.includes(f))) r.dataset.overlay = '1';
+  const layers = [];
+  if (fx.includes('stars')) layers.push(...STARS);
+  if (t.background) layers.push(`linear-gradient(${t.background.angle}deg, ${t.background.stops.join(', ')})`);
+  if (layers.length) {
+    r.classList.add('has-theme-bg');
+    r.style.setProperty('--theme-bg', layers.join(', '));
+    r.style.setProperty('--theme-bg-size', [...(fx.includes('stars') ? STARS.map(() => '260px 260px') : []), ...(t.background ? ['100% 100%'] : [])].join(', '));
+  }
+}
+
 export function applyPrefs(prefs) {
   const r = document.documentElement;
   lastPrefs = prefs;
   r.style.setProperty('--accent', prefs.accent);
+  // thème installé (magasin, import, éditeur) : ses couleurs et effets ; sinon un thème intégré
+  const custom = customTheme(prefs);
+  paintTheme(custom);
   // thème automatique : clair ou sombre comme l'appareil (et suit son changement)
-  r.dataset.theme = prefs.theme === 'auto' ? (systemLight && systemLight.matches ? 'light' : 'dark') : prefs.theme;
+  r.dataset.theme = custom ? (custom.dark ? 'dark' : 'light')
+    : prefs.theme === 'auto' ? (systemLight && systemLight.matches ? 'light' : 'dark') : prefs.theme;
   // style de l'interface (mise en page) : celui de cet appareil s'il en a un, sinon celui du profil
   r.dataset.style = device().ui_style || prefs.ui_style || 'classic';
   r.dataset.text = prefs.text_size || 'm';

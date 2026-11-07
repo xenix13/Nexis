@@ -1,0 +1,30 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "foret",
+ "name": {
+  "fr": "Forêt",
+  "en": "Forest"
+ },
+ "description": {
+  "fr": "Mousse, sous-bois et vert tendre.",
+  "en": "Moss, undergrowth and fresh green."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#08130d",
+  "surface": "#0f2017",
+  "surface2": "#173022",
+  "text": "#e9f5ec",
+  "muted": "#9cbfa7",
+  "line": "#22432f",
+  "accent": "#5fd38d",
+  "on_accent": "#04210f"
+ },
+ "effects": [
+  "vignette"
+ ],
+ "font": "rounded",
+ "radius": 16
+}

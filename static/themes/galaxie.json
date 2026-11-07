@@ -1,0 +1,42 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "galaxie",
+ "name": {
+  "fr": "Galaxie",
+  "en": "Galaxy"
+ },
+ "description": {
+  "fr": "Espace profond, étoiles et nébuleuse violette.",
+  "en": "Deep space, stars and a violet nebula."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#050616",
+  "surface": "#0d1030",
+  "surface2": "#161a45",
+  "text": "#eef0ff",
+  "muted": "#a3a9da",
+  "line": "#252a63",
+  "accent": "#9b8cff",
+  "accent2": "#3fd0ff",
+  "on_accent": "#0b0630"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 135,
+  "stops": [
+   "#1a0b3d",
+   "#050616",
+   "#04263a"
+  ]
+ },
+ "effects": [
+  "stars",
+  "glow"
+ ],
+ "font": "default",
+ "radius": 14,
+ "style": "glass"
+}

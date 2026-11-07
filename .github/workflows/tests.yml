@@ -28,6 +28,32 @@ jobs:
       - run: deploy/build-deb.sh dist && dpkg-deb --info dist/*.deb
       - run: for f in static/js/*.js static/js/views/*.js; do node --check --input-type=module < "$f"; done
 
+  # Magasin de thèmes : chaque thème proposé (dossier static/themes) est vérifié — format, couleurs lisibles —
+  # sans attendre les autres tests ; sur main, l'index lu par les serveurs Nexis est régénéré et enregistré.
+  themes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Vérifier les thèmes
+        run: python3 -m seance.themes check-files static/themes
+      - name: Index des thèmes (main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          python3 -m seance.themes build static/themes
+          if ! git diff --quiet -- static/themes/index.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add static/themes/index.json
+            git commit -m "Index des thèmes"
+            git push
+          fi
+
   # Après les tests, sur main : image Docker (ghcr.io/<propriétaire>/nexis:latest) et, à chaque nouvelle
   # version, une publication GitHub avec le paquet .deb. Sur test : image ghcr.io/<propriétaire>/nexis:test
   # (celle du docker-compose.yml de la branche test), sans publication.

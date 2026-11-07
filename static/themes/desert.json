@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "desert",
+ "name": {
+  "fr": "Désert",
+  "en": "Desert"
+ },
+ "description": {
+  "fr": "Sable, épice et soleil couchant sur les dunes.",
+  "en": "Sand, spice and sunset over the dunes."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#1a120a",
+  "surface": "#26190e",
+  "surface2": "#352314",
+  "text": "#f7ead6",
+  "muted": "#cdb08c",
+  "line": "#4a321d",
+  "accent": "#e8a14a",
+  "on_accent": "#2a1600"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 180,
+  "stops": [
+   "#3a2210",
+   "#1a120a",
+   "#120c06"
+  ]
+ },
+ "effects": [
+  "grain"
+ ],
+ "font": "serif",
+ "radius": 8
+}

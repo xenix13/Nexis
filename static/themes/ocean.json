@@ -1,0 +1,40 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "ocean",
+ "name": {
+  "fr": "Océan profond",
+  "en": "Deep ocean"
+ },
+ "description": {
+  "fr": "Abysses bleu-vert et reflets turquoise.",
+  "en": "Blue-green depths and turquoise glints."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#04121a",
+  "surface": "#082230",
+  "surface2": "#0e3244",
+  "text": "#e6f6fb",
+  "muted": "#93bfcc",
+  "line": "#174458",
+  "accent": "#2ec4d6",
+  "on_accent": "#00222a"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 180,
+  "stops": [
+   "#06283a",
+   "#04121a",
+   "#020a10"
+  ]
+ },
+ "effects": [
+  "glow"
+ ],
+ "font": "default",
+ "radius": 14,
+ "style": "glass"
+}

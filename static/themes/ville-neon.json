@@ -1,0 +1,42 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "ville-neon",
+ "name": {
+  "fr": "Ville néon",
+  "en": "Neon city"
+ },
+ "description": {
+  "fr": "Cyberpunk : magenta et cyan électriques, lueurs et lignes d'écran.",
+  "en": "Cyberpunk: electric magenta and cyan, glow and scanlines."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#07060d",
+  "surface": "#120f22",
+  "surface2": "#1d1836",
+  "text": "#f3f0ff",
+  "muted": "#a9a1cf",
+  "line": "#2c2552",
+  "accent": "#ff2fd1",
+  "accent2": "#1fe6ff",
+  "on_accent": "#1a0016"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 160,
+  "stops": [
+   "#1a0638",
+   "#07060d",
+   "#00202c"
+  ]
+ },
+ "effects": [
+  "neon",
+  "scanlines"
+ ],
+ "font": "default",
+ "radius": 6,
+ "style": "glass"
+}

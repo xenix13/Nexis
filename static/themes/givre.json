@@ -1,0 +1,28 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "givre",
+ "name": {
+  "fr": "Givre",
+  "en": "Frost"
+ },
+ "description": {
+  "fr": "Clair et frais : blanc neige et bleu glacier.",
+  "en": "Light and crisp: snow white and glacier blue."
+ },
+ "dark": false,
+ "colors": {
+  "bg": "#eef4f9",
+  "surface": "#ffffff",
+  "surface2": "#e3edf5",
+  "text": "#12263a",
+  "muted": "#4a5f73",
+  "line": "#d3e0ea",
+  "accent": "#1f6fc5",
+  "on_accent": "#ffffff"
+ },
+ "font": "default",
+ "radius": 12,
+ "style": "glass"
+}

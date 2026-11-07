@@ -4,7 +4,7 @@ import re
 import threading
 import time
 
-from . import media
+from . import media, themes
 from .markers import from_chapters as chapter_markers
 from .i18n import tr
 from .names import fold
@@ -50,7 +50,8 @@ DEFAULT_PREFS = {
     "auto_skip_recap": False,
     "next_delay": 5,
     "accent": "#ffa43a",
-    "theme": "dark",
+    "theme": "dark",  # un des THEMES, ou "t:<id>" : un thème installé (my_themes)
+    "my_themes": [],  # thèmes installés depuis le magasin, importés ou créés (décrits en entier : valables hors ligne)
     "ui_style": "classic",  # mise en page : classique, verre, barre latérale, épuré, cinéma, arrondi
     "poster_size": "m",
     "text_size": "m",
@@ -95,6 +96,7 @@ DEFAULT_PREFS = {
 
 
 THEMES = ("dark", "oled", "midnight", "light", "sepia", "contrast", "auto")
+MAX_MY_THEMES = 20
 # styles d'interface : changent la mise en page (barre de navigation, cartes, panneaux, bannière), pas seulement les couleurs
 UI_STYLES = ("classic", "glass", "sidebar", "minimal", "cinema", "rounded")
 GRADIENTS = ("aurora", "sunset", "ocean", "forest", "berry", "ember", "steel", "mint")
@@ -203,7 +205,14 @@ def validate_prefs(data):
         elif k == "accent":
             ok = isinstance(v, str) and HEX.match(v)
         elif k == "theme":
-            ok = v in THEMES
+            ok = v in THEMES or isinstance(v, str) and v.startswith("t:") and bool(themes.ID.match(v[2:]))
+        elif k == "my_themes":
+            if isinstance(v, list) and len(v) <= MAX_MY_THEMES:
+                try:
+                    v = [themes.validate(t) for t in v]
+                    ok = len({t["id"] for t in v}) == len(v)
+                except themes.ThemeError:
+                    ok = False
         elif k == "ui_style":
             ok = v in UI_STYLES
         elif k == "poster_size":

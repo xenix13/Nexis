@@ -1,0 +1,510 @@
+{
+ "schema": 1,
+ "themes": [
+  {
+   "author": "xenix13",
+   "background": {
+    "angle": 180,
+    "stops": [
+     "#2a0b12",
+     "#14070a",
+     "#0c0406"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#d9a441",
+    "bg": "#14070a",
+    "line": "#4a1c25",
+    "muted": "#d1aca3",
+    "on_accent": "#241600",
+    "surface": "#220c11",
+    "surface2": "#331219",
+    "text": "#fbefe6"
+   },
+   "dark": true,
+   "description": {
+    "en": "Red velvet and gilding of an old picture palace.",
+    "fr": "Velours rouge et dorures de vieille salle de cinéma."
+   },
+   "effects": [
+    "vignette"
+   ],
+   "font": "serif",
+   "id": "cine-club",
+   "name": {
+    "en": "Film society",
+    "fr": "Ciné-club"
+   },
+   "radius": 8,
+   "schema": 1,
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "background": {
+    "angle": 180,
+    "stops": [
+     "#3a2210",
+     "#1a120a",
+     "#120c06"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#e8a14a",
+    "bg": "#1a120a",
+    "line": "#4a321d",
+    "muted": "#cdb08c",
+    "on_accent": "#2a1600",
+    "surface": "#26190e",
+    "surface2": "#352314",
+    "text": "#f7ead6"
+   },
+   "dark": true,
+   "description": {
+    "en": "Sand, spice and sunset over the dunes.",
+    "fr": "Sable, épice et soleil couchant sur les dunes."
+   },
+   "effects": [
+    "grain"
+   ],
+   "font": "serif",
+   "id": "desert",
+   "name": {
+    "en": "Desert",
+    "fr": "Désert"
+   },
+   "radius": 8,
+   "schema": 1,
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "colors": {
+    "accent": "#ff6a1a",
+    "accent2": "#c4142c",
+    "bg": "#0a0505",
+    "line": "#3a1a1a",
+    "muted": "#bb9d99",
+    "on_accent": "#1f0a00",
+    "surface": "#160b0b",
+    "surface2": "#221111",
+    "text": "#f5e9e6"
+   },
+   "dark": true,
+   "description": {
+    "en": "Pumpkin, dried blood and old film grain.",
+    "fr": "Citrouille, sang séché et grain de vieille pellicule."
+   },
+   "effects": [
+    "grain",
+    "vignette"
+   ],
+   "font": "serif",
+   "id": "epouvante",
+   "name": {
+    "en": "Horror",
+    "fr": "Épouvante"
+   },
+   "radius": 4,
+   "schema": 1,
+   "style": "cinema",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "colors": {
+    "accent": "#e6e6e6",
+    "bg": "#0c0c0c",
+    "line": "#333333",
+    "muted": "#a8a8a8",
+    "on_accent": "#111111",
+    "surface": "#171717",
+    "surface2": "#222222",
+    "text": "#f2f2f2"
+   },
+   "dark": true,
+   "description": {
+    "en": "Black and white, grain and venetian-blind shadows.",
+    "fr": "Noir et blanc, grain et ombres de jalousie."
+   },
+   "effects": [
+    "grain",
+    "vignette"
+   ],
+   "font": "serif",
+   "id": "film-noir",
+   "name": {
+    "en": "Film noir",
+    "fr": "Film noir"
+   },
+   "radius": 2,
+   "schema": 1,
+   "style": "minimal",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "colors": {
+    "accent": "#5fd38d",
+    "bg": "#08130d",
+    "line": "#22432f",
+    "muted": "#9cbfa7",
+    "on_accent": "#04210f",
+    "surface": "#0f2017",
+    "surface2": "#173022",
+    "text": "#e9f5ec"
+   },
+   "dark": true,
+   "description": {
+    "en": "Moss, undergrowth and fresh green.",
+    "fr": "Mousse, sous-bois et vert tendre."
+   },
+   "effects": [
+    "vignette"
+   ],
+   "font": "rounded",
+   "id": "foret",
+   "name": {
+    "en": "Forest",
+    "fr": "Forêt"
+   },
+   "radius": 16,
+   "schema": 1,
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "background": {
+    "angle": 135,
+    "stops": [
+     "#1a0b3d",
+     "#050616",
+     "#04263a"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#9b8cff",
+    "accent2": "#3fd0ff",
+    "bg": "#050616",
+    "line": "#252a63",
+    "muted": "#a3a9da",
+    "on_accent": "#0b0630",
+    "surface": "#0d1030",
+    "surface2": "#161a45",
+    "text": "#eef0ff"
+   },
+   "dark": true,
+   "description": {
+    "en": "Deep space, stars and a violet nebula.",
+    "fr": "Espace profond, étoiles et nébuleuse violette."
+   },
+   "effects": [
+    "stars",
+    "glow"
+   ],
+   "font": "default",
+   "id": "galaxie",
+   "name": {
+    "en": "Galaxy",
+    "fr": "Galaxie"
+   },
+   "radius": 14,
+   "schema": 1,
+   "style": "glass",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "colors": {
+    "accent": "#1f6fc5",
+    "bg": "#eef4f9",
+    "line": "#d3e0ea",
+    "muted": "#4a5f73",
+    "on_accent": "#ffffff",
+    "surface": "#ffffff",
+    "surface2": "#e3edf5",
+    "text": "#12263a"
+   },
+   "dark": false,
+   "description": {
+    "en": "Light and crisp: snow white and glacier blue.",
+    "fr": "Clair et frais : blanc neige et bleu glacier."
+   },
+   "effects": [],
+   "font": "default",
+   "id": "givre",
+   "name": {
+    "en": "Frost",
+    "fr": "Givre"
+   },
+   "radius": 12,
+   "schema": 1,
+   "style": "glass",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "background": {
+    "angle": 200,
+    "stops": [
+     "#0b1d42",
+     "#071226",
+     "#2a0a14"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#ff4d5e",
+    "accent2": "#f7c948",
+    "bg": "#071226",
+    "line": "#223a66",
+    "muted": "#a6b6d6",
+    "on_accent": "#1f0004",
+    "surface": "#0d1d3a",
+    "surface2": "#15294f",
+    "text": "#f4f7ff"
+   },
+   "dark": true,
+   "description": {
+    "en": "Midnight blue, cape red and gold: the spirit of superhero films.",
+    "fr": "Bleu nuit, rouge cape et or : l'esprit des films de super-héros."
+   },
+   "effects": [
+    "vignette",
+    "glow"
+   ],
+   "font": "default",
+   "id": "heros",
+   "name": {
+    "en": "Hero",
+    "fr": "Héros"
+   },
+   "radius": 10,
+   "schema": 1,
+   "style": "cinema",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "background": {
+    "angle": 180,
+    "stops": [
+     "#06283a",
+     "#04121a",
+     "#020a10"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#2ec4d6",
+    "bg": "#04121a",
+    "line": "#174458",
+    "muted": "#93bfcc",
+    "on_accent": "#00222a",
+    "surface": "#082230",
+    "surface2": "#0e3244",
+    "text": "#e6f6fb"
+   },
+   "dark": true,
+   "description": {
+    "en": "Blue-green depths and turquoise glints.",
+    "fr": "Abysses bleu-vert et reflets turquoise."
+   },
+   "effects": [
+    "glow"
+   ],
+   "font": "default",
+   "id": "ocean",
+   "name": {
+    "en": "Deep ocean",
+    "fr": "Océan profond"
+   },
+   "radius": 14,
+   "schema": 1,
+   "style": "glass",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "colors": {
+    "accent": "#9b4fd1",
+    "accent2": "#e85d9a",
+    "bg": "#fbf6ff",
+    "line": "#e2d6f0",
+    "muted": "#665c7d",
+    "on_accent": "#ffffff",
+    "surface": "#ffffff",
+    "surface2": "#f1e8fb",
+    "text": "#2b2140"
+   },
+   "dark": false,
+   "description": {
+    "en": "Light and soft: lilac, pink and round shapes.",
+    "fr": "Clair et doux : lilas, rose et formes rondes."
+   },
+   "effects": [],
+   "font": "rounded",
+   "id": "pastel",
+   "name": {
+    "en": "Pastel",
+    "fr": "Pastel"
+   },
+   "radius": 20,
+   "schema": 1,
+   "style": "rounded",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "background": {
+    "angle": 180,
+    "stops": [
+     "#2b0b48",
+     "#120a24",
+     "#3a0d2e"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#ff8a3d",
+    "accent2": "#ff3d9a",
+    "bg": "#120a24",
+    "line": "#3b2766",
+    "muted": "#c8aedb",
+    "on_accent": "#2a0d00",
+    "surface": "#1d1238",
+    "surface2": "#2a1a4d",
+    "text": "#fff1f8"
+   },
+   "dark": true,
+   "description": {
+    "en": "Synthwave: purple, pink and orange sunset under the stars.",
+    "fr": "Synthwave : coucher de soleil violet, rose et orange sous les étoiles."
+   },
+   "effects": [
+    "neon",
+    "stars"
+   ],
+   "font": "default",
+   "id": "retro-80",
+   "name": {
+    "en": "Retro 80s",
+    "fr": "Rétro 80"
+   },
+   "radius": 12,
+   "schema": 1,
+   "style": "rounded",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "colors": {
+    "accent": "#33ff66",
+    "bg": "#020803",
+    "line": "#14401f",
+    "muted": "#6fcf86",
+    "on_accent": "#001a07",
+    "surface": "#06140a",
+    "surface2": "#0b2112",
+    "text": "#c2ffd0"
+   },
+   "dark": true,
+   "description": {
+    "en": "Green phosphor screen, monospace font, scanlines and grain.",
+    "fr": "Écran à phosphore vert, police à chasse fixe, lignes et grain."
+   },
+   "effects": [
+    "scanlines",
+    "grain",
+    "neon"
+   ],
+   "font": "mono",
+   "id": "terminal",
+   "name": {
+    "en": "Terminal",
+    "fr": "Terminal"
+   },
+   "radius": 0,
+   "schema": 1,
+   "style": "minimal",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "background": {
+    "angle": 160,
+    "stops": [
+     "#1a0638",
+     "#07060d",
+     "#00202c"
+    ],
+    "type": "gradient"
+   },
+   "colors": {
+    "accent": "#ff2fd1",
+    "accent2": "#1fe6ff",
+    "bg": "#07060d",
+    "line": "#2c2552",
+    "muted": "#a9a1cf",
+    "on_accent": "#1a0016",
+    "surface": "#120f22",
+    "surface2": "#1d1836",
+    "text": "#f3f0ff"
+   },
+   "dark": true,
+   "description": {
+    "en": "Cyberpunk: electric magenta and cyan, glow and scanlines.",
+    "fr": "Cyberpunk : magenta et cyan électriques, lueurs et lignes d'écran."
+   },
+   "effects": [
+    "neon",
+    "scanlines"
+   ],
+   "font": "default",
+   "id": "ville-neon",
+   "name": {
+    "en": "Neon city",
+    "fr": "Ville néon"
+   },
+   "radius": 6,
+   "schema": 1,
+   "style": "glass",
+   "version": 1
+  },
+  {
+   "author": "xenix13",
+   "colors": {
+    "accent": "#f2c230",
+    "bg": "#0b0c0e",
+    "line": "#2b2e35",
+    "muted": "#a3a39e",
+    "on_accent": "#1a1400",
+    "surface": "#15171b",
+    "surface2": "#1f2228",
+    "text": "#ecebe6"
+   },
+   "dark": true,
+   "description": {
+    "en": "Asphalt grey and signal yellow, for vigilante nights.",
+    "fr": "Gris d'asphalte et jaune de signal, pour les nuits de justicier."
+   },
+   "effects": [
+    "vignette",
+    "grain"
+   ],
+   "font": "default",
+   "id": "ville-sombre",
+   "name": {
+    "en": "Dark city",
+    "fr": "Ville sombre"
+   },
+   "radius": 4,
+   "schema": 1,
+   "style": "cinema",
+   "version": 1
+  }
+ ]
+}

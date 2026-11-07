@@ -1,0 +1,32 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "ville-sombre",
+ "name": {
+  "fr": "Ville sombre",
+  "en": "Dark city"
+ },
+ "description": {
+  "fr": "Gris d'asphalte et jaune de signal, pour les nuits de justicier.",
+  "en": "Asphalt grey and signal yellow, for vigilante nights."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#0b0c0e",
+  "surface": "#15171b",
+  "surface2": "#1f2228",
+  "text": "#ecebe6",
+  "muted": "#a3a39e",
+  "line": "#2b2e35",
+  "accent": "#f2c230",
+  "on_accent": "#1a1400"
+ },
+ "effects": [
+  "vignette",
+  "grain"
+ ],
+ "font": "default",
+ "radius": 4,
+ "style": "cinema"
+}

@@ -695,13 +695,16 @@ class FederationTest(unittest.TestCase):
         series_b = self.lib(colas_b, "Séries")                        # bibliothèque de B (à part ou fusion d'ici)
         self.assertNotEqual(films_a["id"], films_a_on_b["id"])
         movie = self.admin_a.call("GET", f"/api/libraries/{films_a['id']}/items")[1]["items"][0]
+        with open(os.path.join(STATIC, "themes", "ville-neon.json"), encoding="utf-8") as f:
+            neon = json.load(f)
         st, r = self.admin_a.call("PUT", "/api/me/prefs", {
             "theme": "light", "accent": "#4c9aff", "sub_size": 125, "hidden_libraries": [films_a["id"]],
             "start_page": f"lib:{films_a['id']}", "nav_hidden": [f"lib:{films_a['id']}", "live"],
             "wallpaper": f"/library/metadata/{movie['id']}/art/1",
             "home_pins": [{"id": 3, "type": "genre", "ref": "Drame", "lib": films_a["id"], "title": "Drames"}],
             "home_order": ["pin:3", "continue"], "lib_langs": {films_a["id"]: {"audio_lang": "jpn"}},
-            "hidden_genres": ["Horreur"], "private_mode": True, "quiet_hours": "23:00-07:30", "muted_shows": [str(movie["id"])]})
+            "hidden_genres": ["Horreur"], "private_mode": True, "quiet_hours": "23:00-07:30", "muted_shows": [str(movie["id"])],
+            "my_themes": [neon]})
         self.assertEqual(st, 200, r)
         self.sync()
         p = colas_b.call("GET", "/api/me")[1]["prefs"]
@@ -713,6 +716,7 @@ class FederationTest(unittest.TestCase):
         self.assertEqual(p["home_order"], ["pin:3", "continue"])
         self.assertEqual(p["lib_langs"], {films_a_on_b["id"]: {"audio_lang": "jpn"}})
         self.assertEqual((p["hidden_genres"], p["private_mode"], p["quiet_hours"]), (["Horreur"], True, "23:00-07:30"))
+        self.assertEqual([t["id"] for t in p["my_themes"]], ["ville-neon"])  # thème installé : sur l'autre serveur aussi
         st, d = colas_b.call("GET", f"/api/items/{p['muted_shows'][0]}")
         self.assertEqual((st, d["title"]), (200, movie["title"]))  # sourdine : même titre, numéro de B
         wid = int(p["wallpaper"].split("/")[3])

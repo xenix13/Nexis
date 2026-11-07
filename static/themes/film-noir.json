@@ -1,0 +1,32 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "film-noir",
+ "name": {
+  "fr": "Film noir",
+  "en": "Film noir"
+ },
+ "description": {
+  "fr": "Noir et blanc, grain et ombres de jalousie.",
+  "en": "Black and white, grain and venetian-blind shadows."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#0c0c0c",
+  "surface": "#171717",
+  "surface2": "#222222",
+  "text": "#f2f2f2",
+  "muted": "#a8a8a8",
+  "line": "#333333",
+  "accent": "#e6e6e6",
+  "on_accent": "#111111"
+ },
+ "effects": [
+  "grain",
+  "vignette"
+ ],
+ "font": "serif",
+ "radius": 2,
+ "style": "minimal"
+}

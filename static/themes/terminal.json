@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "terminal",
+ "name": {
+  "fr": "Terminal",
+  "en": "Terminal"
+ },
+ "description": {
+  "fr": "Écran à phosphore vert, police à chasse fixe, lignes et grain.",
+  "en": "Green phosphor screen, monospace font, scanlines and grain."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#020803",
+  "surface": "#06140a",
+  "surface2": "#0b2112",
+  "text": "#c2ffd0",
+  "muted": "#6fcf86",
+  "line": "#14401f",
+  "accent": "#33ff66",
+  "on_accent": "#001a07"
+ },
+ "effects": [
+  "scanlines",
+  "grain",
+  "neon"
+ ],
+ "font": "mono",
+ "radius": 0,
+ "style": "minimal"
+}

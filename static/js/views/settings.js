@@ -8,6 +8,7 @@ import { arrange, avatar, clear, confirmDialog, field, h, icon, img, modal, sele
 import { ART, BACKGROUNDS, CATEGORIES, DEFAULT_BG, artDataUrl, artSvg } from '../avatar-art.js';
 import { device, deviceName, modestDevice, setDevice } from '../device.js';
 import { shortcutsPanel } from '../keys.js';
+import { renderThemeStore, themePreview } from './themes.js';
 import { disablePush, enablePush, pushState, pushSupported } from '../push.js';
 
 // notifications push : nouvel épisode d'une série suivie, titre demandé arrivé
@@ -221,6 +222,8 @@ export const ACCOUNT_GROUP = { title: tr('Mon compte'), items: [
     keys: tr('qualité langue audio sous-titres taille police couleur style épisode suivant générique intro automatique spoiler anti-spoiler résumé') },
   { id: 'appearance', label: tr('Apparence'), icon: 'palette', lead: tr('Style de l’interface, thème, couleur d’accent, affiches et fond d’écran.'),
     keys: tr('style mise en page disposition barre latérale verre épuré cinéma arrondi thème sombre clair oled couleur accent affiches taille fond d’écran') },
+  { id: 'themes', label: tr('Magasin de thèmes'), icon: 'palette', lead: tr('Thèmes fournis avec Nexis et proposés par la communauté, création de vos propres thèmes.'),
+    keys: tr('thèmes magasin boutique cyberpunk néon rétro terminal galaxie films couleurs créer importer exporter github communauté') },
   { id: 'device', label: tr('Cet appareil'), icon: 'tv', lead: tr('Réglages propres à ce navigateur ou à cette TV, prioritaires sur ceux du profil.'),
     keys: tr('appareil tv téléphone qualité sous-titres taille animations mouvement télécommande manette navigateur') },
   { id: 'services', label: tr('Trakt et Letterboxd'), icon: 'link', lead: tr('Ce que vous regardez, vos notes et votre liste « À regarder », partagés avec Trakt ou Letterboxd.'),
@@ -735,7 +738,13 @@ function accountPage(id, body, rerender) {
         h('p.muted.small', tr('Change la disposition de Nexis (navigation, cartes, panneaux, grande bannière), et pas seulement les couleurs. Se combine avec n’importe quel thème.')),
         styleTiles,
         devStyle ? h('p.small.warn-text', tr('Cet appareil utilise son propre style ({s}) : voir « Cet appareil ».', { s: (UI_STYLES.find((x) => x[0] === devStyle) || [0, devStyle])[1] })) : null),
-      h('section.panel', h('h2', tr('Thème')), themeTiles),
+      h('section.panel', h('h2', tr('Thème')), themeTiles,
+        (p.my_themes || []).length ? h('div', h('h3.small.theme-sub', tr('Mes thèmes')), h('div.store-grid.mini', p.my_themes.map((t) => h('button.theme-tile', {
+          type: 'button', 'aria-pressed': String(p.theme === `t:${t.id}`), title: (t.name[lang] || t.name.fr),
+          onclick: async () => { await save({ theme: `t:${t.id}`, accent: t.colors.accent }, tr('Thème appliqué')); rerender(); } },
+        themePreview(t), h('span.theme-name', t.name[lang] || t.name.fr))))) : null,
+        h('div.actions-row', h('a.btn', { href: '#/settings/themes' }, icon('palette'), tr('Magasin de thèmes…')),
+          h('span.muted.small', tr('Cyberpunk, rétro, terminal, galaxie, ciné-club… ou le vôtre.')))),
       h('section.panel', h('h2', tr('Couleur d’accent')),
         h('div.accent-row', swatches(p.accent, (c) => save({ accent: c }, tr('Couleur appliquée'))), h('label.color-pick', picker, tr('Autre couleur…'))),
         h('p.muted.small', tr('Boutons, liens actifs, barres de progression.'))),
@@ -947,5 +956,6 @@ export async function renderSettingsArea(main, area, section, ctx) {
     h('div.page-head', h('h1', tr('Paramètres'))), h('div.settings-layout', nav, content)));
   document.title = tr('{label} · Paramètres · Nexis', { label: current.label });
   if (current.area === 'admin') await renderAdminSection(current.id, body, ctx);
+  else if (current.id === 'themes') await renderThemeStore(body, ctx);
   else accountPage(current.id, body, () => renderSettingsArea(main, area, section, ctx));
 }

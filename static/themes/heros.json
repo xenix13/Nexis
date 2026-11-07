@@ -1,0 +1,42 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "heros",
+ "name": {
+  "fr": "Héros",
+  "en": "Hero"
+ },
+ "description": {
+  "fr": "Bleu nuit, rouge cape et or : l'esprit des films de super-héros.",
+  "en": "Midnight blue, cape red and gold: the spirit of superhero films."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#071226",
+  "surface": "#0d1d3a",
+  "surface2": "#15294f",
+  "text": "#f4f7ff",
+  "muted": "#a6b6d6",
+  "line": "#223a66",
+  "accent": "#ff4d5e",
+  "accent2": "#f7c948",
+  "on_accent": "#1f0004"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 200,
+  "stops": [
+   "#0b1d42",
+   "#071226",
+   "#2a0a14"
+  ]
+ },
+ "effects": [
+  "vignette",
+  "glow"
+ ],
+ "font": "default",
+ "radius": 10,
+ "style": "cinema"
+}

@@ -549,6 +549,7 @@ Chaque utilisateur règle son interface dans *Paramètres → Mon compte* ; ces 
     - *Arrondi* : formes très arrondies, menu en pastilles, boutons en dégradé.
     Un appareil peut garder son propre style (*Cet appareil*), par exemple *Classique* sur la TV et *Barre latérale* sur l'ordinateur. Ces styles sont écrits pour Nexis, dans l'esprit des thèmes connus des serveurs multimédia ; les thèmes CSS faits pour Jellyfin ne s'appliquent pas tels quels, car l'interface est différente ;
   - **thème** : sombre, noir profond (OLED), bleu nuit, clair, sépia, contraste élevé, ou automatique (clair ou sombre comme l'appareil, et suit son changement) ;
+  - **magasin de thèmes** (*Paramètres → Magasin de thèmes*, voir plus bas) : des thèmes complets, avec leurs effets, en plus des thèmes de base ;
   - **couleur d'accent** : 9 proposées ou n'importe quelle autre ;
   - **taille du texte** (petite à très grande), **densité** (compacte, normale, aérée), taille des affiches ;
   - **cartes** : titre et année, barre de progression, coche « vu », badges 4K / HDR et « Nouveau » (affichés par défaut), note TMDB (en option) ;
@@ -559,6 +560,18 @@ Chaque utilisateur règle son interface dans *Paramètres → Mon compte* ; ces 
   - **mode privé** (désactivé par défaut) : la progression reste enregistrée pour reprendre, mais rien ne s'ajoute à l'historique, rien ne part vers Trakt, et les administrateurs voient « Lecture privée » au lieu du titre dans les lectures en cours ;
   - **notifications** : nouveaux épisodes des séries suivies (actives par défaut, à couper), **séries en sourdine** (menu ⋯ d'une série → *Ne plus être prévenu des nouveaux épisodes*), **heures calmes** (ex. 22 h à 8 h, heure du serveur) pendant lesquelles les notifications restent dans la cloche sans faire sonner les appareils. Les alertes d'administration et l'arrivée d'un titre demandé passent toujours.
 - **Accueil et menu** : **page d'ouverture** (accueil, « À regarder », Découvrir, TV en direct ou une bibliothèque), ordre et affichage des rangées et des liens. Une collection, une playlist ou un genre d'une bibliothèque s'**épingle sur l'accueil** avec le bouton *Épingler à l'accueil* de sa page (20 rangées au plus). **Mes rangées** : des rangées à soi (nom, bibliothèque, genre, vus ou non, années, tri, nombre de titres), créées et modifiées dans *Accueil et menu*. **Grande bannière** : la reprise en cours (sinon un ajout récent, par défaut), un ajout récent, un titre au hasard, un titre de « À regarder », ou aucune.
+
+### Magasin de thèmes
+
+*Paramètres → Magasin de thèmes* propose des thèmes complets : couleurs, fond en dégradé, police, arrondi des angles et effets (néon, lignes d'écran, grain de pellicule, ciel étoilé, vignettage, halo des affiches), avec un style d'interface conseillé.
+
+- **Fournis avec Nexis** : Ville néon (cyberpunk), Rétro 80 (synthwave), Terminal, Héros, Ville sombre, Galaxie, Désert, Forêt, Océan profond, Épouvante, Ciné-club, Film noir, Pastel et Givre.
+- **Proposés par la communauté** : chacun peut ajouter son thème au dépôt GitHub (dossier [`static/themes`](static/themes/README.md)). L'intégration continue vérifie chaque proposition, un responsable relit puis fusionne, et tous les serveurs le proposent ensuite (index relu toutes les 6 heures par le serveur ; les appareils ne contactent pas GitHub).
+- **Aperçu** essaie un thème sur toute l'interface sans rien changer ; **Installer** l'ajoute à *Mes thèmes* (20 au plus). Les thèmes installés suivent le compte sur les serveurs liés, et restent utilisables si le magasin est injoignable.
+- **Créer un thème** : éditeur avec aperçu en direct sur toute l'interface, puis *Enregistrer et utiliser*, *Exporter* (fichier `.json`, à réimporter ou partager) ou *Proposer sur GitHub* (GitHub s'ouvre avec le fichier déjà rempli : il reste à valider la demande de fusion).
+- **Sécurité** : un thème n'est qu'une description vérifiée par le serveur, jamais du code ni une image (ni CSS libre, ni adresse) : un thème venu d'ailleurs ne peut ni imiter un écran de connexion, ni envoyer quoi que ce soit hors du serveur. Le contraste du texte est contrôlé pour qu'il reste lisible.
+- **Noms** : pas de nom de film, de personnage ou de marque dans le magasin ; on s'en inspire librement sous un nom à soi (« Héros », « Terminal »…).
+- **Administrateur** : en bas de la page, désactiver le magasin en ligne ou le faire pointer vers son propre dépôt de thèmes.
 
 **Bibliothèques** : bouton **Filtres** pour trier par visionnage (non vus, en cours, vus), décennie, durée, définition (4K, 1080p…), HDR, langue audio, sous-titres et note ; une combinaison de filtres s'épingle sur l'accueil. Affichage en affiches, vignettes larges ou liste détaillée (retenu par bibliothèque). **Au hasard** lance un film (ou ouvre une série) pas encore vu, selon le genre choisi.
 

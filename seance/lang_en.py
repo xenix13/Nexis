@@ -674,4 +674,6 @@ EN = {
     "Image trop lourde (8 Mo au maximum)": "Image too large (8 MB at most)",
     "Pas d'image de fond": "No background image",
     "Lecture privée": "Private playback",
+    "Adresse invalide (https://…)": "Invalid address (https://…)",
+    "Thème invalide": "Invalid theme",
 }
