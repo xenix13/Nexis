@@ -226,7 +226,7 @@ export const ACCOUNT_GROUP = { title: tr('Mon compte'), items: [
   { id: 'services', label: tr('Trakt et Letterboxd'), icon: 'link', lead: tr('Ce que vous regardez, vos notes et votre liste « À regarder », partagés avec Trakt ou Letterboxd.'),
     keys: tr('trakt letterboxd synchroniser historique notes import export csv scrobble') },
   { id: 'privacy', label: tr('Contenu et notifications'), icon: 'bell', lead: tr('Genres masqués, mode privé, notifications et heures calmes.'),
-    keys: tr('genres masquer mode privé historique vie privée notifications podcasts épisodes heures calmes nuit silence') },
+    keys: tr('genres masquer mode privé historique vie privée notifications épisodes heures calmes nuit silence') },
   { id: 'layout', label: tr('Accueil et menu'), icon: 'home', lead: tr('Ordre et affichage des rangées de l’accueil et des liens de la barre du haut.'),
     keys: tr('accueil rangées ordre barre du haut menu liens masquer réorganiser épingler page d’ouverture démarrage') },
 ] };
@@ -625,7 +625,6 @@ function accountPage(id, body, rerender) {
       h('section.panel', h('h2', tr('Notifications')),
         h('p.muted.small', tr('Ce que Nexis peut vous signaler. Les notifications s’activent appareil par appareil dans « Cet appareil » ; un titre demandé qui arrive est toujours signalé.')),
         bindToggle('notify_episodes', tr('Nouveaux épisodes des séries que je suis')),
-        bindToggle('notify_podcasts', tr('Nouveaux épisodes des podcasts auxquels je suis abonné')),
         quiet, h('div.grid2', field(tr('De'), from), field(tr('À'), to)),
         h('p.muted.small', tr('Pendant les heures calmes, les notifications restent dans la cloche de Nexis mais ne font pas sonner vos appareils. Heure du serveur.'))),
       h('section.panel', h('h2', tr('Séries en sourdine')),

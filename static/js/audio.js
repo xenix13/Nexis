@@ -1,4 +1,4 @@
-// Lecteur audio de l'application (livres audio, podcasts) : une barre en bas de l'écran, qui continue pendant
+// Lecteur audio de l'application (livres audio) : une barre en bas de l'écran, qui continue pendant
 // qu'on navigue. Un livre en plusieurs fichiers se lit à la suite comme un seul (position et chapitres sur la
 // durée totale). Vitesse, minuterie, chapitres ; commandes de l'écran verrouillé (MediaSession).
 import { post } from './api.js';
@@ -213,7 +213,7 @@ export function stop() {
   notify();
 }
 
-// item : { kind: 'book' | 'podcast', id, title, subtitle, cover, files: [{url, duration}], chapters?, duration?, position?, progressUrl }
+// item : { kind: 'book', id, title, subtitle, cover, files: [{url, duration}], chapters?, duration?, position?, progressUrl }
 export function playAudio(item, at = null) {
   ensure();
   if (cur && cur.kind === item.kind && cur.id === item.id) {

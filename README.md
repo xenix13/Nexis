@@ -25,7 +25,7 @@ Serveur multimédia auto-hébergé pour films, séries et animes. Nexis analyse 
 | **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou externes : `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. ASS rendus par libass (positionnement, karaoké, polices jointes), PGS rendus par le navigateur, VobSub incrustés |
 | **Applications** | Web app installable (Windows, macOS, Linux, Android, iPhone, iPad), téléchargements hors ligne, application Android TV native |
 | **Paramètres** | Un seul espace, organisé en Mon compte, Serveur, Médiathèque et Lecture, avec recherche |
-| **Livres audio et podcasts** | Bibliothèque de livres audio (chapitres, couvertures, reprise), abonnements aux podcasts (recherche, nouveaux épisodes notifiés), lecteur audio en bas de l'écran (vitesse, minuterie, écran verrouillé) |
+| **Livres audio** | Bibliothèque de livres audio (chapitres, couvertures, reprise), lecteur audio en bas de l'écran (vitesse, minuterie, écran verrouillé) |
 | **Photothèque** | Bibliothèque de photos : albums (les sous-dossiers), toutes les photos par mois, carte des lieux (GPS), visionneuse plein écran avec diaporama, date et orientation lues dans les données EXIF |
 | **Serveur DLNA** | Téléviseurs, consoles et box du réseau local trouvent Nexis dans leurs sources et lisent films, séries et photos sans application |
 | **Serveurs liés** | Plusieurs serveurs Nexis reliés par une liaison chiffrée qui leur est propre : comptes communs, bibliothèques de chacun visibles et lisibles depuis l'autre (ajoutées ou fusionnées : un titre une seule fois, meilleure copie choisie automatiquement, serveur le moins occupé en priorité), progression partagée, clé TMDB et Seerr partagés, Regarder ensemble d'un serveur à l'autre. Un seul des deux doit être joignable |
@@ -428,7 +428,6 @@ Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et u
 |---|---|---|
 | Analyser les bibliothèques | toutes les 24 h | bibliothèques concernées |
 | Synchroniser avec Trakt | toutes les 6 h (application Trakt enregistrée) | |
-| Actualiser les podcasts | toutes les 2 h | |
 | Actualiser les métadonnées | le dimanche à 4 h | fiches incomplètes / non actualisées depuis N jours / toutes ; bibliothèques |
 | Extraire les images des chapitres | chaque nuit et après chaque ajout | pause pendant les lectures, bibliothèques |
 | Détecter les intros et génériques | chaque nuit et après chaque ajout | zones analysées, durées min. et max., générique de fin, épisodes à chapitres nommés |
@@ -476,18 +475,9 @@ Dans *Paramètres → Bibliothèques*, **+ Ajouter** avec le type **Livres audio
 - **Écoute.** Dans le lecteur audio de l'application (voir plus bas) ; la position est gardée pour chacun, et *En cours* regroupe les livres commencés. *Recommencer* et *Marquer comme terminé* depuis la fiche.
 - Les livres audio ne sont pas partagés avec les serveurs liés ni en DLNA, et ne s'affichent pas dans l'appli Android TV.
 
-## Podcasts
-
-*Podcasts* dans la barre du haut (masquable dans *Paramètres → Accueil et menu*). Chaque compte a ses abonnements.
-
-- **S'abonner.** Chercher par nom (annuaire d'Apple Podcasts), ou coller l'adresse du flux RSS.
-- **Écouter.** *À reprendre*, *Derniers épisodes* et la page de chaque podcast ; un épisode se marque comme écouté (ou non) d'un clic.
-- **Nouveaux épisodes.** Les flux sont relus toutes les 2 heures (tâche *Actualiser les podcasts*) ; un nouvel épisode est signalé par notification push.
-- **Vie privée et sécurité.** L'audio et les images passent par le serveur : les appareils ne contactent pas l'hébergeur du podcast, et un épisode en HTTP s'écoute aussi sur un Nexis en HTTPS. Une adresse de flux donnée par un utilisateur ne peut pas viser le réseau local du serveur, même après une redirection (un administrateur peut ajouter un flux local).
-
 ## Lecteur audio
 
-Livres audio et podcasts se lisent dans une barre en bas de l'écran, qui reste pendant qu'on navigue dans l'application : lecture/pause, −30 / +30 s, barre de progression, **vitesse** (×0,8 à ×2, gardée séparément pour les livres et les podcasts), **minuterie** (15 à 60 min, ou fin du chapitre), **chapitres**. Sur téléphone, les commandes de l'écran verrouillé et du casque fonctionnent (précédent / suivant = chapitre). La position est enregistrée toutes les 15 secondes et à la pause.
+Les livres audio se lisent dans une barre en bas de l'écran, qui reste pendant qu'on navigue dans l'application : lecture/pause, −30 / +30 s, barre de progression, **vitesse** (×0,8 à ×2, gardée d'un livre à l'autre), **minuterie** (15 à 60 min, ou fin du chapitre), **chapitres**. Sur téléphone, les commandes de l'écran verrouillé et du casque fonctionnent (précédent / suivant = chapitre). La position est enregistrée toutes les 15 secondes et à la pause.
 
 ## Serveur DLNA
 
@@ -567,7 +557,7 @@ Chaque utilisateur règle son interface dans *Paramètres → Mon compte* ; ces 
 - **Contenu et notifications** :
   - **genres masqués** : les films et séries d'un genre (horreur, par exemple) n'apparaissent plus pour soi, dans les bibliothèques, l'accueil, la recherche et les suggestions ; leur fiche reste accessible par un lien direct ;
   - **mode privé** (désactivé par défaut) : la progression reste enregistrée pour reprendre, mais rien ne s'ajoute à l'historique, rien ne part vers Trakt, et les administrateurs voient « Lecture privée » au lieu du titre dans les lectures en cours ;
-  - **notifications** : nouveaux épisodes des séries suivies et des podcasts (actives par défaut, à couper séparément), **séries en sourdine** (menu ⋯ d'une série → *Ne plus être prévenu des nouveaux épisodes*), **heures calmes** (ex. 22 h à 8 h, heure du serveur) pendant lesquelles les notifications restent dans la cloche sans faire sonner les appareils. Les alertes d'administration et l'arrivée d'un titre demandé passent toujours.
+  - **notifications** : nouveaux épisodes des séries suivies (actives par défaut, à couper), **séries en sourdine** (menu ⋯ d'une série → *Ne plus être prévenu des nouveaux épisodes*), **heures calmes** (ex. 22 h à 8 h, heure du serveur) pendant lesquelles les notifications restent dans la cloche sans faire sonner les appareils. Les alertes d'administration et l'arrivée d'un titre demandé passent toujours.
 - **Accueil et menu** : **page d'ouverture** (accueil, « À regarder », Découvrir, TV en direct ou une bibliothèque), ordre et affichage des rangées et des liens. Une collection, une playlist ou un genre d'une bibliothèque s'**épingle sur l'accueil** avec le bouton *Épingler à l'accueil* de sa page (20 rangées au plus). **Mes rangées** : des rangées à soi (nom, bibliothèque, genre, vus ou non, années, tri, nombre de titres), créées et modifiées dans *Accueil et menu*. **Grande bannière** : la reprise en cours (sinon un ajout récent, par défaut), un ajout récent, un titre au hasard, un titre de « À regarder », ou aucune.
 
 **Bibliothèques** : bouton **Filtres** pour trier par visionnage (non vus, en cours, vus), décennie, durée, définition (4K, 1080p…), HDR, langue audio, sous-titres et note ; une combinaison de filtres s'épingle sur l'accueil. Affichage en affiches, vignettes larges ou liste détaillée (retenu par bibliothèque). **Au hasard** lance un film (ou ouvre une série) pas encore vu, selon le genre choisi.
@@ -708,6 +698,7 @@ L'audit, les correctifs et les risques acceptés sont décrits dans [docs/AUDIT-
 | Épisodes « non reconnus » | Ajouter `S01E02` ou ` - 02` au nom |
 | « Trop de transcodages simultanés » | Augmenter la limite si le processeur le permet, ou utiliser une source H.264 |
 | Lecture qui ne démarre pas | `journalctl -u seance -f` pendant l'essai ; `SEANCE_DEBUG=1` dans `/etc/seance/seance.env` affiche les commandes ffmpeg |
+| Pages lentes | Le journal note toute requête de plus de 5 s (« Requête lente : GET /api/… ») : `journalctl -u seance | grep 'Requête lente'` (Docker : `docker logs nexis 2>&1 \| grep 'Requête lente'`). Une affiche absente n'est plus cherchée qu'une fois toutes les 30 min, et une image d'un serveur lié hors ligne n'est pas attendue |
 | Saccades, swap saturé (LXC) | Un transcodage 4K occupe 0,5 à 0,7 Go : prévoir 2 Go de mémoire par transcodage simultané et 1 à 2 Go de swap |
 | Ancienne interface après une mise à jour | Recharger la page ; depuis la 3.14.1, le code de l'interface change d'adresse à chaque version |
 | Double authentification perdue (administrateur) | `sudo nexis reset-2fa <identifiant>` sur le serveur |
@@ -774,4 +765,4 @@ L'interface (`static/`) est en JavaScript, sans étape de compilation.
 - Sous-titres manquants : OpenSubtitles intégré (sans Bazarr), et transcription Whisper
 - Alertes pour les administrateurs, limites par compte, temps d'écran des profils
 - Trakt (synchronisation dans les deux sens) et Letterboxd (export et import)
-- Livres audio, podcasts et lecteur audio persistant
+- Livres audio et lecteur audio persistant

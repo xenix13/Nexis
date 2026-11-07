@@ -117,7 +117,7 @@ class FeaturesTest(unittest.TestCase):
         st, r = self.admin.call("GET", "/api/admin/tasks")
         self.assertEqual(st, 200)
         ids = [t["id"] for t in r["tasks"]]
-        self.assertEqual(ids, ["scan", "metadata", "trakt", "podcasts", "chapters", "intros", "subtitles", "opensubs", "whisper", "livetv", "cleanup", "backup"])
+        self.assertEqual(ids, ["scan", "metadata", "trakt", "chapters", "intros", "subtitles", "opensubs", "whisper", "livetv", "cleanup", "backup"])
         self.assertEqual(self.admin.call("PUT", "/api/admin/tasks/metadata", {"schedule": {"mode": "daily", "time": "25:00"}})[0], 400)
         self.assertEqual(self.admin.call("PUT", "/api/admin/tasks/metadata", {"options": {"days": 9999}})[0], 400)
         st, t = self.admin.call("PUT", "/api/admin/tasks/metadata", {"schedule": {"mode": "weekly", "weekday": 2, "time": "4:30"},

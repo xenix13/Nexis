@@ -1,5 +1,5 @@
 import { get, post, setUnauthorizedHandler } from './api.js';
-import { arrange, avatar, clear, episodeCode, errorBox, h, icon, img, spinner, toast } from './ui.js';
+import { arrange, avatar, cancelImages, clear, episodeCode, errorBox, h, icon, img, spinner, toast } from './ui.js';
 import { renderLogin, renderSetup } from './views/auth.js';
 import { renderProfiles } from './views/profiles.js';
 import { renderCollection, renderPlaylist, renderPlaylists, renderWatchlist } from './views/lists.js';
@@ -16,7 +16,6 @@ import { renderPerson } from './views/person.js';
 import { renderRemote } from './views/remote.js';
 import { renderShared } from './views/photos.js';
 import { renderBook } from './views/books.js';
-import { renderPodcast, renderPodcasts } from './views/podcasts.js';
 import './remote.js'; // télécommande, clavier et manette
 import { aboutDialog } from './about.js';
 import { applyDevice, device } from './device.js';
@@ -203,7 +202,6 @@ export function navItems(me) {
   if (me.features && me.features.discover && !kids) items.push({ key: 'discover', href: '#/discover', label: tr('Découvrir'), icon: 'star' });
   for (const l of me.libraries) items.push({ key: `lib:${l.id}`, href: `#/library/${l.id}`, label: l.title, icon: LIB_ICONS[l.type] || 'folder' });
   if (me.features && me.features.live && !kids) items.push({ key: 'live', href: '#/live', label: tr('TV en direct'), icon: 'guide' });
-  if (!kids) items.push({ key: 'podcasts', href: '#/podcasts', label: tr('Podcasts'), icon: 'mic' });
   const byKey = new Map(items.map((i) => [i.key, i]));
   return arrange(items.map((i) => i.key), me.prefs.nav_order).map((k) => byKey.get(k));
 }
@@ -358,6 +356,7 @@ async function logout() {
 async function route() {
   const token = ++renderToken;
   if (cleanup) { try { cleanup(); } catch { /* ignore */ } cleanup = null; }
+  cancelImages(root);
   const { parts, query } = parseHash();
   const page = parts[0] || '';
   window.scrollTo(0, 0);
@@ -439,7 +438,7 @@ async function route() {
   const active = page === '' ? 'home' : page === 'library' ? `lib:${parts[1]}` : page;
   const main = shell(active);
   main.append(spinner());
-  const titles = { '': tr('Accueil'), podcasts: tr('Podcasts'), book: tr('Livre audio'), live: tr('TV en direct'), together: tr('Regarder ensemble'), watchlist: tr('À regarder'), discover: tr('Découvrir'), playlists: tr('Mes playlists'), search: tr('Recherche'), history: tr('Historique'), downloads: tr('Téléchargements'), settings: tr('Paramètres'), admin: tr('Paramètres') };
+  const titles = { '': tr('Accueil'), book: tr('Livre audio'), live: tr('TV en direct'), together: tr('Regarder ensemble'), watchlist: tr('À regarder'), discover: tr('Découvrir'), playlists: tr('Mes playlists'), search: tr('Recherche'), history: tr('Historique'), downloads: tr('Téléchargements'), settings: tr('Paramètres'), admin: tr('Paramètres') };
   document.title = `${titles[page] || 'Nexis'} · Nexis`;
   try {
     switch (page) {
@@ -447,7 +446,6 @@ async function route() {
       case 'library': await renderLibrary(main, parts[1], ctx); break;
       case 'item': await renderItem(main, parts[1], ctx); break;
       case 'book': await renderBook(main, parts[1], ctx); break;
-      case 'podcasts': if (parts[1]) await renderPodcast(main, parts[1], ctx); else await renderPodcasts(main, ctx); break;
       case 'person': await renderPerson(main, decodeURIComponent(parts.slice(1).join('/')), ctx); break;
       case 'remote': await renderRemote(main, ctx); break;
       case 'search': await renderSearch(main, query.get('q') || '', ctx); break;

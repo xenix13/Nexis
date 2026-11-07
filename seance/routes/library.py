@@ -490,7 +490,9 @@ def register(app, ctx, x):
         h = max(40, min(1920, round(req.int_arg("h", 450) / 20) * 20))
         path = ctx.images.get(r, m.group(2), w, h)
         if not path:
-            raise HTTPError(404, "Pas d'image")
+            # gardé 10 min par le navigateur : il ne la redemande pas à chaque page
+            return Response(json.dumps({"error": i18n.tr("Pas d'image")}), 404, "application/json; charset=utf-8",
+                            {"Cache-Control": "private, max-age=600"})
         with open(path, "rb") as f:
             return Response(f.read(), 200, "image/jpeg", {"Cache-Control": "private, max-age=604800, immutable"})
 

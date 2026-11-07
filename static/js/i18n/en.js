@@ -1889,4 +1889,5 @@ export default {
   "style mise en page disposition barre latérale verre épuré cinéma arrondi thème sombre clair oled couleur accent affiches taille fond d’écran": "style layout sidebar glass minimal cinema rounded theme dark light oled colour accent posters size wallpaper",
   "Épuré": "Minimal",
   "Cinéma plein écran": "Full-screen cinema",
+  "genres masquer mode privé historique vie privée notifications épisodes heures calmes nuit silence": "genres hide private mode history privacy notifications episodes quiet hours night silence",
 };

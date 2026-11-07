@@ -39,6 +39,14 @@ function append(el, children) {
   }
 }
 
+// Images encore en chargement sur la page qu'on quitte : abandonnées. Le navigateur n'ouvre que 6 connexions vers
+// le serveur ; sans cela, la page suivante attend derrière les affiches de la précédente.
+export function cancelImages(el) {
+  for (const im of el.querySelectorAll('img')) {
+    if (!im.complete) im.removeAttribute('src');
+  }
+}
+
 export function clear(el, ...children) {
   el.replaceChildren();
   append(el, children);

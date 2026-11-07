@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from . import __version__, backup, books, catalog, health, limits, opensubs, podcasts, tracking, whisper, collections_api, discover, dlna, federation, i18n, push, remote, livetv, media, notify, photos, suggest, syncplay, tasks, update
+from . import __version__, backup, books, catalog, health, limits, opensubs, tracking, whisper, collections_api, discover, dlna, federation, i18n, push, remote, livetv, media, notify, photos, suggest, syncplay, tasks, update
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
@@ -65,7 +65,6 @@ class Ctx:
         self.health = health.Health(self)
         self.whisper = whisper.Whisper(self)
         self.tracking = tracking.Tracking(self)
-        self.podcasts = podcasts.Podcasts(self)
         for r in self.db.all("SELECT id, content_rating FROM items WHERE content_rating IS NOT NULL AND age IS NULL"):
             age = age_of(r["content_rating"])
             if age is not None:
@@ -236,7 +235,7 @@ def build_app(ctx):
 
     catalog.install(ctx, x)
     for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify, photos, dlna, remote, push,
-                   opensubs, health, whisper, tracking, books, podcasts, backup, federation):
+                   opensubs, health, whisper, tracking, books, backup, federation):
         module.register(app, ctx, x)
     return app
 

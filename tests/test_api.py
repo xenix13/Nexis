@@ -1260,6 +1260,49 @@ class SeanceTest(unittest.TestCase):
         c.call("POST", "/api/stop", {"stream": r["stream"]})
         c.call("POST", "/api/me/prefs/reset")
 
+    def test_missing_images_are_not_retried(self):
+        """Image introuvable : pas recherchée de nouveau à chaque affichage, 404 gardé par le navigateur ;
+        TMDB injoignable : plus de tentative pendant un moment (régression : accueil très lent au retour)."""
+        db, images = self.ctx.db, self.ctx.images
+        lib = int(self.libs["Films"])
+        now = int(time.time())
+        iid = db.run("INSERT INTO items(library_id,type,key,title,sort_title,added_at,updated_at,meta_state) "
+                     "VALUES(?,?,?,?,?,?,?,'done')", (lib, "movie", "/nulle/part.mkv", "Sans image", "sans image", now, now)).lastrowid
+        calls = []
+        real = images._get
+        images._get = lambda *a: calls.append(a) or real(*a)
+        try:
+            url = f"/api/img?p=/library/metadata/{iid}/thumb/1&w=200&h=300"
+            for _ in range(3):
+                st, body, hdrs = self.lea.call("GET", url, raw=True)
+                self.assertEqual(st, 404)
+                self.assertIn("max-age=600", hdrs.get("Cache-Control", ""))
+            self.assertEqual(len(calls), 1)  # cherchée une seule fois
+            # une affiche arrive (métadonnées) : la désignation change, l'image est cherchée de nouveau
+            db.run("UPDATE items SET poster='local:/nulle/part.jpg', img_version=img_version+1 WHERE id=?", (iid,))
+            self.lea.call("GET", url, raw=True)
+            self.assertEqual(len(calls), 2)
+            # TMDB injoignable : une seule tentative réseau, les suivantes échouent tout de suite
+            import urllib.request as ur
+            tries = []
+
+            def down(*a, **k):
+                tries.append(1)
+                raise OSError("réseau coupé")
+            old_open, images._tmdb_down_until = ur.urlopen, 0
+            ur.urlopen = down
+            try:
+                for n in range(3):
+                    with self.assertRaises(OSError):
+                        images._download(f"/absente{n}.jpg", "poster")
+            finally:
+                ur.urlopen, images._tmdb_down_until = old_open, 0
+            self.assertEqual(len(tries), 1)
+        finally:
+            images._get = real
+            images.forget_missing()
+            db.run("DELETE FROM items WHERE id=?", (iid,))
+
     def test_ui_style(self):
         """Style de l'interface (mise en page) : « classique » par défaut, valeurs connues seulement."""
         c = self.lea
@@ -1284,6 +1327,10 @@ class SeanceTest(unittest.TestCase):
         try:
             p = c.call("GET", "/api/me")[1]["prefs"]
             self.assertEqual((p["hidden_genres"], p["private_mode"], p["notify_episodes"], p["quiet_hours"]), ([], False, True, ""))
+            self.assertNotIn("notify_podcasts", p)
+            self.assertNotIn("notify_podcasts", c.call("PUT", "/api/me/prefs", {"notify_podcasts": False})[1])  # podcasts retirés
+            self.assertEqual(c.call("GET", "/api/podcasts")[0], 404)
+            self.assertIsNone(db.scalar("SELECT name FROM sqlite_master WHERE name='podcasts'"))
             self.assertIn("Horreur", [g["name"] for g in c.call("GET", "/api/me/genres")[1]])
             st, r = c.call("PUT", "/api/me/prefs", {"hidden_genres": ["Horreur"]})
             self.assertEqual(st, 200, r)
@@ -1295,7 +1342,7 @@ class SeanceTest(unittest.TestCase):
             self.assertEqual(c.call("GET", f"/api/items/{brume['id']}")[0], 200)  # la fiche reste accessible
             self.assertIn("Brume", [x["title"] for x in self.admin.call("GET", f"/api/libraries/{lib}/items")[1]["items"]])
             for bad in ({"hidden_genres": "Horreur"}, {"hidden_genres": [""]}, {"private_mode": "oui"}, {"quiet_hours": "22:00"},
-                        {"quiet_hours": "25:00-07:00"}, {"quiet_hours": "07:00-07:00"}, {"muted_shows": ["abc"]}, {"notify_podcasts": 1}):
+                        {"quiet_hours": "25:00-07:00"}, {"quiet_hours": "07:00-07:00"}, {"muted_shows": ["abc"]}):
                 self.assertEqual(c.call("PUT", "/api/me/prefs", bad)[0], 400, bad)
             # mode privé : la progression est gardée, l'historique non ; les admins ne voient pas le titre
             uid = c.call("GET", "/api/me")[1]["user"]["id"]
@@ -1317,15 +1364,17 @@ class SeanceTest(unittest.TestCase):
             c.call("POST", f"/api/items/{polar['id']}/watched", {"watched": False})
             # notifications : refusées par type, heures calmes (dans la cloche, sans faire sonner), séries en sourdine
             show = self.items("Séries")["Les Veilleurs"]
-            st, r = c.call("PUT", "/api/me/prefs", {"notify_podcasts": False, "muted_shows": [str(show["id"])]})
+            st, r = c.call("PUT", "/api/me/prefs", {"notify_episodes": False, "muted_shows": [str(show["id"])]})
             self.assertEqual(st, 200, r)
             self.assertEqual([m["title"] for m in c.call("GET", "/api/me/muted")[1]], ["Les Veilleurs"])
             push = self.ctx.push
             push.messages.pop(uid, None)
-            push.notify(uid, "Podcast", "x", kind="podcasts")
             push.notify(uid, "Épisode", "x", kind="episodes")
             push.notify(uid, "Alerte", "x")
-            self.assertEqual([m["title"] for m in push.pending(uid, 0)], ["Épisode", "Alerte"])
+            self.assertEqual([m["title"] for m in push.pending(uid, 0)], ["Alerte"])  # épisodes refusés, alertes toujours
+            c.call("PUT", "/api/me/prefs", {"notify_episodes": True})
+            push.notify(uid, "Épisode", "x", kind="episodes")
+            self.assertEqual([m["title"] for m in push.pending(uid, 0)], ["Alerte", "Épisode"])
             self.assertTrue(pushmod.in_quiet_hours("00:00-23:59", time.mktime((2026, 1, 1, 12, 0, 0, 0, 0, -1))))
             self.assertTrue(pushmod.in_quiet_hours("22:00-07:00", time.mktime((2026, 1, 1, 23, 30, 0, 0, 0, -1))))
             self.assertTrue(pushmod.in_quiet_hours("22:00-07:00", time.mktime((2026, 1, 1, 6, 59, 0, 0, 0, -1))))

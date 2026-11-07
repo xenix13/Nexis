@@ -6,8 +6,24 @@ import { onGroups } from '../groups.js';
 import { pinRow, pins } from '../pins.js';
 import { tr } from '../i18n.js';
 
-export async function renderHome(main, ctx) {
-  const data = await get('/api/home');
+// Dernier accueil reçu : affiché tout de suite au retour sur la page (depuis les Paramètres, une fiche…), puis
+// mis à jour en arrière-plan s'il a changé. Propre au compte et à ses réglages.
+let lastHome = null;
+const HOME_KEEP_MS = 10 * 60 * 1000;
+const homeKey = () => `${state.me.user.id}|${JSON.stringify(state.me.prefs)}`;
+
+export async function renderHome(main, ctx, { fresh = false, preset = null } = {}) {
+  const key = homeKey();
+  let data = preset;
+  let stale = false;
+  if (!data && !fresh && lastHome && lastHome.key === key && Date.now() - lastHome.at < HOME_KEEP_MS) {
+    data = lastHome.data;
+    stale = true;
+  }
+  if (!data) {
+    data = await get('/api/home');
+    lastHome = { key, at: Date.now(), data, text: JSON.stringify(data) };
+  }
   if (!ctx.isCurrent()) return;
   const parts = [];
   const sections = new Map(); // clé -> rangée ; affichées dans l'ordre choisi (Paramètres → Accueil et menu)
@@ -46,7 +62,7 @@ export async function renderHome(main, ctx) {
   let current = continueRow(data.continue);
   // « marquer comme vu » : la carte s'efface, l'épisode suivant prend sa place ; annulable
   async function refreshRow(c) {
-    if (hero && String(hero.id) === String(c.id)) { stopGroups(); await renderHome(main, ctx); return; } // la grande affiche change aussi
+    if (hero && String(hero.id) === String(c.id)) { stopGroups(); await renderHome(main, ctx, { fresh: true }); return; } // la grande affiche change aussi
     const fresh = await get('/api/home');
     if (!ctx.isCurrent()) return;
     const next = continueRow(fresh.continue) || h('div', { hidden: true });
@@ -98,4 +114,18 @@ export async function renderHome(main, ctx) {
       : h('div.empty', tr('Aucune bibliothèque n’est accessible avec ce compte. Contactez l’administrateur.')));
   }
   clear(main, parts);
+  if (stale) {
+    // accueil gardé en mémoire : on vérifie qu'il est toujours à jour, et on le redessine seulement s'il a changé
+    try {
+      const next = await get('/api/home');
+      const text = JSON.stringify(next);
+      if (lastHome && lastHome.key === key && lastHome.text === text) { lastHome.at = Date.now(); return; }
+      lastHome = { key, at: Date.now(), data: next, text };
+      if (!ctx.isCurrent() || homeKey() !== key) return;
+      const y = window.scrollY;
+      stopGroups();
+      await renderHome(main, ctx, { preset: next });
+      window.scrollTo(0, y);
+    } catch { /* hors ligne ou serveur occupé : on garde ce qui est affiché */ }
+  }
 }

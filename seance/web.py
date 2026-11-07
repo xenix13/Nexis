@@ -93,6 +93,11 @@ class Request:
         return out
 
 
+# requêtes plus longues que ce délai notées dans le journal (hors flux vidéo, attentes volontaires, événements)
+SLOW_REQUEST = 5.0
+SLOW_EXEMPT = re.compile(r"^/(api/(stream/|live/|together/|remote/|share/|photos/\d+/stream|items/\d+/prepare|admin/update)|fed/|dlna/)")
+
+
 class Response:
     def __init__(self, body=b"", status=200, content_type="application/octet-stream",
                  headers=None, stream=None, length=None, on_close=None):
@@ -362,6 +367,7 @@ def make_handler(app, trust_proxy=False, hsts=False, fed=None):
             parsed = urllib.parse.urlsplit(self.path)
             req = Request(self, method if method != "HEAD" else "GET", parsed.path,
                           urllib.parse.parse_qs(parsed.query), self.headers, self._client_ip())
+            started = time.monotonic()
             try:
                 if app.begin:
                     app.begin(req)
@@ -385,6 +391,9 @@ def make_handler(app, trust_proxy=False, hsts=False, fed=None):
                 msg = "Erreur interne du serveur"
                 resp = json_response({"error": app.translate(msg) if app.translate else msg}, 500)
             finally:
+                spent = time.monotonic() - started
+                if spent > SLOW_REQUEST and not SLOW_EXEMPT.match(parsed.path):
+                    log.warning("Requête lente : %s %s (%.1f s)", method, parsed.path, spent)
                 for fn in app.teardown:
                     try:
                         fn()

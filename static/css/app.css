@@ -1340,7 +1340,7 @@ button.chip[aria-pressed="true"] { background: var(--accent); color: var(--ink-o
 .trakt-code { font: 700 32px/1.2 var(--mono, monospace); letter-spacing: .2em; padding: 14px 18px; margin: 10px 0 16px;
   border-radius: 12px; background: var(--surface-2); display: inline-block; user-select: all; }
 
-/* lecteur audio (livres audio, podcasts) : barre en bas, qui reste pendant la navigation */
+/* lecteur audio (livres audio) : barre en bas, qui reste pendant la navigation */
 html.has-audio body { padding-bottom: 96px; }
 .audio-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: color-mix(in srgb, var(--surface) 96%, transparent);
   backdrop-filter: blur(12px); border-top: 1px solid var(--line); padding: 8px 16px calc(8px + env(safe-area-inset-bottom));
@@ -1372,7 +1372,7 @@ html.has-audio body { padding-bottom: 96px; }
   .ab-controls .ab-btn:not(.ab-play) { min-width: 32px; padding: 0 2px; }
 }
 
-/* livres audio et podcasts */
+/* livres audio */
 .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px; }
 .book-tile { display: block; min-width: 0; }
 .book-cover { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--surface-2);
@@ -1382,7 +1382,7 @@ html.has-audio body { padding-bottom: 96px; }
 .book-cover > span svg { width: 38%; height: 38%; opacity: .4; }
 .book-progress { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(0, 0, 0, .45); }
 .book-progress div { height: 100%; background: var(--accent); }
-.book-done, .pod-badge { position: absolute; top: 6px; right: 6px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px;
+.book-done { position: absolute; top: 6px; right: 6px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px;
   background: var(--accent); color: var(--ink-on-accent); font-size: 12px; font-weight: 700; display: grid; place-items: center; }
 .book-title { margin-top: 8px; font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .book-detail { display: flex; gap: 28px; align-items: flex-start; margin-bottom: 24px; }
@@ -1394,18 +1394,6 @@ html.has-audio body { padding-bottom: 96px; }
 .chapter-row { display: flex; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: 8px;
   background: transparent; cursor: pointer; text-align: left; }
 .chapter-row:hover { background: var(--surface-2); }
-.ep-list, .pod-results { display: flex; flex-direction: column; gap: 6px; }
-.ep-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--surface); }
-.ep-row.played .ep-title { color: var(--muted); }
-.ep-row.current { outline: 2px solid var(--accent); }
-.ep-info { flex: 1; min-width: 0; }
-.ep-title { font-weight: 600; cursor: pointer; }
-.ep-desc { white-space: pre-line; color: var(--muted); margin: 6px 0 0; }
-.ep-progress { height: 3px; margin-top: 6px; border-radius: 2px; background: var(--surface-2); max-width: 240px; }
-.ep-progress div { height: 100%; border-radius: 2px; background: var(--accent); }
-.ep-play { background: var(--accent); color: var(--ink-on-accent); border-radius: 50%; }
-.pod-thumb { width: 56px; height: 56px; border-radius: 8px; object-fit: cover; background: var(--surface-2); flex: none; }
-.search-field { width: 100%; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); margin-bottom: 10px; }
 @media (max-width: 640px) {
   .book-detail { flex-direction: column; }
   .book-cover.big { width: 60vw; }

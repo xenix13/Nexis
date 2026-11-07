@@ -1398,6 +1398,8 @@ class Federation:
         if cur is not None and bool(cur) != online:
             db.run("UPDATE peers SET online=? WHERE id=?", (1 if online else 0, pid))
             log.warning("Serveur lié %s %s", pid, "de nouveau joignable" if online else "injoignable : ses titres sont masqués")
+            if online and getattr(self.ctx, "images", None):
+                self.ctx.images.forget_missing()  # ses images sont redemandées
             self.relink(pid)
 
     # progression -----------------------------------------------------------
@@ -1464,8 +1466,10 @@ class Federation:
             return dest
         try:
             peer = self.peer(item["peer_id"])
+            if not peer["online"]:  # serveur lié injoignable : pas d'attente, l'image viendra à son retour
+                return None
             self.ctx.db.release()
-            resp, close = self.request(peer, "GET", f"/fed/img/{int(item['remote_id'])}/{kind}?w={w}&h={h}", timeout=30)
+            resp, close = self.request(peer, "GET", f"/fed/img/{int(item['remote_id'])}/{kind}?w={w}&h={h}", timeout=10)
             try:
                 data = resp.read(20 * 1024 * 1024) if resp.status == 200 else None
             finally:

@@ -23,7 +23,7 @@ EXTERNAL_BASE = 1000  # identifiants des sous-titres externes
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 LANG = re.compile(r"^[a-z]{2,3}$")
 # rangées de l'accueil et liens de la barre du haut : ordre et masquage propres à chaque utilisateur
-LAYOUT_KEY = re.compile(r"^(together|continue|watchlist|suggest|because|short|unfinished|home|discover|live|podcasts|lib:\d{1,9}|pin:\d{1,6})$")
+LAYOUT_KEY = re.compile(r"^(together|continue|watchlist|suggest|because|short|unfinished|home|discover|live|lib:\d{1,9}|pin:\d{1,6})$")
 IMG_PATH = re.compile(r"^/library/metadata/(\d{1,12})/(thumb|art)/\d{1,14}$")
 LANG_NAMES = {"fra": "Français", "eng": "Anglais", "jpn": "Japonais", "deu": "Allemand", "spa": "Espagnol",
               "ita": "Italien", "por": "Portugais", "kor": "Coréen", "zho": "Chinois", "rus": "Russe",
@@ -82,9 +82,8 @@ DEFAULT_PREFS = {
     # contenu et vie privée
     "hidden_genres": [],
     "private_mode": False,
-    # notifications : nouveaux épisodes, podcasts ; séries dont on ne veut plus être prévenu ; heures calmes
+    # notifications : nouveaux épisodes ; séries dont on ne veut plus être prévenu ; heures calmes
     "notify_episodes": True,
-    "notify_podcasts": True,
     "muted_shows": [],
     "quiet_hours": "",
     "start_page": "home",
@@ -177,7 +176,7 @@ def validate_prefs(data):
             ok = v in (10, 15, 30, 60, 90)
         elif k == "default_speed":
             ok = v in (0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2)
-        elif k in ("remember_volume", "night_audio", "private_mode", "notify_episodes", "notify_podcasts"):
+        elif k in ("remember_volume", "night_audio", "private_mode", "notify_episodes"):
             ok = isinstance(v, bool)
         elif k == "hidden_genres":
             ok = isinstance(v, list) and len(v) <= 40 and all(isinstance(g, str) and 1 <= len(g) <= 60 for g in v)

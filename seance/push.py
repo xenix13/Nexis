@@ -146,7 +146,7 @@ class Push:
     def notify(self, uid, title, body, url="#/", tag="nexis", kind=None):
         """Message pour toutes les inscriptions de ce compte (en arrière-plan).
 
-        kind : "episodes" ou "podcasts" -> le compte peut les refuser (notify_<kind>) ; pendant ses heures calmes,
+        kind : "episodes" -> le compte peut les refuser (notify_<kind>) ; pendant ses heures calmes,
         ces messages ne font pas sonner l'appareil. Les alertes et les essais passent toujours."""
         prefs = self.prefs(uid) if kind else {}
         if kind and prefs.get(f"notify_{kind}") is False:

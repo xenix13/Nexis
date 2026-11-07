@@ -642,6 +642,22 @@ MIGRATIONS = [
         UPDATE users SET rev=CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) WHERE id=OLD.user_id;
     END;
     """,
+    # 26 : podcasts retirés (tables, et leur trace dans les préférences : menu, accueil, notifications)
+    """
+    DROP TABLE IF EXISTS podcast_progress;
+    DROP TABLE IF EXISTS podcast_subs;
+    DROP INDEX IF EXISTS podcast_episodes_pub;
+    DROP TABLE IF EXISTS podcast_episodes;
+    DROP TABLE IF EXISTS podcasts;
+    UPDATE fed_clock SET applying=1;
+    UPDATE prefs SET data=json_remove(data, '$.notify_podcasts') WHERE json_valid(data);
+    UPDATE prefs SET data=json_set(data, '$.nav_order', json((SELECT json_group_array(value) FROM json_each(prefs.data, '$.nav_order')
+        WHERE value<>'podcasts'))) WHERE json_valid(data) AND json_type(data, '$.nav_order')='array';
+    UPDATE prefs SET data=json_set(data, '$.nav_hidden', json((SELECT json_group_array(value) FROM json_each(prefs.data, '$.nav_hidden')
+        WHERE value<>'podcasts'))) WHERE json_valid(data) AND json_type(data, '$.nav_hidden')='array';
+    UPDATE prefs SET data=json_set(data, '$.start_page', 'home') WHERE json_valid(data) AND json_extract(data, '$.start_page')='podcasts';
+    UPDATE fed_clock SET applying=0;
+    """,
 ]
 
 
