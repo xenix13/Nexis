@@ -549,7 +549,12 @@ Chaque utilisateur règle son interface dans *Paramètres → Mon compte* ; ces 
 
 - **Profil** : nom, photo (image envoyée ou avatar prédéfini), **langue de l'interface** (français ou anglais), code PIN, mot de passe.
 - **Lecture** : qualité, langues, enchaînement des épisodes, **apparence des sous-titres** (taille, police, couleur, fond, bordure, position, avec aperçu ; ne s'applique pas aux sous-titres ASS stylés ni aux PGS) et **anti-spoiler** (vignettes floutées et résumés masqués pour les épisodes non vus ; un clic affiche le résumé).
-- **Apparence** : thème, couleur d'accent, taille des affiches, **fond d'écran** (sur la fiche d'un film ou d'une série, menu ⋯ → *Utiliser comme fond d'écran* : son image d'arrière-plan s'affiche, estompée, derrière toutes les pages ; propre à chaque profil).
+- **Apparence** :
+  - **thème** : sombre, noir profond (OLED), bleu nuit, clair, sépia, contraste élevé, ou automatique (clair ou sombre comme l'appareil, et suit son changement) ;
+  - **couleur d'accent** : 9 proposées ou n'importe quelle autre ;
+  - **taille du texte** (petite à très grande), **densité** (compacte, normale, aérée), taille des affiches ;
+  - **cartes** : titre et année, barre de progression, coche « vu », badges 4K / HDR et « Nouveau » (affichés par défaut), note TMDB (en option) ;
+  - **fond d'écran**, estompé derrière les pages : l'image d'un titre (menu ⋯ de sa fiche → *Utiliser comme fond d'écran*), un de vos titres différent chaque jour (liste « À regarder », notés 4 ou 5 étoiles, regardés récemment), un dégradé, une couleur, ou une image envoyée (gardée sur ce serveur).
 - **Cet appareil** : qualité et taille des sous-titres propres à ce navigateur ou à cette TV, animations réduites, navigation à la télécommande forcée ou désactivée. Ces réglages restent sur l'appareil et priment sur ceux du profil.
 - **Accueil et menu** : **page d'ouverture** (accueil, « À regarder », Découvrir, TV en direct ou une bibliothèque), ordre et affichage des rangées et des liens. Une collection, une playlist ou un genre d'une bibliothèque s'**épingle sur l'accueil** avec le bouton *Épingler à l'accueil* de sa page (20 rangées au plus).
 

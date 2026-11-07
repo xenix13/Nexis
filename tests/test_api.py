@@ -1194,6 +1194,44 @@ class SeanceTest(unittest.TestCase):
         self.assertIn("short", home)
         self.assertIn("unfinished", home)
 
+    def test_appearance_prefs(self):
+        """Thèmes, taille du texte, densité, cartes, fonds d'écran (couleur, dégradé, du jour, image envoyée)."""
+        c = self.lea
+        st, r = c.call("PUT", "/api/me/prefs", {"theme": "midnight", "text_size": "l", "density": "compact", "accent": "#123abc",
+                                                "card_rating": True, "card_titles": False, "wallpaper_mode": "gradient",
+                                                "wallpaper_gradient": "ocean", "wallpaper_color": "#203040"})
+        self.assertEqual(st, 200, r)
+        self.assertEqual((r["theme"], r["text_size"], r["density"], r["card_rating"], r["card_titles"], r["card_quality"]),
+                         ("midnight", "l", "compact", True, False, True))  # l'essentiel reste affiché par défaut
+        for bad in ({"theme": "rose"}, {"text_size": "xxl"}, {"density": 3}, {"card_new": "oui"}, {"wallpaper_mode": "video"},
+                    {"wallpaper_gradient": "plaid"}, {"wallpaper_color": "bleu"}):
+            self.assertEqual(c.call("PUT", "/api/me/prefs", bad)[0], 400, bad)
+        # définition des films pour les badges 4K / HDR
+        st, items = c.call("GET", f"/api/libraries/{self.libs['Films']}/items")
+        self.assertTrue(all(i.get("res") in ("4K", "1080p", "720p", "SD") for i in items["items"] if i["type"] == "movie"))
+        # fond du jour : un titre de la liste « À regarder » de la personne, le même toute la journée
+        polar = self.movie("Nuit polaire")
+        self.ctx.db.run("UPDATE items SET backdrop='fanart.jpg' WHERE id=?", (int(polar["id"]),))
+        st, r = c.call("POST", f"/api/items/{polar['id']}/watchlist", {"on": True})
+        self.assertEqual(st, 200, r)
+        st, d1 = c.call("GET", "/api/me/wallpaper/daily")
+        st, d2 = c.call("GET", "/api/me/wallpaper/daily")
+        self.assertEqual(d1, d2)
+        self.assertTrue(d1["path"].startswith(f"/library/metadata/{polar['id']}/art/"), d1)
+        # image envoyée : réencodée en JPEG, servie à son propriétaire seulement
+        png = os.path.join(tempfile.mkdtemp(), "fond.png")
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=teal:s=2400x1350", "-frames:v", "1", png], check=True)
+        with open(png, "rb") as f:
+            data = f.read()
+        st, r = c.call("POST", "/api/me/wallpaper", raw_body=data, headers={"Content-Type": "image/png"})
+        self.assertEqual((st, r.get("wallpaper_mode")), (200, "upload"), r)
+        st, img_data, h = c.call("GET", "/api/me/wallpaper/image", raw=True)
+        self.assertEqual((st, img_data[:2], h["Content-Type"]), (200, b"\xff\xd8", "image/jpeg"))
+        self.assertEqual(self.admin.call("GET", "/api/me/wallpaper/image")[0], 404)  # pas celle d'un autre
+        self.assertEqual(c.call("POST", "/api/me/wallpaper", raw_body=b"pas une image" * 20)[0], 400)
+        c.call("DELETE", "/api/me/wallpaper")
+        c.call("POST", "/api/me/prefs/reset")
+
     def test_wallpaper_and_recap_marker(self):
         """Fond d'écran du profil (l'arrière-plan d'un titre) et repère de récapitulatif posé à la main."""
         polar = self.movie("Nuit polaire")

@@ -52,7 +52,19 @@ DEFAULT_PREFS = {
     "accent": "#ffa43a",
     "theme": "dark",
     "poster_size": "m",
+    "text_size": "m",
+    "density": "normal",
+    # cartes des films et séries : l'essentiel affiché, la note en option
+    "card_titles": True,
+    "card_progress": True,
+    "card_watched": True,
+    "card_quality": True,
+    "card_new": True,
+    "card_rating": False,
     "wallpaper": "",
+    "wallpaper_mode": "title",  # title (image d'un titre), color, gradient, daily (un de vos titres chaque jour), upload
+    "wallpaper_color": "#1d2a44",
+    "wallpaper_gradient": "aurora",
     "hidden_libraries": [],
     "show_continue": True,
     "hide_spoilers": False,
@@ -65,6 +77,8 @@ DEFAULT_PREFS = {
 }
 
 
+THEMES = ("dark", "oled", "midnight", "light", "sepia", "contrast", "auto")
+GRADIENTS = ("aurora", "sunset", "ocean", "forest", "berry", "ember", "steel", "mint")
 PIN_TYPES = ("collection", "playlist", "genre", "filter")
 FILTER_KEYS = {"genre", "watched", "decade", "duration", "res", "hdr", "audio", "subs", "rating", "sort"}
 
@@ -130,12 +144,23 @@ def validate_prefs(data):
             ok = v in ("bottom", "high")
         elif k == "next_delay":
             ok = v in (0, 3, 5, 10, 15, 20, 30)
-        elif k in ("autoplay_next", "auto_skip_intro", "auto_skip_recap", "show_continue", "hide_spoilers"):
+        elif k in ("autoplay_next", "auto_skip_intro", "auto_skip_recap", "show_continue", "hide_spoilers", "card_titles",
+                   "card_progress", "card_watched", "card_quality", "card_new", "card_rating"):
             ok = isinstance(v, bool)
+        elif k == "text_size":
+            ok = v in ("s", "m", "l", "xl")
+        elif k == "density":
+            ok = v in ("compact", "normal", "comfy")
+        elif k == "wallpaper_mode":
+            ok = v in ("none", "title", "color", "gradient", "daily", "upload")
+        elif k == "wallpaper_color":
+            ok = isinstance(v, str) and bool(HEX.match(v))
+        elif k == "wallpaper_gradient":
+            ok = v in GRADIENTS
         elif k == "accent":
             ok = isinstance(v, str) and HEX.match(v)
         elif k == "theme":
-            ok = v in ("dark", "oled", "light")
+            ok = v in THEMES
         elif k == "poster_size":
             ok = v in ("s", "m", "l")
         elif k == "wallpaper":  # image de fond du profil : l'arrière-plan d'un film ou d'une série
@@ -167,7 +192,8 @@ ITEM_SQL = "SELECT i.*, p.idx AS parent_idx, COALESCE(sh.age, i.age) AS eff_age,
 # l'analyse ffprobe ni la distribution, qui pèsent plusieurs Ko par élément.
 CARD_SQL = ("SELECT i.id, i.type, i.title, i.year, i.idx, i.img_version, i.duration_ms, i.library_id, i.rating, "
             "i.content_rating, i.added_at, i.show_id, i.parent_id, i.released, i.extra_kind, i.age, i.summary, "
-            "p.idx AS parent_idx, COALESCE(sh.age, i.age) AS eff_age, " + _COUNTS + _JOINS)
+            "p.idx AS parent_idx, COALESCE(sh.age, i.age) AS eff_age, json_extract(i.probe, '$.video.height') AS vh, "
+            "json_extract(i.probe, '$.video.transfer') AS vt, " + _COUNTS + _JOINS)
 AGE_EXPR = "COALESCE(sh.age, i.age)"
 EPISODE_ORDER = "ORDER BY (p.idx=0), p.idx, i.idx, i.id"
 
@@ -308,6 +334,19 @@ def install(ctx, x):
              "thumb": img(r["id"], "thumb", v), "art": img(r["id"], "art", v), "duration": r["duration_ms"],
              "section": str(r["library_id"]), "rating": r["rating"], "content_rating": r["content_rating"],
              "added": r["added_at"]}
+        if t in ("movie", "episode"):
+            # définition et HDR pour les badges des cartes (colonnes légères des grilles, sinon l'analyse du fichier)
+            vh, vt = r.get("vh"), r.get("vt")
+            if vh is None and r.get("probe"):
+                try:
+                    v = json.loads(r["probe"]).get("video") or {}
+                    vh, vt = v.get("height"), v.get("transfer")
+                except (ValueError, AttributeError):
+                    pass
+            if vh:
+                c["res"] = "4K" if vh >= 1700 else "1080p" if vh >= 1000 else "720p" if vh >= 700 else "SD"
+            if vt in ("smpte2084", "arib-std-b67"):
+                c["hdr"] = True
         if t in ("season", "episode"):
             c["title"] = tr(r["title"])  # titres créés par le scan : « Saison 2 », « Spéciaux », « Épisode 3 »
         if t == "episode":

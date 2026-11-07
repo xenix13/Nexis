@@ -34,7 +34,7 @@ from . import __version__ as VERSION
 log = logging.getLogger("seance.backup")
 
 FORMAT = 1
-DIRS = ("federation", "push", "avatars", "subtitles")
+DIRS = ("federation", "push", "avatars", "subtitles", "wallpapers")
 # nexis-<serveur>_AAAAMMJJ-HHMMSS[-auto|-envoi].tar.gz (le serveur d'origine dans le nom : les copies des
 # serveurs liés se rangent à côté) ; anciens noms sans serveur acceptés
 NAME = re.compile(r"^nexis-(?:(?P<srv>[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?)_)?(?P<date>\d{8}-\d{6})"

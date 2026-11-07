@@ -1,7 +1,7 @@
 import { adminTarget, del, get, post, put, setAdminTarget } from '../api.js';
 import { qrSvg } from '../qr.js';
 import { ADMIN_ALIASES, ADMIN_GROUPS, renderAdminSection } from './admin.js';
-import { applyPrefs, navItems, refreshMe, repaintNav, repaintUser, state } from '../app.js';
+import { GRADIENTS, applyPrefs, navItems, refreshMe, repaintNav, repaintUser, state } from '../app.js';
 import { PIN_LABELS, pins, removePin } from '../pins.js';
 import { SUB_BGS, SUB_COLORS, SUB_EDGES, SUB_FONTS, SUB_POSITIONS, applySubStyle } from '../substyle.js';
 import { arrange, avatar, clear, confirmDialog, field, h, icon, img, modal, select, spinner, toast, toggle } from '../ui.js';
@@ -562,17 +562,74 @@ function accountPage(id, body, rerender) {
   }
 
   if (id === 'appearance') {
-    clear(body, h('section.panel', h('h2', tr('Couleurs et affiches')),
-      field(tr('Couleur d’accent'), swatches(p.accent, (c) => save({ accent: c }, tr('Couleur appliquée')))),
-      h('div.grid2',
-        field(tr('Thème'), bindSelect('theme', [['dark', tr('Sombre')], ['oled', tr('Noir profond (OLED)')], ['light', tr('Clair')]])),
-        field(tr('Taille des affiches'), bindSelect('poster_size', [['s', tr('Petites')], ['m', tr('Moyennes')], ['l', tr('Grandes')]])))),
-    h('section.panel', h('h2', tr('Fond d’écran')),
-      p.wallpaper ? h('div.wallpaper-preview', { style: `background-image: url("${img(p.wallpaper, 480, 270)}")` }) : null,
-      h('p.muted', p.wallpaper ? tr('L’image apparaît, estompée, derrière toutes les pages.')
-        : tr('Sur la fiche d’un film ou d’une série, menu ⋯ puis « Utiliser comme fond d’écran ».')),
-      p.wallpaper ? h('button.btn', { type: 'button', onclick: async () => { await save({ wallpaper: '' }, tr('Fond d’écran retiré')); rerender(); } },
-        tr('Retirer le fond d’écran')) : null));
+    // thèmes : aperçu en vignette (fond, surface, texte, accent)
+    const THEMES = [['dark', tr('Sombre'), '#0b0b0e', '#1c1c22', '#f5f3ef'], ['oled', tr('Noir profond (OLED)'), '#000', '#161619', '#f5f3ef'],
+      ['midnight', tr('Bleu nuit'), '#0a0f1c', '#19243f', '#eef2fb'], ['light', tr('Clair'), '#f5f3ee', '#ffffff', '#16161a'],
+      ['sepia', tr('Sépia'), '#f1e7d6', '#fbf5ea', '#3b2f22'], ['contrast', tr('Contraste élevé'), '#000', '#1b1b1b', '#ffffff'],
+      ['auto', tr('Automatique (comme l’appareil)'), 'linear-gradient(135deg, #0b0b0e 50%, #f5f3ee 50%)', '#888', '#888']];
+    const themeTiles = h('div.theme-tiles', THEMES.map(([v, label, bg, surf, text]) => h('button.theme-tile', {
+      type: 'button', 'aria-pressed': String(p.theme === v), title: label,
+      onclick: async () => { await save({ theme: v }, tr('Thème appliqué')); rerender(); } },
+    h('span.theme-preview', { style: `background:${bg}` }, h('span', { style: `background:${surf}` }, h('i', { style: `background:${text}` }), h('b', { style: 'background:var(--accent)' }))),
+    h('span.theme-name', label))));
+    const picker = h('input.color-input', { type: 'color', value: p.accent, title: tr('Autre couleur'),
+      onchange: (e) => save({ accent: e.target.value }, tr('Couleur appliquée')) });
+    const cardToggle = (key, label) => bindToggle(key, label);
+    // fond d'écran
+    const MODES = [['none', tr('Aucun')], ['title', tr('L’image d’un titre')], ['daily', tr('Un de vos titres, différent chaque jour')],
+      ['gradient', tr('Un dégradé')], ['color', tr('Une couleur')], ['upload', tr('Une image à vous')]];
+    const mode = p.wallpaper_mode === 'title' && !p.wallpaper ? 'none' : p.wallpaper_mode;
+    const modeSel = select(MODES, mode, { onchange: async (e) => { await save({ wallpaper_mode: e.target.value }, tr('Fond d’écran appliqué')); rerender(); } });
+    let detail = null;
+    if (mode === 'title') {
+      detail = h('div', p.wallpaper ? h('div.wallpaper-preview', { style: `background-image: url("${img(p.wallpaper, 480, 270)}")` }) : null,
+        h('p.muted.small', tr('Sur la fiche d’un film ou d’une série, menu ⋯ puis « Utiliser comme fond d’écran ».')));
+    } else if (mode === 'none') {
+      detail = h('p.muted.small', tr('Le fond de la page est celui du thème.'));
+    } else if (mode === 'daily') {
+      detail = h('p.muted.small', tr('Chaque jour, l’image d’un titre de votre liste « À regarder », de ceux que vous avez notés 4 ou 5 étoiles, ou regardés récemment.'));
+    } else if (mode === 'gradient') {
+      detail = h('div.swatches', Object.entries(GRADIENTS).map(([k, css]) => h('button.swatch.grad', { type: 'button', title: k, style: `background:${css}`,
+        'aria-pressed': String(p.wallpaper_gradient === k), onclick: () => save({ wallpaper_gradient: k }, tr('Fond d’écran appliqué')) })));
+    } else if (mode === 'color') {
+      detail = h('input.color-input', { type: 'color', value: p.wallpaper_color, onchange: (e) => save({ wallpaper_color: e.target.value }, tr('Fond d’écran appliqué')) });
+    } else if (mode === 'upload') {
+      const file = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', hidden: true, onchange: async () => {
+        const f = file.files[0];
+        if (!f) return;
+        try {
+          const r = await fetch('/api/me/wallpaper', { method: 'POST', body: f, credentials: 'same-origin', headers: { 'X-Seance': '1', 'X-Lang': lang } });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.error || r.statusText);
+          state.wallVersion = j.wallpaper_version;
+          Object.assign(me.prefs, j);
+          applyPrefs(me.prefs);
+          toast(tr('Fond d’écran appliqué'), 'ok');
+          rerender();
+        } catch (e) { toast(e.message, 'bad'); }
+      } });
+      detail = h('div', h('div.wallpaper-preview', { style: `background-image: url("/api/me/wallpaper/image?v=${state.wallVersion || 0}")` }),
+        h('div.actions-row', h('button.btn', { onclick: () => file.click() }, tr('Choisir une image…')), file),
+        h('p.muted.small', tr('JPEG, PNG ou WebP, 8 Mo au plus. L’image reste sur ce serveur.')));
+    }
+    clear(body,
+      h('section.panel', h('h2', tr('Thème')), themeTiles),
+      h('section.panel', h('h2', tr('Couleur d’accent')),
+        h('div.accent-row', swatches(p.accent, (c) => save({ accent: c }, tr('Couleur appliquée'))), h('label.color-pick', picker, tr('Autre couleur…'))),
+        h('p.muted.small', tr('Boutons, liens actifs, barres de progression.'))),
+      h('section.panel', h('h2', tr('Taille et densité')),
+        h('div.grid2',
+          field(tr('Taille du texte'), bindSelect('text_size', [['s', tr('Petite')], ['m', tr('Normale')], ['l', tr('Grande')], ['xl', tr('Très grande')]])),
+          field(tr('Densité'), bindSelect('density', [['compact', tr('Compacte')], ['normal', tr('Normale')], ['comfy', tr('Aérée')]]))),
+        field(tr('Taille des affiches'), bindSelect('poster_size', [['s', tr('Petites')], ['m', tr('Moyennes')], ['l', tr('Grandes')]]))),
+      h('section.panel', h('h2', tr('Cartes des films et séries')),
+        cardToggle('card_titles', tr('Titre et année sous l’affiche')),
+        cardToggle('card_progress', tr('Barre de progression')),
+        cardToggle('card_watched', tr('Coche « vu »')),
+        cardToggle('card_quality', tr('Badges 4K et HDR')),
+        cardToggle('card_new', tr('Badge « Nouveau » (ajouts de la semaine)')),
+        cardToggle('card_rating', tr('Note TMDB'))),
+      h('section.panel', h('h2', tr('Fond d’écran')), field(tr('Derrière les pages'), modeSel), detail));
     return;
   }
 

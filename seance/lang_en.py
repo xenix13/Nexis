@@ -671,4 +671,6 @@ EN = {
     "Adresse S3 invalide (ex. https://s3.eu-west-3.amazonaws.com)": "Invalid S3 address (e.g. https://s3.eu-west-3.amazonaws.com)",
     "Réglage invalide : {}": "Invalid setting: {}",
     "Compte d'origine invalide": "Invalid source account",
+    "Image trop lourde (8 Mo au maximum)": "Image too large (8 MB at most)",
+    "Pas d'image de fond": "No background image",
 }

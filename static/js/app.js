@@ -56,18 +56,58 @@ function minimize(m) {
   dock.append(m.el);
 }
 
+// fonds d'écran en dégradé (Paramètres → Apparence → Fond d'écran)
+export const GRADIENTS = {
+  aurora: 'linear-gradient(135deg, #0f2027, #203a43 45%, #2c5364)',
+  sunset: 'linear-gradient(135deg, #3a1c71, #d76d77 55%, #ffaf7b)',
+  ocean: 'linear-gradient(135deg, #0b1d3a, #1a4f8b 55%, #2bc0e4)',
+  forest: 'linear-gradient(135deg, #0b2312, #1f5130 55%, #6a9f58)',
+  berry: 'linear-gradient(135deg, #2b0a3d, #6a1b5c 55%, #c2456f)',
+  ember: 'linear-gradient(135deg, #1a0a05, #6b1d0b 55%, #e2582b)',
+  steel: 'linear-gradient(135deg, #16181d, #343a46 55%, #6b7486)',
+  mint: 'linear-gradient(135deg, #0d2b2b, #16645e 55%, #6fd3b6)',
+};
+const systemLight = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+let lastPrefs = null;
+if (systemLight && systemLight.addEventListener) {
+  systemLight.addEventListener('change', () => { if (lastPrefs && lastPrefs.theme === 'auto') applyPrefs(lastPrefs); });
+}
+let daily = null; // fond du jour, demandé une fois par jour
+async function dailyWallpaper() {
+  const day = new Date().toDateString();
+  if (daily && daily.day === day) return daily.path;
+  try { daily = { day, path: (await get('/api/me/wallpaper/daily')).path }; } catch { daily = { day, path: null }; }
+  return daily.path;
+}
+
 export function applyPrefs(prefs) {
   const r = document.documentElement;
+  lastPrefs = prefs;
   r.style.setProperty('--accent', prefs.accent);
-  r.dataset.theme = prefs.theme;
+  // thème automatique : clair ou sombre comme l'appareil (et suit son changement)
+  r.dataset.theme = prefs.theme === 'auto' ? (systemLight && systemLight.matches ? 'light' : 'dark') : prefs.theme;
+  r.dataset.text = prefs.text_size || 'm';
+  r.dataset.density = prefs.density || 'normal';
+  for (const [cls, on] of [['cards-no-titles', prefs.card_titles === false], ['cards-no-progress', prefs.card_progress === false],
+    ['cards-no-watched', prefs.card_watched === false], ['cards-no-quality', prefs.card_quality === false],
+    ['cards-no-new', prefs.card_new === false], ['cards-rating', !!prefs.card_rating]]) r.classList.toggle(cls, on);
   const kids = !!(state.me && state.me.user && state.me.user.kids);
   r.classList.toggle('kids', kids); // interface enfant : grandes vignettes, menu simplifié
   r.dataset.poster = kids ? 'l' : prefs.poster_size;
   r.classList.toggle('no-spoilers', !!prefs.hide_spoilers);
-  // fond d'écran du profil (l'arrière-plan d'un titre choisi depuis sa fiche), estompé derrière l'interface
-  r.classList.toggle('has-wallpaper', !!prefs.wallpaper);
-  if (prefs.wallpaper) r.style.setProperty('--wallpaper', `url("${img(prefs.wallpaper, 1280, 720)}")`);
-  else r.style.removeProperty('--wallpaper');
+  // fond d'écran du profil, estompé derrière l'interface : l'image d'un titre, une couleur, un dégradé, un titre
+  // différent chaque jour, ou une image envoyée
+  const setWall = (css) => {
+    r.classList.toggle('has-wallpaper', !!css);
+    if (css) r.style.setProperty('--wallpaper', css); else r.style.removeProperty('--wallpaper');
+  };
+  const mode = prefs.wallpaper_mode || 'title';
+  if (mode === 'title') setWall(prefs.wallpaper ? `url("${img(prefs.wallpaper, 1280, 720)}")` : '');
+  else if (mode === 'color') setWall(`linear-gradient(${prefs.wallpaper_color}, ${prefs.wallpaper_color})`);
+  else if (mode === 'gradient') setWall(GRADIENTS[prefs.wallpaper_gradient] || GRADIENTS.aurora);
+  else if (mode === 'upload') setWall(`url("/api/me/wallpaper/image?v=${prefs.wallpaper_version || state.wallVersion || 0}")`);
+  else if (mode === 'daily') dailyWallpaper().then((p) => { if (lastPrefs === prefs) setWall(p ? `url("${img(p, 1280, 720)}")` : ''); });
+  else setWall('');
   // barre d'état du téléphone / de la fenêtre installée à la couleur du thème
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = getComputedStyle(r).getPropertyValue('--bg').trim() || '#0b0b0e';

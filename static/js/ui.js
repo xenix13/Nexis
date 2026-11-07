@@ -287,9 +287,14 @@ export function posterCard(c, { href } = {}) {
   if (c.type === 'show' && c.latest) sub = tr('Nouveau : S{season} E{episode}', { season: c.latest.season, episode: c.latest.episode });
   if (c.type === 'season') sub = tr('{p1} épisodes', { p1: c.leaves || 0 });
   const thumb = c.type === 'episode' ? (c.show_thumb || c.thumb) : c.thumb;
+  // repères affichés selon le profil (Paramètres → Apparence) : définition, HDR, nouveauté, note
+  const isNew = c.added && Date.now() / 1000 - c.added < 7 * 86400 && !c.watched && c.type !== 'episode';
+  const flags = [c.res === '4K' ? h('span.card-q', '4K') : null, c.hdr ? h('span.card-q', 'HDR') : null,
+    isNew ? h('span.card-new', tr('Nouveau')) : null,
+    c.rating ? h('span.card-rate', `★ ${Number(c.rating).toLocaleString(locale(), { maximumFractionDigits: 1 })}`) : null].filter(Boolean);
   return h('a.card.poster', { href: link, title: c.title },
     h('div.card-img', thumb ? h('img', { src: img(thumb, 200, 300), alt: '', loading: 'lazy' }) : h('div.noimg', c.title),
-      badge(c), progressBar(c.position, c.duration)),
+      flags.length ? h('div.card-flags', flags) : null, badge(c), progressBar(c.position, c.duration)),
     h('div.card-title', c.type === 'episode' ? c.show : c.title),
     h('div.card-sub', String(sub)));
 }
