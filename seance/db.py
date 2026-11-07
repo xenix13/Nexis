@@ -630,6 +630,18 @@ MIGRATIONS = [
         PRIMARY KEY(user_id, episode_id)
     );
     """,
+    # 25 : préférences répliquées avec les comptes (une modification relance l'envoi du compte aux serveurs liés)
+    """
+    CREATE TRIGGER prefs_fed_ins AFTER INSERT ON prefs WHEN (SELECT applying FROM fed_clock)=0 BEGIN
+        UPDATE users SET rev=CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) WHERE id=NEW.user_id;
+    END;
+    CREATE TRIGGER prefs_fed_upd AFTER UPDATE ON prefs WHEN (SELECT applying FROM fed_clock)=0 BEGIN
+        UPDATE users SET rev=CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) WHERE id=NEW.user_id;
+    END;
+    CREATE TRIGGER prefs_fed_del AFTER DELETE ON prefs WHEN (SELECT applying FROM fed_clock)=0 BEGIN
+        UPDATE users SET rev=CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) WHERE id=OLD.user_id;
+    END;
+    """,
 ]
 
 

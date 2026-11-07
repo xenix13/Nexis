@@ -687,6 +687,59 @@ class FederationTest(unittest.TestCase):
         self.a.db.set_setting("server_name", None)
         self.b.db.set_setting("server_name", None)
 
+    def test_17_prefs_follow_account(self):
+        """Les préférences d'un compte le suivent d'un serveur lié à l'autre (bibliothèques et fond d'écran traduits)."""
+        colas_b = self.login(self.base_b, "colas", "motdepasseA")
+        films_a = self.lib(self.admin_a, "Films")                    # bibliothèque de A, vue depuis A
+        films_a_on_b = self.lib(colas_b, "Films", server=True)        # la même, reçue par B
+        series_b = self.lib(colas_b, "Séries")                        # bibliothèque de B (à part ou fusion d'ici)
+        self.assertNotEqual(films_a["id"], films_a_on_b["id"])
+        movie = self.admin_a.call("GET", f"/api/libraries/{films_a['id']}/items")[1]["items"][0]
+        st, r = self.admin_a.call("PUT", "/api/me/prefs", {
+            "theme": "light", "accent": "#4c9aff", "sub_size": 125, "hidden_libraries": [films_a["id"]],
+            "start_page": f"lib:{films_a['id']}", "nav_hidden": [f"lib:{films_a['id']}", "live"],
+            "wallpaper": f"/library/metadata/{movie['id']}/art/1",
+            "home_pins": [{"id": 3, "type": "genre", "ref": "Drame", "lib": films_a["id"], "title": "Drames"}],
+            "home_order": ["pin:3", "continue"]})
+        self.assertEqual(st, 200, r)
+        self.sync()
+        p = colas_b.call("GET", "/api/me")[1]["prefs"]
+        self.assertEqual((p["theme"], p["accent"], p["sub_size"]), ("light", "#4c9aff", 125))
+        self.assertEqual(p["hidden_libraries"], [films_a_on_b["id"]])
+        self.assertEqual(p["start_page"], f"lib:{films_a_on_b['id']}")
+        self.assertEqual(p["nav_hidden"], [f"lib:{films_a_on_b['id']}", "live"])
+        self.assertEqual(p["home_pins"][0]["lib"], films_a_on_b["id"])
+        self.assertEqual(p["home_order"], ["pin:3", "continue"])
+        wid = int(p["wallpaper"].split("/")[3])
+        st, d = colas_b.call("GET", f"/api/items/{wid}")
+        self.assertEqual((st, d["title"]), (200, movie["title"]))  # le même film, avec son numéro sur B
+        # dans l'autre sens : un changement fait sur B revient sur A
+        st, r = colas_b.call("PUT", "/api/me/prefs", {"theme": "oled", "hidden_libraries": [series_b["id"]]})
+        self.assertEqual(st, 200, r)
+        self.sync()
+        p = self.admin_a.call("GET", "/api/me")[1]["prefs"]
+        # Séries de B vue depuis A : à part, ou fusionnée avec celle de A (test de fusion) : c'est celle affichée
+        series_b_on_a = self.lib(self.admin_a, "Séries", server=True) or self.lib(self.admin_a, "Séries")
+        self.assertEqual((p["theme"], p["hidden_libraries"]), ("oled", [series_b_on_a["id"]]))
+        self.assertEqual(p["accent"], "#4c9aff")
+        # retour aux réglages par défaut : partout aussi
+        st, r = self.admin_a.call("POST", "/api/me/prefs/reset")
+        self.assertEqual((st, r["theme"]), (200, "dark"))
+        self.sync()
+        p = colas_b.call("GET", "/api/me")[1]["prefs"]
+        self.assertEqual((p["theme"], p["hidden_libraries"], p["home_pins"]), ("dark", [], []))
+        # copier les réglages d'un compte vers un autre (administrateur)
+        self.admin_a.call("PUT", "/api/me/prefs", {"theme": "light", "sub_size": 150})
+        lea_id = next(u["id"] for u in self.admin_a.call("GET", "/api/admin/users")[1] if u["username"] == "lea")
+        me_id = self.admin_a.call("GET", "/api/me")[1]["user"]["id"]
+        st, r = self.admin_a.call("POST", f"/api/admin/users/{lea_id}/prefs", {"from": me_id})
+        self.assertEqual(st, 200, r)
+        lea = self.login(self.base_a, "lea", "motdepasseL")
+        self.assertEqual(lea.call("GET", "/api/me")[1]["prefs"]["sub_size"], 150)
+        self.assertEqual(self.admin_a.call("POST", f"/api/admin/users/{lea_id}/prefs", {"from": lea_id})[0], 400)
+        self.admin_a.call("POST", "/api/me/prefs/reset")
+        self.sync()
+
     def test_99_unlink(self):
         st, r = self.admin_b.call("DELETE", f"/api/admin/federation/peers/{self.peer_on_b}")
         self.assertEqual(st, 200, r)

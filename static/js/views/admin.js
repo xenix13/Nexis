@@ -62,7 +62,7 @@ function since(ts) {
 const AGE_LIMITS = [['', tr('Aucune restriction')], ['7', tr('Jeunes enfants (7 ans max.)')], ['10', tr('Enfant (10 ans max.)')],
   ['12', tr('12 ans max.')], ['16', tr('16 ans max.')]];
 
-async function userForm(user, libraries, defaultLang = 'fr') {
+async function userForm(user, libraries, defaultLang = 'fr', others = []) {
   const isNew = !user;
   user = user || { username: '', display_name: '', is_admin: false, all_libraries: true, libraries: [], disabled: false,
     managed: false, home: true, max_age: null, allow_unrated: true, has_pin: false, kids: false };
@@ -97,6 +97,7 @@ async function userForm(user, libraries, defaultLang = 'fr') {
     remote.append(h('option', { value: String(user.remote_kbps), selected: true }, `${(user.remote_kbps / 1000).toLocaleString(locale())} Mbit/s`));
   }
   const admin = toggle(tr('Administrateur'), user.is_admin);
+  const copyFrom = select([['', tr('Ne rien copier')], ...others.filter((o) => !user.id || o.id !== user.id).map((o) => [o.id, o.display_name])], '');
   const disabled = toggle(tr('Compte désactivé'), user.disabled);
   const all = toggle(tr('Accès à toutes les bibliothèques (y compris les futures)'), user.all_libraries);
   const libChecks = libraries.map((l) => {
@@ -145,6 +146,8 @@ async function userForm(user, libraries, defaultLang = 'fr') {
       field(tr('Lectures simultanées (max.)'), streams, tr('Sur tous les appareils du compte.'))),
     bedOn, bedFields,
     field(tr('Débit maximum hors de la maison'), remote, tr('Depuis l’extérieur, la qualité est réduite pour tenir dans ce débit. À la maison, rien ne change.')),
+    others.length ? h('h4.form-sub', tr('Réglages')) : null,
+    others.length ? field(tr('Copier les réglages de…'), copyFrom, tr('Apparence, langues, lecture, accueil et menu de ce compte remplacent ceux-ci (pratique pour les profils des enfants).')) : null,
     h('h4.form-sub', tr('Droits et bibliothèques')),
     admin, isNew ? null : disabled, all, libBox, err);
   return modal(isNew ? tr('Nouvel utilisateur') : tr('Modifier {display_name}', { display_name: user.display_name }), body, [
@@ -172,8 +175,9 @@ async function userForm(user, libraries, defaultLang = 'fr') {
       else if (clearPin && clearPin.querySelector('input').checked) payload.pin = '';
       if (!isNew) payload.disabled = disabled.querySelector('input').checked;
       try {
-        if (isNew) await post('/api/admin/users', { username: username.value.trim(), ...payload });
-        else await put(`/api/admin/users/${user.id}`, payload);
+        const saved = isNew ? await post('/api/admin/users', { username: username.value.trim(), ...payload })
+          : await put(`/api/admin/users/${user.id}`, payload);
+        if (copyFrom.value) await post(`/api/admin/users/${(saved && saved.id) || user.id}/prefs`, { from: Number(copyFrom.value) });
         return true;
       } catch (e) { err.textContent = e.message; return false; }
     } },
@@ -198,7 +202,7 @@ async function usersTab(body, ctx) {
   const libName = (id) => (libraries.find((l) => l.id === id) || { name: `#${id}` }).name;
   clear(body,
     h('div.toolbar', h('p.muted', tr('{length} compte(s). Historique, reprise de lecture et préférences sont propres à chaque compte.', { length: users.length })),
-      h('button.btn.primary', { onclick: async () => { if (await userForm(null, libraries, defaultLang)) { toast(tr('Utilisateur créé'), 'ok'); reload(); } } }, tr('+ Ajouter'))),
+      h('button.btn.primary', { onclick: async () => { if (await userForm(null, libraries, defaultLang, users)) { toast(tr('Utilisateur créé'), 'ok'); reload(); } } }, tr('+ Ajouter'))),
     h('div.user-list', users.map((u) => h('div.user-row', { class: u.disabled ? 'user-row off' : 'user-row' },
       avatar(u, 40),
       h('div.grow', h('strong', u.display_name), h('span.muted', ` @${u.username}`),
@@ -213,7 +217,7 @@ async function usersTab(body, ctx) {
           u.two_factor ? h('span.tag.ok', tr('Double authentification')) : null,
           u.all_libraries ? tr('Toutes les bibliothèques') : (u.libraries.map(libName).join(', ') || tr('Aucune bibliothèque')),
           tr(' · vu {p1}', { p1: since(u.last_seen) }))),
-      h('button.btn.small', { onclick: async () => { if (await userForm(u, libraries, defaultLang)) { toast(tr('Modifications enregistrées'), 'ok'); reload(); } } }, tr('Modifier')),
+      h('button.btn.small', { onclick: async () => { if (await userForm(u, libraries, defaultLang, users)) { toast(tr('Modifications enregistrées'), 'ok'); reload(); } } }, tr('Modifier')),
       u.id === state.me.user.id ? null : h('button.icon-btn', { title: tr('Supprimer'), onclick: async () => {
         if (!await confirmDialog(tr('Supprimer ce compte ?'), tr('L’historique et les préférences de {display_name} seront supprimés. Cette action est définitive.', { display_name: u.display_name }), tr('Supprimer'))) return;
         try { await del(`/api/admin/users/${u.id}`); toast(tr('Compte supprimé'), 'ok'); reload(); } catch (e) { toast(e.message, 'bad'); }

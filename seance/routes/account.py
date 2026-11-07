@@ -153,6 +153,12 @@ def register(app, ctx, x):
                (req.user["id"], json.dumps(p)))
         return p
 
+    @app.route("POST", "/api/me/prefs/reset")
+    def me_prefs_reset(req):
+        """Retour aux réglages par défaut (sur tous les serveurs liés)."""
+        db.run("INSERT INTO prefs(user_id,data) VALUES(?, '{}') ON CONFLICT(user_id) DO UPDATE SET data='{}'", (req.user["id"],))
+        return get_prefs(req.user["id"])
+
     @app.route("PUT", "/api/me/language")
     def me_language(req):
         lang = i18n.valid(req.json().get("language"))

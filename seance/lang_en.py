@@ -670,4 +670,5 @@ EN = {
     "Le compte refuse l'accès : reliez-le de nouveau": "The account denies access: link it again",
     "Adresse S3 invalide (ex. https://s3.eu-west-3.amazonaws.com)": "Invalid S3 address (e.g. https://s3.eu-west-3.amazonaws.com)",
     "Réglage invalide : {}": "Invalid setting: {}",
+    "Compte d'origine invalide": "Invalid source account",
 }

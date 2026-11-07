@@ -372,7 +372,7 @@ Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et u
 
 **Ce qui est partagé**
 
-- **Comptes.** Ils sont communs : mots de passe, double authentification, profils, PIN, contrôle parental, langue, photo et accès aux bibliothèques. Une modification sur l'un arrive sur l'autre en moins d'une minute ; la plus récente l'emporte et une suppression est définitive. Un identifiant présent sur les deux serveurs au moment du jumelage devient un seul compte, avec les données du serveur qui a créé l'invitation. Les sessions ne sont pas partagées : il faut se connecter une fois sur chaque serveur.
+- **Comptes.** Ils sont communs : mots de passe, double authentification, profils, PIN, contrôle parental, langue, photo et accès aux bibliothèques. Les **préférences** de chacun suivent aussi le compte : apparence, langues, sous-titres, lecture, accueil et menu (bibliothèques masquées, page d'ouverture, rangées épinglées d'un genre ou de filtres, fond d'écran), traduits pour l'autre serveur ; les rangées épinglées d'une collection ou d'une playlist restent sur leur serveur, et les réglages de *Cet appareil* sur leur appareil. Une modification sur l'un arrive sur l'autre en moins d'une minute ; la plus récente l'emporte et une suppression est définitive. Un identifiant présent sur les deux serveurs au moment du jumelage devient un seul compte, avec les données du serveur qui a créé l'invitation. Les sessions ne sont pas partagées : il faut se connecter une fois sur chaque serveur.
 - **Bibliothèques.** Chaque bibliothèque reçue de l'autre serveur se règle dans *Serveurs liés* :
   - **Nouvelle bibliothèque** (par défaut) : elle s'ajoute comme une bibliothèque de plus, sous son nom, avec un petit badge du serveur sur sa page ;
   - **Fusionner avec « … »** : ses titres rejoignent l'une de vos bibliothèques du même type. Un film ou une série présent sur les deux serveurs n'apparaît qu'une fois (même identifiant TMDB, IMDb ou TVDB, sinon même titre et même année), et les saisons et épisodes de chacun sont réunis sous la même série.
@@ -545,7 +545,7 @@ Une alerte est envoyée une fois, rappelée une fois par jour si le problème du
 
 ## Personnalisation
 
-Chaque utilisateur règle son interface dans *Paramètres → Mon compte* :
+Chaque utilisateur règle son interface dans *Paramètres → Mon compte* ; ces réglages sont propres à son profil, le suivent sur les serveurs liés, et *Profil → Revenir aux réglages par défaut* les remet à zéro. Un administrateur peut copier les réglages d'un compte vers un autre (fiche de l'utilisateur → *Copier les réglages de…*), par exemple pour les profils des enfants :
 
 - **Profil** : nom, photo (image envoyée ou avatar prédéfini), **langue de l'interface** (français ou anglais), code PIN, mot de passe.
 - **Lecture** : qualité, langues, enchaînement des épisodes, **apparence des sous-titres** (taille, police, couleur, fond, bordure, position, avec aperçu ; ne s'applique pas aux sous-titres ASS stylés ni aux PGS) et **anti-spoiler** (vignettes floutées et résumés masqués pour les épisodes non vus ; un clic affiche le résumé).

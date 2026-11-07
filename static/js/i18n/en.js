@@ -1758,4 +1758,13 @@ export default {
   "restaurée": "restored",
   "à relier": "to link",
   "échec le {date} : {error}": "failed on {date}: {error}",
+  "Apparence, langues, lecture, accueil et menu de ce compte remplacent ceux-ci (pratique pour les profils des enfants).": "That account's appearance, languages, playback, home and menu replace these (handy for children's profiles).",
+  "Apparence, langues, lecture, accueil et menu reprennent leurs valeurs de départ, sur tous les serveurs liés.": "Appearance, languages, playback, home and menu go back to their initial values, on all linked servers.",
+  "Copier les réglages de…": "Copy settings from…",
+  "Mes réglages": "My settings",
+  "Ne rien copier": "Don't copy anything",
+  "Revenir aux réglages par défaut": "Restore default settings",
+  "Revenir aux réglages par défaut ?": "Restore default settings?",
+  "Réglages par défaut rétablis": "Default settings restored",
+  "Vos réglages (apparence, langues, lecture, accueil et menu) sont propres à votre profil et vous suivent sur tous les serveurs liés. Ceux de « Cet appareil » restent propres à ce navigateur.": "Your settings (appearance, languages, playback, home and menu) belong to your profile and follow you on every linked server. Those under “This device” stay specific to this browser.",
 };

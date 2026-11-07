@@ -107,6 +107,18 @@ def register(app, ctx, x):
         if not creating and (fields.get("disabled") or "password_hash" in fields):
             db.run("DELETE FROM sessions WHERE user_id=?", (uid,))
 
+    @app.route("POST", r"/api/admin/users/(?P<uid>\d{1,10})/prefs", auth="admin")
+    def admin_copy_prefs(req):
+        """Copier tous les réglages d'un compte vers un autre (régler d'un coup les profils des enfants)."""
+        uid, src = int(req.params["uid"]), req.json().get("from")
+        if not isinstance(src, (int, str)) or not str(src).isdigit() or int(src) == uid:
+            raise HTTPError(400, "Compte d'origine invalide")
+        if not db.one("SELECT 1 FROM users WHERE id=?", (uid,)) or not db.one("SELECT 1 FROM users WHERE id=?", (int(src),)):
+            raise HTTPError(404, "Utilisateur introuvable")
+        data = db.scalar("SELECT data FROM prefs WHERE user_id=?", (int(src),)) or "{}"
+        db.run("INSERT INTO prefs(user_id,data) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data", (uid, data))
+        return {"ok": True}
+
     @app.route("POST", "/api/admin/users", auth="admin")
     def admin_create_user(req):
         b = req.json()

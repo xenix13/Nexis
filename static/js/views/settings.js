@@ -4,7 +4,7 @@ import { ADMIN_ALIASES, ADMIN_GROUPS, renderAdminSection } from './admin.js';
 import { applyPrefs, navItems, refreshMe, repaintNav, repaintUser, state } from '../app.js';
 import { PIN_LABELS, pins, removePin } from '../pins.js';
 import { SUB_BGS, SUB_COLORS, SUB_EDGES, SUB_FONTS, SUB_POSITIONS, applySubStyle } from '../substyle.js';
-import { arrange, avatar, clear, field, h, icon, img, modal, select, spinner, toast, toggle } from '../ui.js';
+import { arrange, avatar, clear, confirmDialog, field, h, icon, img, modal, select, spinner, toast, toggle } from '../ui.js';
 import { ART, BACKGROUNDS, CATEGORIES, DEFAULT_BG, artDataUrl, artSvg } from '../avatar-art.js';
 import { device, deviceName, setDevice } from '../device.js';
 import { shortcutsPanel } from '../keys.js';
@@ -452,7 +452,21 @@ function accountPage(id, body, rerender) {
       } });
     const languagePanel = h('section.panel', h('h2', tr('Langue')), field('Langue / Language', language,
       tr('Langue des menus et des messages de Nexis, pour ce compte sur tous les appareils.')));
-    clear(body, profile, languagePanel, pinPanel, security, me.user.managed ? null : twoFactorPanel(rerender));
+    // tous les réglages du profil : les mêmes sur chaque serveur lié ; retour aux valeurs par défaut
+    const resetPanel = h('section.panel', h('h2', tr('Mes réglages')),
+      h('p.muted.small', tr('Vos réglages (apparence, langues, lecture, accueil et menu) sont propres à votre profil et vous suivent sur tous les serveurs liés. Ceux de « Cet appareil » restent propres à ce navigateur.')),
+      h('button.btn', { onclick: async () => {
+        if (!await confirmDialog(tr('Revenir aux réglages par défaut ?'), tr('Apparence, langues, lecture, accueil et menu reprennent leurs valeurs de départ, sur tous les serveurs liés.'), tr('Réinitialiser'))) return;
+        try {
+          const r = await post('/api/me/prefs/reset');
+          state.me.prefs = r;
+          applyPrefs(r);
+          repaintNav();
+          toast(tr('Réglages par défaut rétablis'), 'ok');
+          rerender();
+        } catch (e) { toast(e.message, 'bad'); }
+      } }, tr('Revenir aux réglages par défaut')));
+    clear(body, profile, languagePanel, pinPanel, security, me.user.managed ? null : twoFactorPanel(rerender), resetPanel);
     return;
   }
 

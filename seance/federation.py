@@ -896,10 +896,114 @@ class Federation:
         return c
 
     # comptes ---------------------------------------------------------------
+    # ------------------------------------------------------------------ préférences des comptes
+    # Elles suivent le compte sur les serveurs liés. Ce qui désigne une bibliothèque (lib:N, bibliothèques masquées,
+    # rangées épinglées d'un genre ou de filtres) passe par l'identifiant commun des bibliothèques, le fond d'écran
+    # par la désignation commune de l'élément. Les rangées épinglées d'une collection ou d'une playlist restent
+    # propres à chaque serveur (elles n'existent que sur le leur).
+    LIB_KEYS = ("home_order", "home_hidden", "nav_order", "nav_hidden")
+
+    def prefs_out(self, user_id):
+        raw = self.ctx.db.scalar("SELECT data FROM prefs WHERE user_id=?", (user_id,))
+        if raw is None:
+            return {}
+        try:
+            p = json.loads(raw)
+        except ValueError:
+            return {}
+        uids = {str(r["id"]): r["uid"] for r in self.ctx.db.all("SELECT id, uid FROM libraries WHERE uid IS NOT NULL")}
+        pins = [pin for pin in p.get("home_pins") or [] if pin.get("type") in ("genre", "filter") and uids.get(str(pin.get("lib")))]
+        kept = {pin["id"] for pin in pins}
+
+        def key(k):
+            if k.startswith("lib:"):
+                return f"lib@{uids[k[4:]]}" if k[4:] in uids else None
+            if k.startswith("pin:"):
+                return k if k[4:].isdigit() and int(k[4:]) in kept else None
+            return k
+        out = dict(p)
+        out["hidden_libraries"] = [uids[i] for i in p.get("hidden_libraries") or [] if i in uids]
+        out["home_pins"] = [dict(pin, lib=uids[str(pin["lib"])]) for pin in pins]
+        for k in self.LIB_KEYS:
+            if k in p:
+                out[k] = [v for v in (key(x) for x in p[k]) if v]
+        if "start_page" in p:
+            out["start_page"] = key(p["start_page"]) or "home"
+        wp = p.get("wallpaper") or ""
+        m = re.match(r"^/library/metadata/(\d{1,12})/art/(\d{1,14})$", wp)
+        out["wallpaper"] = {"ref": self.ref_of(int(m.group(1))), "v": m.group(2)} if m else wp
+        return {"_v": 1, **out}  # présent même vide : un retour aux réglages par défaut se propage aussi
+
+    def prefs_in(self, user_id, incoming):
+        """Préférences reçues d'un serveur lié, traduites pour ce serveur, puis vérifiées une à une."""
+        from .catalog import validate_prefs
+        db = self.ctx.db
+        if not isinstance(incoming, dict):
+            return
+        local = {}
+        raw = db.scalar("SELECT data FROM prefs WHERE user_id=?", (user_id,))
+        if raw:
+            try:
+                local = json.loads(raw)
+            except ValueError:
+                local = {}
+        ids = {}
+        for r in db.all("SELECT id, uid, merge_into FROM libraries WHERE uid IS NOT NULL"):
+            ids[r["uid"]] = str(r["merge_into"] or r["id"])  # bibliothèque fusionnée : celle qu'on affiche ici
+        p = {k: v for k, v in incoming.items() if k != "_v"}
+        mine = [pin for pin in local.get("home_pins") or [] if pin.get("type") in ("collection", "playlist")]
+        used = {pin["id"] for pin in mine}
+        renum, pins = {}, []
+        for pin in incoming.get("home_pins") or []:
+            if not isinstance(pin, dict) or pin.get("lib") not in ids:
+                continue
+            new = pin.get("id")
+            if not isinstance(new, int) or new in used:
+                new = max(used | {0}) + 1
+            renum[pin.get("id")] = new
+            used.add(new)
+            pins.append(dict(pin, id=new, lib=ids[pin["lib"]]))
+        p["home_pins"] = mine + pins
+
+        def key(k):
+            if not isinstance(k, str):
+                return None
+            if k.startswith("lib@"):
+                return f"lib:{ids[k[4:]]}" if k[4:] in ids else None
+            if k.startswith("pin:"):
+                n = int(k[4:]) if k[4:].isdigit() else None
+                return f"pin:{renum[n]}" if n in renum else None
+            return k
+        p["hidden_libraries"] = [ids[u] for u in incoming.get("hidden_libraries") or [] if u in ids]
+        for k in self.LIB_KEYS:
+            if isinstance(incoming.get(k), list):
+                lst = [v for v in (key(x) for x in incoming[k]) if v]
+                # rangées propres à ce serveur (collections, playlists épinglées) : gardées à leur place
+                lst += [x for x in local.get(k) or [] if x.startswith("pin:") and int(x[4:]) in {q["id"] for q in mine}
+                        and x not in lst]
+                p[k] = list(dict.fromkeys(lst))
+        if "start_page" in incoming:
+            p["start_page"] = key(incoming["start_page"]) or "home"
+        wp = incoming.get("wallpaper")
+        if isinstance(wp, dict):
+            iid = self.resolve_ref(wp.get("ref"))
+            p["wallpaper"] = f"/library/metadata/{iid}/art/{int(wp.get('v') or 1)}" if iid else ""
+        clean = {}
+        for k, v in p.items():
+            try:
+                clean.update(validate_prefs({k: v}))
+            except HTTPError:
+                continue  # réglage inconnu ici (version différente) ou devenu invalide : on garde celui d'ici
+        if not clean.get("home_pins"):
+            clean.pop("home_pins", None)
+        db.run("INSERT INTO prefs(user_id,data) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data",
+               (user_id, json.dumps(clean)))
+
     def user_payload(self, u):
         db = self.ctx.db
         d = {f: u[f] for f in USER_FIELDS}
         d.update(uid=u["uid"], rev=u["rev"] or 0, created_at=u["created_at"])
+        d["prefs"] = self.prefs_out(u["id"])
         libs = [r["uid"] for r in db.all("SELECT l.uid FROM user_libraries ul JOIN libraries l ON l.id=ul.section_id "
                                          "WHERE ul.user_id=?", (u["id"],))]
         libs += [r["uid"] for r in db.all("SELECT uid FROM fed_pending_libs WHERE user_id=?", (u["id"],))]
@@ -1020,6 +1124,8 @@ class Federation:
                             db.run("INSERT OR IGNORE INTO user_libraries(user_id,section_id) VALUES(?,?)", (lid, str(lib)))
                         else:  # bibliothèque pas encore reçue (catalogue d'un serveur lié) : posée à son arrivée
                             db.run("INSERT OR IGNORE INTO fed_pending_libs(user_id,uid) VALUES(?,?)", (lid, luid))
+                    if isinstance(u.get("prefs"), dict) and u["prefs"]:
+                        self.prefs_in(lid, u["prefs"])  # thème, langues, accueil… : les mêmes sur chaque serveur
                     if fields["avatar_ver"] != old_avatar or (fields["avatar_ver"] and not self.has_avatar(lid)):
                         avatars.append((lid, u["uid"], fields["avatar_ver"]))
                 for uid in gone:
