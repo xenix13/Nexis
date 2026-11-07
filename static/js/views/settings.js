@@ -6,7 +6,7 @@ import { PIN_LABELS, pins, removePin } from '../pins.js';
 import { SUB_BGS, SUB_COLORS, SUB_EDGES, SUB_FONTS, SUB_POSITIONS, applySubStyle } from '../substyle.js';
 import { arrange, avatar, clear, confirmDialog, field, h, icon, img, modal, select, spinner, toast, toggle } from '../ui.js';
 import { ART, BACKGROUNDS, CATEGORIES, DEFAULT_BG, artDataUrl, artSvg } from '../avatar-art.js';
-import { device, deviceName, setDevice } from '../device.js';
+import { device, deviceName, modestDevice, setDevice } from '../device.js';
 import { shortcutsPanel } from '../keys.js';
 import { disablePush, enablePush, pushState, pushSupported } from '../push.js';
 
@@ -648,6 +648,9 @@ function accountPage(id, body, rerender) {
       h('section.panel', h('h2', tr('Affichage et navigation')),
         h('div.grid2',
           field(tr('Animations'), pick('motion', [['', tr('Selon le système')], ['reduced', tr('Réduites')]])),
+          field(tr('Effets visuels'), pick('effects', [['', modestDevice() ? tr('Automatique (allégés sur cet appareil)') : tr('Automatique (complets sur cet appareil)')],
+            ['full', tr('Complets')], ['lite', tr('Allégés')]]),
+          tr('Allégés : sans flou, transparence ni ombres. Plus fluide sur une TV ou un appareil modeste ; la disposition du style ne change pas.')),
           field(tr('Style de l’interface'), select([['', tr('Selon le profil ({p1})', { p1: (UI_STYLES.find((x) => x[0] === (p.ui_style || 'classic')) || UI_STYLES[0])[1] })],
             ...UI_STYLES.map(([v, l]) => [v, l])], d.ui_style || '', { onchange: (e) => { set({ ui_style: e.target.value }); applyPrefs(me.prefs); } }),
           tr('Par exemple « Classique » sur la TV et « Barre latérale » sur l’ordinateur.')),

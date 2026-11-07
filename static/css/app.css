@@ -1453,14 +1453,14 @@ html.has-audio body { padding-bottom: 96px; }
 /* ---------- Verre dépoli : barre flottante, panneaux translucides, bannière en carte ---------- */
 :root[data-style="glass"] { --radius: 16px; --glass: color-mix(in srgb, var(--surface) 58%, transparent);
   --glass-line: color-mix(in srgb, var(--text) 11%, transparent); }
-:root[data-style="glass"]:not(.has-wallpaper) body {
+:root[data-style="glass"]:not(.has-wallpaper) body::before { content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  will-change: transform; transform: translateZ(0);
   background: radial-gradient(70vw 60vh at 0% -10%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%),
     radial-gradient(60vw 60vh at 100% 10%, color-mix(in srgb, #4c7dff 16%, transparent), transparent 70%),
-    radial-gradient(60vw 50vh at 50% 110%, color-mix(in srgb, #b45cff 12%, transparent), transparent 70%), var(--bg);
-  background-attachment: fixed; }
+    radial-gradient(60vw 50vh at 50% 110%, color-mix(in srgb, #b45cff 12%, transparent), transparent 70%), var(--bg); }
 :root[data-style="glass"] .topbar { top: calc(10px + var(--safe-top)); margin: calc(10px + var(--safe-top)) var(--gutter) 0;
   min-height: 62px; padding: 8px 10px 8px 18px; border-radius: 22px; background: var(--glass); border: 1px solid var(--glass-line);
-  backdrop-filter: blur(20px) saturate(1.5); -webkit-backdrop-filter: blur(20px) saturate(1.5); box-shadow: 0 12px 34px rgba(0, 0, 0, .28); }
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 12px 34px rgba(0, 0, 0, .28); }
 :root[data-style="glass"] .topbar.scrolled { background: color-mix(in srgb, var(--surface) 74%, transparent); box-shadow: 0 12px 34px rgba(0, 0, 0, .35); }
 :root[data-style="glass"] .nav-link { border-radius: 99px; padding: 7px 14px; }
 :root[data-style="glass"] .nav-link.active { background: color-mix(in srgb, var(--text) 13%, transparent); }
@@ -1472,8 +1472,10 @@ html.has-audio body { padding-bottom: 96px; }
   linear-gradient(0deg, rgba(0, 0, 0, .55) 0%, transparent 45%); }
 :root[data-style="glass"] .hero-body { padding: 0 clamp(24px, 4vw, 56px) clamp(32px, 6vh, 56px); }
 :root[data-style="glass"] .panel, :root[data-style="glass"] .modal, :root[data-style="glass"] .user-menu, :root[data-style="glass"] .error-box {
-  background: var(--glass); border: 1px solid var(--glass-line); border-radius: 22px;
-  backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); }
+  background: color-mix(in srgb, var(--surface) 72%, transparent); border: 1px solid var(--glass-line); border-radius: 22px; }
+/* flou réservé à ce qui flotte (menus, fenêtres) : sous chaque panneau, il était recalculé à chaque image du défilement */
+:root[data-style="glass"] .modal, :root[data-style="glass"] .user-menu {
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
 :root[data-style="glass"] .modal { background: color-mix(in srgb, var(--surface) 82%, transparent); }
 :root[data-style="glass"] .btn { border-radius: 99px; }
 :root[data-style="glass"] .btn:not(.primary):not(.danger):not(.light) { background: color-mix(in srgb, var(--text) 9%, transparent); border-color: var(--glass-line); }
@@ -1650,3 +1652,13 @@ html.has-audio body { padding-bottom: 96px; }
 .style-preview[data-s="rounded"] .sp-bar i:first-child { width: 18px; background: linear-gradient(135deg, var(--accent), #ff3d8b); }
 .style-preview[data-s="rounded"] .sp-hero { border-radius: 0 0 12px 12px; }
 .style-preview[data-s="rounded"] .sp-row b { border-radius: 8px; }
+
+/* ---------- effets visuels allégés (Paramètres → Cet appareil) : pour une TV ou un appareil modeste ---------- */
+html.lite *, html.lite *::before, html.lite *::after { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+html.lite.has-wallpaper body::before { filter: none; inset: 0;
+  background: linear-gradient(color-mix(in srgb, var(--bg) 88%, transparent), color-mix(in srgb, var(--bg) 96%, transparent) 70%),
+    var(--wallpaper) center / cover no-repeat; }
+html.lite .card-img, html.lite .detail-poster, html.lite .panel, html.lite .hero { box-shadow: none !important; }
+html.lite .card-img, html.lite .card { transition: none !important; }
+html.lite .topbar.scrolled, html.lite .user-menu, html.lite .modal { background: var(--surface); }
+html.lite .topbar.scrolled { background: var(--bg); }

@@ -103,11 +103,11 @@ export function applyPrefs(prefs) {
     if (css) r.style.setProperty('--wallpaper', css); else r.style.removeProperty('--wallpaper');
   };
   const mode = prefs.wallpaper_mode || 'title';
-  if (mode === 'title') setWall(prefs.wallpaper ? `url("${img(prefs.wallpaper, 1280, 720)}")` : '');
+  if (mode === 'title') setWall(prefs.wallpaper ? `url("${img(prefs.wallpaper, 960, 540)}")` : ''); // flouté : pas besoin de plus
   else if (mode === 'color') setWall(`linear-gradient(${prefs.wallpaper_color}, ${prefs.wallpaper_color})`);
   else if (mode === 'gradient') setWall(GRADIENTS[prefs.wallpaper_gradient] || GRADIENTS.aurora);
   else if (mode === 'upload') setWall(`url("/api/me/wallpaper/image?v=${prefs.wallpaper_version || state.wallVersion || 0}")`);
-  else if (mode === 'daily') dailyWallpaper().then((p) => { if (lastPrefs === prefs) setWall(p ? `url("${img(p, 1280, 720)}")` : ''); });
+  else if (mode === 'daily') dailyWallpaper().then((p) => { if (lastPrefs === prefs) setWall(p ? `url("${img(p, 960, 540)}")` : ''); });
   else setWall('');
   // barre d'état du téléphone / de la fenêtre installée à la couleur du thème
   const meta = document.querySelector('meta[name="theme-color"]');

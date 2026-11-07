@@ -1890,4 +1890,10 @@ export default {
   "Épuré": "Minimal",
   "Cinéma plein écran": "Full-screen cinema",
   "genres masquer mode privé historique vie privée notifications épisodes heures calmes nuit silence": "genres hide private mode history privacy notifications episodes quiet hours night silence",
+  "Allégés": "Reduced",
+  "Allégés : sans flou, transparence ni ombres. Plus fluide sur une TV ou un appareil modeste ; la disposition du style ne change pas.": "Reduced: no blur, transparency or shadows. Smoother on a TV or a modest device; the style's layout stays the same.",
+  "Automatique (allégés sur cet appareil)": "Automatic (reduced on this device)",
+  "Automatique (complets sur cet appareil)": "Automatic (full on this device)",
+  "Complets": "Full",
+  "Effets visuels": "Visual effects",
 };

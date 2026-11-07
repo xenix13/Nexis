@@ -27,10 +27,20 @@ export function deviceOverrides() {
   return o;
 }
 
+// appareil modeste (peu de mémoire ou de cœurs, transparence réduite demandée par le système) : effets allégés
+export function modestDevice() {
+  const mem = navigator.deviceMemory;
+  const cores = navigator.hardwareConcurrency;
+  const lessGlass = window.matchMedia && window.matchMedia('(prefers-reduced-transparency: reduce)').matches;
+  return !!((mem && mem <= 2) || (cores && cores <= 2) || lessGlass);
+}
+
 export function applyDevice() {
   const d = device();
   const r = document.documentElement;
   r.classList.toggle('reduce-motion', d.motion === 'reduced');
+  // effets visuels : flou, transparence, ombres ; « allégés » pour une TV ou un appareil modeste
+  r.classList.toggle('lite', d.effects === 'lite' || (d.effects !== 'full' && modestDevice()));
   if (d.remote === 'on') r.classList.add('remote');
   else if (d.remote === 'off') r.classList.remove('remote');
 }
