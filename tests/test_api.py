@@ -1260,6 +1260,74 @@ class SeanceTest(unittest.TestCase):
         c.call("POST", "/api/stop", {"stream": r["stream"]})
         c.call("POST", "/api/me/prefs/reset")
 
+    def test_content_privacy_notifications(self):
+        """Genres masqués, mode privé (pas d'historique, titre caché aux admins), choix des notifications, heures calmes."""
+        from seance import push as pushmod
+        c, lib, db = self.lea, self.libs["Films"], self.ctx.db
+        brume, polar = self.movie("Brume"), self.movie("Nuit polaire")
+        old = {r["id"]: r["genres"] for r in db.all("SELECT id, genres FROM items WHERE id IN (?,?)", (brume["id"], polar["id"]))}
+        db.run("UPDATE items SET genres=? WHERE id=?", (json.dumps(["Horreur", "Thriller"]), brume["id"]))
+        db.run("UPDATE items SET genres=? WHERE id=?", (json.dumps(["Drame"]), polar["id"]))
+        try:
+            p = c.call("GET", "/api/me")[1]["prefs"]
+            self.assertEqual((p["hidden_genres"], p["private_mode"], p["notify_episodes"], p["quiet_hours"]), ([], False, True, ""))
+            self.assertIn("Horreur", [g["name"] for g in c.call("GET", "/api/me/genres")[1]])
+            st, r = c.call("PUT", "/api/me/prefs", {"hidden_genres": ["Horreur"]})
+            self.assertEqual(st, 200, r)
+            titles = [x["title"] for x in c.call("GET", f"/api/libraries/{lib}/items")[1]["items"]]
+            self.assertNotIn("Brume", titles)
+            self.assertIn("Nuit polaire", titles)
+            self.assertNotIn("Horreur", [g["id"] for g in c.call("GET", f"/api/libraries/{lib}/genres")[1]])
+            self.assertIn("Horreur", [g["name"] for g in c.call("GET", "/api/me/genres")[1]])  # pour pouvoir le réafficher
+            self.assertEqual(c.call("GET", f"/api/items/{brume['id']}")[0], 200)  # la fiche reste accessible
+            self.assertIn("Brume", [x["title"] for x in self.admin.call("GET", f"/api/libraries/{lib}/items")[1]["items"]])
+            for bad in ({"hidden_genres": "Horreur"}, {"hidden_genres": [""]}, {"private_mode": "oui"}, {"quiet_hours": "22:00"},
+                        {"quiet_hours": "25:00-07:00"}, {"quiet_hours": "07:00-07:00"}, {"muted_shows": ["abc"]}, {"notify_podcasts": 1}):
+                self.assertEqual(c.call("PUT", "/api/me/prefs", bad)[0], 400, bad)
+            # mode privé : la progression est gardée, l'historique non ; les admins ne voient pas le titre
+            uid = c.call("GET", "/api/me")[1]["user"]["id"]
+            before = db.scalar("SELECT COUNT(*) FROM history WHERE user_id=?", (uid,))
+            c.call("PUT", "/api/me/prefs", {"private_mode": True})
+            self.assertEqual(c.call("POST", f"/api/items/{polar['id']}/watched", {"watched": True})[0], 200)
+            self.assertEqual(db.scalar("SELECT COUNT(*) FROM history WHERE user_id=?", (uid,)), before)
+            self.assertTrue(c.call("GET", f"/api/items/{polar['id']}")[1]["watched"])
+            st, r = c.call("POST", "/api/play", {"id": polar["id"], "caps": {"video": ["h264"], "audio": ["aac"], "containers": ["mp4"]}})
+            self.assertEqual(st, 200, r)
+            row = next(s for s in self.admin.call("GET", "/api/admin/streams")[1] if s["id"] == r["stream"])
+            self.assertTrue(row["private"])
+            self.assertNotEqual(row["title"], "Nuit polaire")
+            c.call("POST", "/api/stop", {"stream": r["stream"]})
+            c.call("POST", f"/api/items/{polar['id']}/watched", {"watched": False})
+            c.call("PUT", "/api/me/prefs", {"private_mode": False})
+            c.call("POST", f"/api/items/{polar['id']}/watched", {"watched": True})
+            self.assertEqual(db.scalar("SELECT COUNT(*) FROM history WHERE user_id=?", (uid,)), before + 1)
+            c.call("POST", f"/api/items/{polar['id']}/watched", {"watched": False})
+            # notifications : refusées par type, heures calmes (dans la cloche, sans faire sonner), séries en sourdine
+            show = self.items("Séries")["Les Veilleurs"]
+            st, r = c.call("PUT", "/api/me/prefs", {"notify_podcasts": False, "muted_shows": [str(show["id"])]})
+            self.assertEqual(st, 200, r)
+            self.assertEqual([m["title"] for m in c.call("GET", "/api/me/muted")[1]], ["Les Veilleurs"])
+            push = self.ctx.push
+            push.messages.pop(uid, None)
+            push.notify(uid, "Podcast", "x", kind="podcasts")
+            push.notify(uid, "Épisode", "x", kind="episodes")
+            push.notify(uid, "Alerte", "x")
+            self.assertEqual([m["title"] for m in push.pending(uid, 0)], ["Épisode", "Alerte"])
+            self.assertTrue(pushmod.in_quiet_hours("00:00-23:59", time.mktime((2026, 1, 1, 12, 0, 0, 0, 0, -1))))
+            self.assertTrue(pushmod.in_quiet_hours("22:00-07:00", time.mktime((2026, 1, 1, 23, 30, 0, 0, 0, -1))))
+            self.assertTrue(pushmod.in_quiet_hours("22:00-07:00", time.mktime((2026, 1, 1, 6, 59, 0, 0, 0, -1))))
+            self.assertFalse(pushmod.in_quiet_hours("22:00-07:00", time.mktime((2026, 1, 1, 7, 0, 0, 0, 0, -1))))
+            self.assertFalse(pushmod.in_quiet_hours("", None))
+            ep = self.episodes("Les Veilleurs", "Séries")[2][0]
+            c.call("POST", f"/api/items/{ep['id']}/watched", {"watched": True})  # série suivie
+            c.call("POST", f"/api/items/{ep['id']}/watched", {"watched": False})
+            user = db.one("SELECT * FROM users WHERE id=?", (uid,))
+            self.assertNotIn(show["id"], [sh["id"] for sh, _ in self.ctx.x.new_episodes(user)])
+        finally:
+            for iid, g in old.items():
+                db.run("UPDATE items SET genres=? WHERE id=?", (g, iid))
+            c.call("POST", "/api/me/prefs/reset")
+
     def test_wallpaper_and_recap_marker(self):
         """Fond d'écran du profil (l'arrière-plan d'un titre) et repère de récapitulatif posé à la main."""
         polar = self.movie("Nuit polaire")

@@ -150,7 +150,18 @@ def register(app, ctx, x):
         rows = db.all("SELECT g.value AS name, COUNT(*) AS n FROM items i, json_each(i.genres) g "
                       "WHERE i.library_id=? AND i.type IN ('movie','show') GROUP BY g.value ORDER BY g.value",
                       (int(sid),))
-        return [{"id": r["name"], "title": r["name"], "count": r["n"]} for r in rows]
+        hidden = set(get_prefs(req.user["id"]).get("hidden_genres") or [])
+        return [{"id": r["name"], "title": r["name"], "count": r["n"]} for r in rows if r["name"] not in hidden]
+
+    @app.route("GET", "/api/me/genres")
+    def my_genres(req):
+        """Tous les genres des bibliothèques de ce compte (choix des genres à masquer), y compris ceux déjà masqués."""
+        libs = [int(i) for i in x.allowed_ids(req.user)]
+        if not libs:
+            return []
+        rows = db.all("SELECT g.value AS name, COUNT(*) AS n FROM items i, json_each(i.genres) g WHERE i.library_id IN "
+                      f"({','.join('?' * len(libs))}) AND i.type IN ('movie','show') GROUP BY g.value ORDER BY g.value", libs)
+        return [{"name": r["name"], "count": r["n"]} for r in rows]
 
     def recent_row(lib, user):
         if lib["type"] == "movie":
@@ -328,7 +339,7 @@ def register(app, ctx, x):
         out["genres"] = [{"genre": r["g"], "library": str(r["library_id"]), "count": r["n"]} for r in db.all(
             "SELECT g.value AS g, i.library_id, COUNT(*) AS n FROM items i, json_each(i.genres) g WHERE i.type IN "
             f"('movie','show') AND i.library_id IN ({marks}) GROUP BY g.value, i.library_id ORDER BY n DESC", allowed)
-            if q in fold(r["g"] or "")][:8]
+            if q in fold(r["g"] or "") and r["g"] not in set(get_prefs(req.user["id"]).get("hidden_genres") or [])][:8]
         if not (out["movies"] or out["shows"] or out["episodes"] or out["people"]):
             # rien d'exact : titres proches (faute de frappe, lettre en trop ou en moins)
             import difflib

@@ -289,6 +289,8 @@ class Tracking:
                 st = lib.tmdb_of_show.get(row["show_id"])
                 if st and (st, row["season"], row["idx"]) not in t_eps:
                     shows.setdefault(st, {}).setdefault(row["season"], []).append({"number": row["idx"], "watched_at": when})
+        if x.get_prefs(uid).get("private_mode"):  # mode privé : rien de ce qu'on regarde ne part vers Trakt
+            movies, shows = [], {}
         out["exported"] = len(movies) + sum(len(e) for s in shows.values() for e in s.values())
         self._post_batches("/sync/history", movies, shows, token)
         # --- notes

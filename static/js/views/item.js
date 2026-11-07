@@ -212,6 +212,19 @@ function itemMenu(d, rerender) {
       } catch (e) { toast(e.message, 'bad'); }
     } });
   }
+  if (d.type === 'show') {
+    // nouveaux épisodes : prévenu ou non, série par série (Paramètres → Contenu et notifications)
+    const muted = (state.me.prefs.muted_shows || []).includes(String(d.id));
+    items.push({ label: muted ? tr('Être prévenu des nouveaux épisodes') : tr('Ne plus être prévenu des nouveaux épisodes'), onClick: async () => {
+      const list = (state.me.prefs.muted_shows || []).filter((x) => x !== String(d.id));
+      try {
+        const r = await put('/api/me/prefs', { muted_shows: muted ? list : [...list, String(d.id)] });
+        Object.assign(state.me.prefs, r);
+        toast(muted ? tr('Vous serez prévenu des nouveaux épisodes') : tr('Plus de notification pour cette série'), 'ok');
+        rerender();
+      } catch (e) { toast(e.message, 'bad'); }
+    } });
+  }
   if (state.me.user.is_admin) {
     items.push({ divider: true }, { heading: tr('Administration') },
       { label: tr('Identifier…'), onClick: () => identify(d, rerender) },

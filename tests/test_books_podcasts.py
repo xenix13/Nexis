@@ -129,7 +129,7 @@ class BooksPodcastsTest(unittest.TestCase):
         cls.lea = Client(cls.base)
         cls.lea.call("POST", "/api/login", {"username": "lea", "password": "motdepasse2"})
         cls.sent = []
-        cls.ctx.push.notify = lambda uid, title, body, url="#/", tag="": cls.sent.append((uid, title, body)) or 1
+        cls.ctx.push.notify = lambda uid, title, body, url="#/", tag="", kind=None: cls.sent.append((uid, title, body)) or 1
 
     @classmethod
     def tearDownClass(cls):

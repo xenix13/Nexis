@@ -216,6 +216,8 @@ export const ACCOUNT_GROUP = { title: tr('Mon compte'), items: [
     keys: tr('appareil tv téléphone qualité sous-titres taille animations mouvement télécommande manette navigateur') },
   { id: 'services', label: tr('Trakt et Letterboxd'), icon: 'link', lead: tr('Ce que vous regardez, vos notes et votre liste « À regarder », partagés avec Trakt ou Letterboxd.'),
     keys: tr('trakt letterboxd synchroniser historique notes import export csv scrobble') },
+  { id: 'privacy', label: tr('Contenu et notifications'), icon: 'bell', lead: tr('Genres masqués, mode privé, notifications et heures calmes.'),
+    keys: tr('genres masquer mode privé historique vie privée notifications podcasts épisodes heures calmes nuit silence') },
   { id: 'layout', label: tr('Accueil et menu'), icon: 'home', lead: tr('Ordre et affichage des rangées de l’accueil et des liens de la barre du haut.'),
     keys: tr('accueil rangées ordre barre du haut menu liens masquer réorganiser épingler page d’ouverture démarrage') },
 ] };
@@ -561,6 +563,65 @@ function accountPage(id, body, rerender) {
         bindToggle('remember_volume', tr('Garder le volume d’une lecture à l’autre')),
         bindToggle('night_audio', tr('Son « nuit » : dialogues renforcés, explosions et musique atténuées (son 5.1 / 7.1 converti)'))),
       libLangsPanel());
+    return;
+  }
+
+  if (id === 'privacy') {
+    // genres masqués : bascule par genre (tous les genres des bibliothèques du compte)
+    const hidden = new Set(p.hidden_genres || []);
+    const genreBox = h('div.chips', spinner());
+    get('/api/me/genres').then((gs) => {
+      const names = [...new Set([...gs.map((g) => g.name), ...hidden])].sort((a, b) => a.localeCompare(b, locale()));
+      clear(genreBox, names.length ? names.map((g) => h('button.chip.chip-toggle', { type: 'button', class: hidden.has(g) ? 'chip chip-toggle on' : 'chip chip-toggle',
+        'aria-pressed': String(hidden.has(g)), onclick: async (e) => {
+          const b = e.currentTarget;
+          if (hidden.has(g)) hidden.delete(g); else if (hidden.size >= 40) { toast(tr('40 genres masqués au maximum'), 'bad'); return; } else hidden.add(g);
+          b.classList.toggle('on', hidden.has(g));
+          b.setAttribute('aria-pressed', String(hidden.has(g)));
+          await save({ hidden_genres: [...hidden] }, hidden.has(g) ? tr('Genre « {g} » masqué', { g }) : tr('Genre « {g} » de nouveau visible', { g }));
+        } }, g)) : h('p.muted.small', tr('Aucun genre dans vos bibliothèques.')));
+    }).catch((e) => clear(genreBox, h('p.muted.small', e.message)));
+    // heures calmes : "HH:MM-HH:MM", vide = jamais
+    const [qa, qb] = (p.quiet_hours || '22:00-08:00').split('-');
+    const from = h('input', { type: 'time', value: qa, disabled: !p.quiet_hours });
+    const to = h('input', { type: 'time', value: qb, disabled: !p.quiet_hours });
+    const quietSave = () => {
+      if (!from.value || !to.value || from.value === to.value) { toast(tr('Choisissez deux heures différentes'), 'bad'); return; }
+      save({ quiet_hours: `${from.value}-${to.value}` }, tr('Heures calmes enregistrées'));
+    };
+    from.addEventListener('change', quietSave);
+    to.addEventListener('change', quietSave);
+    const quiet = toggle(tr('Heures calmes : pas de notification sur les appareils pendant cette plage'), !!p.quiet_hours, { onchange: (e) => {
+      from.disabled = to.disabled = !e.target.checked;
+      if (e.target.checked) quietSave(); else save({ quiet_hours: '' }, tr('Heures calmes désactivées'));
+    } });
+    const mutedList = h('div.user-list');
+    const paintMuted = async () => {
+      const list = await get('/api/me/muted').catch(() => []);
+      clear(mutedList, list.length ? list.map((c) => h('div.user-row', h('a.grow', { href: `#/item/${c.id}` }, h('strong', c.title),
+        c.year ? h('span.muted', ` (${c.year})`) : null),
+      h('button.btn.small', { onclick: async () => {
+        await save({ muted_shows: (me.prefs.muted_shows || []).filter((x) => x !== String(c.id)) }, tr('Vous serez prévenu des nouveaux épisodes'));
+        paintMuted();
+      } }, tr('Réactiver')))) : h('p.muted.small', tr('Aucune série en sourdine.')));
+    };
+    paintMuted();
+    clear(body,
+      h('section.panel', h('h2', tr('Genres masqués')),
+        h('p.muted.small', tr('Les films et séries de ces genres n’apparaissent plus pour vous : bibliothèques, accueil, recherche et suggestions. Leur fiche reste accessible par un lien direct.')),
+        genreBox),
+      h('section.panel', h('h2', tr('Mode privé')),
+        h('p.muted.small', tr('Votre progression reste enregistrée (pour reprendre où vous en étiez), mais rien n’est ajouté à votre historique, rien n’est envoyé à Trakt, et les administrateurs voient « Lecture privée » au lieu du titre.')),
+        bindToggle('private_mode', tr('Activer le mode privé'))),
+      h('section.panel', h('h2', tr('Notifications')),
+        h('p.muted.small', tr('Ce que Nexis peut vous signaler. Les notifications s’activent appareil par appareil dans « Cet appareil » ; un titre demandé qui arrive est toujours signalé.')),
+        bindToggle('notify_episodes', tr('Nouveaux épisodes des séries que je suis')),
+        bindToggle('notify_podcasts', tr('Nouveaux épisodes des podcasts auxquels je suis abonné')),
+        quiet, h('div.grid2', field(tr('De'), from), field(tr('À'), to)),
+        h('p.muted.small', tr('Pendant les heures calmes, les notifications restent dans la cloche de Nexis mais ne font pas sonner vos appareils. Heure du serveur.'))),
+      h('section.panel', h('h2', tr('Séries en sourdine')),
+        h('p.muted.small', tr('Pas de notification pour ces séries (menu ⋯ d’une série → Ne plus être prévenu des nouveaux épisodes).')),
+        mutedList));
     return;
   }
 

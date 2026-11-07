@@ -933,6 +933,8 @@ class Federation:
         wp = p.get("wallpaper") or ""
         m = re.match(r"^/library/metadata/(\d{1,12})/art/(\d{1,14})$", wp)
         out["wallpaper"] = {"ref": self.ref_of(int(m.group(1))), "v": m.group(2)} if m else wp
+        if "muted_shows" in p:  # séries dont on ne veut plus être prévenu : désignées pour tous les serveurs
+            out["muted_shows"] = [r for r in (self.ref_of(int(i)) for i in p["muted_shows"] if str(i).isdigit()) if r]
         return {"_v": 1, **out}  # présent même vide : un retour aux réglages par défaut se propage aussi
 
     def prefs_in(self, user_id, incoming):
@@ -987,6 +989,8 @@ class Federation:
                 p[k] = list(dict.fromkeys(lst))
         if "start_page" in incoming:
             p["start_page"] = key(incoming["start_page"]) or "home"
+        if isinstance(incoming.get("muted_shows"), list):
+            p["muted_shows"] = list(dict.fromkeys(str(i) for i in (self.resolve_ref(r) for r in incoming["muted_shows"][:500]) if i))
         wp = incoming.get("wallpaper")
         if isinstance(wp, dict):
             iid = self.resolve_ref(wp.get("ref"))

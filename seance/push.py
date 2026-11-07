@@ -25,6 +25,20 @@ CONTACT = "https://github.com/xenix13/Nexis"
 KEEP_MESSAGES = 20
 
 
+def in_quiet_hours(spec, now=None):
+    """spec "22:30-07:00" (heure du serveur) : vrai pendant cette plage, qui peut passer minuit."""
+    if not spec or len(spec) != 11:
+        return False
+    try:
+        a = int(spec[:2]) * 60 + int(spec[3:5])
+        b = int(spec[6:8]) * 60 + int(spec[9:11])
+    except ValueError:
+        return False
+    t = time.localtime(now)
+    m = t.tm_hour * 60 + t.tm_min
+    return a <= m < b if a < b else (m >= a or m < b)
+
+
 def b64url(data):
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
@@ -125,13 +139,25 @@ class Push:
             db.run("DELETE FROM push_subs WHERE failures>=20")
         return False
 
-    def notify(self, uid, title, body, url="#/", tag="nexis"):
-        """Message pour toutes les inscriptions de ce compte (en arrière-plan)."""
+    def prefs(self, uid):
+        x = getattr(self.ctx, "x", None)
+        return x.get_prefs(uid) if x and hasattr(x, "get_prefs") else {}
+
+    def notify(self, uid, title, body, url="#/", tag="nexis", kind=None):
+        """Message pour toutes les inscriptions de ce compte (en arrière-plan).
+
+        kind : "episodes" ou "podcasts" -> le compte peut les refuser (notify_<kind>) ; pendant ses heures calmes,
+        ces messages ne font pas sonner l'appareil. Les alertes et les essais passent toujours."""
+        prefs = self.prefs(uid) if kind else {}
+        if kind and prefs.get(f"notify_{kind}") is False:
+            return 0
         msg = {"title": title[:120], "body": body[:240], "url": url, "tag": tag, "at": int(time.time())}
         with self.lock:
             lst = self.messages.setdefault(uid, [])
             lst.append(msg)
             del lst[:-KEEP_MESSAGES]
+        if kind and in_quiet_hours(prefs.get("quiet_hours")):
+            return 0
         subs = self.ctx.db.all("SELECT * FROM push_subs WHERE user_id=?", (uid,))
         if not subs or not self.public_key():
             return 0
@@ -169,11 +195,11 @@ class Push:
                 e = sorted(eps, key=lambda e: ((e.get("parent_idx") or 0), e["idx"] or 0))[0]
                 title = tr("Nouvel épisode") if len(eps) == 1 else tr("{n} nouveaux épisodes").format(n=len(eps))
                 body = f"{sh['title']} · S{e.get('parent_idx') or 0}E{e['idx'] or 0} · {e['title']}" if len(eps) == 1 else sh["title"]
-                self.notify(uid, title, body, f"#/item/{sh['id']}", tag=f"show-{sh['id']}")
+                self.notify(uid, title, body, f"#/item/{sh['id']}", tag=f"show-{sh['id']}", kind="episodes")
             else:
                 n = sum(len(eps) for _, eps in fresh)
                 self.notify(uid, tr("{n} nouveaux épisodes").format(n=n), ", ".join(sh["title"] for sh, _ in fresh[:4]),
-                            "#/", tag="episodes")
+                            "#/", tag="episodes", kind="episodes")
 
 
 def register(app, ctx, x):

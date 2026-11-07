@@ -470,13 +470,17 @@ def register(app, ctx, x):
     @app.route("GET", "/api/admin/streams", auth="admin")
     def admin_streams(req):
         rows = db.all("SELECT s.id, s.title, s.quality, s.position_ms, s.state, s.created_at, s.last_seen, s.params, "
-                      "u.display_name AS user FROM streams s JOIN users u ON u.id=s.user_id "
+                      "u.display_name AS user, u.id AS uid FROM streams s JOIN users u ON u.id=s.user_id "
                       "WHERE s.last_seen > ? ORDER BY s.created_at DESC", (int(time.time()) - 180,))
         for r in rows:
             p = json.loads(r.pop("params") or "{}")
             r["mode"] = p.get("mode")
             r["reasons"] = [i18n.tr(x) for x in p.get("reasons", [])]
             r["peer"] = p.get("peer")  # lecture d'un titre d'un serveur lié, relayée par ce serveur
+            if x.get_prefs(r["uid"]).get("private_mode"):
+                r["title"] = i18n.tr("Lecture privée")
+                r["private"] = True
+            r.pop("uid", None)
             r.update(ctx.transcoder.stats(r["id"]))
             if p.get("video_codec"):
                 r["source"] = f"{str(p['video_codec']).upper()} {p.get('src_height') or '?'}p"

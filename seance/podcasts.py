@@ -210,7 +210,7 @@ class Podcasts:
         for u in db.all("SELECT u.id, u.language FROM podcast_subs s JOIN users u ON u.id=s.user_id WHERE s.podcast_id=? "
                         "AND u.disabled=0", (pid,)):
             body = fresh[0]["title"] if len(fresh) == 1 else tr("{n} nouveaux épisodes", u["language"]).format(n=len(fresh))
-            self.ctx.push.notify(u["id"], title, body, f"#/podcasts/{pid}", tag=f"podcast-{pid}")
+            self.ctx.push.notify(u["id"], title, body, f"#/podcasts/{pid}", tag=f"podcast-{pid}", kind="podcasts")
 
     def refresh_all(self, job=None):
         db = self.ctx.db

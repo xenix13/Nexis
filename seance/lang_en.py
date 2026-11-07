@@ -673,4 +673,5 @@ EN = {
     "Compte d'origine invalide": "Invalid source account",
     "Image trop lourde (8 Mo au maximum)": "Image too large (8 MB at most)",
     "Pas d'image de fond": "No background image",
+    "Lecture privée": "Private playback",
 }

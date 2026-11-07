@@ -700,7 +700,8 @@ class FederationTest(unittest.TestCase):
             "start_page": f"lib:{films_a['id']}", "nav_hidden": [f"lib:{films_a['id']}", "live"],
             "wallpaper": f"/library/metadata/{movie['id']}/art/1",
             "home_pins": [{"id": 3, "type": "genre", "ref": "Drame", "lib": films_a["id"], "title": "Drames"}],
-            "home_order": ["pin:3", "continue"], "lib_langs": {films_a["id"]: {"audio_lang": "jpn"}}})
+            "home_order": ["pin:3", "continue"], "lib_langs": {films_a["id"]: {"audio_lang": "jpn"}},
+            "hidden_genres": ["Horreur"], "private_mode": True, "quiet_hours": "23:00-07:30", "muted_shows": [str(movie["id"])]})
         self.assertEqual(st, 200, r)
         self.sync()
         p = colas_b.call("GET", "/api/me")[1]["prefs"]
@@ -711,6 +712,9 @@ class FederationTest(unittest.TestCase):
         self.assertEqual(p["home_pins"][0]["lib"], films_a_on_b["id"])
         self.assertEqual(p["home_order"], ["pin:3", "continue"])
         self.assertEqual(p["lib_langs"], {films_a_on_b["id"]: {"audio_lang": "jpn"}})
+        self.assertEqual((p["hidden_genres"], p["private_mode"], p["quiet_hours"]), (["Horreur"], True, "23:00-07:30"))
+        st, d = colas_b.call("GET", f"/api/items/{p['muted_shows'][0]}")
+        self.assertEqual((st, d["title"]), (200, movie["title"]))  # sourdine : même titre, numéro de B
         wid = int(p["wallpaper"].split("/")[3])
         st, d = colas_b.call("GET", f"/api/items/{wid}")
         self.assertEqual((st, d["title"]), (200, movie["title"]))  # le même film, avec son numéro sur B

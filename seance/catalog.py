@@ -78,6 +78,14 @@ DEFAULT_PREFS = {
     "default_speed": 1,
     "remember_volume": True,
     "night_audio": False,
+    # contenu et vie privée
+    "hidden_genres": [],
+    "private_mode": False,
+    # notifications : nouveaux épisodes, podcasts ; séries dont on ne veut plus être prévenu ; heures calmes
+    "notify_episodes": True,
+    "notify_podcasts": True,
+    "muted_shows": [],
+    "quiet_hours": "",
     "start_page": "home",
     "home_order": [],
     "home_hidden": [],
@@ -166,8 +174,14 @@ def validate_prefs(data):
             ok = v in (10, 15, 30, 60, 90)
         elif k == "default_speed":
             ok = v in (0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2)
-        elif k in ("remember_volume", "night_audio"):
+        elif k in ("remember_volume", "night_audio", "private_mode", "notify_episodes", "notify_podcasts"):
             ok = isinstance(v, bool)
+        elif k == "hidden_genres":
+            ok = isinstance(v, list) and len(v) <= 40 and all(isinstance(g, str) and 1 <= len(g) <= 60 for g in v)
+        elif k == "muted_shows":
+            ok = isinstance(v, list) and len(v) <= 500 and all(isinstance(x, str) and x.isdigit() and len(x) <= 12 for x in v)
+        elif k == "quiet_hours":
+            ok = v == "" or isinstance(v, str) and bool(re.match(r"^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$", v)) and v[:5] != v[6:]
         elif k == "lib_langs":
             ok = isinstance(v, dict) and len(v) <= 100 and all(
                 isinstance(lk, str) and lk.isdigit() and isinstance(lv, dict) and set(lv) <= {"audio_lang", "sub_mode", "sub_lang"}
@@ -319,6 +333,12 @@ def install(ctx, x):
         if hidden and hidden_ids(user):
             sql += " AND COALESCE(i.show_id, i.id) NOT IN (SELECT item_id FROM hidden_items WHERE user_id=?)"
             args = [*args, user["id"]]
+        genres = get_prefs(user["id"]).get("hidden_genres") if hidden else None
+        if genres:
+            # genres masqués pour soi (ceux de la série pour un épisode)
+            sql += (" AND NOT EXISTS (SELECT 1 FROM json_each((SELECT g0.genres FROM items g0 WHERE g0.id=COALESCE(i.show_id, i.id))) gg "
+                    f"WHERE gg.value IN ({','.join('?' * len(genres))}))")
+            args = [*args, *genres]
         return sql, args
 
     def hidden_ids(user):
@@ -462,7 +482,7 @@ def install(ctx, x):
                    "last_watched_at=?, updated_at=? WHERE user_id=? AND rating_key=?", (now, now, uid, c["id"]))
             recent = db.scalar("SELECT MAX(watched_at) FROM history WHERE user_id=? AND rating_key=?",
                                (uid, c["id"]))
-            if not recent or now - recent > 3 * 3600:
+            if (not recent or now - recent > 3 * 3600) and not get_prefs(uid).get("private_mode"):  # mode privé : pas d'historique
                 db.run("INSERT INTO history(user_id,rating_key,watched_at,section_id,meta) VALUES(?,?,?,?,?)",
                        (uid, c["id"], now, c.get("section"), json.dumps(c, ensure_ascii=False)))
         else:
