@@ -66,6 +66,43 @@ const listeners = new Set();
 export function onDownloads(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 const notify = () => listeners.forEach((fn) => { try { fn(); } catch (e) { console.warn(e); } });
 
+// ------------------------------------------------------------------ application installée : continuer en arrière-plan
+// Android gèle une application qu'on quitte : tant qu'un téléchargement est en cours, l'application Nexis se déclare
+// « au travail » (notification « Nexis télécharge… » avec la progression) et le transfert continue, écran éteint
+// compris. Ordinateur : pas de mise en veille pendant un téléchargement.
+const busy = new Map(); // téléchargements en cours (clé -> enregistrement)
+let toldActive = false;
+let tellTimer = null;
+const nativeDownloads = () => (window.NexisAndroid && window.NexisAndroid.downloads ? (j) => window.NexisAndroid.downloads(j)
+  : window.nexisNative && window.nexisNative.downloads ? (j) => window.nexisNative.downloads(j) : null);
+function track(rec, gone = false) {
+  if (!gone && ['queued', 'preparing', 'downloading'].includes(rec.state)) busy.set(rec.key, rec); else busy.delete(rec.key);
+  tellNative();
+}
+function tellNative() {
+  const send = nativeDownloads();
+  if (!send) return;
+  const active = busy.size > 0;
+  if (!active && !toldActive) return; // rien en cours, rien annoncé
+  if (active === toldActive && tellTimer) return; // prochain envoi déjà prévu (au plus un par seconde)
+  const now = () => {
+    tellTimer = null;
+    const list = [...busy.values()];
+    toldActive = list.length > 0;
+    const cur = list.find((d) => d.state === 'downloading') || list.find((d) => d.state === 'preparing') || list[0];
+    const it = cur ? cur.item : null;
+    const pct = !cur ? 0 : cur.state === 'downloading' ? (cur.chunks ? cur.got / cur.chunks : 0) : cur.state === 'preparing' ? (cur.prep || 0) : 0;
+    try {
+      send(JSON.stringify({ active: list.length,
+        title: it ? (it.type === 'episode' ? `${it.show || ''} · ${it.title || ''}` : it.title || '') : '',
+        state: cur ? cur.state : '', percent: Math.round(pct * 100),
+        text: cur ? (cur.state === 'preparing' ? tr('Préparation sur le serveur…') : cur.state === 'downloading' ? tr('Téléchargement…') : tr('En attente')) : '' }));
+    } catch { /* ancienne application */ }
+  };
+  if (active !== toldActive) { clearTimeout(tellTimer); now(); return; } // début ou fin : tout de suite
+  tellTimer = setTimeout(now, 1000);
+}
+
 const keyOf = (uid, rk) => `${uid}:${rk}`;
 const mediaUrl = (key, part) => `/offline/${key.replace(':', '/')}/${part}`;
 
@@ -114,12 +151,17 @@ export async function pump() {
     }
   } finally {
     running = false;
+    // file terminée ou interrompue (réseau coupé) : l'application peut se rendormir
+    for (const [k, d] of busy) if (d.state !== 'downloading' && d.state !== 'preparing') busy.delete(k);
+    if (!navigator.onLine) busy.clear();
+    tellNative();
   }
 }
 
 async function save(rec, patch) {
   Object.assign(rec, patch);
   await put('downloads', rec);
+  track(rec);
   notify();
 }
 
@@ -255,6 +297,7 @@ export async function removeDownload(key) {
   const rec = await one('downloads', key);
   if (!rec) return;
   await remove('downloads', key);
+  track(rec, true);
   if (rec.job) del(`/api/downloads/${rec.job}`).catch(() => {});
   const cache = await caches.open(MEDIA);
   const prefix = mediaUrl(key, '');
@@ -272,6 +315,7 @@ export async function removeMany(keys) {
     const rec = await one('downloads', key);
     if (!rec) continue;
     await remove('downloads', key);
+    track(rec, true);
     if (rec.job) del(`/api/downloads/${rec.job}`).catch(() => {});
     prefixes.push(mediaUrl(key, ''));
   }

@@ -14,4 +14,5 @@ contextBridge.exposeInMainWorld('nexisNative', {
   changeServer: () => ipcRenderer.invoke('nexis:change-server'),
   retry: () => ipcRenderer.invoke('nexis:retry'),
   checkUpdate: () => ipcRenderer.invoke('nexis:check-update'),
+  downloads: (json) => ipcRenderer.send('nexis:downloads', String(json)), // file de téléchargement (veille, barre des tâches)
 });

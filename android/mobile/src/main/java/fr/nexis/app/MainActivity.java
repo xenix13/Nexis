@@ -67,6 +67,7 @@ public class MainActivity extends Activity {
     private ValueCallback<Uri[]> pendingFiles;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private long lastUpdateCheck = 0;
+    private boolean downloading = false; // service de téléchargement en arrière-plan lancé
     private boolean fr;
 
     private SharedPreferences prefs() { return getSharedPreferences(PREFS, MODE_PRIVATE); }
@@ -96,6 +97,8 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
         web.addJavascriptInterface(new Bridge(), "NexisAndroid");
+        // moteur de la page gardé prioritaire même application quittée (téléchargements en cours)
+        web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
 
         web.setWebViewClient(new WebViewClient() {
             @Override
@@ -282,8 +285,42 @@ public class MainActivity extends Activity {
     @Override
     protected void onPause() {
         CookieManager.getInstance().flush(); // session gardée si Android ferme l'application
-        web.onPause();
+        if (!downloading) web.onPause(); // téléchargement en cours : la page continue de travailler
         super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        // sans la page, plus rien ne télécharge : la notification « Nexis télécharge » disparaît
+        if (downloading) stopService(new Intent(this, DownloadService.class));
+        downloading = false;
+        super.onDestroy();
+    }
+
+    // ------------------------------------------------------------------ téléchargements en arrière-plan
+    private void downloadsChanged(String json) {
+        int count = 0, percent = 0;
+        String title = "", text = "";
+        try {
+            JSONObject j = new JSONObject(json);
+            count = j.optInt("active", 0);
+            percent = j.optInt("percent", 0);
+            title = j.optString("title", "");
+            text = j.optString("text", "");
+        } catch (Exception ignored) { }
+        if (count <= 0) {
+            if (downloading) stopService(new Intent(this, DownloadService.class));
+            downloading = false;
+            return;
+        }
+        if (downloading) { DownloadService.update(this, count, title, text, percent); return; }
+        try {
+            startForegroundService(new Intent(this, DownloadService.class)
+                    .putExtra("count", count).putExtra("title", title).putExtra("text", text).putExtra("percent", percent));
+            downloading = true;
+        } catch (Exception e) {
+            // Android refuse de lancer le service depuis l'arrière-plan : le téléchargement reprendra au retour
+        }
     }
 
     // ------------------------------------------------------------------ choix du serveur
@@ -483,6 +520,10 @@ public class MainActivity extends Activity {
         public void checkUpdate() { ui.post(() -> MainActivity.this.checkUpdate(true)); }
 
         // notifications : inscrit (jeton du serveur) et autorisées par Android ?
+        /** État de la file de téléchargement (JSON : active, title, text, percent) ; active = 0 : plus rien en cours. */
+        @JavascriptInterface
+        public void downloads(String json) { ui.post(() -> downloadsChanged(json)); }
+
         @JavascriptInterface
         public String pushStatus() {
             try {

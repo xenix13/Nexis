@@ -2,7 +2,7 @@
 // La fenêtre affiche l'interface du serveur Nexis choisi au premier lancement : elle suit donc chaque mise à jour du
 // serveur. Le moteur est celui de l'application (Chromium), le même partout : pas de différence entre navigateurs.
 // Le programme lui-même se met à jour depuis le serveur (/apps/desktop, fichiers publiés avec chaque version).
-const { app, BrowserWindow, Menu, dialog, ipcMain, net, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, net, powerSaveBlocker, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { strings, fill } = require('./strings');
@@ -34,7 +34,9 @@ function createWindow() {
     width: b.width || 1280, height: b.height || 800, x: b.x, y: b.y, minWidth: 720, minHeight: 480,
     backgroundColor: '#0b0b0e', title: 'Nexis', autoHideMenuBar: true, show: false,
     icon: path.join(__dirname, 'build', 'icon.png'),
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, spellcheck: false },
+    // backgroundThrottling : fenêtre réduite ou cachée, la page continue au même rythme (téléchargements)
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, spellcheck: false,
+      backgroundThrottling: false },
   });
   if (config.maximized) win.maximize();
   win.once('ready-to-show', () => win.show());
@@ -109,6 +111,16 @@ ipcMain.handle('nexis:set-server', (_e, url) => setServer(url));
 ipcMain.handle('nexis:change-server', () => { win.loadFile('setup.html', { query: { change: '1', current: config.server || '' } }); });
 ipcMain.handle('nexis:retry', () => { if (config.server) win.loadURL(config.server); });
 ipcMain.handle('nexis:check-update', () => checkUpdates(true));
+// téléchargement en cours : l'ordinateur ne se met pas en veille (l'écran, lui, peut s'éteindre)
+let blocker = null;
+ipcMain.on('nexis:downloads', (_e, json) => {
+  let active = 0;
+  let percent = 0;
+  try { ({ active = 0, percent = 0 } = JSON.parse(json)); } catch { /* ignore */ }
+  if (active > 0 && blocker === null) blocker = powerSaveBlocker.start('prevent-app-suspension');
+  if (active <= 0 && blocker !== null) { powerSaveBlocker.stop(blocker); blocker = null; }
+  if (win) win.setProgressBar(active > 0 ? Math.max(0.01, percent / 100) : -1);
+});
 ipcMain.on('nexis:info', (e) => { e.returnValue = { version: app.getVersion(), os: process.platform, server: config.server || null, strings: T }; });
 
 // ------------------------------------------------------------------ mises à jour du programme
