@@ -1,7 +1,7 @@
 {
   "name": "nexis-desktop",
   "productName": "Nexis",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Nexis pour Windows, macOS et Linux : l'interface de votre serveur Nexis, dans une vraie application.",
   "homepage": "https://github.com/xenix13/Nexis",
   "author": {

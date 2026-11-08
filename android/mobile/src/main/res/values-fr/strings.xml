@@ -12,4 +12,7 @@
     <string name="no_browser">Aucune application ne peut ouvrir ce lien.</string>
     <string name="channel_name">Nouveaux épisodes et alertes</string>
     <string name="channel_text">Nouveaux épisodes des séries suivies, titres demandés qui arrivent, alertes du serveur.</string>
+    <string name="dl_channel">Téléchargements en cours</string>
+    <string name="dl_one">Nexis télécharge</string>
+    <string name="dl_many">Nexis télécharge (%1$d titres)</string>
 </resources>

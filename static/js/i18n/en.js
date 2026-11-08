@@ -2105,4 +2105,5 @@ export default {
   "Sur vos autres appareils": "On your other devices",
   "Application Nexis : les téléchargements sont gardés par l’application, sans limite propre au navigateur. La place disponible est celle de l’appareil.": "Nexis app: downloads are kept by the app, with no browser-specific limit. The available space is the device’s.",
   "Plus de place sur l’appareil. Supprimez un téléchargement ou libérez de l’espace.": "No space left on the device. Delete a download or free up space.",
+  "Préparation sur le serveur…": "Preparing on the server…",
 };
