@@ -230,10 +230,16 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
+      # seulement les applications (pas le relevé de construction Docker, qui ne se télécharge pas)
       - uses: actions/download-artifact@v4
         with:
+          pattern: desktop-*
           path: out
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apps
+          path: out
       - name: Publication
         env:
           GH_TOKEN: ${{ github.token }}
