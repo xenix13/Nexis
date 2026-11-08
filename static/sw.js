@@ -1,6 +1,7 @@
 // Nexis : service worker. Rend l'application installable et lui permet de s'ouvrir même quand le serveur
 // est injoignable (message « Réessayer » au lieu d'une page d'erreur du navigateur).
-// Toujours le réseau d'abord : après une mise à jour du serveur, on n'utilise jamais une ancienne version.
+// Le réseau d'abord : après une mise à jour du serveur, on n'utilise jamais une ancienne version (le code, servi à
+// une adresse qui change avec chaque version, vient directement du cache).
 // Le cache ne sert que hors ligne. API, vidéos et images ne passent pas par ici (cache HTTP du navigateur).
 // Le serveur remplace les deux lignes ci-dessous (version et liste des fichiers de l'interface).
 const VERSION = 'dev';
@@ -31,6 +32,12 @@ self.addEventListener('fetch', (event) => {
 async function networkFirst(req) {
   const key = req.mode === 'navigate' ? '/' : req; // application d'une seule page : toute navigation est « / »
   const cache = await caches.open(CACHE);
+  // code et style à une adresse propre à leur version (/v/<empreinte>/) : ils ne changent jamais, la copie suffit
+  // (sans cela, chaque ouverture redemande la quarantaine de fichiers de l'interface au serveur)
+  if (new URL(req.url).pathname.startsWith('/v/')) {
+    const hit = await cache.match(req);
+    if (hit) return hit;
+  }
   try {
     const res = await fetch(req);
     if (res.ok && res.type === 'basic') cache.put(key, res.clone());
@@ -44,3 +51,27 @@ async function networkFirst(req) {
     throw err;
   }
 }
+
+// Notifications push : le message arrive vide (rien à chiffrer côté serveur) ; on demande à Nexis quoi afficher.
+self.addEventListener('push', (event) => {
+  event.waitUntil((async () => {
+    let msgs = [];
+    try {
+      const r = await fetch('/api/push/pending', { credentials: 'same-origin', cache: 'no-store' });
+      if (r.ok) msgs = (await r.json()).messages || [];
+    } catch { /* serveur injoignable : message générique */ }
+    const m = msgs[msgs.length - 1] || { title: 'Nexis', body: '', url: '#/', tag: 'nexis' };
+    await self.registration.showNotification(m.title, { body: m.body, tag: m.tag, icon: '/icons/icon-192.png',
+      badge: '/icons/maskable-192.png', data: { url: m.url || '#/' } });
+  })());
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = `/${(event.notification.data && event.notification.data.url) || '#/'}`;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    const open = list.find((c) => new URL(c.url).origin === self.location.origin);
+    if (open) return open.focus().then((c) => (c && c.navigate ? c.navigate(url) : c));
+    return self.clients.openWindow(url);
+  }));
+});

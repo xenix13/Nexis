@@ -96,6 +96,44 @@ Les actions tierces (`docker/build-push-action@v6`, `gradle/actions/setup-gradle
 - **Services prêtés (3.24.0).** Un serveur qui a une clé TMDB ou Seerr les prête aux serveurs liés sans transmettre la clé : il relaie lui-même les requêtes. TMDB : chemins de lecture seulement (`/movie`, `/tv`, `/search`, `/discover`…, sans `..`). Seerr : statuts (`GET /media`), comptes (`GET /user`) et nouvelles demandes (`POST /request`) ; toute autre route est refusée (403), notamment les réglages de Seerr. Un serveur lié peut faire une demande au nom de n'importe quel compte Seerr, comme le ferait le serveur lui-même.
 - **Regarder ensemble entre serveurs (3.24.0).** Les routes `/fed/together/…` agissent au nom du compte (répliqué) indiqué par le serveur lié. Elles ne donnent accès qu'aux groupes, et l'accès au titre (bibliothèques, restriction d'âge) est vérifié sur le serveur du groupe.
 
+## 8. Serveur DLNA et photothèque (nouveau, 3.25.0)
+
+- **DLNA sans comptes.** Le protocole ne prévoit aucune authentification : quand le service est activé, tout appareil du réseau local peut parcourir et lire les bibliothèques partagées, sans contrôle parental. Le service est donc **désactivé par défaut**, limité aux bibliothèques choisies par l'administrateur, et refuse toute adresse qui n'est pas locale (privée, boucle locale, lien local), y compris derrière un reverse proxy (403). Les routes `/dlna/` ne servent que les fichiers des bibliothèques partagées, désignés par leur numéro : aucun chemin n'est accepté du client.
+- **Événements UPnP.** L'état initial envoyé à l'abonnement ne part que vers l'adresse de l'appareil qui s'abonne (pas de requête vers une adresse tierce).
+- **SOAP.** Les corps de requête sont limités à 64 Ko et lus avec le parseur XML de la bibliothèque standard (expat protège des entités récursives).
+- **Photothèque.** Lecture seule : les miniatures et images redimensionnées vont dans le cache de Nexis. L'accès aux photos (vignettes, visionneuse, fichier d'origine) vérifie l'accès du compte à la bibliothèque. Les photothèques ne sont pas recopiées chez les serveurs liés.
+
+## 9. Télécommande, notifications push, albums partagés (nouveau, 3.29.0)
+
+- **Télécommande.** Un appareil n'est visible et pilotable que par le compte qui l'utilise. Les commandes font partie d'une liste fermée (lecture, pause, position, volume, pistes, vitesse, arrêt), avec des valeurs courtes.
+- **Notifications push.** Le serveur n'appelle que les services push des navigateurs (Google, Mozilla, Apple, Microsoft), en HTTPS et sans port ni identifiants dans l'adresse : une adresse d'abonnement arbitraire ne peut pas lui faire appeler une machine du réseau local. Les messages sont vides ; l'appareil réveillé demande leur contenu avec sa session. La clé VAPID est créée par openssl dans `push/` (droits 600).
+- **Albums partagés par lien.** Jeton aléatoire de 144 bits, durée de 1 à 90 jours, révocable. Seuls l'album et ses sous-albums sont accessibles, vérifiés à chaque photo, et les essais de jetons au hasard sont freinés comme les mots de passe. Le reste de l'API demande toujours un compte.
+
+## 10. Diffusion sur une TV (nouveau, 3.30.0)
+
+- **Flux lisible sans session.** Un flux lancé pour une TV (Chromecast, AirPlay) est servi à quiconque connaît son adresse : la TV la demande sans le cookie du navigateur. Cette adresse contient l'identifiant aléatoire du flux (96 bits) et cesse de fonctionner à l'arrêt de la lecture. Les autres flux demandent toujours la session de leur propriétaire. Ces flux portent `Access-Control-Allow-Origin: *`, sans cookies, pour le lecteur du Chromecast.
+- **Script tiers.** La politique de sécurité du contenu autorise `https://www.gstatic.com` dans `script-src` pour le SDK Cast de Google. Ce SDK n'est chargé que dans Chrome et Edge, à l'ouverture du lecteur. C'est le seul code tiers de l'interface.
+
+## 11. Sauvegardes, services externes, podcasts (nouveau, 3.32.0 à 3.37.0)
+
+- **Archives de sauvegarde.** Elles contiennent les empreintes des mots de passe, les secrets de double authentification, l'identité des serveurs liés et les jetons des services reliés : droits 600, téléchargement réservé aux administrateurs. À la restauration, l'archive est refusée si elle contient autre chose que la base et les dossiers attendus (pas de chemin absolu, pas de `..`, pas de lien), si sa base est plus récente que la version installée ou si l'intégrité de la base échoue. Elle n'est mise en place qu'au démarrage suivant ; l'état d'avant est gardé.
+- **Identifiants de services.** Le mot de passe OpenSubtitles, la clé du service Whisper et le secret de l'application Trakt sont dans la base (nécessaires pour appeler ces services) et jamais renvoyés à l'interface. Les comptes Trakt sont reliés par code d'appareil (OAuth) : Nexis ne voit pas le mot de passe Trakt, seulement un jeton révocable, retiré quand on délie le compte.
+- **Podcasts (SSRF).** Le serveur lit les flux RSS, l'audio et les images à la place des appareils. Une adresse donnée par un utilisateur ordinaire est refusée si elle désigne une adresse privée, de bouclage, locale au lien ou réservée, et chaque redirection est vérifiée de même. Seul un administrateur peut ajouter un flux du réseau local. Les images ne sont relayées que si elles appartiennent à un podcast connu ou à un résultat de recherche récent ; l'audio n'est relayé qu'aux abonnés du podcast, et seulement s'il s'annonce comme de l'audio.
+- **Fichiers envoyés.** Archive de sauvegarde (8 Go au plus) et export Letterboxd (20 Mo au plus) sont lus par morceaux, sans passer par la limite des requêtes ordinaires (1 Mo) ; un envoi incomplet ferme la connexion.
+- **Limites et temps d'écran.** Appliqués par le serveur au lancement de chaque lecture et à chaque compte rendu de lecture, pas seulement par l'interface.
+
+## 12. Administration des serveurs liés depuis l'un d'eux (nouveau, 3.38.0)
+
+- **Principe.** Une requête d'administration (`/api/admin/…`) faite depuis la page d'un serveur, avec le serveur lié choisi dans le sélecteur, lui est transmise par la liaison TLS à certificats épinglés, signée par la clé du jumelage et au nom du compte (même identifiant sur les deux serveurs). Le serveur réglé vérifie lui-même que ce compte, chez lui, est administrateur et actif : un compte ordinaire d'un serveur ne devient pas administrateur de l'autre.
+- **Niveau de confiance.** Il ne change pas : des serveurs liés se répliquent déjà leurs comptes, droits compris. Un serveur compromis pouvait donc déjà se donner un administrateur sur l'autre. L'administration à distance peut être refusée par chaque serveur, réglage modifiable seulement sur place (jamais par un serveur lié), et chaque action reçue est notée dans son journal avec le compte et le serveur d'origine.
+- **Périmètre.** Seules les routes `/api/admin/…` sont acceptées à ce titre ; le reste de l'API (profil, préférences, historique) reste fermé aux requêtes entre serveurs au nom d'un compte. La liste des serveurs administrables n'est jamais relayée.
+
+## 13. Copies des sauvegardes (nouveau, 3.39.0)
+
+- **Entre serveurs liés.** La copie passe par la liaison TLS signée. Le serveur qui la reçoit vérifie l'archive (contenu, base) et que son manifeste porte l'identité du serveur qui l'envoie : un serveur lié ne peut pas déposer une sauvegarde au nom d'un autre. Chaque serveur peut refuser d'en garder. Ces copies ne sont pas chiffrées : les serveurs liés partagent déjà comptes et clés.
+- **Stockages externes.** Les secrets (clé S3, secret OAuth, jetons de renouvellement) restent dans la base et ne sont jamais renvoyés à l'interface. Google Drive est relié avec la portée `drive.file` (seulement les fichiers créés par Nexis), OneDrive avec `Files.ReadWrite.AppFolder` (seulement le dossier de l'application). Avec une phrase secrète, les copies externes sont chiffrées : AES-256-CTR (openssl) puis HMAC-SHA256 sur l'ensemble, clés tirées de la phrase par PBKDF2-SHA256 (300 000 tours) ; une archive modifiée ou une mauvaise phrase est refusée avant tout déchiffrement. Sans phrase secrète, la copie externe contient en clair les empreintes des mots de passe et les clés : l'interface le signale.
+- **Restauration depuis un chemin du serveur.** Réservée aux administrateurs ; le fichier n'est lu que s'il est une archive de Nexis valide.
+
 ## Recommandations par priorité
 
 1. Sécuriser le compte GitHub et la branche `main` ; mettre à jour vers des versions publiées et signées (§ 1).

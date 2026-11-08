@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -64,6 +65,43 @@ def has_option(name):
         except (OSError, subprocess.SubprocessError):
             _options[name] = False
     return _options[name]
+
+
+_filters = {}
+
+
+def has_filter(name):
+    """ffmpeg a-t-il ce filtre ? (zscale, pour convertir le HDR, dépend de la compilation)"""
+    if name not in _filters:
+        try:
+            out = subprocess.run([FFMPEG, "-hide_banner", "-filters"], capture_output=True, timeout=20).stdout
+            _filters[name] = re.search(rb"^\s*\S+\s+" + re.escape(name.encode()) + rb"\s", out, re.M) is not None
+        except (OSError, subprocess.SubprocessError):
+            _filters[name] = False
+    return _filters[name]
+
+
+_version = []
+
+
+def ffmpeg_major():
+    """Version majeure d'ffmpeg (6, 7, 8…), 0 si inconnue (version de développement « N-… »)."""
+    if not _version:
+        try:
+            out = subprocess.run([FFMPEG, "-hide_banner", "-version"], capture_output=True, timeout=20).stdout
+            m = re.match(rb"ffmpeg version n?(\d+)\.", out)
+            _version.append(int(m.group(1)) if m else 0)
+        except (OSError, subprocess.SubprocessError):
+            _version.append(0)
+    return _version[0]
+
+
+def readrate_ok():
+    """-readrate utilisable pour ménager le partage réseau. Depuis ffmpeg 7, la lecture limitée se fige en cours
+    de route sur certains fichiers (constaté avec ffmpeg 8.0 : préparation bloquée à mi-fichier) : on s'en passe,
+    la priorité basse (nice, ionice) suffit à laisser la place aux lectures."""
+    major = ffmpeg_major()
+    return has_option("readrate") and 0 < major < 7
 
 
 def available():
@@ -204,13 +242,17 @@ def keyframe_before(path, seconds, video_index=0):
     return best if best is not None else seconds
 
 
-def resize_image(src, dest, w, h, crop=True):
-    """Redimensionne (et recadre) une image avec ffmpeg -> JPEG."""
+def resize_image(src, dest, w, h, crop=True, orient=None):
+    """Redimensionne (et recadre) une image avec ffmpeg -> JPEG. orient : filtres qui la remettent à l'endroit
+    (orientation EXIF d'une photo, appliquée ici plutôt que devinée par ffmpeg selon sa version)."""
     vf = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}" if crop
-          else f"scale={w}:{h}:force_original_aspect_ratio=decrease")
+          else f"scale='min({w},iw)':'min({h},ih)':force_original_aspect_ratio=decrease")
+    if orient:
+        vf = f"{orient},{vf}"
     tmp = f"{dest}.{threading.get_ident()}.tmp.jpg"
     with _image_slots:
-        run([FFMPEG, "-y", "-v", "error", "-i", src, "-vf", vf, "-frames:v", "1", "-q:v", "4", tmp], timeout=60)
+        run([FFMPEG, "-y", "-v", "error", *(["-noautorotate"] if orient is not None else []), "-i", src, "-vf", vf,
+             "-frames:v", "1", "-q:v", "4", tmp], timeout=60)
     _keep_image(tmp, dest)
 
 

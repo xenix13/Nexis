@@ -492,7 +492,7 @@ class SubtitleCache:
         cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-v", "error", "-y"]
         if trick:
             cmd += ["-skip_frame", "nokey"]  # seules les images clés sont décodées : très peu de calcul
-        if job.kind in ("soon", "gentle") and self._streaming() and media.has_option("readrate"):
+        if job.kind in ("soon", "gentle") and self._streaming() and media.readrate_ok():
             # laisse de la bande passante au flux en cours
             cmd += ["-readrate", str(SOON_READRATE if job.kind == "soon" else GENTLE_READRATE)]
         if fonts and tracks and self._want_fonts(item):

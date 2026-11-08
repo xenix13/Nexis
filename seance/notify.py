@@ -33,7 +33,8 @@ def register(app, ctx, x):
     def new_episodes(user):
         """[(série, [épisodes nouveaux non vus])] pour les séries suivies, du plus récent au plus ancien."""
         uid = user["id"]
-        shows = followed(uid)
+        muted = {int(m) for m in x.get_prefs(uid).get("muted_shows") or [] if str(m).isdigit()}
+        shows = [s for s in followed(uid) if s not in muted]  # séries dont on ne veut plus être prévenu
         if not shows:
             return []
         since = int(time.time()) - NEW_DAYS * 86400
@@ -61,6 +62,7 @@ def register(app, ctx, x):
         seen = db.scalar("SELECT notif_seen FROM users WHERE id=?", (user["id"],)) or 0
         return sum(1 for _, eps in new_episodes(user) if max(e["added_at"] or 0 for e in eps) > seen)
     x.unread_notifications = unread_count
+    x.new_episodes = new_episodes
 
     @app.route("GET", "/api/notifications")
     def notifications(req):
@@ -73,6 +75,15 @@ def register(app, ctx, x):
             out.append({"show": x.card(sh), "count": len(eps), "episode": x.card(first), "added_at": newest,
                         "unread": newest > seen})
         return {"items": out, "unread": sum(1 for n in out if n["unread"])}
+
+    @app.route("GET", "/api/me/muted")
+    def muted_list(req):
+        """Séries dont on ne veut plus être prévenu (pour les réactiver)."""
+        ids = [int(i) for i in x.get_prefs(req.user["id"]).get("muted_shows") or [] if str(i).isdigit()]
+        if not ids:
+            return []
+        rows = db.all(CARD_SQL + f"WHERE i.id IN ({','.join('?' * len(ids))}) ORDER BY i.sort_title", ids)
+        return [{"id": r["id"], "title": r["title"], "year": r["year"]} for r in rows]
 
     @app.route("POST", "/api/notifications/seen")
     def notifications_seen(req):

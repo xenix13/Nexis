@@ -412,10 +412,21 @@ class FederationTest(unittest.TestCase):
         ok = {"X-Fed-Peer": uid_b, "X-Fed-Key": secret}
         st, body = fed_raw(port, "GET", "/fed/hello", ok)
         self.assertEqual(st, 200, body)
-        # au nom d'un compte, un serveur lié ne peut que lire : pas d'administration
+        # administration au nom d'un compte : seulement s'il est administrateur ici, et si ce serveur l'accepte
         colas = self.a.db.scalar("SELECT uid FROM users WHERE username='colas'")
+        lea = self.a.db.scalar("SELECT uid FROM users WHERE username='lea'")
         st, _ = fed_raw(port, "GET", "/api/admin/users", dict(ok, **{"X-Fed-User": colas}))
+        self.assertEqual(st, 200)
+        st, _ = fed_raw(port, "GET", "/api/admin/users", dict(ok, **{"X-Fed-User": lea}))
         self.assertEqual(st, 403)
+        self.a.db.set_setting("fed_remote_admin", "0")
+        try:
+            st, _ = fed_raw(port, "GET", "/api/admin/users", dict(ok, **{"X-Fed-User": colas}))
+            self.assertEqual(st, 403)
+        finally:
+            self.a.db.set_setting("fed_remote_admin", None)
+        st, _ = fed_raw(port, "GET", "/api/me", dict(ok, **{"X-Fed-User": colas}))
+        self.assertEqual(st, 403)  # le reste de l'API reste fermé
         # avatar d'un compte : route avec paramètre, servie (et pas la page de l'interface)
         st, body = fed_raw(port, "GET", f"/fed/avatar/{colas}", ok)
         self.assertEqual(st, 404, body[:80])
@@ -589,6 +600,154 @@ class FederationTest(unittest.TestCase):
             self.admin_a.call("PUT", "/api/admin/requests", {"seerr_url": "", "seerr_key": ""})
             seerr.httpd.shutdown()
             self.sync()
+
+    def test_15_remote_admin(self):
+        """Un administrateur connecté à A règle B : requêtes d'administration relayées au nom du même compte."""
+        st, sv = self.admin_a.call("GET", "/api/admin/servers")
+        self.assertEqual(st, 200, sv)
+        self.assertEqual([p["id"] for p in sv["peers"]], [str(self.peer_on_a)])
+        on_b = {"X-Nexis-Server": str(self.peer_on_a)}
+        st, libs = self.admin_a.call("GET", "/api/admin/libraries", headers=on_b)
+        self.assertEqual(st, 200, libs)
+        self.assertIn("Animes", [l["name"] for l in libs["libraries"]])  # la bibliothèque n'existe que sur B
+        st, libs_a = self.admin_a.call("GET", "/api/admin/libraries")
+        self.assertNotIn("Animes", [l["name"] for l in libs_a["libraries"] if not l.get("peer")])
+        # un réglage modifié depuis A s'applique à B seulement
+        st, r = self.admin_a.call("PUT", "/api/admin/settings", {"watch_interval": 123}, headers=on_b)
+        self.assertEqual(st, 200, r)
+        self.assertEqual(self.b.db.setting("watch_interval"), "123")
+        self.assertNotEqual(self.a.db.setting("watch_interval"), "123")
+        st, r = self.admin_a.call("GET", f"/api/admin/settings?_server={self.peer_on_a}")  # même chose par l'adresse
+        self.assertEqual((st, r["watch_interval"]), (200, 123))
+        # la liste des serveurs, elle, reste celle d'ici
+        st, sv2 = self.admin_a.call("GET", "/api/admin/servers", headers=on_b)
+        self.assertEqual(sv2["local"]["name"], sv["local"]["name"])
+        # un compte ordinaire ne peut pas s'en servir
+        lea = self.login(self.base_a, "lea", "motdepasseL")
+        self.assertEqual(lea.call("GET", "/api/admin/settings", headers=on_b)[0], 403)
+        self.assertEqual(self.admin_a.call("GET", "/api/admin/settings", headers={"X-Nexis-Server": "999"})[0], 404)
+        # B peut refuser d'être administré depuis un serveur lié (réglage fait sur place)
+        st, r = self.admin_b.call("PUT", "/api/admin/servers", {"remote_admin": False})
+        self.assertEqual((st, r["remote_admin"]), (200, False))
+        st, r = self.admin_a.call("GET", "/api/admin/settings", headers=on_b)
+        self.assertEqual(st, 403)
+        self.assertIn("n'accepte pas", r["error"])
+        self.admin_b.call("PUT", "/api/admin/servers", {"remote_admin": True})
+        # les routes entre serveurs restent fermées au reste de l'API (pas de « /api/me » au nom d'un compte)
+        st, r = self.a.fed.call(self.a.fed.peer(self.peer_on_a), "GET", "/api/me",
+                                user=self.a.db.one("SELECT * FROM users WHERE username='colas'"))
+        self.assertEqual(st, 403)
+
+    def test_16_backups_copied_between_servers(self):
+        """Une sauvegarde de A est recopiée chez B, rangée sous le nom de A ; B garde celles de chaque serveur à part."""
+        from seance import backup
+        self.a.db.set_setting("server_name", "Serveur Salon")
+        self.b.db.set_setting("server_name", "Serveur Bureau")
+        b_a = backup.create(self.a, "auto", distribute=False)
+        self.assertTrue(b_a["name"].startswith("nexis-serveur-salon_"), b_a["name"])
+        res = backup.distribute(self.a, os.path.join(backup.directory(self.a), b_a["name"]))
+        self.assertTrue(res and all(ok for _, ok in res), res)
+        on_b = {b["name"]: b for b in backup.listing(self.b)}
+        self.assertIn(b_a["name"], on_b)
+        copy = on_b[b_a["name"]]
+        self.assertEqual((copy["mine"], copy["server"]), (False, "Serveur Salon"))
+        # depuis A, l'administration de B montre la copie, avec son serveur d'origine
+        st, v = self.admin_a.call("GET", "/api/admin/backups", headers={"X-Nexis-Server": str(self.peer_on_a)})
+        self.assertEqual(st, 200, v)
+        self.assertTrue(any(b["name"] == b_a["name"] and not b["mine"] for b in v["backups"]))
+        # B garde au plus N copies automatiques de A, sans toucher aux siennes
+        mine_b = backup.create(self.b, "auto", distribute=False)
+        self.b.tasks.update("backup", options={"keep": 1})
+        try:
+            import time as _t
+            _t.sleep(1.1)
+            b_a2 = backup.create(self.a, "auto", distribute=False)
+            backup.distribute(self.a, os.path.join(backup.directory(self.a), b_a2["name"]))
+            names = {b["name"] for b in backup.listing(self.b)}
+            self.assertIn(b_a2["name"], names)
+            self.assertNotIn(b_a["name"], names)
+            self.assertIn(mine_b["name"], names)
+        finally:
+            self.b.tasks.update("backup", options={"keep": 7})
+        # B peut refuser de garder les sauvegardes des autres
+        self.b.db.set_setting("backup_from_peers", "0")
+        try:
+            res = backup.distribute(self.a, os.path.join(backup.directory(self.a), b_a2["name"]))
+            self.assertFalse(res[0][1])
+            self.assertIn("ne garde pas", backup.copies_status(self.a)[f"peer:{self.peer_on_a}"]["error"])
+        finally:
+            self.b.db.set_setting("backup_from_peers", None)
+        # un serveur lié ne peut pas déposer une sauvegarde au nom d'un autre serveur
+        with open(os.path.join(backup.directory(self.a), b_a2["name"]), "rb") as f:
+            raw = f.read()
+        st, _ = fed_raw(self.a.fed.port, "POST", "/fed/backup", {"X-Fed-Peer": self.b.fed.uid(),
+                        "X-Fed-Key": self.a.db.scalar("SELECT secret FROM peers"), "X-Backup-Name": "nexis-pirate_20260101-000000-auto.tar.gz",
+                        "Content-Length": str(len(raw))}, raw)
+        self.assertEqual(st, 400)  # c'est une sauvegarde de A, pas de B
+        self.a.db.set_setting("server_name", None)
+        self.b.db.set_setting("server_name", None)
+
+    def test_17_prefs_follow_account(self):
+        """Les préférences d'un compte le suivent d'un serveur lié à l'autre (bibliothèques et fond d'écran traduits)."""
+        colas_b = self.login(self.base_b, "colas", "motdepasseA")
+        films_a = self.lib(self.admin_a, "Films")                    # bibliothèque de A, vue depuis A
+        films_a_on_b = self.lib(colas_b, "Films", server=True)        # la même, reçue par B
+        series_b = self.lib(colas_b, "Séries")                        # bibliothèque de B (à part ou fusion d'ici)
+        self.assertNotEqual(films_a["id"], films_a_on_b["id"])
+        movie = self.admin_a.call("GET", f"/api/libraries/{films_a['id']}/items")[1]["items"][0]
+        with open(os.path.join(STATIC, "themes", "ville-neon.json"), encoding="utf-8") as f:
+            neon = json.load(f)
+        st, r = self.admin_a.call("PUT", "/api/me/prefs", {
+            "theme": "light", "accent": "#4c9aff", "sub_size": 125, "hidden_libraries": [films_a["id"]],
+            "start_page": f"lib:{films_a['id']}", "nav_hidden": [f"lib:{films_a['id']}", "live"],
+            "wallpaper": f"/library/metadata/{movie['id']}/art/1",
+            "home_pins": [{"id": 3, "type": "genre", "ref": "Drame", "lib": films_a["id"], "title": "Drames"}],
+            "home_order": ["pin:3", "continue"], "lib_langs": {films_a["id"]: {"audio_lang": "jpn"}},
+            "hidden_genres": ["Horreur"], "private_mode": True, "quiet_hours": "23:00-07:30", "muted_shows": [str(movie["id"])],
+            "my_themes": [neon]})
+        self.assertEqual(st, 200, r)
+        self.sync()
+        p = colas_b.call("GET", "/api/me")[1]["prefs"]
+        self.assertEqual((p["theme"], p["accent"], p["sub_size"]), ("light", "#4c9aff", 125))
+        self.assertEqual(p["hidden_libraries"], [films_a_on_b["id"]])
+        self.assertEqual(p["start_page"], f"lib:{films_a_on_b['id']}")
+        self.assertEqual(p["nav_hidden"], [f"lib:{films_a_on_b['id']}", "live"])
+        self.assertEqual(p["home_pins"][0]["lib"], films_a_on_b["id"])
+        self.assertEqual(p["home_order"], ["pin:3", "continue"])
+        self.assertEqual(p["lib_langs"], {films_a_on_b["id"]: {"audio_lang": "jpn"}})
+        self.assertEqual((p["hidden_genres"], p["private_mode"], p["quiet_hours"]), (["Horreur"], True, "23:00-07:30"))
+        self.assertEqual([t["id"] for t in p["my_themes"]], ["ville-neon"])  # thème installé : sur l'autre serveur aussi
+        st, d = colas_b.call("GET", f"/api/items/{p['muted_shows'][0]}")
+        self.assertEqual((st, d["title"]), (200, movie["title"]))  # sourdine : même titre, numéro de B
+        wid = int(p["wallpaper"].split("/")[3])
+        st, d = colas_b.call("GET", f"/api/items/{wid}")
+        self.assertEqual((st, d["title"]), (200, movie["title"]))  # le même film, avec son numéro sur B
+        # dans l'autre sens : un changement fait sur B revient sur A
+        st, r = colas_b.call("PUT", "/api/me/prefs", {"theme": "oled", "hidden_libraries": [series_b["id"]]})
+        self.assertEqual(st, 200, r)
+        self.sync()
+        p = self.admin_a.call("GET", "/api/me")[1]["prefs"]
+        # Séries de B vue depuis A : à part, ou fusionnée avec celle de A (test de fusion) : c'est celle affichée
+        series_b_on_a = self.lib(self.admin_a, "Séries", server=True) or self.lib(self.admin_a, "Séries")
+        self.assertEqual((p["theme"], p["hidden_libraries"]), ("oled", [series_b_on_a["id"]]))
+        self.assertEqual(p["accent"], "#4c9aff")
+        # retour aux réglages par défaut : partout aussi
+        st, r = self.admin_a.call("POST", "/api/me/prefs/reset")
+        self.assertEqual((st, r["theme"]), (200, "dark"))
+        self.sync()
+        p = colas_b.call("GET", "/api/me")[1]["prefs"]
+        self.assertEqual((p["theme"], p["hidden_libraries"], p["home_pins"]), ("dark", [], []))
+        # copier les réglages d'un compte vers un autre (administrateur)
+        self.admin_a.call("PUT", "/api/me/prefs", {"theme": "light", "sub_size": 150})
+        lea_id = next(u["id"] for u in self.admin_a.call("GET", "/api/admin/users")[1] if u["username"] == "lea")
+        me_id = self.admin_a.call("GET", "/api/me")[1]["user"]["id"]
+        st, r = self.admin_a.call("POST", f"/api/admin/users/{lea_id}/prefs", {"from": me_id})
+        self.assertEqual(st, 200, r)
+        lea = self.login(self.base_a, "lea", "motdepasseL")
+        self.assertEqual(lea.call("GET", "/api/me")[1]["prefs"]["sub_size"], 150)
+        self.assertEqual(self.admin_a.call("POST", f"/api/admin/users/{lea_id}/prefs", {"from": lea_id})[0], 400)
+        self.admin_a.call("POST", "/api/me/prefs/reset")
+        self.sync()
 
     def test_99_unlink(self):
         st, r = self.admin_b.call("DELETE", f"/api/admin/federation/peers/{self.peer_on_b}")

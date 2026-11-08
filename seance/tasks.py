@@ -419,6 +419,14 @@ class CleanupTask(Task):
                 except OSError:
                     continue
                 rm(p)
+        # sous-titres téléchargés de titres qui ne sont plus dans les bibliothèques
+        dl = os.path.join(ctx.data_dir, "subtitles")
+        if os.path.isdir(dl):
+            ids = {str(r["id"]) for r in ctx.db.all("SELECT id FROM items WHERE type IN ('movie','episode')")}
+            ctx.db.release()
+            for name in os.listdir(dl):
+                if name.isdigit() and name not in ids:
+                    rm(os.path.join(dl, name))
         fp = ctx.fingerprints.base
         for name in os.listdir(fp):
             stem = name.split("_head")[0].split("_tail")[0]
@@ -428,7 +436,175 @@ class CleanupTask(Task):
         return f"{removed} élément(s) supprimé(s), {freed / 1e6:.1f} Mo libérés"
 
 
-TASKS = [ScanTask(), MetadataTask(), ChapterImagesTask(), IntroTask(), SubtitlesTask(), LiveTask(), CleanupTask()]
+class OpenSubtitlesTask(Task):
+    id = "opensubs"
+    name = "Télécharger les sous-titres manquants"
+    description = ("Cherche sur OpenSubtitles les sous-titres des langues choisies (Paramètres → Sous-titres et son) "
+                   "pour les films et épisodes qui n'en ont pas, en commençant par les plus récents. S'arrête au quota "
+                   "du jour du compte et reprend le lendemain.")
+    category = "Lecture"
+    default = {"mode": "daily", "time": "06:10"}
+    options = [AFTER_SCAN, opt_libraries()]
+
+    def available(self, ctx):
+        if not ctx.opensubs.configured():
+            return False, "Renseignez le compte OpenSubtitles dans Paramètres → Sous-titres et son."
+        return True, None
+
+    def run(self, ctx, job, opts):
+        from .opensubs import FAIL_RETRY, SubsError
+        os_ = ctx.opensubs
+        conf = os_.conf()
+        if not conf["langs"]:
+            return "Aucune langue choisie"
+        clause, args = lib_clause(opts)
+        rows = ctx.db.all("SELECT i.* FROM items i WHERE i.type IN ('movie','episode') AND i.probe IS NOT NULL" + clause +
+                          " ORDER BY i.added_at DESC, i.id DESC", args)
+        tried = {(r["item_id"], r["lang"]): r for r in ctx.db.all("SELECT * FROM subs_attempts")}
+        ctx.db.release()
+        now = time.time()
+        got = searched = 0
+        todo = []
+        for r in rows:
+            probe = json.loads(r["probe"] or "{}")
+            want = [l for l in os_.missing_langs(probe, conf["langs"])
+                    if not ((r["id"], l) in tried and (tried[(r["id"], l)]["result"] == "removed"
+                                                        or now - tried[(r["id"], l)]["at"] < FAIL_RETRY))]
+            if want:
+                todo.append((r, want))
+        for n, (r, want) in enumerate(todo):
+            job.check()
+            job.progress = n / max(1, len(todo))
+            job.message = r["title"]
+            left = os_.quota_left()
+            if left is not None and left <= 0:
+                return f"{got} sous-titre(s) téléchargé(s) ; quota du jour atteint, reprise demain"
+            try:
+                g, _ = os_.fetch_missing(r, want, conf["hi"])
+                got += g
+                searched += 1
+            except SubsError as e:
+                if "Quota" in str(e):
+                    return f"{got} sous-titre(s) téléchargé(s) ; quota du jour atteint, reprise demain"
+                if "refuse" in str(e) or "manquant" in str(e):
+                    raise RuntimeError(str(e))
+                log.warning("OpenSubtitles, %s : %s", r["title"], e)
+            finally:
+                ctx.db.release()
+            time.sleep(0.3)  # l'API limite à quelques requêtes par seconde
+        job.progress = 1
+        return f"{got} sous-titre(s) téléchargé(s) pour {searched} titre(s)" if todo else "Rien à chercher"
+
+
+class WhisperTask(Task):
+    id = "whisper"
+    name = "Générer les sous-titres manquants (Whisper)"
+    description = ("Transcrit la voix des films et épisodes qui n'ont aucun sous-titre dans la langue parlée, une fois "
+                   "OpenSubtitles passé. Très long sans carte graphique ni service dédié : à réserver aux heures creuses.")
+    category = "Lecture"
+    heavy = True
+    default = {"mode": "off"}
+    options = [opt_int("per_run", "Au plus", 3, 1, 100, "titres par passage"), PAUSE, opt_libraries()]
+
+    def available(self, ctx):
+        return ctx.whisper.available()
+
+    def run(self, ctx, job, opts):
+        from .opensubs import FAIL_RETRY
+        clause, args = lib_clause(opts)
+        rows = ctx.db.all("SELECT i.* FROM items i WHERE i.type IN ('movie','episode') AND i.probe IS NOT NULL" + clause +
+                          " ORDER BY i.added_at DESC, i.id DESC", args)
+        tried = {(r["item_id"], r["lang"]): r for r in ctx.db.all("SELECT * FROM subs_attempts WHERE lang LIKE 'w:%'")}
+        ctx.db.release()
+        now = time.time()
+        todo = []
+        for r in rows:
+            lang = ctx.whisper.needs(json.loads(r["probe"] or "{}"))
+            t = tried.get((r["id"], f"w:{lang if lang != 'und' else ''}"))
+            if lang and not (t and (t["result"] == "removed" or now - t["at"] < FAIL_RETRY)):
+                todo.append(r)
+        todo = todo[:int(opts.get("per_run", 3))]
+        done = 0
+        for n, r in enumerate(todo):
+            job.message = r["title"]
+            base = n / max(1, len(todo))
+            try:
+                ctx.whisper.generate(r, progress=lambda p: setattr(job, "progress", base + p / len(todo)),
+                                     check=job.wait_idle)
+                done += 1
+            except Cancelled:
+                raise
+            except Exception as e:
+                log.warning("Whisper, %s : %s", r["title"], e)
+                lang = ctx.whisper.needs(json.loads(r["probe"] or "{}")) or ""
+                ctx.db.run("INSERT INTO subs_attempts(item_id, lang, at, result) VALUES(?,?,?, 'none') ON CONFLICT(item_id, lang) "
+                           "DO UPDATE SET at=excluded.at, result='none'", (r["id"], f"w:{lang if lang != 'und' else ''}", int(time.time())))
+            finally:
+                ctx.db.release()
+        job.progress = 1
+        return f"{done} sous-titre(s) généré(s) sur {len(todo)}" if todo else "Rien à transcrire"
+
+
+class TraktTask(Task):
+    id = "trakt"
+    name = "Synchroniser avec Trakt"
+    description = ("Pour chaque compte relié à Trakt : ce qui est vu, les notes et la liste « À regarder » passent d'un "
+                   "côté à l'autre. Rien n'est retiré.")
+    category = "Bibliothèques"
+    default = {"mode": "interval", "hours": 6}
+
+    def available(self, ctx):
+        if not ctx.tracking.configured():
+            return False, "Enregistrez l'application Trakt dans Paramètres → Trakt et Letterboxd."
+        return True, None
+
+    def run(self, ctx, job, opts):
+        from .tracking import TraktError
+        users = ctx.db.all("SELECT u.* FROM users u JOIN trakt_links t ON t.user_id=u.id WHERE u.disabled=0")
+        ctx.db.release()
+        done, errors = 0, []
+        for n, u in enumerate(users):
+            job.check()
+            job.progress = n / max(1, len(users))
+            job.message = u["display_name"]
+            try:
+                ctx.tracking.sync(u)
+                done += 1
+            except TraktError as e:
+                errors.append(f"{u['display_name']} : {e}")
+            finally:
+                ctx.db.release()
+        job.progress = 1
+        if errors and not done:
+            raise RuntimeError("; ".join(errors)[:280])
+        return f"{done} compte(s) synchronisé(s)" + (f", {len(errors)} en échec" if errors else "")
+
+
+
+class BackupTask(Task):
+    id = "backup"
+    name = "Sauvegarder le serveur"
+    description = ("Copie la base (comptes, historique, notes, playlists, réglages, bibliothèques), les clés des "
+                   "serveurs liés et des notifications, et les images de profil dans une archive. Les vidéos et les "
+                   "photos n'y sont pas.")
+    category = "Maintenance"
+    default = {"mode": "daily", "time": "04:30"}
+    options = [opt_int("keep", "Garder les", 7, 1, 90, "dernières sauvegardes automatiques")]
+
+    def run(self, ctx, job, opts):
+        from . import backup
+        try:
+            b = backup.create(ctx, "auto", keep=int(opts.get("keep", 7)))
+        except backup.BackupError as e:
+            raise RuntimeError(str(e))
+        finally:
+            ctx.db.release()
+        job.progress = 1
+        return f"{b['name']} ({b['size'] / 1e6:.1f} Mo)"
+
+
+TASKS = [ScanTask(), MetadataTask(), TraktTask(), ChapterImagesTask(), IntroTask(), SubtitlesTask(), OpenSubtitlesTask(), WhisperTask(), LiveTask(),
+         CleanupTask(), BackupTask()]
 
 
 # ------------------------------------------------------------------ planification
@@ -678,6 +854,10 @@ class TaskManager:
             ctx.db.set_setting(f"task_last:{task.id}", json.dumps({
                 "start": int(started), "end": int(time.time()), "status": status, "summary": summary[:300],
                 "reason": job.reason}))
+            try:
+                ctx.health.task_finished(task, status, tr(summary[:300]))
+            except Exception:
+                log.exception("Alerte de fin de tâche")
             ctx.db.release()
 
 

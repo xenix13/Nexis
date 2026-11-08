@@ -1,0 +1,42 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "steampunk",
+ "name": {
+  "fr": "Steampunk",
+  "en": "Steampunk"
+ },
+ "description": {
+  "fr": "Laiton, cuivre et vapeur dans un atelier victorien.",
+  "en": "Brass, copper and steam in a Victorian workshop."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#14100b",
+  "surface": "#211a12",
+  "surface2": "#2e241a",
+  "text": "#f3e6cf",
+  "muted": "#c4ab86",
+  "line": "#4a3a28",
+  "accent": "#c9a14a",
+  "accent2": "#b5653a",
+  "on_accent": "#1f1400"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 200,
+  "stops": [
+   "#2b2012",
+   "#14100b",
+   "#1b0f0a"
+  ]
+ },
+ "effects": [
+  "grain",
+  "vignette"
+ ],
+ "font": "serif",
+ "radius": 6,
+ "style": "classic"
+}

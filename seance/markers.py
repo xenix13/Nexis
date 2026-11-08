@@ -18,6 +18,9 @@ CREDITS = re.compile(r"^\s*(?:ed(?:\s*(?:song|theme)?\s*\d*)?(?:\b|$)|ending|end
 PREVIEW = re.compile(r"^\s*(?:preview|next episode|aper[çc]u|prochain [ée]pisode|yokoku|next time)", re.I)
 GENERIC = re.compile(r"^\s*(?:(?:chapter|chapitre|ch\.?|kapitel|cap[ií]tulo|capitolo|part(?:ie)?)?\s*\d{1,3}|"
                      r"\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d+)?)?\s*$", re.I)
+RECAP = re.compile(r"^\s*(?:recap|r[ée]cap(?:itulatif)?|r[ée]sum[ée](?:\s+des\s+[ée]pisodes)?|previously(?:\s+on)?|"
+                   r"pr[ée]c[ée]demment|dans\s+les\s+[ée]pisodes\s+pr[ée]c[ée]dents|last\s+time|story\s+so\s+far)", re.I)
+RECAP_LEN = (8, 6 * 60)  # un récapitulatif dure de quelques secondes à quelques minutes
 SONG = (70, 115)  # durée typique d'un opening / ending d'anime (secondes)
 
 
@@ -61,13 +64,22 @@ def _pick_credits(chapters, duration):
     return next((c for c in eds if _songlike(c)), eds[0])
 
 
+def _pick_recap(chapters, duration):
+    """« Précédemment dans… » : chapitre nommé ainsi dans le premier tiers de l'épisode."""
+    return next((c for c in chapters if c["start"] < duration * 0.35 and RECAP.match(c.get("title") or "")
+                 and RECAP_LEN[0] <= _len(c) <= RECAP_LEN[1]), None)
+
+
 def from_chapters(chapters, duration):
-    """-> {'intro': {start, end, source}, 'credits': {...}} en millisecondes ('intro' = l'OP à passer)."""
+    """-> {'intro': {start, end, source}, 'recap': {...}, 'credits': {...}} en millisecondes ('intro' = l'OP à passer)."""
     out = {}
     if not chapters or not duration:
         return out
     ms = lambda s: int(round(s * 1000))
     chapters = sorted(chapters, key=lambda c: c["start"])
+    rc = _pick_recap(chapters, duration)
+    if rc:
+        out["recap"] = {"start": ms(rc["start"]), "end": ms(rc["end"]), "source": "chapters"}
     named = [c for c in chapters if not GENERIC.match(c.get("title") or "")]
     if named:
         op, ed = _pick_opening(chapters, duration), _pick_credits(chapters, duration)

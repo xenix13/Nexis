@@ -139,7 +139,9 @@ def register(app, ctx, x):
                 "features": {"discover": bool(db.setting("tmdb_key") or ctx.fed.provider("tmdb")),
                              "requests": bool(db.setting("seerr_url") and db.setting("seerr_key") or ctx.fed.provider("seerr")),
                              "live": x.live_available(req.user),
-                             "downloads": db.setting("downloads", "1") == "1"},
+                             "downloads": db.setting("downloads", "1") == "1",
+                             "opensubtitles": ctx.opensubs.configured(),
+                             "whisper": bool(req.user["is_admin"] and ctx.whisper.backend())},
                 "update": ctx.update_latest if req.user["is_admin"] else None,
                 "notifications": x.unread_notifications(req.user)}
 
@@ -150,6 +152,12 @@ def register(app, ctx, x):
         db.run("INSERT INTO prefs(user_id,data) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data",
                (req.user["id"], json.dumps(p)))
         return p
+
+    @app.route("POST", "/api/me/prefs/reset")
+    def me_prefs_reset(req):
+        """Retour aux réglages par défaut (sur tous les serveurs liés)."""
+        db.run("INSERT INTO prefs(user_id,data) VALUES(?, '{}') ON CONFLICT(user_id) DO UPDATE SET data='{}'", (req.user["id"],))
+        return get_prefs(req.user["id"])
 
     @app.route("PUT", "/api/me/language")
     def me_language(req):
@@ -210,6 +218,93 @@ def register(app, ctx, x):
         ver = int(time.time())
         db.run("UPDATE users SET avatar_ver=? WHERE id=?", (ver, uid))
         return {"avatar": avatar_url({"id": uid, "avatar_ver": ver})}
+
+    # ------------------------------------------------------------ fond d'écran
+    wall_dir = os.path.join(ctx.data_dir, "wallpapers")
+    WALL_MAX = 8 * 1024 * 1024
+
+    @app.route("GET", "/api/me/wallpaper/daily")
+    def me_wallpaper_daily(req):
+        """« Un de vos titres chaque jour » : l'arrière-plan d'un titre de votre liste, de ceux que vous avez aimés
+        ou regardés récemment ; le même toute la journée."""
+        import hashlib
+        uid = req.user["id"]
+        cands = db.all("SELECT i.id, i.img_version FROM items i WHERE i.type IN ('movie','show') AND (i.backdrop IS NOT NULL "
+                       "AND i.backdrop<>'') AND (i.id IN (SELECT item_id FROM watchlist WHERE user_id=?) OR i.id IN "
+                       "(SELECT item_id FROM stars WHERE user_id=? AND stars>=4) OR CAST(i.id AS TEXT) IN (SELECT COALESCE("
+                       "show_key, rating_key) FROM progress WHERE user_id=? ORDER BY updated_at DESC LIMIT 40)) ORDER BY i.id",
+                       (uid, uid, uid))
+        cands = [c for c in cands if x.visible(req.user, db.one("SELECT i.*, COALESCE(sh.age, i.age) AS eff_age FROM items i "
+                                                              "LEFT JOIN items sh ON sh.id=i.show_id WHERE i.id=?", (c["id"],)))]
+        if not cands:  # rien de personnel encore : un ajout récent de vos bibliothèques
+            allowed = sorted(int(i) for i in x.allowed_set(req.user) if str(i).isdigit()) or [0]
+            cands = db.all(f"SELECT id, img_version FROM items WHERE type IN ('movie','show') AND backdrop IS NOT NULL "
+                           f"AND backdrop<>'' AND library_id IN ({','.join('?' * len(allowed))}) ORDER BY added_at DESC LIMIT 30",
+                           allowed)
+        if not cands:
+            return {"path": None}
+        day = time.strftime("%Y-%m-%d")
+        pick = cands[int(hashlib.sha1(f"{uid}|{day}".encode()).hexdigest(), 16) % len(cands)]
+        return {"path": f"/library/metadata/{pick['id']}/art/{pick['img_version']}"}
+
+    @app.route("POST", "/api/me/wallpaper")
+    def me_wallpaper_upload(req):
+        """Image de fond choisie sur l'appareil : réencodée (1920 px au plus, sans métadonnées)."""
+        try:
+            length = int(req.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = 0
+        if not 100 <= length <= WALL_MAX:
+            raise HTTPError(400, "Image trop lourde (8 Mo au maximum)")
+        os.makedirs(wall_dir, exist_ok=True)
+        uid = req.user["id"]
+        with tempfile.TemporaryDirectory(dir=wall_dir) as tmp:
+            src, out = os.path.join(tmp, "in"), os.path.join(tmp, "out.jpg")
+            req._body = b""  # lu ici par morceaux (au-delà de la limite des requêtes ordinaires)
+            left = length
+            with open(src, "wb") as f:
+                while left:
+                    chunk = req.handler.rfile.read(min(left, 1024 * 1024))
+                    if not chunk:
+                        req.handler.close_connection = True
+                        raise HTTPError(400, "Envoi interrompu")
+                    f.write(chunk)
+                    left -= len(chunk)
+            with open(src, "rb") as f:
+                head = f.read(12)
+            demuxer = next((d for magic, d in DEMUXERS.items() if head.startswith(magic)), None)
+            if not demuxer or (demuxer == "webp_pipe" and head[8:12] != b"WEBP"):
+                raise HTTPError(400, "Format non pris en charge (JPEG, PNG ou WebP)")
+            cmd = [media.FFMPEG, "-hide_banner", "-loglevel", "error", *media.LOCAL_ONLY, "-f", demuxer, "-i", src,
+                   "-frames:v", "1", "-vf", "scale='min(1920,iw)':-2", "-map_metadata", "-1", "-q:v", "3", "-y", out]
+            try:
+                p = subprocess.run(cmd, capture_output=True, timeout=60, stdin=subprocess.DEVNULL)
+            except (OSError, subprocess.TimeoutExpired):
+                raise HTTPError(500, "Traitement de l'image impossible")
+            if p.returncode != 0 or not os.path.isfile(out) or os.path.getsize(out) < 100:
+                raise HTTPError(400, "Image illisible")
+            os.replace(out, os.path.join(wall_dir, f"{uid}.jpg"))
+        prefs = get_prefs(uid)
+        prefs.update(wallpaper_mode="upload")
+        db.run("INSERT INTO prefs(user_id,data) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data",
+               (uid, json.dumps(prefs)))
+        return dict(prefs, wallpaper_version=int(time.time()))
+
+    @app.route("GET", "/api/me/wallpaper/image")
+    def me_wallpaper_image(req):
+        path = os.path.join(wall_dir, f"{req.user['id']}.jpg")
+        if not os.path.isfile(path):
+            raise HTTPError(404, "Pas d'image de fond")
+        with open(path, "rb") as f:
+            return Response(f.read(), 200, "image/jpeg", {"Cache-Control": "private, max-age=86400"})
+
+    @app.route("DELETE", "/api/me/wallpaper")
+    def me_wallpaper_delete(req):
+        try:
+            os.remove(os.path.join(wall_dir, f"{req.user['id']}.jpg"))
+        except OSError:
+            pass
+        return {"ok": True}
 
     @app.route("DELETE", "/api/me/avatar")
     def me_avatar_delete(req):

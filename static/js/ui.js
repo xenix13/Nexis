@@ -39,6 +39,14 @@ function append(el, children) {
   }
 }
 
+// Images encore en chargement sur la page qu'on quitte : abandonnées. Le navigateur n'ouvre que 6 connexions vers
+// le serveur ; sans cela, la page suivante attend derrière les affiches de la précédente.
+export function cancelImages(el) {
+  for (const im of el.querySelectorAll('img')) {
+    if (!im.complete) im.removeAttribute('src');
+  }
+}
+
 export function clear(el, ...children) {
   el.replaceChildren();
   append(el, children);
@@ -83,9 +91,19 @@ export function episodeCode(c) {
   return `S${String(c.season).padStart(2, '0')}E${String(c.episode).padStart(2, '0')}`;
 }
 
-export function icon(name) {
+export function icon(name, extra) {
   const paths = {
     play: 'M8 5v14l11-7z',
+    chevleft: 'M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z',
+    cast: 'M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z',
+    airplay: 'M6 22h12l-6-6zM21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4v-2H3V5h18v12h-4v2h4c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z',
+    grid: 'M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z',
+    place: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z',
+    wide: 'M3 5h18v6H3zm0 8h18v6H3z',
+    shuffle: 'M10.59 9.17 5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z',
+    chevright: 'M8.6 7.4 10 6l6 6-6 6-1.4-1.4 4.6-4.6z',
+    download: 'M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z',
+    info: 'M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z',
     pause: 'M6 5h4v14H6zM14 5h4v14h-4z',
     check: 'M9 16.2 4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4z',
     back: 'M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z',
@@ -101,6 +119,9 @@ export function icon(name) {
     storage: 'M2 20h20v-4H2v4zm2-3h2v2H4v-2zM2 4v4h20V4H2zm4 3H4V5h2v2zm-4 7h20v-4H2v4zm2-3h2v2H4v-2z',
     bolt: 'M7 2v11h3v9l7-12h-4l4-8z',
     upgrade: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-6H8l4-4 4 4h-3v6z',
+    headphones: 'M12 3a9 9 0 0 0-9 9v7a2 2 0 0 0 2 2h3v-8H5v-1a7 7 0 0 1 14 0v1h-3v8h3a2 2 0 0 0 2-2v-7a9 9 0 0 0-9-9z',
+    mic: 'M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z',
+    backup: 'M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z',
     install: 'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z',
     search: 'M15.5 14h-.8l-.3-.3A6.5 6.5 0 1 0 14 15.5l.3.3v.8l5 5 1.5-1.5-5-5zm-6 0a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9z',
     rewind: 'M12 5V1L7 6l5 5V7a6 6 0 1 1-6 6H4a8 8 0 1 0 8-8z',
@@ -140,6 +161,7 @@ export function icon(name) {
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
   svg.classList.add('icon');
+  if (extra) svg.classList.add(extra);
   const p = document.createElementNS(ns, 'path');
   p.setAttribute('d', paths[name] || '');
   svg.append(p);
@@ -274,9 +296,14 @@ export function posterCard(c, { href } = {}) {
   if (c.type === 'show' && c.latest) sub = tr('Nouveau : S{season} E{episode}', { season: c.latest.season, episode: c.latest.episode });
   if (c.type === 'season') sub = tr('{p1} épisodes', { p1: c.leaves || 0 });
   const thumb = c.type === 'episode' ? (c.show_thumb || c.thumb) : c.thumb;
+  // repères affichés selon le profil (Paramètres → Apparence) : définition, HDR, nouveauté, note
+  const isNew = c.added && Date.now() / 1000 - c.added < 7 * 86400 && !c.watched && c.type !== 'episode';
+  const flags = [c.res === '4K' ? h('span.card-q', '4K') : null, c.hdr ? h('span.card-q', 'HDR') : null,
+    isNew ? h('span.card-new', tr('Nouveau')) : null,
+    c.rating ? h('span.card-rate', `★ ${Number(c.rating).toLocaleString(locale(), { maximumFractionDigits: 1 })}`) : null].filter(Boolean);
   return h('a.card.poster', { href: link, title: c.title },
     h('div.card-img', thumb ? h('img', { src: img(thumb, 200, 300), alt: '', loading: 'lazy' }) : h('div.noimg', c.title),
-      badge(c), progressBar(c.position, c.duration)),
+      flags.length ? h('div.card-flags', flags) : null, badge(c), progressBar(c.position, c.duration)),
     h('div.card-title', c.type === 'episode' ? c.show : c.title),
     h('div.card-sub', String(sub)));
 }

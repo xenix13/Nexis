@@ -4,18 +4,55 @@ on:
   pull_request:
 jobs:
   api:
-    runs-on: ubuntu-latest
+    # même système que l'image Docker (ubuntu:24.04, ffmpeg 6.1) : on teste ce qui est livré
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: ffmpeg
+        timeout-minutes: 14
+        # le miroir apt des machines GitHub se fige parfois : délais courts, et jusqu'à trois essais de 4 minutes
+        run: |
+          for i in 1 2 3; do
+            timeout 240 sh -c 'sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update -qq &&
+              sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y -qq ffmpeg' && exit 0
+            echo "apt bloqué (essai $i), nouvel essai"
+          done
+          exit 1
       - run: pip install pillow
       - run: python -m unittest discover -s tests -t . -v
       - run: for f in deploy/*.sh; do bash -n "$f"; done
       - run: deploy/build-deb.sh dist && dpkg-deb --info dist/*.deb
       - run: for f in static/js/*.js static/js/views/*.js; do node --check --input-type=module < "$f"; done
+
+  # Magasin de thèmes : chaque thème proposé (dossier static/themes) est vérifié — format, couleurs lisibles —
+  # sans attendre les autres tests ; sur main, l'index lu par les serveurs Nexis est régénéré et enregistré.
+  themes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Vérifier les thèmes
+        run: python3 -m seance.themes check-files static/themes
+      - name: Index des thèmes (main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          python3 -m seance.themes build static/themes
+          if ! git diff --quiet -- static/themes/index.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add static/themes/index.json
+            git commit -m "Index des thèmes"
+            git push
+          fi
 
   # Après les tests, sur main : image Docker (ghcr.io/<propriétaire>/nexis:latest) et, à chaque nouvelle
   # version, une publication GitHub avec le paquet .deb. Sur test : image ghcr.io/<propriétaire>/nexis:test
@@ -104,6 +141,10 @@ jobs:
             exit $status
           fi
           cp android/app/build/outputs/apk/release/app-release.apk "nexis-tv-$V.apk"
+          # application téléphone et tablette (module mobile) : publiée avec les applications de bureau
+          mkdir -p apps-out
+          cp android/mobile/build/outputs/apk/release/mobile-release.apk apps-out/nexis-android.apk
+          cp "nexis-tv-$V.apk" apps-out/nexis-tv.apk
           # empreinte du certificat de signature : doit rester la même d'une version à l'autre
           SIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
           if [ -n "$SIGNER" ]; then
@@ -130,3 +171,96 @@ jobs:
         run: |
           cp "nexis-tv-$V.apk" nexis-tv.apk  # nom fixe : …/releases/latest/download/nexis-tv.apk (adresse /tv du serveur)
           gh release view "v$V" >/dev/null 2>&1 && gh release upload "v$V" "nexis-tv-$V.apk" nexis-tv.apk --clobber || echo "Pas de publication v$V"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apps
+          path: apps-out/*.apk
+
+  # Application de bureau (Electron) : Windows (installateur), macOS (image disque universelle), Linux (AppImage,
+  # .deb). Construites sur chaque système, puis jointes à la publication avec l'APK Android (job apps).
+  desktop:
+    needs: api
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+          - os: macos-latest
+            target: --mac
+          - os: ubuntu-latest
+            target: --linux
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Construction
+        working-directory: apps/desktop
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"  # pas de certificat : Windows et macOS demandent une confirmation au 1er lancement
+        run: |
+          npm ci --no-audit --no-fund
+          npm run icon
+          npx electron-builder ${{ matrix.target }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ runner.os }}
+          if-no-files-found: error
+          path: |
+            apps/desktop/dist/Nexis-Setup.exe*
+            apps/desktop/dist/Nexis.dmg
+            apps/desktop/dist/Nexis.AppImage
+            apps/desktop/dist/nexis-desktop.deb
+            apps/desktop/dist/latest*.yml
+
+  # Publication des applications : avec la version (main), ou dans la pré-version « apps-test » (test). Chaque serveur
+  # Nexis lit cette publication pour sa page Applications et les mises à jour des applications (seance/apps.py).
+  apps:
+    needs: [desktop, android]
+    if: >-
+      !failure() && !cancelled() && github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/test')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      # seulement les applications (pas le relevé de construction Docker, qui ne se télécharge pas)
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: out
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apps
+          path: out
+      - name: Publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(python3 -c 'import re; print(re.search(r"__version__ = \"(.+?)\"", open("seance/__init__.py").read()).group(1))')
+          # versions des applications (indépendantes de celle du serveur), lues par les applications pour se mettre à jour
+          python3 - > out/nexis-apps.json <<'PY'
+          import json, re
+          g = open("android/mobile/build.gradle").read()
+          print(json.dumps({
+              "desktop": json.load(open("apps/desktop/package.json"))["version"],
+              "android": {"version": re.search(r"versionName '([^']+)'", g).group(1), "code": int(re.search(r"versionCode (\d+)", g).group(1))},
+          }))
+          PY
+          ls -la out
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            TAG="v$V"
+            gh release view "$TAG" >/dev/null 2>&1 || { echo "Pas de publication $TAG"; exit 0; }
+          else
+            TAG=apps-test
+            gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --prerelease --target test \
+              --title "Applications (test)" --notes "Applications construites depuis la branche test, pour essai."
+          fi
+          gh release upload "$TAG" out/* --clobber

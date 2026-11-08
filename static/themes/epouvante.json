@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "epouvante",
+ "name": {
+  "fr": "Épouvante",
+  "en": "Horror"
+ },
+ "description": {
+  "fr": "Citrouille, sang séché et grain de vieille pellicule.",
+  "en": "Pumpkin, dried blood and old film grain."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#0a0505",
+  "surface": "#160b0b",
+  "surface2": "#221111",
+  "text": "#f5e9e6",
+  "muted": "#bb9d99",
+  "line": "#3a1a1a",
+  "accent": "#ff6a1a",
+  "accent2": "#c4142c",
+  "on_accent": "#1f0a00"
+ },
+ "effects": [
+  "grain",
+  "vignette"
+ ],
+ "font": "serif",
+ "radius": 4,
+ "style": "cinema"
+}

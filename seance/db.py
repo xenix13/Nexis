@@ -483,6 +483,210 @@ MIGRATIONS = [
             WHERE peer_id IS NOT NULL AND library_id=OLD.id;
     END;
     """,
+    # 19 : notes personnelles (1 à 5 étoiles), titres masqués pour soi, playlists partagées avec tout le foyer
+    """
+    CREATE TABLE stars(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        stars INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, item_id)
+    );
+    CREATE TABLE hidden_items(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, item_id)
+    );
+    ALTER TABLE playlists ADD COLUMN shared INTEGER NOT NULL DEFAULT 0;
+    """,
+    # 20 : notifications push (appareils inscrits, épisodes déjà signalés) ; photothèque : favoris, albums partagés par lien
+    """
+    CREATE TABLE push_subs(
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        endpoint TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        last_ok INTEGER,
+        failures INTEGER NOT NULL DEFAULT 0
+    );
+    ALTER TABLE users ADD COLUMN push_seen INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE photo_favs(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        added_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, item_id)
+    );
+    CREATE TABLE photo_shares(
+        token TEXT PRIMARY KEY,
+        album_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+    );
+    """,
+    # 21 : sous-titres OpenSubtitles (recherches automatiques sans résultat, ou sous-titre retiré à la main)
+    """
+    CREATE TABLE subs_attempts(
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        lang TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        result TEXT NOT NULL,
+        PRIMARY KEY(item_id, lang)
+    );
+    """,
+    # 22 : alertes pour les administrateurs ; limites par compte (lectures simultanées, débit hors du réseau local) ;
+    # temps d'écran des profils (minutes par jour, heure du coucher) et temps regardé par jour
+    """
+    CREATE TABLE alerts(
+        key TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        url TEXT NOT NULL DEFAULT '#/admin/dashboard',
+        created_at INTEGER NOT NULL,
+        notified_at INTEGER NOT NULL,
+        resolved_at INTEGER
+    );
+    ALTER TABLE users ADD COLUMN max_streams INTEGER;
+    ALTER TABLE users ADD COLUMN remote_kbps INTEGER;
+    ALTER TABLE users ADD COLUMN daily_minutes INTEGER;
+    ALTER TABLE users ADD COLUMN bedtime TEXT;
+    CREATE TABLE screen_time(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        day TEXT NOT NULL,
+        seconds INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(user_id, day)
+    );
+    DROP TRIGGER users_fed_upd;
+    CREATE TRIGGER users_fed_upd AFTER UPDATE OF username, display_name, password_hash, is_admin, all_libraries,
+        disabled, avatar_color, pin_hash, managed, home, max_age, allow_unrated, avatar_ver, kids, totp_enabled,
+        totp_secret, totp_recovery, language, max_streams, remote_kbps, daily_minutes, bedtime, rev ON users
+        WHEN NEW.fseq IS OLD.fseq BEGIN
+        UPDATE fed_clock SET n=n+1;
+        UPDATE users SET fseq=(SELECT n FROM fed_clock),
+            rev=CASE WHEN NEW.rev IS OLD.rev THEN CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) ELSE NEW.rev END
+            WHERE id=NEW.id;
+    END;
+    """,
+    # 23 : comptes Trakt reliés
+    """
+    CREATE TABLE trakt_links(
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT NOT NULL DEFAULT '',
+        expires_at INTEGER NOT NULL,
+        username TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        last_sync INTEGER,
+        last_error TEXT,
+        last_result TEXT
+    );
+    """,
+    # 24 : podcasts (flux, épisodes, abonnements et écoute de chacun)
+    """
+    CREATE TABLE podcasts(
+        id INTEGER PRIMARY KEY,
+        url TEXT NOT NULL UNIQUE,
+        title TEXT NOT NULL,
+        author TEXT NOT NULL DEFAULT '',
+        image TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        link TEXT NOT NULL DEFAULT '',
+        etag TEXT,
+        private INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        checked_at INTEGER,
+        created_at INTEGER NOT NULL
+    );
+    CREATE TABLE podcast_episodes(
+        id INTEGER PRIMARY KEY,
+        podcast_id INTEGER NOT NULL REFERENCES podcasts(id) ON DELETE CASCADE,
+        guid TEXT NOT NULL,
+        title TEXT NOT NULL,
+        published INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER,
+        url TEXT NOT NULL,
+        mime TEXT NOT NULL DEFAULT 'audio/mpeg',
+        image TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        added_at INTEGER NOT NULL,
+        UNIQUE(podcast_id, guid)
+    );
+    CREATE INDEX podcast_episodes_pub ON podcast_episodes(podcast_id, published DESC);
+    CREATE TABLE podcast_subs(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        podcast_id INTEGER NOT NULL REFERENCES podcasts(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, podcast_id)
+    );
+    CREATE TABLE podcast_progress(
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        episode_id INTEGER NOT NULL REFERENCES podcast_episodes(id) ON DELETE CASCADE,
+        position_ms INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        played INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY(user_id, episode_id)
+    );
+    """,
+    # 25 : préférences répliquées avec les comptes (une modification relance l'envoi du compte aux serveurs liés)
+    """
+    CREATE TRIGGER prefs_fed_ins AFTER INSERT ON prefs WHEN (SELECT applying FROM fed_clock)=0 BEGIN
+        UPDATE users SET rev=CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) WHERE id=NEW.user_id;
+    END;
+    CREATE TRIGGER prefs_fed_upd AFTER UPDATE ON prefs WHEN (SELECT applying FROM fed_clock)=0 BEGIN
+        UPDATE users SET rev=CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) WHERE id=NEW.user_id;
+    END;
+    CREATE TRIGGER prefs_fed_del AFTER DELETE ON prefs WHEN (SELECT applying FROM fed_clock)=0 BEGIN
+        UPDATE users SET rev=CAST((julianday('now')-2440587.5)*86400000 AS INTEGER) WHERE id=OLD.user_id;
+    END;
+    """,
+    # 26 : podcasts retirés (tables, et leur trace dans les préférences : menu, accueil, notifications)
+    """
+    DROP TABLE IF EXISTS podcast_progress;
+    DROP TABLE IF EXISTS podcast_subs;
+    DROP INDEX IF EXISTS podcast_episodes_pub;
+    DROP TABLE IF EXISTS podcast_episodes;
+    DROP TABLE IF EXISTS podcasts;
+    UPDATE fed_clock SET applying=1;
+    UPDATE prefs SET data=json_remove(data, '$.notify_podcasts') WHERE json_valid(data);
+    UPDATE prefs SET data=json_set(data, '$.nav_order', json((SELECT json_group_array(value) FROM json_each(prefs.data, '$.nav_order')
+        WHERE value<>'podcasts'))) WHERE json_valid(data) AND json_type(data, '$.nav_order')='array';
+    UPDATE prefs SET data=json_set(data, '$.nav_hidden', json((SELECT json_group_array(value) FROM json_each(prefs.data, '$.nav_hidden')
+        WHERE value<>'podcasts'))) WHERE json_valid(data) AND json_type(data, '$.nav_hidden')='array';
+    UPDATE prefs SET data=json_set(data, '$.start_page', 'home') WHERE json_valid(data) AND json_extract(data, '$.start_page')='podcasts';
+    UPDATE fed_clock SET applying=0;
+    """,
+    # 27 : journal des lectures (statistiques de l'administration) : une ligne à la fin de chaque lecture de plus
+    # de 30 s, quelle qu'en soit la raison (arrêt, abandon, lecture remplacée), avec le débit estimé
+    """
+    CREATE TABLE play_log(
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        rating_key TEXT NOT NULL,
+        title TEXT,
+        mode TEXT,
+        kbps INTEGER,
+        started INTEGER NOT NULL,
+        ended INTEGER NOT NULL,
+        seconds INTEGER NOT NULL,
+        relayed INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX play_log_time ON play_log(ended);
+    CREATE INDEX play_log_user ON play_log(user_id, ended);
+    CREATE TRIGGER streams_log AFTER DELETE ON streams WHEN OLD.last_seen - OLD.created_at >= 30 BEGIN
+        INSERT INTO play_log(user_id, rating_key, title, mode, kbps, started, ended, seconds, relayed) VALUES(
+            OLD.user_id,
+            -- mode privé : la durée compte, le titre n'est pas gardé
+            CASE WHEN (SELECT json_extract(data, '$.private_mode') FROM prefs WHERE user_id = OLD.user_id) = 1 THEN 'private' ELSE OLD.rating_key END,
+            CASE WHEN (SELECT json_extract(data, '$.private_mode') FROM prefs WHERE user_id = OLD.user_id) = 1 THEN NULL ELSE OLD.title END,
+            json_extract(OLD.params, '$.mode'),
+            CASE WHEN json_extract(OLD.params, '$.mode') = 'transcode' THEN json_extract(OLD.params, '$.kbps')
+                 ELSE COALESCE(NULLIF(json_extract(OLD.params, '$.src_kbps'), 0), json_extract(OLD.params, '$.kbps')) END,
+            OLD.created_at, OLD.last_seen, OLD.last_seen - OLD.created_at, json_extract(OLD.params, '$.peer') IS NOT NULL);
+    END;
+    """,
 ]
 
 

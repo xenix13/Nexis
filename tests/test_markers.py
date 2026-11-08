@@ -44,6 +44,19 @@ class MarkersTest(unittest.TestCase):
         self.assertEqual((m["intro"]["start"], m["credits"]["start"]), (120000, 1310000))
 
 
+    def test_recap(self):
+        c, d = chaps(("Previously on", 55), ("Opening", 40), ("Act 1", 900), ("Credits", 60))
+        m = from_chapters(c, d)
+        self.assertEqual((m["recap"]["start"], m["recap"]["end"], m["intro"]["start"]), (0, 55000, 55000))
+        c, d = chaps(("Cold open", 120), ("Récapitulatif", 70), ("Générique", 45), ("Partie 1", 1200))
+        self.assertEqual(from_chapters(c, d)["recap"]["start"], 120000)
+        # « Résumé » tardif (bonus de fin) ou trop long : pas un récap
+        c, d = chaps(("Partie 1", 1200), ("Résumé", 60))
+        self.assertNotIn("recap", from_chapters(c, d))
+        c, d = chaps(("Recap", 900), ("Partie 1", 1800))
+        self.assertNotIn("recap", from_chapters(c, d))
+
+
 if __name__ == "__main__":
     unittest.main()
 

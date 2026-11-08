@@ -1,0 +1,42 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "retro-80",
+ "name": {
+  "fr": "Rétro 80",
+  "en": "Retro 80s"
+ },
+ "description": {
+  "fr": "Synthwave : coucher de soleil violet, rose et orange sous les étoiles.",
+  "en": "Synthwave: purple, pink and orange sunset under the stars."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#120a24",
+  "surface": "#1d1238",
+  "surface2": "#2a1a4d",
+  "text": "#fff1f8",
+  "muted": "#c8aedb",
+  "line": "#3b2766",
+  "accent": "#ff8a3d",
+  "accent2": "#ff3d9a",
+  "on_accent": "#2a0d00"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 180,
+  "stops": [
+   "#2b0b48",
+   "#120a24",
+   "#3a0d2e"
+  ]
+ },
+ "effects": [
+  "neon",
+  "stars"
+ ],
+ "font": "default",
+ "radius": 12,
+ "style": "rounded"
+}

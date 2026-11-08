@@ -32,7 +32,7 @@ FEATURED = [8, 119, 337, 381, 1899, 350, 531, 283, 415]
 FALLBACK_NAMES = {8: "Netflix", 119: "Prime Video", 337: "Disney+", 381: "Canal+", 1899: "Max", 350: "Apple TV+",
                   531: "Paramount+", 283: "Crunchyroll", 415: "ADN"}
 IMG_PATH = re.compile(r"^/[A-Za-z0-9_-]{4,80}\.(?:jpg|jpeg|png|svg)$")
-IMG_SIZES = {"poster": "w342", "backdrop": "w1280", "logo": "w154", "still": "w300"}
+IMG_SIZES = {"poster": "w342", "backdrop": "w1280", "logo": "w154", "still": "w300", "profile": "w185"}
 STATUS = {2: "pending", 3: "processing", 4: "partial", 5: "available", 6: "blocked", 7: "deleted"}
 SORTS = {
     "movie": {"popular": "popularity.desc", "recent": "primary_release_date.desc", "rating": "vote_average.desc"},
@@ -174,7 +174,7 @@ def register(app, ctx, x):
         allowed = sorted(x.allowed_set(user), key=int)
         if not allowed:
             return {}
-        age_sql, age_args = x.age_filter(user)
+        age_sql, age_args = x.age_filter(user, hidden=False)  # titre masqué : il est quand même sur le serveur
         rows = db.all(x.ITEM_SQL + f"WHERE i.type IN ('movie','show') AND i.tmdb_id IN ({','.join('?' * len(ids))}) "
                       f"AND i.library_id IN ({','.join('?' * len(allowed))})" + age_sql,
                       ids + [int(a) for a in allowed] + age_args)

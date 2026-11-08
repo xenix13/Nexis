@@ -1,6 +1,7 @@
 // Téléchargements pour regarder hors ligne.
-// - Le serveur prépare un MP4 (H.264 / AAC, lisible partout) ; on le récupère par morceaux de 8 Mo, ce qui permet
-//   de reprendre après une coupure ou une fermeture de l'application.
+// - Le serveur prépare un MP4 (H.264 / AAC, lisible partout) ; on le récupère par morceaux de 16 Mo, quatre à la
+//   fois, ce qui permet de reprendre après une coupure ou une fermeture de l'application. Hors Safari, le fichier
+//   est un MP4 fragmenté : ses morceaux se récupèrent pendant que le serveur le prépare encore.
 // - Les morceaux, l'affiche et les sous-titres vont dans le stockage du navigateur (Cache API) ; la fiche et
 //   l'avancement dans IndexedDB. Rien ne quitte l'appareil.
 // - Hors ligne, les positions de lecture sont gardées puis renvoyées au serveur au retour du réseau.
@@ -11,7 +12,11 @@ import { tr, locale } from './i18n.js';
 
 const DB_NAME = 'nexis-offline';
 const MEDIA = 'nexis-offline-media';
-const CHUNK = 8 * 1024 * 1024;
+const CHUNK = 16 * 1024 * 1024;
+const OLD_CHUNK = 8 * 1024 * 1024; // téléchargements commencés avant le passage à 16 Mo
+const PARALLEL = 4;
+// Safari (et tout navigateur d'iPhone / iPad) : MP4 classique, récupéré une fois prêt
+const progressiveOk = () => !/iphone|ipad|ipod/i.test(navigator.userAgent) && !(/safari/i.test(navigator.userAgent) && !/chrome|chromium|crios|android|fxios|edg/i.test(navigator.userAgent));
 // ce que CET appareil sait lire (le fichier gardé n'est lu que sur lui) : le serveur ne convertit que le reste
 export const deviceCaps = () => { const c = browserCaps(); return { video: c.video, audio: c.audio, containers: ['mp4'] }; };
 
@@ -97,9 +102,13 @@ export async function pump() {
   if (running || !supported() || !navigator.onLine) return;
   running = true;
   try {
+    await runSmart();
     for (;;) {
-      const next = (await all('downloads')).find((d) => ['queued', 'preparing', 'downloading', 'paused'].includes(d.state));
+      const pending = (await all('downloads')).filter((d) => ['queued', 'preparing', 'downloading', 'paused'].includes(d.state));
+      const next = pending[0];
       if (!next) break;
+      // les deux suivants : préparation demandée tout de suite, le serveur avance pendant ce transfert-ci
+      for (const later of pending.slice(1, 3)) if (!later.job) requestJob(later).catch(() => {});
       const ok = await work(next);
       if (!ok) break; // réseau coupé : on reprendra au retour de la connexion
     }
@@ -112,6 +121,50 @@ async function save(rec, patch) {
   Object.assign(rec, patch);
   await put('downloads', rec);
   notify();
+}
+
+async function requestJob(rec) {
+  const job = await post('/api/downloads', { id: rec.rk, quality: rec.opts.quality, audio: rec.opts.audio ?? null,
+    burn: rec.opts.burn ?? null, caps: deviceCaps(), progressive: progressiveOk() });
+  await save(rec, { job: job.id, gen: job.gen, state: rec.state === 'queued' ? 'preparing' : rec.state, got: 0, chunks: 0, chunk: CHUNK });
+  return job;
+}
+
+// morceaux [rec.got, upto) : quatre à la fois ; rec.got avance sur ceux reçus d'affilée (reprise exacte)
+async function transfer(rec, upto, cache) {
+  const size = rec.chunk || (rec.got ? OLD_CHUNK : CHUNK);
+  if (!rec.chunk) await save(rec, { chunk: size });
+  const done = new Set();
+  let next = rec.got;
+  let failure = null;
+  const fetchChunk = async (n) => {
+    const start = n * size;
+    const end = Math.min(rec.size || Infinity, start + size) - 1;
+    const res = await fetch(`/api/downloads/${rec.job}/file`, { headers: { Range: `bytes=${start}-${end}`, 'X-Seance': '1' },
+      credentials: 'same-origin' });
+    if (res.status === 404) { const e = new Error('gone'); e.gone = true; throw e; }
+    if (res.status !== 206 && res.status !== 200) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    if (blob.size !== end - start + 1) throw new Error('morceau incomplet');
+    await cache.put(mediaUrl(rec.key, `chunk-${n}`), new Response(blob));
+    done.add(n);
+    let got = rec.got;
+    while (done.has(got)) got += 1;
+    if (got !== rec.got) await save(rec, { got });
+  };
+  const lane = async () => {
+    while (!failure && next < upto) {
+      const n = next++;
+      try { await fetchChunk(n); } catch (e) { failure = failure || e; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PARALLEL, Math.max(1, upto - rec.got)) }, lane));
+  if (failure) throw failure;
+}
+
+async function resetChunks(rec, cache, patch) {
+  for (let n = 0; n < Math.max(rec.chunks || 0, rec.got || 0) + PARALLEL; n++) await cache.delete(mediaUrl(rec.key, `chunk-${n}`));
+  await save(rec, { got: 0, chunks: 0, chunk: CHUNK, ...patch });
 }
 
 async function work(rec) {
@@ -134,7 +187,7 @@ async function work(rec) {
       }
       await save(rec, { posterSaved: true });
     }
-    // 1. préparation sur le serveur
+    // 1. préparation sur le serveur ; les parties déjà écrites se récupèrent pendant ce temps (MP4 fragmenté)
     for (;;) {
       let job;
       try {
@@ -144,35 +197,41 @@ async function work(rec) {
         job = null; // serveur redémarré : on redemande
       }
       if (!job) {
-        job = await post('/api/downloads', { id: rec.rk, quality: rec.opts.quality, audio: rec.opts.audio ?? null,
-          burn: rec.opts.burn ?? null, caps: deviceCaps() });
-        await save(rec, { job: job.id, state: 'preparing', got: 0, chunks: 0 });
+        if (rec.got) await resetChunks(rec, cache, {});
+        job = await requestJob(rec);
       }
       if (job.state === 'error') { await save(rec, { state: 'error', error: job.error }); return true; }
+      if (job.gen !== undefined && rec.gen !== undefined && job.gen !== rec.gen) {
+        await resetChunks(rec, cache, { gen: job.gen }); // nouvel essai sur le serveur : on repart de zéro
+      }
       if (job.state === 'ready') {
-        if (!rec.chunks || rec.size !== job.size) await save(rec, { size: job.size, chunks: Math.ceil(job.size / CHUNK), got: 0 });
+        if (!rec.chunk) await save(rec, { chunk: rec.got ? OLD_CHUNK : CHUNK });
+        if (!rec.chunks || rec.size !== job.size) await save(rec, { size: job.size, chunks: Math.ceil(job.size / rec.chunk) });
         break;
       }
-      await save(rec, { state: 'preparing', prep: job.progress || 0, waiting: !!job.waiting, convert: job.mode === 'transcode' });
+      await save(rec, { state: 'preparing', prep: job.progress || 0, waiting: !!job.waiting, convert: job.mode === 'transcode', gen: job.gen });
+      if (job.progressive && job.ready) {
+        const whole = Math.floor(job.ready / (rec.chunk || CHUNK)); // morceaux entièrement écrits
+        if (whole > rec.got) {
+          try { await transfer(rec, whole, cache); } catch (e) {
+            if (!e.gone && !/HTTP 409/.test(e.message)) throw e; // 409 : rattrapé par la préparation, on attend
+          }
+          continue;
+        }
+      }
       await new Promise((r) => setTimeout(r, 2500));
       const fresh = await one('downloads', rec.key);
       if (!fresh) return true; // supprimé entre-temps
     }
-    // 2. transfert par morceaux (reprend là où il s'était arrêté)
+    // 2. transfert de ce qui reste (reprend là où il s'était arrêté)
     await save(rec, { state: 'downloading' });
-    for (let n = rec.got; n < rec.chunks; n++) {
-      if (!(await one('downloads', rec.key))) return true; // supprimé entre-temps
-      const start = n * CHUNK;
-      const end = Math.min(rec.size, start + CHUNK) - 1;
-      const res = await fetch(`/api/downloads/${rec.job}/file`, { headers: { Range: `bytes=${start}-${end}`, 'X-Seance': '1' },
-        credentials: 'same-origin' });
-      if (res.status === 404) { await save(rec, { job: null, state: 'queued', got: 0 }); return true; }
-      if (res.status !== 206 && res.status !== 200) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      if (blob.size !== end - start + 1) throw new Error('morceau incomplet');
-      await cache.put(mediaUrl(rec.key, `chunk-${n}`), new Response(blob));
-      await save(rec, { got: n + 1 });
+    try {
+      await transfer(rec, rec.chunks, cache);
+    } catch (e) {
+      if (e.gone) { await save(rec, { job: null, state: 'queued', got: 0 }); return true; }
+      throw e;
     }
+    if (!(await one('downloads', rec.key))) return true; // supprimé entre-temps
     del(`/api/downloads/${rec.job}`).catch(() => {}); // le serveur peut effacer sa copie
     await save(rec, { state: 'done', job: null, doneAt: Date.now() });
     return true;
@@ -201,6 +260,26 @@ export async function removeDownload(key) {
     if (new URL(req.url).pathname.startsWith(prefix)) await cache.delete(req);
   }
   notify();
+}
+
+// plusieurs d'un coup (sélection de la page Téléchargements) : le stockage n'est parcouru qu'une fois
+export async function removeMany(keys) {
+  const wanted = new Set(keys);
+  const prefixes = [];
+  for (const key of wanted) {
+    const rec = await one('downloads', key);
+    if (!rec) continue;
+    await remove('downloads', key);
+    if (rec.job) del(`/api/downloads/${rec.job}`).catch(() => {});
+    prefixes.push(mediaUrl(key, ''));
+  }
+  const cache = await caches.open(MEDIA);
+  for (const req of await cache.keys()) {
+    const path = new URL(req.url).pathname;
+    if (prefixes.some((p) => path.startsWith(p))) await cache.delete(req);
+  }
+  notify();
+  return prefixes.length;
 }
 
 export async function retry(key) {
@@ -252,11 +331,66 @@ export async function nextDownloaded(uid, item) {
   return after.length ? after[0].item : null;
 }
 
+// ------------------------------------------------------------------ téléchargements intelligents (réglage de l'appareil)
+// Un épisode téléchargé regardé jusqu'au bout : l'épisode suivant se télécharge (mêmes langues, même qualité), et,
+// si on le demande, l'épisode vu est supprimé. Fait au retour du réseau si on regardait hors ligne.
+const SMART_KEY = 'nexis.dl.smart';
+const SMART_QUEUE = 'nexis.dl.smartQueue';
+const readLS = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 'null') ?? d; } catch { return d; } };
+const writeLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* stockage indisponible */ } };
+export const smartPrefs = () => ({ next: true, clean: false, ...readLS(SMART_KEY, {}) });
+export const setSmart = (patch) => writeLS(SMART_KEY, { ...smartPrefs(), ...patch });
+
+function matchTracks(rec, full) {
+  const prev = (rec.item.audio || [])[0];
+  const audio = (prev && (full.audio || []).find((a) => a.lang === prev.lang)) || null;
+  const langs = new Set((rec.item.subtitles || []).map((t) => t.lang));
+  const subs = (full.subtitles || []).filter((t) => t.overlay && langs.has(t.lang)).map((t) => t.id);
+  return { audio: audio ? audio.id : null, subs, burn: null };
+}
+
+async function smartAfter(uid, item) {
+  const s = smartPrefs();
+  if (item.type !== 'episode' || (!s.next && !s.clean)) return;
+  const q = readLS(SMART_QUEUE, []);
+  if (!q.some((x) => x.key === keyOf(uid, item.id))) q.push({ key: keyOf(uid, item.id), uid });
+  writeLS(SMART_QUEUE, q);
+  if (navigator.onLine) pump();
+}
+
+let smartRunning = false;
+async function runSmart() {
+  const q = readLS(SMART_QUEUE, []);
+  if (smartRunning || !q.length || !navigator.onLine) return;
+  smartRunning = true;
+  const left = [];
+  try {
+    writeLS(SMART_QUEUE, []);
+    for (const x of q) {
+      const rec = await one('downloads', x.key);
+      if (!rec) continue;
+      const s = smartPrefs();
+      try {
+        const nxt = rec.item.next;
+        if (s.next && nxt && !nxt.watched && !(await one('downloads', keyOf(x.uid, nxt.id)))) {
+          const full = await get(`/api/items/${nxt.id}`);
+          await download(x.uid, full, { ...matchTracks(rec, full), quality: rec.opts.quality, smart: true });
+        }
+        if (s.clean) await removeDownload(x.key);
+      } catch { left.push(x); } // réseau coupé entre-temps : on réessaiera
+    }
+  } finally {
+    if (left.length) writeLS(SMART_QUEUE, [...readLS(SMART_QUEUE, []), ...left]);
+    smartRunning = false;
+  }
+}
+
 // ------------------------------------------------------------------ positions de lecture hors ligne
 export async function saveProgress(uid, item, position, duration, ended) {
   await put('progress', { key: keyOf(uid, item.id), id: String(item.id), uid, position, duration, ended: !!ended, at: Math.floor(Date.now() / 1000) });
   const rec = await one('downloads', keyOf(uid, item.id));
   if (rec) await put('downloads', { ...rec, item: { ...rec.item, position: ended ? 0 : position, watched: rec.item.watched || !!ended } });
+  if (rec && ended) smartAfter(uid, rec.item);
   syncProgress(uid);
 }
 

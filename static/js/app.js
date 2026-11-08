@@ -1,5 +1,5 @@
 import { get, post, setUnauthorizedHandler } from './api.js';
-import { arrange, avatar, clear, episodeCode, errorBox, h, icon, img, spinner, toast } from './ui.js';
+import { arrange, avatar, cancelImages, clear, episodeCode, errorBox, h, icon, img, spinner, toast } from './ui.js';
 import { renderLogin, renderSetup } from './views/auth.js';
 import { renderProfiles } from './views/profiles.js';
 import { renderCollection, renderPlaylist, renderPlaylists, renderWatchlist } from './views/lists.js';
@@ -12,11 +12,16 @@ import { renderHistory } from './views/history.js';
 import { renderSettingsArea } from './views/settings.js';
 import { renderPlayer } from './player.js';
 import { renderTogether } from './views/together.js';
+import { renderPerson } from './views/person.js';
+import { renderRemote } from './views/remote.js';
+import { renderShared } from './views/photos.js';
+import { renderBook } from './views/books.js';
 import './remote.js'; // télécommande, clavier et manette
 import { aboutDialog } from './about.js';
-import { applyDevice } from './device.js';
+import { applyDevice, device } from './device.js';
 import { createGroupDialog, currentGroups, isFreshFeed, onGroups, startGroupsFeed, stopGroupsFeed } from './groups.js';
 import { canInstall, install, onInstallChange, setupInstall } from './install.js';
+import { shortcutsHelp } from './keys.js';
 import { forgetMe, list as listDownloads, pump, rememberMe, rememberedMe, supported as offlineSupported, syncProgress } from './offline.js';
 import { renderDownloads } from './views/downloads.js';
 import { followUpdate, resumeUpdate, updatePending } from './updater.js';
@@ -50,14 +55,108 @@ function minimize(m) {
   dock.append(m.el);
 }
 
+// fonds d'écran en dégradé (Paramètres → Apparence → Fond d'écran)
+export const GRADIENTS = {
+  aurora: 'linear-gradient(135deg, #0f2027, #203a43 45%, #2c5364)',
+  sunset: 'linear-gradient(135deg, #3a1c71, #d76d77 55%, #ffaf7b)',
+  ocean: 'linear-gradient(135deg, #0b1d3a, #1a4f8b 55%, #2bc0e4)',
+  forest: 'linear-gradient(135deg, #0b2312, #1f5130 55%, #6a9f58)',
+  berry: 'linear-gradient(135deg, #2b0a3d, #6a1b5c 55%, #c2456f)',
+  ember: 'linear-gradient(135deg, #1a0a05, #6b1d0b 55%, #e2582b)',
+  steel: 'linear-gradient(135deg, #16181d, #343a46 55%, #6b7486)',
+  mint: 'linear-gradient(135deg, #0d2b2b, #16645e 55%, #6fd3b6)',
+};
+const systemLight = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+let lastPrefs = null;
+if (systemLight && systemLight.addEventListener) {
+  systemLight.addEventListener('change', () => { if (lastPrefs && lastPrefs.theme === 'auto') applyPrefs(lastPrefs); });
+}
+let daily = null; // fond du jour, demandé une fois par jour
+async function dailyWallpaper() {
+  const day = new Date().toDateString();
+  if (daily && daily.day === day) return daily.path;
+  try { daily = { day, path: (await get('/api/me/wallpaper/daily')).path }; } catch { daily = { day, path: null }; }
+  return daily.path;
+}
+
+// --- thèmes installés : uniquement des couleurs vérifiées (#rrggbb), des nombres et des mots d'une liste fixe,
+// posés en variables CSS ; jamais de CSS venu d'ailleurs
+const THEME_VARS = { bg: '--bg', surface: '--surface', surface2: '--surface-2', text: '--text', muted: '--muted', line: '--line',
+  on_accent: '--ink-on-accent', accent2: '--accent-2' };
+const OVERLAY_FX = ['scanlines', 'grain', 'vignette'];
+// ciel étoilé : petits points répétés (effet « stars »)
+const STARS = ['radial-gradient(1px 1px at 20px 30px, #fff9 50%, transparent 51%)', 'radial-gradient(1px 1px at 120px 80px, #fff7 50%, transparent 51%)',
+  'radial-gradient(1.5px 1.5px at 60px 150px, #fffa 50%, transparent 51%)', 'radial-gradient(1px 1px at 170px 200px, #fff6 50%, transparent 51%)',
+  'radial-gradient(1.5px 1.5px at 230px 40px, #fff8 50%, transparent 51%)'];
+
+export function customTheme(prefs) {
+  if (!prefs || typeof prefs.theme !== 'string' || !prefs.theme.startsWith('t:')) return null;
+  return (prefs.my_themes || []).find((t) => `t:${t.id}` === prefs.theme) || null;
+}
+
+export function paintTheme(t) {
+  const r = document.documentElement;
+  for (const v of Object.values(THEME_VARS)) r.style.removeProperty(v);
+  for (const v of ['--radius', '--theme-bg', '--theme-bg-size']) r.style.removeProperty(v);
+  r.style.removeProperty('color-scheme');
+  delete r.dataset.fx;
+  delete r.dataset.overlay;
+  delete r.dataset.font;
+  r.classList.remove('has-theme-bg');
+  if (!t) return;
+  for (const [k, v] of Object.entries(THEME_VARS)) if (t.colors[k]) r.style.setProperty(v, t.colors[k]);
+  if (!t.colors.line) r.style.setProperty('--line', `color-mix(in srgb, ${t.colors.text} 10%, transparent)`);
+  if (!t.colors.accent2) r.style.setProperty('--accent-2', 'var(--accent)');
+  r.style.setProperty('--radius', `${t.radius}px`);
+  r.style.setProperty('color-scheme', t.dark ? 'dark' : 'light');
+  if (t.font && t.font !== 'default') r.dataset.font = t.font;
+  const fx = t.effects || [];
+  if (fx.length) r.dataset.fx = fx.join(' ');
+  if (fx.some((f) => OVERLAY_FX.includes(f))) r.dataset.overlay = '1';
+  const layers = [];
+  if (fx.includes('stars')) layers.push(...STARS);
+  if (t.background) layers.push(`linear-gradient(${t.background.angle}deg, ${t.background.stops.join(', ')})`);
+  if (layers.length) {
+    r.classList.add('has-theme-bg');
+    r.style.setProperty('--theme-bg', layers.join(', '));
+    r.style.setProperty('--theme-bg-size', [...(fx.includes('stars') ? STARS.map(() => '260px 260px') : []), ...(t.background ? ['100% 100%'] : [])].join(', '));
+  }
+}
+
 export function applyPrefs(prefs) {
   const r = document.documentElement;
+  lastPrefs = prefs;
   r.style.setProperty('--accent', prefs.accent);
-  r.dataset.theme = prefs.theme;
+  // thème installé (magasin, import, éditeur) : ses couleurs et effets ; sinon un thème intégré
+  const custom = customTheme(prefs);
+  paintTheme(custom);
+  // thème automatique : clair ou sombre comme l'appareil (et suit son changement)
+  r.dataset.theme = custom ? (custom.dark ? 'dark' : 'light')
+    : prefs.theme === 'auto' ? (systemLight && systemLight.matches ? 'light' : 'dark') : prefs.theme;
+  // style de l'interface (mise en page) : celui de cet appareil s'il en a un, sinon celui du profil
+  r.dataset.style = device().ui_style || prefs.ui_style || 'classic';
+  r.dataset.text = prefs.text_size || 'm';
+  r.dataset.density = prefs.density || 'normal';
+  for (const [cls, on] of [['cards-no-titles', prefs.card_titles === false], ['cards-no-progress', prefs.card_progress === false],
+    ['cards-no-watched', prefs.card_watched === false], ['cards-no-quality', prefs.card_quality === false],
+    ['cards-no-new', prefs.card_new === false], ['cards-rating', !!prefs.card_rating]]) r.classList.toggle(cls, on);
   const kids = !!(state.me && state.me.user && state.me.user.kids);
   r.classList.toggle('kids', kids); // interface enfant : grandes vignettes, menu simplifié
   r.dataset.poster = kids ? 'l' : prefs.poster_size;
   r.classList.toggle('no-spoilers', !!prefs.hide_spoilers);
+  // fond d'écran du profil, estompé derrière l'interface : l'image d'un titre, une couleur, un dégradé, un titre
+  // différent chaque jour, ou une image envoyée
+  const setWall = (css) => {
+    r.classList.toggle('has-wallpaper', !!css);
+    if (css) r.style.setProperty('--wallpaper', css); else r.style.removeProperty('--wallpaper');
+  };
+  const mode = prefs.wallpaper_mode || 'title';
+  if (mode === 'title') setWall(prefs.wallpaper ? `url("${img(prefs.wallpaper, 960, 540)}")` : ''); // flouté : pas besoin de plus
+  else if (mode === 'color') setWall(`linear-gradient(${prefs.wallpaper_color}, ${prefs.wallpaper_color})`);
+  else if (mode === 'gradient') setWall(GRADIENTS[prefs.wallpaper_gradient] || GRADIENTS.aurora);
+  else if (mode === 'upload') setWall(`url("/api/me/wallpaper/image?v=${prefs.wallpaper_version || state.wallVersion || 0}")`);
+  else if (mode === 'daily') dailyWallpaper().then((p) => { if (lastPrefs === prefs) setWall(p ? `url("${img(p, 960, 540)}")` : ''); });
+  else setWall('');
   // barre d'état du téléphone / de la fenêtre installée à la couleur du thème
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.content = getComputedStyle(r).getPropertyValue('--bg').trim() || '#0b0b0e';
@@ -133,27 +232,31 @@ function parseHash() {
   return { parts: path.split('/').filter(Boolean), query: new URLSearchParams(qs || '') };
 }
 
-function navLink(href, label, active) {
-  return h('a.nav-link', { href, class: active ? 'nav-link active' : 'nav-link' }, label);
+// icône affichée selon le style (barre latérale, arrondi) ; le texte reste le libellé du lien
+function navLink(href, label, active, ico) {
+  return h('a.nav-link', { href, class: active ? 'nav-link active' : 'nav-link', title: label },
+    icon(ico || 'folder', 'nav-ico'), h('span.nav-label', label));
 }
+const LIB_ICONS = { movie: 'film', show: 'tv', photo: 'folder', audiobook: 'headphones', music: 'headphones' };
 
 // Liens de la barre du haut, dans l'ordre choisi par l'utilisateur (Paramètres → Accueil et menu)
 let startPending = true;
 applyDevice(); // réglages propres à cet appareil (animations, télécommande)
 
 export function navItems(me) {
-  const items = [{ key: 'home', href: '#/', label: tr('Accueil'), fixed: true }, { key: 'watchlist', href: '#/watchlist', label: tr('À regarder') }];
+  const items = [{ key: 'home', href: '#/', label: tr('Accueil'), fixed: true, icon: 'home' },
+    { key: 'watchlist', href: '#/watchlist', label: tr('À regarder'), icon: 'bookmark' }];
   const kids = me.user && me.user.kids;
-  if (me.features && me.features.discover && !kids) items.push({ key: 'discover', href: '#/discover', label: tr('Découvrir') });
-  for (const l of me.libraries) items.push({ key: `lib:${l.id}`, href: `#/library/${l.id}`, label: l.title });
-  if (me.features && me.features.live && !kids) items.push({ key: 'live', href: '#/live', label: tr('TV en direct') });
+  if (me.features && me.features.discover && !kids) items.push({ key: 'discover', href: '#/discover', label: tr('Découvrir'), icon: 'star' });
+  for (const l of me.libraries) items.push({ key: `lib:${l.id}`, href: `#/library/${l.id}`, label: l.title, icon: LIB_ICONS[l.type] || 'folder' });
+  if (me.features && me.features.live && !kids) items.push({ key: 'live', href: '#/live', label: tr('TV en direct'), icon: 'guide' });
   const byKey = new Map(items.map((i) => [i.key, i]));
   return arrange(items.map((i) => i.key), me.prefs.nav_order).map((k) => byKey.get(k));
 }
 
 function navLinks(me, active) {
   return navItems(me).filter((i) => i.fixed || !me.prefs.nav_hidden.includes(i.key))
-    .map((i) => navLink(i.href, i.label, active === i.key));
+    .map((i) => navLink(i.href, i.label, active === i.key, i.icon));
 }
 
 // après un changement dans Réglages : on redessine les liens sans recharger la page
@@ -220,10 +323,12 @@ function shell(active) {
     me.user.home ? h('a', { href: '#/profiles' }, tr('Changer de profil')) : null,
     h('a', { href: '#/playlists' }, tr('Mes playlists')),
     h('a', { href: '#/together' }, tr('Regarder ensemble')),
+    h('a', { href: '#/remote' }, tr('Télécommande')),
     h('a', { href: '#/history' }, tr('Historique')),
     me.features && me.features.downloads && offlineSupported() ? h('a', { href: '#/downloads' }, tr('Téléchargements')) : null,
     h('a', { href: '#/settings' }, tr('Paramètres')),
     h('button.install-app', { hidden: !canInstall(), onclick: () => install() }, icon('install'), tr('Installer l’application')),
+    h('a', { href: '#/apps' }, tr('Applications')),
     h('button', { onclick: () => aboutDialog(state.status && state.status.version) }, tr('À propos')),
     h('button', { onclick: logout }, tr('Se déconnecter')),
     state.status ? h('div.menu-version', `Nexis ${state.status.version}`) : null);
@@ -300,6 +405,7 @@ async function logout() {
 async function route() {
   const token = ++renderToken;
   if (cleanup) { try { cleanup(); } catch { /* ignore */ } cleanup = null; }
+  cancelImages(root);
   const { parts, query } = parseHash();
   const page = parts[0] || '';
   window.scrollTo(0, 0);
@@ -313,6 +419,29 @@ async function route() {
       return;
     }
     if (await resumeUpdate(state.status)) return;
+  }
+  if (page === 'apps') {
+    // applications à installer : lisible sans être connecté (lien de la page de connexion)
+    document.body.classList.remove('playing');
+    if (!state.me) {
+      try { await get('/api/me', { quiet401: true }); await refreshMe(); } catch { /* pas connecté */ }
+    }
+    if (token !== renderToken) return;
+    const { renderApps } = await import('./views/apps.js');
+    if (state.me) { await renderApps(shell('apps')); return; }
+    const main = h('main.main.share-page');
+    clear(root, h('header.share-head', h('a.logo', { href: '#/' }, h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis')), main);
+    await renderApps(main);
+    return;
+  }
+  if (page === 'share' && parts[1]) {
+    // album photo partagé par lien : consultable sans compte
+    document.body.classList.remove('playing');
+    const main = h('main.main.share-page');
+    clear(root, h('header.share-head', h('span.logo', h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis')), main);
+    const ctx = { query, parts, isCurrent: () => token === renderToken, setCleanup: (fn) => { cleanup = fn; } };
+    try { await renderShared(main, parts[1], ctx); } catch (e) { clear(main, h('div.empty', e.message)); }
+    return;
   }
   if (state.status.setup) {
     document.title = tr('Installation · Nexis');
@@ -372,13 +501,16 @@ async function route() {
   const active = page === '' ? 'home' : page === 'library' ? `lib:${parts[1]}` : page;
   const main = shell(active);
   main.append(spinner());
-  const titles = { '': tr('Accueil'), live: tr('TV en direct'), together: tr('Regarder ensemble'), watchlist: tr('À regarder'), discover: tr('Découvrir'), playlists: tr('Mes playlists'), search: tr('Recherche'), history: tr('Historique'), downloads: tr('Téléchargements'), settings: tr('Paramètres'), admin: tr('Paramètres') };
+  const titles = { '': tr('Accueil'), book: tr('Livre audio'), live: tr('TV en direct'), together: tr('Regarder ensemble'), watchlist: tr('À regarder'), discover: tr('Découvrir'), playlists: tr('Mes playlists'), search: tr('Recherche'), history: tr('Historique'), downloads: tr('Téléchargements'), settings: tr('Paramètres'), admin: tr('Paramètres') };
   document.title = `${titles[page] || 'Nexis'} · Nexis`;
   try {
     switch (page) {
       case '': await renderHome(main, ctx); break;
       case 'library': await renderLibrary(main, parts[1], ctx); break;
       case 'item': await renderItem(main, parts[1], ctx); break;
+      case 'book': await renderBook(main, parts[1], ctx); break;
+      case 'person': await renderPerson(main, decodeURIComponent(parts.slice(1).join('/')), ctx); break;
+      case 'remote': await renderRemote(main, ctx); break;
       case 'search': await renderSearch(main, query.get('q') || '', ctx); break;
       case 'collection': await renderCollection(main, parts[1], ctx); break;
       case 'watchlist': await renderWatchlist(main, ctx); break;
@@ -435,6 +567,16 @@ new MutationObserver((records) => {
 }).observe(document.getElementById('app') || document.body, { childList: true, subtree: true });
 
 setupInstall();
+// raccourcis partout : « ? » affiche l'aide, « / » place le curseur dans la recherche
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey || (e.target.closest && e.target.closest('input, select, textarea, [contenteditable]'))) return;
+  if (document.querySelector('.modal-overlay')) return;
+  if (e.key === '?') { e.preventDefault(); shortcutsHelp(); }
+  else if (e.key === '/' && !location.hash.startsWith('#/play')) {
+    const s = document.querySelector('.search-input');
+    if (s) { e.preventDefault(); s.focus(); s.select(); }
+  }
+});
 onInstallChange(() => document.querySelectorAll('.install-app').forEach((b) => { b.hidden = !canInstall(); }));
 
 window.addEventListener('hashchange', route);

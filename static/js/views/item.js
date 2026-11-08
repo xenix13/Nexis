@@ -1,11 +1,13 @@
 import { del, get, post, put } from '../api.js';
-import { state } from '../app.js';
+import { applyPrefs, state } from '../app.js';
 import { launchableGroups } from '../groups.js';
 import { deviceCaps, download as offlineDownload, find as findDownload, onDownloads, supported as offlineSupported } from '../offline.js';
-import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload } from '../tracks.js';
+import { SIGNS_HINT, fixForced, menuSubs, pickAudio, pickSubtitle, trackPayload, withLibLangs } from '../tracks.js';
 import { chapterStrip } from '../chapters.js';
 import { clear, episodeCode, field, fmtDuration, fmtTime, h, icon, img, modal, moreMenu, posterCard, progressBar, select, spinner, toast, toggle } from '../ui.js';
 import { tr, plural, locale } from '../i18n.js';
+
+const personHref = (name) => `#/person/${encodeURIComponent(name)}`;
 
 async function identify(d, onDone) {
   const q = h('input', { value: d.type === 'episode' ? d.show : d.title });
@@ -51,9 +53,62 @@ function fileInfo(d) {
     row(tr('Sous-titres'), (d.subtitles || []).map((x) => x.title).join(' · ')),
     row(tr('Chapitres'), d.chapters && d.chapters.length ? `${d.chapters.length}` : tr('aucun')),
     row(tr('Intro'), mk.intro ? `${fmtTime(mk.intro.start)} → ${fmtTime(mk.intro.end)} (${src[mk.intro.source] || mk.intro.source})` : tr('non détectée')),
+    mk.recap ? row(tr('Récap'), `${fmtTime(mk.recap.start)} → ${fmtTime(mk.recap.end)} (${src[mk.recap.source] || mk.recap.source})`) : null,
     row(tr('Générique de fin'), mk.credits ? `${fmtTime(mk.credits.start)} (${src[mk.credits.source] || mk.credits.source})` : tr('non détecté')),
     row(tr('Métadonnées'), { done: 'TMDB', local: tr('fichiers locaux'), nomatch: tr('non identifié'), error: tr('erreur'), pending: tr('en attente') }[d.meta_state] || d.meta_state),
   ), []);
+}
+
+// Sous-titres en ligne (OpenSubtitles) : résultats pour ce fichier, téléchargement en un clic
+async function subtitleSearch(d, rerender) {
+  const list = h('div.os-results', spinner());
+  const info = h('p.muted.small');
+  const langSel = h('select');
+  const body = h('div', h('div.grid2', field(tr('Langue'), langSel), h('div')), info, list);
+  let changed = false;
+  const load = async (langs) => {
+    list.replaceChildren(spinner());
+    try {
+      const r = await get(`/api/items/${d.id}/opensubtitles${langs ? `?langs=${langs}` : ''}`);
+      if (!langSel.options.length) {
+        const codes = [...new Set([...r.langs, ...Object.keys(r.lang_names)])];
+        langSel.replaceChildren(h('option', { value: r.langs.join(',') }, r.langs.map((c) => r.lang_names[c] || c).join(' + ')),
+          ...codes.map((c) => h('option', { value: c }, r.lang_names[c] || c)));
+        langSel.onchange = () => load(langSel.value);
+      }
+      info.textContent = [r.remaining != null ? tr('{n} téléchargement(s) restant(s) aujourd’hui.', { n: r.remaining }) : '',
+        r.downloaded.length ? tr('Déjà téléchargés : {list}', { list: r.downloaded.map((x) => `${r.lang_names[x.lang] || x.lang}`).join(', ') }) : ''].filter(Boolean).join(' ');
+      const isAdmin = state.me.user.is_admin;
+      const rows = [
+        ...(isAdmin ? r.downloaded.map((x) => h('div.os-row', h('div.os-info', h('strong', r.lang_names[x.lang] || x.lang), h('div.os-release.muted', x.release || tr('téléchargé'))),
+          h('button.btn.small', { onclick: async () => {
+            try { await del(`/api/items/${d.id}/opensubtitles/${x.file_id}`); changed = true; toast(tr('Sous-titre retiré'), 'ok'); load(langSel.value); } catch (e) { toast(e.message, 'bad'); }
+          } }, tr('Retirer')))) : []),
+        ...r.results.map((s) => {
+          const btn = h('button.btn.small.primary', { onclick: async () => {
+            btn.disabled = true;
+            btn.textContent = tr('Téléchargement…');
+            try {
+              await post(`/api/items/${d.id}/opensubtitles`, { file_id: s.file_id, lang: s.lang, hi: s.hi, release: s.release });
+              changed = true;
+              btn.textContent = tr('Ajouté');
+              toast(tr('Sous-titres ajoutés : ils apparaissent dans le lecteur'), 'ok');
+            } catch (e) { toast(e.message, 'bad'); btn.disabled = false; btn.textContent = tr('Télécharger'); }
+          } }, tr('Télécharger'));
+          return h('div.os-row', h('div.os-info',
+            h('div', h('strong', r.lang_names[s.lang] || s.lang), ' ',
+              s.hash_match ? h('span.os-badge.good', tr('calé sur ce fichier')) : null,
+              s.hi ? h('span.os-badge', 'SDH') : null, s.forced ? h('span.os-badge', tr('forcés')) : null,
+              s.machine ? h('span.os-badge', tr('traduction automatique')) : null),
+            h('div.os-release.muted', s.release || '—'),
+            h('div.muted.small', tr('{n} téléchargements', { n: s.downloads.toLocaleString(locale()) }))), btn);
+        })];
+      list.replaceChildren(...(rows.length ? rows : [h('p.muted', tr('Aucun sous-titre trouvé pour ce titre dans cette langue.'))]));
+    } catch (e) { list.replaceChildren(h('p.muted', e.message)); }
+  };
+  load('');
+  await modal(tr('Sous-titres en ligne'), body, [{ label: tr('Fermer'), value: true }]);
+  if (changed) rerender();
 }
 
 async function addToPlaylist(d) {
@@ -121,6 +176,55 @@ function itemMenu(d, rerender) {
       rerender();
     } });
   }
+  const art = d.type === 'episode' ? (d.show_art || d.art) : d.art;
+  if (art && /\/art\//.test(art) && state.me && state.me.prefs) {
+    const current = state.me.prefs.wallpaper === art;
+    items.push({ label: current ? tr('Retirer le fond d’écran') : tr('Utiliser comme fond d’écran'), onClick: async () => {
+      try {
+        const r = await put('/api/me/prefs', { wallpaper: current ? '' : art });
+        Object.assign(state.me.prefs, r);
+        applyPrefs(state.me.prefs);
+        toast(current ? tr('Fond d’écran retiré') : tr('Fond d’écran appliqué'), 'ok');
+      } catch (e) { toast(e.message, 'bad'); }
+    } });
+  }
+  if (['movie', 'episode'].includes(d.type) && state.me.features && state.me.features.opensubtitles) {
+    items.push({ label: tr('Chercher des sous-titres…'), onClick: () => subtitleSearch(d, rerender) });
+  }
+  if (['movie', 'episode'].includes(d.type) && state.me.features && state.me.features.whisper) {
+    const generated = (d.subtitles || []).some((s) => s.generated);
+    items.push({ label: generated ? tr('Retirer les sous-titres générés (Whisper)') : tr('Générer les sous-titres (Whisper)'), onClick: async () => {
+      try {
+        if (generated) { await del(`/api/items/${d.id}/whisper`); toast(tr('Sous-titres générés retirés'), 'ok'); rerender(); return; }
+        const r = await post(`/api/items/${d.id}/whisper`);
+        toast(r.queue.length > 1 ? tr('Ajouté à la file ({n} en attente)', { n: r.queue.length }) : tr('Génération lancée : les sous-titres apparaîtront une fois la transcription finie'), 'ok');
+      } catch (e) { toast(e.message, 'bad'); }
+    } });
+  }
+  if (['movie', 'show'].includes(d.type)) {
+    // masqué pour soi : disparaît des listes (bibliothèques, accueil, recherche), la fiche reste accessible
+    items.push({ label: d.hidden ? tr('Ne plus masquer') : tr('Masquer pour moi'), onClick: async () => {
+      try {
+        const r = await put(`/api/items/${d.id}/hidden`, { hidden: !d.hidden });
+        d.hidden = r.hidden;
+        toast(r.hidden ? tr('Masqué : il n’apparaîtra plus dans vos listes') : tr('Titre de nouveau visible'), 'ok');
+        rerender();
+      } catch (e) { toast(e.message, 'bad'); }
+    } });
+  }
+  if (d.type === 'show') {
+    // nouveaux épisodes : prévenu ou non, série par série (Paramètres → Contenu et notifications)
+    const muted = (state.me.prefs.muted_shows || []).includes(String(d.id));
+    items.push({ label: muted ? tr('Être prévenu des nouveaux épisodes') : tr('Ne plus être prévenu des nouveaux épisodes'), onClick: async () => {
+      const list = (state.me.prefs.muted_shows || []).filter((x) => x !== String(d.id));
+      try {
+        const r = await put('/api/me/prefs', { muted_shows: muted ? list : [...list, String(d.id)] });
+        Object.assign(state.me.prefs, r);
+        toast(muted ? tr('Vous serez prévenu des nouveaux épisodes') : tr('Plus de notification pour cette série'), 'ok');
+        rerender();
+      } catch (e) { toast(e.message, 'bad'); }
+    } });
+  }
   if (state.me.user.is_admin) {
     items.push({ divider: true }, { heading: tr('Administration') },
       { label: tr('Identifier…'), onClick: () => identify(d, rerender) },
@@ -161,7 +265,33 @@ function opinionButtons(d) {
   };
   paint();
   setOpinion = set;
+  syncOpinion = (v) => { value = v ?? null; paint(); };
   return [up, down];
+}
+let syncOpinion = null;
+
+// Note personnelle de 1 à 5 étoiles (un clic sur la note actuelle la retire) ; elle oriente aussi les suggestions
+function starButtons(d) {
+  if (!['movie', 'show'].includes(d.type)) return null;
+  let value = d.stars || 0;
+  const stars = [1, 2, 3, 4, 5].map((n) => h('button.star', { type: 'button', 'aria-label': tr('{n} sur 5', { n }),
+    onclick: async () => {
+      const next = value === n ? null : n;
+      try {
+        const r = await put(`/api/items/${d.id}/stars`, { stars: next });
+        value = r.stars || 0;
+        d.stars = r.stars;
+        paint();
+        if (syncOpinion) syncOpinion(r.opinion);
+        toast(next ? tr('Votre note : {n}/5', { n: next }) : tr('Note retirée'), 'ok');
+      } catch (e) { toast(e.message, 'bad'); }
+    } }, '★'));
+  const box = h('div.stars', { role: 'group', 'aria-label': tr('Ma note') }, stars);
+  const paint = () => stars.forEach((s, i) => { s.classList.toggle('on', i < value); s.setAttribute('aria-pressed', String(i + 1 === value)); });
+  box.addEventListener('mouseover', (e) => { const i = stars.indexOf(e.target); if (i >= 0) stars.forEach((s, j) => s.classList.toggle('hover', j <= i)); });
+  box.addEventListener('mouseleave', () => stars.forEach((s) => s.classList.remove('hover')));
+  paint();
+  return box;
 }
 
 function watchlistButton(d) {
@@ -203,7 +333,7 @@ function trackChooser(d, target, onChange) {
   const audio = d.audio || [];
   const subs = d.subtitles || [];
   if (!audio.length && !subs.length) return null;
-  const prefs = state.me.prefs;
+  const prefs = withLibLangs(state.me.prefs, d);
   let a = pickAudio(audio, prefs, d.track_prefs);
   let s = pickSubtitle(subs, a, prefs, d.track_prefs);
   const aSel = select(audio.map((x) => [x.id, x.title]), a ? a.id : '', { 'aria-label': tr('Langue audio') });
@@ -292,11 +422,11 @@ async function qualityChoices(one, tracks) {
   }
   return out;
 }
-const canDownload = () => state.me.features && state.me.features.downloads && offlineSupported();
+export const canDownload = () => state.me.features && state.me.features.downloads && offlineSupported();
 
 // choix des pistes comme au lancement de la lecture (langues préférées, sous-titres forcés…)
 function defaultTracks(it) {
-  const prefs = state.me.prefs;
+  const prefs = withLibLangs(state.me.prefs, it);
   const audio = pickAudio(it.audio || [], prefs, it.track_prefs);
   const sub = fixForced(pickSubtitle(it.subtitles || [], audio, prefs, it.track_prefs), audio, it.subtitles || []);
   return { audio: audio ? audio.id : null, subs: sub && sub.overlay ? [sub.id] : [], burn: sub && !sub.overlay ? sub.id : null };
@@ -312,7 +442,7 @@ async function startDownloads(items, opts) {
     { label: tr('Voir'), onClick: () => { location.hash = '#/downloads'; } });
 }
 
-async function downloadDialog(items, title) {
+export async function downloadDialog(items, title) {
   const one = items.length === 1 && items[0].audio ? items[0] : null;
   const choices = one ? await qualityChoices(one, defaultTracks(one)) : SEASON_QUALITIES;
   const wanted = dlQuality();
@@ -430,6 +560,8 @@ function episodeRow(e, refresh) {
 }
 
 export async function renderItem(main, rk, ctx) {
+  // titres proches demandés en même temps que la fiche : un aller-retour de moins quand le serveur est loin
+  const early = /^\d+$/.test(String(rk)) ? get(`/api/items/${rk}/similar`).catch(() => null) : null;
   const d = await get(`/api/items/${rk}`);
   if (!ctx.isCurrent()) return;
   if (d.type === 'season') { location.replace(`#/item/${d.show_id}?season=${d.id}`); return; }
@@ -455,6 +587,15 @@ export async function renderItem(main, rk, ctx) {
       playLinks.push(link);
       actions.append(link);
     }
+    if (d.leaves > 1) {
+      // épisodes dans le désordre (sitcoms) : un au hasard, puis un autre à la fin de chacun
+      actions.append(h('button.btn', { type: 'button', title: tr('Lecture aléatoire'), onclick: async () => {
+        try {
+          const ep = await get(`/api/random?show=${d.id}`);
+          location.hash = `#/play/${ep.id}?shuffle=${d.id}`;
+        } catch (e) { toast(e.message, 'bad'); }
+      } }, icon('shuffle'), tr('Aléatoire')));
+    }
   } else {
     for (const link of playButtons(d)) {
       link.dataset.base = link.getAttribute('href');
@@ -464,7 +605,7 @@ export async function renderItem(main, rk, ctx) {
   }
   const together = d.type === 'show' ? togetherButton(d.play_target ? { ...d.play_target, show: d.title } : null)
     : (['movie', 'episode'].includes(d.type) ? togetherButton(d) : null);
-  actions.append(...[watchlistButton(d), ...(opinionButtons(d) || []), together, downloadButton(d), trailerButton(d)].filter(Boolean), itemMenu(d, rerender));
+  actions.append(...[watchlistButton(d), ...(opinionButtons(d) || []), starButtons(d), together, downloadButton(d), trailerButton(d)].filter(Boolean), itemMenu(d, rerender));
   const chooser = trackChooser(d, d.type === 'show' ? d.play_target : null, (au, su) => {
     for (const l of playLinks) l.setAttribute('href', withTracks(l.dataset.base, au, su));
   });
@@ -479,7 +620,8 @@ export async function renderItem(main, rk, ctx) {
     d.summary ? h('p.summary', { class: d.type === 'episode' && !d.watched ? 'summary spoiler' : 'summary' }, d.summary) : null,
     d.genres && d.genres.length ? h('div.chips', d.genres.map((g) => h('span.chip', g))) : null,
     h('dl.facts',
-      d.directors && d.directors.length ? [h('dt', tr('Réalisation')), h('dd', d.directors.join(', '))] : null,
+      d.directors && d.directors.length ? [h('dt', tr('Réalisation')), h('dd', d.directors.flatMap((n, i) =>
+        [i ? ', ' : null, h('a.person-link', { href: personHref(n) }, n)]))] : null,
       d.studio ? [h('dt', tr('Studio')), h('dd', d.studio)] : null,
       null));
 
@@ -513,8 +655,8 @@ export async function renderItem(main, rk, ctx) {
   if (['movie', 'show', 'episode'].includes(d.type)) {
     const similar = h('section.block', { hidden: true });
     parts.push(similar);
-    get(`/api/items/${d.id}/similar`).then((r) => {
-      if (!r.items.length || !similar.isConnected) return;
+    (early && String(d.id) === String(rk) ? early : get(`/api/items/${d.id}/similar`)).then((r) => {
+      if (!r || !r.items.length || !similar.isConnected) return;
       similar.append(h('h2', d.type === 'movie' ? tr('Films similaires') : tr('Titres similaires')),
         h('div.grid.small', r.items.slice(0, 12).map((x) => posterCard(x))));
       similar.hidden = false;
@@ -522,7 +664,9 @@ export async function renderItem(main, rk, ctx) {
   }
   if (d.cast && d.cast.length) {
     parts.push(h('section.block', h('h2', tr('Distribution')),
-      h('div.cast', d.cast.map((p) => h('div.person', h('span.person-init', p.name.charAt(0)),
+      h('div.cast', d.cast.map((p) => h('a.person', { href: personHref(p.name) },
+        p.photo ? h('img.person-init', { src: `/api/discover/img?p=${encodeURIComponent(p.photo)}&k=profile`, alt: '', loading: 'lazy' })
+          : h('span.person-init', p.name.charAt(0)),
         h('div', h('strong', p.name), p.role ? h('div.muted', p.role) : null))))));
   }
 

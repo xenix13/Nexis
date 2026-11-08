@@ -1,0 +1,29 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "pastel",
+ "name": {
+  "fr": "Pastel",
+  "en": "Pastel"
+ },
+ "description": {
+  "fr": "Clair et doux : lilas, rose et formes rondes.",
+  "en": "Light and soft: lilac, pink and round shapes."
+ },
+ "dark": false,
+ "colors": {
+  "bg": "#fbf6ff",
+  "surface": "#ffffff",
+  "surface2": "#f1e8fb",
+  "text": "#2b2140",
+  "muted": "#665c7d",
+  "line": "#e2d6f0",
+  "accent": "#9b4fd1",
+  "accent2": "#e85d9a",
+  "on_accent": "#ffffff"
+ },
+ "font": "rounded",
+ "radius": 20,
+ "style": "rounded"
+}

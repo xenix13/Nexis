@@ -1,0 +1,41 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "kawaii",
+ "name": {
+  "fr": "Kawaii",
+  "en": "Kawaii"
+ },
+ "description": {
+  "fr": "Rose bonbon, menthe et formes rondes, pour les fans d'anime.",
+  "en": "Candy pink, mint and round shapes, for anime fans."
+ },
+ "dark": false,
+ "colors": {
+  "bg": "#fff5fa",
+  "surface": "#ffffff",
+  "surface2": "#ffe6f2",
+  "text": "#3b1f35",
+  "muted": "#6f5068",
+  "line": "#f5cfe2",
+  "accent": "#d6337e",
+  "accent2": "#2bb39a",
+  "on_accent": "#ffffff"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 135,
+  "stops": [
+   "#ffe3f0",
+   "#fff5fa",
+   "#e3fff7"
+  ]
+ },
+ "effects": [
+  "glow"
+ ],
+ "font": "rounded",
+ "radius": 24,
+ "style": "rounded"
+}

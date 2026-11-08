@@ -1,7 +1,7 @@
-import { del, get, post, put } from '../api.js';
+import { adminTarget, adminUrl, del, get, post, put } from '../api.js';
 import { refreshMe, state } from '../app.js';
 import { followUpdate } from '../updater.js';
-import { avatar, clear, confirmDialog, field, fmtTime, h, icon, modal, select, toast, toggle } from '../ui.js';
+import { avatar, clear, confirmDialog, field, fmtTime, h, icon, modal, select, spinner, store, toast, toggle } from '../ui.js';
 import { LANGUAGES, locale, plural, tr } from '../i18n.js';
 
 // Pages de l'administration, rangées par thème dans le menu des Paramètres.
@@ -10,10 +10,14 @@ export const ADMIN_GROUPS = [
   { title: tr('Serveur'), items: [
     { id: 'dashboard', label: tr('Vue d’ensemble'), icon: 'dashboard', lead: tr('Version, état du serveur et lectures en cours.'),
       keys: tr('tableau de bord lectures en cours streams mémoire swap charge processeur version arrêter') },
+    { id: 'stats', label: tr('Statistiques'), icon: 'list', lead: tr('Qui regarde quoi, combien de temps, débit utilisé, et les titres jamais regardés.'),
+      keys: tr('statistiques activité heures visionnage débit données comptes titres populaires jamais regardés place disque') },
     { id: 'users', label: tr('Utilisateurs'), icon: 'group', lead: tr('Comptes, profils du foyer, contrôle parental et accès aux bibliothèques.'),
       keys: tr('compte profil enfant pin âge restriction administrateur désactiver mot de passe foyer langue language') },
     { id: 'update', label: tr('Mise à jour'), icon: 'upgrade', lead: tr('Version installée et mises à jour de Nexis.'),
       keys: tr('version mettre à jour github nouveautés changements réinstaller') },
+    { id: 'backups', label: tr('Sauvegardes'), icon: 'backup', lead: tr('Sauvegarde automatique de la base et des clés, et restauration.'),
+      keys: tr('sauvegarde backup restaurer restauration archive base de données migration nouveau serveur') },
     { id: 'federation', label: tr('Serveurs liés'), icon: 'link', lead: tr('Relier vos serveurs Nexis : comptes communs, bibliothèques de chacun visibles et lisibles depuis l’autre.'),
       keys: tr('fédération cluster lier jumeler invitation second serveur réplication tunnel') },
     { id: 'tasks', label: tr('Tâches planifiées'), icon: 'clock', lead: tr('Travaux de fond : scans, métadonnées, intros, sous-titres, nettoyage.'),
@@ -34,8 +38,10 @@ export const ADMIN_GROUPS = [
   { title: tr('Lecture'), items: [
     { id: 'transcoding', label: tr('Transcodage'), icon: 'bolt', lead: tr('Lectures simultanées et carte graphique.'),
       keys: tr('processeur cpu gpu carte graphique nvidia nvenc vaapi intel amd limites lectures simultanées matériel') },
-    { id: 'subtitles', label: tr('Sous-titres et son'), icon: 'subs', lead: tr('Préparation des sous-titres intégrés et mixage du son 5.1 / 7.1.'),
-      keys: tr('sous-titres préparer audio son 5.1 7.1 stéréo mixage downmix volume dialogues') },
+    { id: 'subtitles', label: tr('Sous-titres et son'), icon: 'subs', lead: tr('Sous-titres manquants (OpenSubtitles), sous-titres intégrés et mixage du son 5.1 / 7.1.'),
+      keys: tr('sous-titres opensubtitles bazarr télécharger manquants préparer audio son 5.1 7.1 stéréo mixage downmix volume dialogues') },
+    { id: 'dlna', label: tr('DLNA'), icon: 'tv', lead: tr('Téléviseurs, consoles et box du réseau local : Nexis apparaît comme serveur multimédia.'),
+      keys: tr('dlna upnp téléviseur smart tv samsung lg sony console xbox ps5 box réseau local serveur multimédia') },
     { id: 'downloads', label: tr('Téléchargements'), icon: 'install', lead: tr('Visionnage hors ligne dans l’application.'),
       keys: tr('hors ligne télécharger offline téléphone') },
     { id: 'live', label: tr('TV en direct'), icon: 'tv', lead: tr('Listes de chaînes IPTV (M3U) et guide des programmes.'),
@@ -58,7 +64,7 @@ function since(ts) {
 const AGE_LIMITS = [['', tr('Aucune restriction')], ['7', tr('Jeunes enfants (7 ans max.)')], ['10', tr('Enfant (10 ans max.)')],
   ['12', tr('12 ans max.')], ['16', tr('16 ans max.')]];
 
-async function userForm(user, libraries, defaultLang = 'fr') {
+async function userForm(user, libraries, defaultLang = 'fr', others = []) {
   const isNew = !user;
   user = user || { username: '', display_name: '', is_admin: false, all_libraries: true, libraries: [], disabled: false,
     managed: false, home: true, max_age: null, allow_unrated: true, has_pin: false, kids: false };
@@ -74,7 +80,26 @@ async function userForm(user, libraries, defaultLang = 'fr') {
   const age = select(AGE_LIMITS, user.max_age == null ? '' : String(user.max_age));
   const unrated = toggle(tr('Autoriser les contenus sans classification'), user.allow_unrated);
   const kids = toggle(tr('Interface enfant : grandes vignettes, menu simplifié'), user.kids);
+  // temps d'écran et limites du compte
+  const minutes = select([['', tr('Illimité')], ['30', tr('30 min')], ['45', tr('45 min')], ['60', tr('1 h')], ['90', tr('1 h 30')],
+    ['120', tr('2 h')], ['180', tr('3 h')], ['240', tr('4 h')], ['360', tr('6 h')]],
+  user.daily_minutes ? String(user.daily_minutes) : '');
+  if (user.daily_minutes && !minutes.querySelector(`option[value="${user.daily_minutes}"]`)) {
+    minutes.append(h('option', { value: String(user.daily_minutes), selected: true }, tr('{n} min', { n: user.daily_minutes })));
+  }
+  const [bedFrom, bedTo] = (user.bedtime || '-').split('-');
+  const bedOn = toggle(tr('Heure du coucher : pas de lecture la nuit'), !!user.bedtime);
+  const bedStart = h('input', { type: 'time', value: bedFrom || '21:00' });
+  const bedEnd = h('input', { type: 'time', value: bedTo || '07:00' });
+  const bedFields = h('div.grid2', field(tr('À partir de'), bedStart), field(tr('Jusqu’à'), bedEnd));
+  const streams = h('input', { type: 'number', min: 1, max: 20, value: user.max_streams || '', placeholder: tr('Illimité') });
+  const remote = select([['', tr('Illimité')], ['2000', '2 Mbit/s'], ['4000', '4 Mbit/s'], ['8000', '8 Mbit/s'], ['12000', '12 Mbit/s'],
+    ['20000', '20 Mbit/s'], ['40000', '40 Mbit/s']], user.remote_kbps ? String(user.remote_kbps) : '');
+  if (user.remote_kbps && !remote.querySelector(`option[value="${user.remote_kbps}"]`)) {
+    remote.append(h('option', { value: String(user.remote_kbps), selected: true }, `${(user.remote_kbps / 1000).toLocaleString(locale())} Mbit/s`));
+  }
   const admin = toggle(tr('Administrateur'), user.is_admin);
+  const copyFrom = select([['', tr('Ne rien copier')], ...others.filter((o) => !user.id || o.id !== user.id).map((o) => [o.id, o.display_name])], '');
   const disabled = toggle(tr('Compte désactivé'), user.disabled);
   const all = toggle(tr('Accès à toutes les bibliothèques (y compris les futures)'), user.all_libraries);
   const libChecks = libraries.map((l) => {
@@ -90,8 +115,9 @@ async function userForm(user, libraries, defaultLang = 'fr') {
     passField.hidden = isManaged;
     admin.hidden = isManaged;
     unrated.hidden = !age.value;
+    bedFields.hidden = !bedOn.querySelector('input').checked;
   };
-  [all, managed].forEach((t) => t.querySelector('input').addEventListener('change', sync));
+  [all, managed, bedOn].forEach((t) => t.querySelector('input').addEventListener('change', sync));
   age.addEventListener('change', sync);
   sync();
   const err = h('p.form-error');
@@ -117,6 +143,13 @@ async function userForm(user, libraries, defaultLang = 'fr') {
     home,
     h('div.grid2', field(tr('Code PIN du profil'), pin), field(tr('Restriction d’âge'), age, tr('D’après la classification (TMDB ou .nfo).'))),
     clearPin, unrated, kids,
+    h('h4.form-sub', tr('Temps d’écran et limites')),
+    h('div.grid2', field(tr('Temps d’écran par jour'), minutes, user.screen_used != null ? tr('{n} min regardées aujourd’hui.', { n: user.screen_used }) : null),
+      field(tr('Lectures simultanées (max.)'), streams, tr('Sur tous les appareils du compte.'))),
+    bedOn, bedFields,
+    field(tr('Débit maximum hors de la maison'), remote, tr('Depuis l’extérieur, la qualité est réduite pour tenir dans ce débit. À la maison, rien ne change.')),
+    others.length ? h('h4.form-sub', tr('Réglages')) : null,
+    others.length ? field(tr('Copier les réglages de…'), copyFrom, tr('Apparence, langues, lecture, accueil et menu de ce compte remplacent ceux-ci (pratique pour les profils des enfants).')) : null,
     h('h4.form-sub', tr('Droits et bibliothèques')),
     admin, isNew ? null : disabled, all, libBox, err);
   return modal(isNew ? tr('Nouvel utilisateur') : tr('Modifier {display_name}', { display_name: user.display_name }), body, [
@@ -134,14 +167,19 @@ async function userForm(user, libraries, defaultLang = 'fr') {
         allow_unrated: unrated.querySelector('input').checked,
         kids: kids.querySelector('input').checked,
         language: language.value,
+        daily_minutes: minutes.value ? Number(minutes.value) : null,
+        bedtime: bedOn.querySelector('input').checked ? `${bedStart.value || '21:00'}-${bedEnd.value || '07:00'}` : null,
+        max_streams: streams.value ? Number(streams.value) : null,
+        remote_kbps: remote.value ? Number(remote.value) : null,
       };
       if (pass.value && !isManaged) payload.password = pass.value;
       if (pin.value) payload.pin = pin.value;
       else if (clearPin && clearPin.querySelector('input').checked) payload.pin = '';
       if (!isNew) payload.disabled = disabled.querySelector('input').checked;
       try {
-        if (isNew) await post('/api/admin/users', { username: username.value.trim(), ...payload });
-        else await put(`/api/admin/users/${user.id}`, payload);
+        const saved = isNew ? await post('/api/admin/users', { username: username.value.trim(), ...payload })
+          : await put(`/api/admin/users/${user.id}`, payload);
+        if (copyFrom.value) await post(`/api/admin/users/${(saved && saved.id) || user.id}/prefs`, { from: Number(copyFrom.value) });
         return true;
       } catch (e) { err.textContent = e.message; return false; }
     } },
@@ -166,7 +204,7 @@ async function usersTab(body, ctx) {
   const libName = (id) => (libraries.find((l) => l.id === id) || { name: `#${id}` }).name;
   clear(body,
     h('div.toolbar', h('p.muted', tr('{length} compte(s). Historique, reprise de lecture et préférences sont propres à chaque compte.', { length: users.length })),
-      h('button.btn.primary', { onclick: async () => { if (await userForm(null, libraries, defaultLang)) { toast(tr('Utilisateur créé'), 'ok'); reload(); } } }, tr('+ Ajouter'))),
+      h('button.btn.primary', { onclick: async () => { if (await userForm(null, libraries, defaultLang, users)) { toast(tr('Utilisateur créé'), 'ok'); reload(); } } }, tr('+ Ajouter'))),
     h('div.user-list', users.map((u) => h('div.user-row', { class: u.disabled ? 'user-row off' : 'user-row' },
       avatar(u, 40),
       h('div.grow', h('strong', u.display_name), h('span.muted', ` @${u.username}`),
@@ -181,7 +219,7 @@ async function usersTab(body, ctx) {
           u.two_factor ? h('span.tag.ok', tr('Double authentification')) : null,
           u.all_libraries ? tr('Toutes les bibliothèques') : (u.libraries.map(libName).join(', ') || tr('Aucune bibliothèque')),
           tr(' · vu {p1}', { p1: since(u.last_seen) }))),
-      h('button.btn.small', { onclick: async () => { if (await userForm(u, libraries, defaultLang)) { toast(tr('Modifications enregistrées'), 'ok'); reload(); } } }, tr('Modifier')),
+      h('button.btn.small', { onclick: async () => { if (await userForm(u, libraries, defaultLang, users)) { toast(tr('Modifications enregistrées'), 'ok'); reload(); } } }, tr('Modifier')),
       u.id === state.me.user.id ? null : h('button.icon-btn', { title: tr('Supprimer'), onclick: async () => {
         if (!await confirmDialog(tr('Supprimer ce compte ?'), tr('L’historique et les préférences de {display_name} seront supprimés. Cette action est définitive.', { display_name: u.display_name }), tr('Supprimer'))) return;
         try { await del(`/api/admin/users/${u.id}`); toast(tr('Compte supprimé'), 'ok'); reload(); } catch (e) { toast(e.message, 'bad'); }
@@ -216,7 +254,7 @@ async function libraryForm(lib) {
   const isNew = !lib || !lib.id;
   lib = lib || { name: '', kind: 'movie', paths: [] };
   const name = h('input', { value: lib.name, maxlength: 40, placeholder: tr('Films, Séries, Animes…') });
-  const kind = select([['movie', tr('Films')], ['show', tr('Séries (et animes)')]], lib.kind);
+  const kind = select([['movie', tr('Films')], ['show', tr('Séries (et animes)')], ['photo', tr('Photos')], ['audiobook', tr('Livres audio')]], lib.kind);
   const paths = h('div.paths');
   const addPath = (value = '') => {
     const input = h('input', { value, placeholder: '/mnt/films' });
@@ -232,7 +270,7 @@ async function libraryForm(lib) {
   const err = h('p.form-error');
   const body = h('div.form',
     h('div.grid2', field(tr('Nom'), name), field(tr('Type de contenu'), kind)),
-    field(tr('Dossiers'), paths, tr('Chemins sur le serveur Nexis (ex. /mnt/films). Chaque film ou série dans son propre sous-dossier.')),
+    field(tr('Dossiers'), paths, tr('Chemins sur le serveur Nexis (ex. /mnt/films). Chaque film ou série dans son propre sous-dossier ; pour des photos, chaque sous-dossier devient un album.')),
     h('button.btn.small.ghost', { type: 'button', onclick: () => addPath() }, tr('+ Ajouter un dossier')),
     isNew ? null : h('p.muted.small', tr('Changer le type vide la bibliothèque avant de la rescanner.')), err);
   return modal(isNew ? tr('Nouvelle bibliothèque') : tr('Modifier « {name} »', { name: lib.name }), body, [
@@ -280,9 +318,12 @@ async function librariesTab(body, ctx) {
         h('button.btn.primary', { onclick: async () => { if (await libraryForm(null)) { await refreshMe(); toast(tr('Bibliothèque créée, scan en cours'), 'ok'); reload(); } } }, tr('+ Ajouter')))),
     scanBox(data.scan),
     data.libraries.length ? h('div.user-list', data.libraries.map((l) => h('div.user-row',
-      h('div.lib-icon', l.kind === 'movie' ? '🎬' : '📺'),
+      h('div.lib-icon', l.kind === 'movie' ? '🎬' : l.kind === 'photo' ? '🖼️' : l.kind === 'audiobook' ? '🎧' : '📺'),
       h('div.grow', h('strong', l.name),
-        h('div.muted.small', l.kind === 'movie' ? plural(c(l, 'movie'), '{n} film', '{n} films') : tr('{p1} séries · {p2} épisodes', { p1: c(l, 'show'), p2: c(l, 'episode') }),
+        h('div.muted.small', l.kind === 'movie' ? plural(c(l, 'movie'), '{n} film', '{n} films')
+          : l.kind === 'photo' ? tr('{p1} photos · {p2} albums', { p1: c(l, 'photo'), p2: c(l, 'album') })
+            : l.kind === 'audiobook' ? plural(c(l, 'book'), '{n} livre', '{n} livres')
+              : tr('{p1} séries · {p2} épisodes', { p1: c(l, 'show'), p2: c(l, 'episode') }),
           l.unmatched ? h('span', tr(' · {unmatched} non identifié(s)', { unmatched: l.unmatched })) : null,
           tr(' · scanné {p1}', { p1: since(l.scanned_at) })),
         h('div.small', l.paths.map((p, i) => h('code', { class: l.paths_ok[i] ? '' : 'bad-path', title: l.paths_ok[i] ? '' : tr('Dossier inaccessible') }, p))),
@@ -493,7 +534,12 @@ const subtitlesPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   const algo = select([['none', tr('ffmpeg (par défaut)')], ['dave750', 'Dave750'], ['nightmode', tr('Dialogues (nuit)')],
     ['rfc7845', 'RFC 7845'], ['ac4', 'AC-4']], s.downmix_algo);
   const boost = select([['1', tr('× 1 (aucun)')], ['1.5', tr('× 1,5')], ['2', tr('× 2 (par défaut)')], ['2.5', tr('× 2,5')], ['3', '× 3']], String(s.downmix_boost));
+  const osPanel = h('section.panel', h('h2', 'OpenSubtitles'), h('p.muted.small', tr('Chargement…')));
+  openSubtitlesPanel(osPanel);
+  const wPanel = h('section.panel', h('h2', tr('Sous-titres générés (Whisper)')), h('p.muted.small', tr('Chargement…')));
+  whisperPanel(wPanel);
   return [
+    osPanel, wPanel,
     h('section.panel', h('h2', tr('Sous-titres intégrés')),
       h('p.muted.small', tr('Les sous-titres intégrés aux fichiers (MKV) ne peuvent être extraits qu’en lisant le fichier en entier. Nexis les prépare à l’avance, en dehors des lectures, pour qu’ils soient disponibles dès le début de la vidéo.')),
       prefetch,
@@ -505,6 +551,98 @@ const subtitlesPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
       h('button.btn.primary', { onclick: () => save({ downmix_algo: algo.value, downmix_boost: Number(boost.value) }, tr('Mixage enregistré (prochaines lectures)')) }, tr('Enregistrer'))),
   ];
 });
+
+// Sous-titres téléchargés depuis OpenSubtitles.com : compte, langues, quota du jour
+async function openSubtitlesPanel(panel) {
+  let v;
+  try { v = await get('/api/admin/opensubtitles'); } catch (e) { clear(panel, h('h2', 'OpenSubtitles'), h('p.muted', e.message)); return; }
+  const key = h('input', { type: 'password', autocomplete: 'off', placeholder: v.key_set ? tr('Clé enregistrée (laisser vide pour la garder)') : tr('Clé d’API (consumer)') });
+  const user = h('input', { value: v.user, autocomplete: 'off', spellcheck: false });
+  const pass = h('input', { type: 'password', autocomplete: 'new-password', placeholder: v.password_set ? tr('Enregistré (laisser vide pour le garder)') : '' });
+  const chosen = new Set(v.langs);
+  const chips = h('div.chips', v.all_langs.map((c) => {
+    const b = h('button.chip', { type: 'button', 'aria-pressed': String(chosen.has(c)), onclick: () => {
+      if (chosen.has(c)) chosen.delete(c); else if (chosen.size < 6) chosen.add(c);
+      b.setAttribute('aria-pressed', String(chosen.has(c)));
+    } }, v.lang_names[c] || c);
+    return b;
+  }));
+  const hi = toggle(tr('Accepter les sous-titres pour sourds et malentendants (SDH) s’il n’y a qu’eux'), v.hi);
+  const status = v.configured
+    ? h('div.status-box.ok', v.remaining != null ? tr('Compte connecté : {n} téléchargement(s) restant(s) aujourd’hui.', { n: v.remaining }) : tr('Compte connecté.'))
+    : h('div.status-box', tr('Pas encore configuré.'));
+  const saveBtn = h('button.btn.primary', { onclick: async () => {
+    saveBtn.disabled = true;
+    try {
+      const body = { user: user.value.trim(), langs: [...chosen], hi: hi.querySelector('input').checked };
+      if (key.value.trim()) body.key = key.value.trim();
+      if (pass.value) body.password = pass.value;
+      const r = await put('/api/admin/opensubtitles', body);
+      toast(r.account ? tr('Connexion réussie : {n} téléchargement(s) restant(s) aujourd’hui', { n: r.account.remaining ?? '?' }) : tr('Enregistré'), 'ok');
+      await refreshMe();
+      openSubtitlesPanel(panel);
+    } catch (e) { toast(e.message, 'bad'); saveBtn.disabled = false; }
+  } }, tr('Tester et enregistrer'));
+  clear(panel, h('h2', 'OpenSubtitles'),
+    h('p.muted.small', tr('Nexis télécharge lui-même les sous-titres manquants, sans Bazarr. Il faut un compte gratuit sur opensubtitles.com (20 sous-titres par jour) et une clé d’API, créée sur le site dans « API consumers ». Les sous-titres sont rangés dans le dossier de données de Nexis, jamais à côté des vidéos.')),
+    status,
+    h('div.grid2', field(tr('Clé d’API'), key), field(tr('Identifiant OpenSubtitles'), user)),
+    h('div.grid2', field(tr('Mot de passe OpenSubtitles'), pass), h('div')),
+    field(tr('Langues à télécharger automatiquement (6 au plus)'), chips,
+      tr('Un film ou un épisode qui n’a aucun sous-titre complet dans l’une de ces langues en reçoit un, chaque nuit et après chaque ajout (tâche « Télécharger les sous-titres manquants »). Les sous-titres calés sur le fichier exact passent en premier ; les traductions automatiques sont écartées.')),
+    hi,
+    v.last ? h('p.muted.small', tr('Dernier passage : {summary}', { summary: v.last.summary || v.last.status })) : null,
+    h('div.actions-row', saveBtn, h('a.btn', { href: '#/admin/tasks' }, tr('Tâches planifiées'))));
+}
+
+// Whisper : transcription de la voix (service compatible OpenAI, ou whisper.cpp sur ce serveur)
+async function whisperPanel(panel) {
+  let v;
+  try { v = await get('/api/admin/whisper'); } catch (e) { clear(panel, h('h2', 'Whisper'), h('p.muted', e.message)); return; }
+  const url = h('input', { value: v.url, placeholder: 'http://192.168.1.20:8000', spellcheck: false });
+  const key = h('input', { type: 'password', autocomplete: 'off', placeholder: v.key_set ? tr('Clé enregistrée (laisser vide pour la garder)') : tr('Facultative') });
+  const modelHttp = h('input', { value: v.model_http, spellcheck: false });
+  const threads = h('input', { type: 'number', min: 1, max: 64, value: v.threads });
+  const local = v.filter || v.cli;
+  const save = async (patch, msg = tr('Enregistré')) => {
+    try { await put('/api/admin/whisper', patch); toast(msg, 'ok'); await refreshMe(); whisperPanel(panel); } catch (e) { toast(e.message, 'bad'); }
+  };
+  const status = v.available
+    ? h('div.status-box.ok', v.backend === 'http' ? tr('Prêt : service de transcription.') : tr('Prêt : whisper.cpp sur ce serveur (modèle {m}).', { m: v.model }))
+    : h('div.status-box', v.note);
+  const job = v.current ? h('p.small', tr('En cours : {title} ({p} %)', { title: v.current.title, p: Math.round((v.current.progress || 0) * 100) }),
+    v.queue.length ? tr(' · {n} en attente', { n: v.queue.length }) : '') : null;
+  const dl = v.download && !v.download.finished ? h('p.small', tr('Téléchargement du modèle {m} : {p} %', { m: v.download.model,
+    p: Math.round((v.download.done / Math.max(1, v.download.total)) * 100) })) : (v.download && v.download.error ? h('p.form-error.small', v.download.error) : null);
+  const modelRows = Object.entries(v.models).map(([m, info]) => h('div.os-row', h('div.os-info', h('strong', m),
+    h('div.muted.small', tr('{n} Mo', { n: info.size_mb }), m === 'base' ? tr(' · bon compromis') : m === 'small' ? tr(' · plus juste, 3 fois plus lent') : '')),
+    info.installed
+      ? (v.model === m ? h('span.os-badge.good', tr('utilisé')) : h('button.btn.small', { onclick: () => save({ model: m }) }, tr('Utiliser')))
+      : h('button.btn.small', { onclick: async () => {
+        try { await post('/api/admin/whisper/model', { model: m }); toast(tr('Téléchargement lancé'), 'ok'); setTimeout(() => whisperPanel(panel), 1500); } catch (e) { toast(e.message, 'bad'); }
+      } }, tr('Télécharger'))));
+  clear(panel, h('h2', tr('Sous-titres générés (Whisper)')),
+    h('p.muted.small', tr('Pour les vidéos sans aucun sous-titre dans la langue parlée, Whisper écrit les sous-titres à partir de la voix (dans cette langue : il ne traduit pas). C’est un calcul long ; il se fait une vidéo à la fois, en pause pendant les lectures.')),
+    status, job, dl,
+    h('h4.form-sub', tr('Service de transcription (recommandé)')),
+    h('p.muted.small', tr('Un service compatible avec l’API d’OpenAI, par exemple Speaches (faster-whisper) lancé dans un conteneur à côté de Nexis, avec une carte graphique s’il y en a une. OpenAI convient aussi, mais l’audio des vidéos part alors sur Internet.')),
+    h('div.grid2', field(tr('Adresse du service'), url), field(tr('Modèle'), modelHttp, tr('Ex. Systran/faster-whisper-small pour Speaches, whisper-1 pour OpenAI.'))),
+    h('div.grid2', field(tr('Clé d’API'), key), h('div')),
+    h('div.actions-row', h('button.btn.primary', { onclick: () => {
+      const patch = { url: url.value.trim(), model_http: modelHttp.value.trim() || 'whisper-1' };
+      if (key.value.trim()) patch.key = key.value.trim();
+      save(patch);
+    } }, tr('Enregistrer')),
+    v.key_set ? h('button.btn', { onclick: () => save({ clear_key: true }, tr('Clé retirée')) }, tr('Retirer la clé')) : null),
+    h('h4.form-sub', tr('Sur ce serveur (whisper.cpp)')),
+    local
+      ? [h('p.muted.small', v.filter ? tr('ffmpeg de ce serveur sait transcrire (filtre whisper). Choisissez un modèle : il est téléchargé dans le dossier de données.')
+        : tr('whisper-cli est installé. Choisissez un modèle : il est téléchargé dans le dossier de données.')),
+      h('div.os-results', modelRows), field(tr('Cœurs utilisés'), threads, tr('{n} cœur(s) sur ce serveur.', { n: v.cpus })),
+      h('button.btn', { onclick: () => save({ threads: Number(threads.value) }) }, tr('Enregistrer'))]
+      : h('p.muted.small', tr('Ni ffmpeg 8 avec le filtre whisper, ni whisper-cli n’est installé sur ce serveur (l’image Docker ne les contient pas) : utilisez un service de transcription.')),
+    h('p.muted.small', tr('Automatique : tâche « Générer les sous-titres manquants (Whisper) », désactivée par défaut. À la main : fiche d’un film ou d’un épisode, menu ⋯.')));
+}
 
 const transcodingPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   const maxStreams = h('input', { type: 'number', min: 1, max: 50, value: s.max_streams });
@@ -536,6 +674,11 @@ const transcodingPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
       h('div.grid2', field(tr('Lectures simultanées (max.)'), maxStreams), field(tr('Transcodages simultanés (max.)'), maxTranscodes,
         tr('0 : transcodage désactivé (lecture directe et remux uniquement).'))),
       h('button.btn.primary', { onclick: () => save({ max_streams: Number(maxStreams.value), max_transcodes: Number(maxTranscodes.value) }, tr('Enregistré')) }, tr('Enregistrer'))),
+    h('section.panel', h('h2', tr('Films HDR')),
+      h('p.muted.small', tr('Quand un film HDR (HDR10, HLG, Dolby Vision avec base HDR10) doit être transcodé, ses couleurs sont converties pour un écran ordinaire ; sans cela, l’image paraît délavée et grise. La lecture directe d’un fichier HDR n’est pas touchée. La conversion se fait sur le processeur et coûte environ un cœur de plus en 1080p.')),
+      s.tonemap_ok ? null : h('div.status-box.bad', tr('Le ffmpeg de ce serveur n’a pas le filtre zscale : la conversion HDR est impossible.')),
+      field(tr('Conversion HDR → SDR'), select([['hable', tr('Hable (contraste naturel, par défaut)')], ['mobius', tr('Mobius (couleurs plus vives)')],
+        ['reinhard', tr('Reinhard (plus doux)')], ['off', tr('Désactivée')]], s.tonemap, { onchange: (e) => save({ tonemap: e.target.value }, tr('Enregistré (prochaines lectures)')) }))),
     h('section.panel', h('h2', tr('Carte graphique')),
       h('p.muted.small', tr('La carte graphique décode et encode la vidéo à la place du processeur, ce qui permet beaucoup plus de transcodages simultanés. Un essai est effectué avant l’enregistrement ; si la carte refuse un fichier, le processeur prend le relais. L’accès d’un conteneur LXC à la carte est décrit dans le README.')),
       h('div.grid2', field(tr('Accélération matérielle'), hwEngine), hwDeviceField),
@@ -546,15 +689,22 @@ const transcodingPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
 const downloadsPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   const downloadsToggle = toggle(tr('Autoriser les téléchargements'), s.downloads);
   downloadsToggle.querySelector('input').addEventListener('change', (e) => save({ downloads: e.target.checked }, tr('Enregistré')));
+  const prio = select([['low', tr('Discrète : le moins de ressources possible, en pause pendant les lectures')],
+    ['normal', tr('Normale : pleine vitesse quand personne ne regarde (conseillé)')],
+    ['high', tr('Rapide : tout le processeur, même pendant les lectures')]], s.downloads_priority || 'normal',
+  { onchange: (e) => save({ downloads_priority: e.target.value }, tr('Enregistré')) });
   return h('section.panel', h('h2', tr('Visionnage hors ligne')),
-    h('p.muted.small', tr('Les utilisateurs peuvent télécharger films et épisodes dans l’application pour les regarder sans connexion. Le serveur prépare une copie à la qualité choisie (conversions une à la fois, en priorité basse), puis la supprime une fois récupérée.')),
-    downloadsToggle);
+    h('p.muted.small', tr('Les utilisateurs peuvent télécharger films et épisodes dans l’application pour les regarder sans connexion. Le serveur prépare une copie à la qualité choisie, que l’appareil récupère pendant la préparation, puis la supprime une fois récupérée.')),
+    downloadsToggle,
+    field(tr('Vitesse de préparation'), prio,
+      tr('Normale : en priorité basse pendant une lecture, et une conversion attend si un spectateur a besoin du processeur ; deux préparations à la fois sur un serveur de 8 cœurs ou plus. Rapide : deux à la fois, sans jamais attendre (les lectures peuvent en pâtir sur un petit serveur).')));
 });
 
 // --------------------------------------------------------------- mise à jour
 // La vérification interroge GitHub (résultat gardé 30 min côté serveur) ; le bouton force une nouvelle vérification.
-function updatePage(body) {
-  const version = state.status.version;
+async function updatePage(body) {
+  // serveur lié choisi dans le sélecteur : sa version, pas celle de ce serveur
+  const version = adminTarget() ? (await get('/api/admin/update')).current : state.status.version;
   const box = h('div');
   const checkBtn = h('button.btn', { onclick: () => load(true) }, tr('Rechercher une mise à jour'));
   const checked = h('span.muted.small');
@@ -622,6 +772,8 @@ function updatePage(body) {
 async function runUpdate(version) {
   if (!await confirmDialog(tr('Mettre à jour Nexis ?'), tr('Le serveur télécharge la nouvelle version puis redémarre (une à deux minutes). Les lectures en cours seront interrompues.'), tr('Mettre à jour'), false)) return;
   try { await post('/api/admin/update'); } catch (e) { toast(e.message, 'bad'); return; }
+  const remote = adminTarget();
+  if (remote) { toast(tr('Mise à jour lancée sur « {name} » : il redémarre dans une à deux minutes', { name: remote.name }), 'ok'); return; }
   followUpdate(version);
 }
 
@@ -893,14 +1045,48 @@ async function liveTab(body, ctx) {
 const MODES = { direct: tr('Lecture directe'), copy: tr('Remux (vidéo copiée)'), transcode: tr('Transcodage') };
 
 async function dashboardPage(body, ctx) {
-  const version = state.status.version;
-  const latest = state.me.update;
+  const remote = adminTarget();
+  const version = remote ? (await get('/api/admin/settings')).version : state.status.version;
+  const latest = remote ? null : state.me.update;
   const versionCard = h('div.panel.scan', h('strong', `Nexis ${version}`), latest
     ? h('div.small', h('span.tag.accent', tr('Mise à jour')), tr(' Nexis {latest} est disponible · ', { latest }), h('a', { href: '#/admin/update' }, tr('Mettre à jour')))
     : h('div.muted.small', tr('À jour (vérification automatique toutes les 6 heures) · '), h('a', { href: '#/admin/update' }, tr('Détails'))));
+  const alertsBox = h('div');
+  const paintAlerts = (v) => {
+    const c = v.conf;
+    const sw = (k, label) => {
+      const t = toggle(label, c[k]);
+      t.querySelector('input').addEventListener('change', async (e) => {
+        try { paintAlerts(await put('/api/admin/alerts', { [k]: e.target.checked })); } catch (ex) { toast(ex.message, 'bad'); }
+      });
+      return t;
+    };
+    const gbInput = h('input', { type: 'number', min: 1, max: 5000, value: c.disk_gb, onchange: async () => {
+      try { paintAlerts(await put('/api/admin/alerts', { disk_gb: Number(gbInput.value) })); toast(tr('Enregistré'), 'ok'); } catch (ex) { toast(ex.message, 'bad'); }
+    } });
+    clear(alertsBox,
+      v.alerts.length ? h('div.alert-list', v.alerts.map((a) => h('a.alert-row', { href: a.url },
+        h('strong', a.title), h('div.small', a.body), h('div.muted.small', new Date(a.created_at * 1000).toLocaleString(locale(), { dateStyle: 'short', timeStyle: 'short' })))))
+        : h('div.status-box.ok', tr('Aucune alerte : tout va bien.')),
+      h('details.alert-conf', h('summary.small', tr('Alertes envoyées aux administrateurs')),
+        h('p.muted.small', tr('Chaque alerte part en notification push sur les appareils où vous l’avez activée (Paramètres → Profil → Notifications), une fois, puis une fois par jour tant que le problème dure.')),
+        sw('disk', tr('Disque presque plein (données de Nexis, sauvegardes)')),
+        field(tr('Seuil d’espace libre (Go)'), gbInput),
+        sw('folder', tr('Dossier de bibliothèque inaccessible (partage réseau démonté)')),
+        sw('peer', tr('Serveur lié injoignable depuis 15 minutes')),
+        sw('task', tr('Tâche planifiée en échec')),
+        h('div.actions-row',
+          h('button.btn.small', { onclick: async () => { try { paintAlerts(await post('/api/admin/alerts/check')); toast(tr('Vérification faite'), 'ok'); } catch (ex) { toast(ex.message, 'bad'); } } }, tr('Vérifier maintenant')),
+          h('button.btn.small', { onclick: async () => {
+            const r = await post('/api/admin/alerts/test');
+            toast(r.sent ? tr('Alerte de test envoyée') : tr('Aucun appareil inscrit aux notifications pour ce compte'), r.sent ? 'ok' : 'bad');
+          } }, tr('Envoyer une alerte de test')))));
+  };
   const load = async () => {
-    const [list, sys] = await Promise.all([get('/api/admin/streams'), get('/api/admin/system').catch(() => null)]);
+    const [list, sys, alerts] = await Promise.all([get('/api/admin/streams'), get('/api/admin/system').catch(() => null),
+      get('/api/admin/alerts').catch(() => null)]);
     if (!ctx.isCurrent()) return;
+    if (alerts && !alertsBox.querySelector('details[open]')) paintAlerts(alerts);
     const gb = (mb) => tr('{n} Go', { n: (mb / 1024).toLocaleString(locale(), { maximumFractionDigits: 1, minimumFractionDigits: 1 }) });
     const swapHigh = sys && sys.swap_total && sys.swap_used > sys.swap_total * 0.25;
     const server = sys && sys.mem_total ? h('div.panel.scan', h('strong', tr('Serveur')), h('div.muted.small',
@@ -918,7 +1104,7 @@ async function dashboardPage(body, ctx) {
       secLine(sec.admins_2fa === sec.admins, tr('Double authentification : {admins_2fa} administrateur(s) sur {admins}', { admins_2fa: sec.admins_2fa, admins: sec.admins }),
         sec.admins_2fa === sec.admins ? null : tr('à activer dans Paramètres → Profil par chaque administrateur')),
       h('li.muted', tr('Adresse vue par le serveur pour cette session : {client_ip}', { client_ip: sec.client_ip })))) : null;
-    clear(body, versionCard, server, security, h('h3.sub', tr('Lectures en cours')), list.length ? h('div.user-list', list.map((s) => h('div.user-row',
+    clear(body, versionCard, h('section.panel', h('h2', tr('Alertes')), alertsBox), server, security, h('h3.sub', tr('Lectures en cours')), list.length ? h('div.user-list', list.map((s) => h('div.user-row',
       h('div.grow', h('strong', s.title), h('div.muted.small',
         tr(s.state === 'paused' ? '{user} · en pause à {time} · {mode}' : '{user} · en lecture à {time} · {mode}', { user: s.user, time: fmtTime(s.position_ms), mode: MODES[s.mode] || s.mode }),
         s.hw ? tr(' · carte graphique ({p1})', { p1: s.hw === 'nvenc' ? 'NVIDIA' : 'VAAPI' }) : '',
@@ -1011,6 +1197,20 @@ async function joinDialog() {
 
 const shortPrint = (fp) => (fp ? fp.slice(0, 32).toUpperCase().match(/.{4}/g).join(' ') : '—');
 
+// Accepter ou non d'être administré depuis un serveur lié (réglé sur place : jamais depuis un autre serveur)
+function remoteAdminPanel() {
+  if (adminTarget()) return null;
+  const box = h('section.panel', h('h2', tr('Administration depuis les serveurs liés')));
+  get('/api/admin/servers').then((sv) => {
+    const t = toggle(tr('Les administrateurs peuvent régler ce serveur depuis un serveur lié'), sv.remote_admin);
+    t.querySelector('input').addEventListener('change', async (e) => {
+      try { await put('/api/admin/servers', { remote_admin: e.target.checked }); toast(tr('Enregistré'), 'ok'); } catch (ex) { toast(ex.message, 'bad'); }
+    });
+    box.append(h('p.muted.small', tr('Un administrateur connecté à un autre serveur de la liste choisit ce serveur en haut des pages d’administration et règle tout comme s’il était connecté ici, avec son propre compte (le même sur tous les serveurs). Chaque action est notée dans le journal de ce serveur. Ce réglage ne se change que sur place.')), t);
+  }).catch(() => {});
+  return box;
+}
+
 async function federationPage(body, ctx) {
   const render = (v) => {
     if (!ctx.isCurrent()) return;
@@ -1079,7 +1279,7 @@ async function federationPage(body, ctx) {
       h('div.toolbar', h('div.actions-row',
           h('button.btn', { onclick: async () => { const r = await joinDialog(); if (r) { toast(tr('Serveurs liés'), 'ok'); await refreshMe(); render(r); } } }, tr('Rejoindre un serveur')),
           h('button.btn.primary', { onclick: async () => { await inviteDialog(v); load(); } }, tr('+ Inviter un serveur')))),
-      peers, me,
+      peers, me, remoteAdminPanel(),
       h('section.panel', h('h2', tr('Comment ça marche')), h('ul.small.muted',
         h('li', tr('Les deux serveurs se reconnaissent par leur certificat, échangé à l’invitation, et chiffrent tout ce qu’ils s’envoient (TLS). Pas besoin de VPN ni de nom de domaine, et cela marche aussi en HTTP sur le réseau local.')),
         h('li', tr('Un seul des deux doit pouvoir joindre l’autre : celui qui ne l’est pas ouvre lui-même un tunnel vers lui. Rien à ouvrir sur sa box.')),
@@ -1098,8 +1298,355 @@ async function federationPage(body, ctx) {
   ctx.setCleanup(() => clearInterval(t));
 }
 
-const PAGES = { dashboard: dashboardPage, users: usersTab, update: updatePage, tasks: tasksTab, libraries: librariesTab,
-  federation: federationPage, shares: sharesTab, metadata: metadataPage, detection: detectionPage, requests: requestsTab, transcoding: transcodingPage,
+// ----------------------------------------------------------------- DLNA
+async function dlnaPage(body, ctx) {
+  const render = (v) => {
+    if (!ctx.isCurrent()) return;
+    const on = toggle(tr('Activer le serveur DLNA'), v.enabled);
+    const name = h('input', { value: v.custom_name, maxlength: 60, placeholder: v.name });
+    const libs = v.libraries.map((l) => ({ l, box: h('input', { type: 'checkbox', checked: l.shared }) }));
+    const status = !v.enabled ? h('div.status-box', tr('Le serveur DLNA est désactivé.'))
+      : v.error ? h('div.status-box.bad', v.error)
+        : h('div.status-box.ok', tr('Nexis est visible sur le réseau local sous le nom « {name} ».', { name: v.name }));
+    clear(body,
+      h('section.panel', h('h2', tr('Serveur DLNA')),
+        h('p.muted.small', tr('Les téléviseurs, consoles et box du réseau local trouvent Nexis dans leur liste de sources (« Serveurs multimédia », « DLNA », « Partage »). Ils lisent les fichiers tels quels : sans conversion, un format que l’appareil ne connaît pas ne se lit pas (préférez alors l’application Nexis).')),
+        status, on,
+        field(tr('Nom affiché sur les appareils'), name),
+        field(tr('Bibliothèques partagées'), h('div.check-list', libs.map(({ l, box }) => h('label.check-row', box, h('span', l.name)))),
+          tr('Le DLNA ne connaît pas les comptes : tout appareil du réseau local voit ces bibliothèques, sans contrôle parental.')),
+        h('div.actions-row', h('button.btn.primary', { onclick: async () => {
+          try {
+            render(await put('/api/admin/dlna', { enabled: on.querySelector('input').checked, name: name.value.trim(),
+              libraries: libs.filter((x) => x.box.checked).map((x) => x.l.id) }));
+            toast(tr('Enregistré'), 'ok');
+          } catch (e) { toast(e.message, 'bad'); }
+        } }, tr('Enregistrer')))),
+      h('section.panel', h('h2', tr('Bon à savoir')), h('ul.small.muted',
+        h('li', tr('Réservé au réseau local : les appareils doivent être sur le même réseau que le serveur, et les adresses extérieures sont refusées.')),
+        h('li', tr('Avec Docker, le conteneur doit utiliser le réseau de l’hôte (network_mode: host) : l’annonce DLNA ne traverse pas le réseau interne de Docker.')),
+        h('li', tr('Les titres d’un serveur lié ne sont pas partagés en DLNA, seulement ceux de ce serveur.')),
+        v.address ? h('li', tr('Adresse de description : {address}', { address: v.address })) : null)));
+  };
+  render(await get('/api/admin/dlna'));
+}
+
+// --------------------------------------------------------------- sauvegardes
+async function backupsPage(body, ctx) {
+  const size = (b) => (b >= 1e9 ? tr('{n} Go', { n: (b / 1e9).toLocaleString(locale(), { maximumFractionDigits: 1 }) })
+    : b >= 1e6 ? tr('{n} Mo', { n: (b / 1e6).toLocaleString(locale(), { maximumFractionDigits: 1 }) })
+      : tr('{n} Ko', { n: Math.max(1, Math.round(b / 1e3)) }));
+  const when = (ts) => new Date(ts * 1000).toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' });
+  const reload = async () => render(await get('/api/admin/backups'));
+  // après une restauration : Nexis redémarre, la page se recharge une fois revenu
+  const restarted = (r) => {
+    if (!r.restarting) { toast(tr('Restauration prête : redémarrez Nexis pour l’appliquer'), 'ok'); return; }
+    clear(body, h('section.panel', h('h2', tr('Restauration en cours')), h('p.muted', tr('Nexis redémarre avec la sauvegarde. La page se rechargera toute seule.'))));
+    const started = Date.now();
+    const wait = async () => {
+      await new Promise((res) => setTimeout(res, 2500));
+      try { await get('/api/status'); location.reload(); } catch { if (Date.now() - started < 180000) wait(); }
+    };
+    wait();
+  };
+  const askPassphrase = async (title) => {
+    const input = h('input', { type: 'password', autocomplete: 'off' });
+    const ok = await modal(title, h('div.form', h('p.muted.small', tr('Cette archive est chiffrée : indiquez la phrase secrète choisie au moment de la sauvegarde (laisser vide pour essayer celle enregistrée ici).')),
+      field(tr('Phrase secrète'), input)), [{ label: tr('Annuler'), value: false }, { label: tr('Restaurer'), primary: true, value: true }]);
+    return ok ? input.value : null;
+  };
+  const confirmRestore = (b) => confirmDialog(tr('Restaurer cette sauvegarde ?'),
+    `${b && b.server && !b.mine ? tr('Elle vient du serveur « {name} » : ce serveur prendra son identité (comptes, réglages, liaisons). À faire seulement pour remplacer « {name} », par exemple sur une nouvelle machine.', { name: b.server }) + ' ' : ''}${
+      tr('Comptes, historique, réglages et bibliothèques reviennent à leur état de la sauvegarde. Ce qui a changé depuis est perdu (l’état actuel reste gardé dans le dossier de données, sous « before-restore »). Nexis redémarre.')}`, tr('Restaurer'));
+
+  const render = (v) => {
+    if (!ctx.isCurrent()) return;
+    const sched = v.schedule || { mode: 'off' };
+    const mode = select([['off', tr('Désactivée')], ['daily', tr('Chaque jour')], ['weekly', tr('Chaque semaine (dimanche)')]],
+      sched.mode === 'interval' ? 'daily' : sched.mode);
+    const time = h('input', { type: 'time', value: sched.time || '04:30' });
+    const keep = h('input', { type: 'number', min: 1, max: 90, value: v.keep });
+    const dir = h('input', { value: v.custom_dir ? v.dir : '', placeholder: v.default_dir, spellcheck: false });
+    const saveConf = async (extra = {}) => {
+      const schedule = mode.value === 'off' ? { mode: 'off' } : { mode: mode.value, time: time.value || '04:30', ...(mode.value === 'weekly' ? { weekday: 6 } : {}) };
+      try { render(await put('/api/admin/backups/settings', { schedule, keep: Number(keep.value), dir: dir.value.trim(), ...extra })); toast(tr('Enregistré'), 'ok'); } catch (e) { toast(e.message, 'bad'); }
+    };
+    const setOnly = async (patch, msg = tr('Enregistré')) => {
+      try { render(await put('/api/admin/backups/settings', patch)); toast(msg, 'ok'); } catch (e) { toast(e.message, 'bad'); }
+    };
+    const nowBtn = h('button.btn.primary', { onclick: async () => {
+      nowBtn.disabled = true;
+      nowBtn.textContent = tr('Sauvegarde en cours…');
+      try { render(await post('/api/admin/backups')); toast(tr('Sauvegarde terminée : copies en cours vers les autres destinations'), 'ok'); } catch (e) { toast(e.message, 'bad'); nowBtn.disabled = false; }
+    } }, tr('Sauvegarder maintenant'));
+    // envoyer une archive (pour la garder), ou restaurer directement depuis un fichier de l'appareil
+    const pick = (restore) => {
+      const input = h('input', { type: 'file', accept: '.gz,.enc,application/gzip,application/octet-stream', hidden: true, onchange: async () => {
+        const f = input.files[0];
+        if (!f) return;
+        let pass = '';
+        if (restore) {
+          if (!await confirmRestore(null)) return;
+          if (/\.enc$/i.test(f.name)) { pass = await askPassphrase(tr('Archive chiffrée')); if (pass === null) return; }
+        }
+        toast(tr('Envoi de la sauvegarde…'));
+        try {
+          const headers = { 'X-Seance': '1', 'Content-Type': 'application/octet-stream' };
+          if (pass) headers['X-Backup-Passphrase'] = pass;
+          const r = await fetch(adminUrl(restore ? '/api/admin/backups/restore-file' : '/api/admin/backups/upload'), { method: 'POST', body: f, credentials: 'same-origin', headers });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.error || r.statusText);
+          if (restore) { restarted(j); return; }
+          render(j);
+          toast(tr('Sauvegarde ajoutée : vous pouvez la restaurer'), 'ok');
+        } catch (e) { toast(e.message, 'bad'); }
+      } });
+      document.body.append(input);
+      input.click();
+      setTimeout(() => input.remove(), 60000);
+    };
+    const restorePath = async () => {
+      const path = h('input', { placeholder: '/backups/nexis-salon_20261107-043000-auto.tar.gz', spellcheck: false });
+      const pass = h('input', { type: 'password', autocomplete: 'off', placeholder: tr('Seulement pour une archive chiffrée (.enc)') });
+      const ok = await modal(tr('Restaurer depuis un fichier du serveur'), h('div.form',
+        h('p.muted.small', tr('Un fichier déjà présent sur le serveur : disque externe, NAS monté, dossier partagé avec le conteneur…')),
+        field(tr('Chemin du fichier'), path), field(tr('Phrase secrète'), pass)),
+      [{ label: tr('Annuler'), value: false }, { label: tr('Restaurer'), primary: true, value: true }]);
+      if (!ok || !path.value.trim()) return;
+      if (!await confirmRestore(null)) return;
+      try { restarted(await post('/api/admin/backups/restore-path', { path: path.value.trim(), passphrase: pass.value || undefined })); } catch (e) { toast(e.message, 'bad'); }
+    };
+    const last = v.last;
+    const row = (b) => h('div.backup-row',
+      h('div.backup-info', h('strong', when(b.created)),
+        h('div.muted.small', [b.version ? `Nexis ${b.version}` : null, size(b.size),
+          b.uploaded ? tr('envoyée') : b.name.includes('-restauree') ? tr('restaurée') : b.auto ? tr('automatique') : tr('manuelle')].filter(Boolean).join(' · '),
+        b.broken ? h('span.bad', ` · ${tr('illisible')}`) : null), h('code.backup-name', b.name)),
+      h('div.actions-row',
+        h('a.btn.small', { href: adminUrl(`/api/admin/backups/${b.name}`), download: b.name }, icon('download'), tr('Télécharger')),
+        h('button.btn.small', { disabled: !!b.broken, onclick: async () => {
+          if (!await confirmRestore(b)) return;
+          try { restarted(await post(`/api/admin/backups/${b.name}/restore`)); } catch (e) { toast(e.message, 'bad'); }
+        } }, tr('Restaurer')),
+        h('button.icon-btn', { title: tr('Supprimer'), 'aria-label': tr('Supprimer'), onclick: async () => {
+          if (!await confirmDialog(tr('Supprimer cette sauvegarde ?'), when(b.created), tr('Supprimer'))) return;
+          try { render(await del(`/api/admin/backups/${b.name}`)); } catch (e) { toast(e.message, 'bad'); }
+        } }, icon('trash'))));
+    // sauvegardes de ce serveur, puis copies de chaque serveur lié (rangées par serveur d'origine)
+    const mine = v.backups.filter((b) => b.mine);
+    const others = {};
+    for (const b of v.backups.filter((x) => !x.mine)) (others[b.server || b.slug || '?'] ||= []).push(b);
+    const copyLine = (st) => (st ? h('span', { class: st.ok ? 'muted' : 'bad' }, st.ok ? tr('dernière copie {date}', { date: when(st.at) }) : tr('échec le {date} : {error}', { date: when(st.at), error: st.error || '?' })) : h('span.muted', tr('pas encore de copie')));
+    clear(body,
+      v.restored ? h('div.status-box.ok', tr('Sauvegarde du {date} restaurée (Nexis {version}).', { date: when(v.restored.created), version: v.restored.version || '?' })) : null,
+      h('section.panel', h('h2', tr('Sauvegarde automatique')),
+        h('p.muted.small', tr('L’archive contient la base (comptes, historique, notes, playlists, réglages, bibliothèques et métadonnées), les clés des serveurs liés et des notifications, les images de profil et les sous-titres téléchargés. Les vidéos et les photos n’y sont pas. Elle contient les mots de passe (chiffrés) : gardez-la en lieu sûr.')),
+        h('div.grid2', field(tr('Fréquence'), mode), field(tr('Heure'), time)),
+        h('div.grid2', field(tr('Sauvegardes automatiques gardées'), keep, tr('Pour ce serveur, et pour chaque serveur lié dont il garde les copies.')),
+          field(tr('Dossier des sauvegardes'), dir, tr('De préférence sur un autre disque ou un NAS (dossier monté dans le conteneur avec Docker). Vide : dans le dossier de données.'))),
+        h('p.muted.small', [v.free != null ? tr('Espace libre : {n}', { n: size(v.free) }) : null,
+          last ? tr('Dernière sauvegarde automatique : {date} ({status})', { date: when(last.start), status: last.status === 'ok' ? tr('réussie') : last.summary || tr('échec') }) : null].filter(Boolean).join(' · ')),
+        h('button.btn', { onclick: () => saveConf() }, tr('Enregistrer'))),
+      v.peers.length ? (() => {
+        const to = toggle(tr('Recopier chaque sauvegarde de ce serveur sur les serveurs liés'), v.to_peers);
+        to.querySelector('input').addEventListener('change', (e) => setOnly({ to_peers: e.target.checked }));
+        const from = toggle(tr('Garder ici les sauvegardes envoyées par les serveurs liés'), v.from_peers);
+        from.querySelector('input').addEventListener('change', (e) => setOnly({ from_peers: e.target.checked }));
+        return h('section.panel', h('h2', tr('Recopie entre les serveurs liés')),
+          h('p.muted.small', tr('Chaque serveur garde aussi les sauvegardes des autres : si l’un tombe en panne, sa dernière sauvegarde est sur un autre. Les noms commencent par le nom du serveur d’origine (nexis-<serveur>_date), et chaque serveur garde celles des autres à part.')),
+          to, from,
+          h('ul.small.copy-status', v.peers.map((p) => h('li', h('strong', p.name), ' · ', copyLine(p.last)))));
+      })() : null,
+      remotesPanel(v),
+      h('section.panel', h('h2', tr('Chiffrement des copies hors du serveur')),
+        h('p.muted.small', tr('Avec une phrase secrète, les copies envoyées sur S3, Google Drive ou OneDrive sont chiffrées (AES-256) : le service ne peut pas les lire. Notez la phrase ailleurs : sans elle, ces copies ne se restaurent pas. Les copies entre vos serveurs liés et celles du dossier ne sont pas chiffrées.')),
+        h('div.status-box', { class: v.passphrase_set ? 'status-box ok' : 'status-box' }, v.passphrase_set ? tr('Phrase secrète enregistrée : les copies externes sont chiffrées.') : tr('Pas de phrase secrète : les copies externes ne sont pas chiffrées.')),
+        (() => {
+          const pw = h('input', { type: 'password', autocomplete: 'new-password', placeholder: tr('10 caractères au moins') });
+          return h('div.actions-row', pw,
+            h('button.btn', { onclick: () => { if (pw.value) setOnly({ passphrase: pw.value }, tr('Phrase secrète enregistrée')); } }, v.passphrase_set ? tr('Changer') : tr('Enregistrer')),
+            v.passphrase_set ? h('button.btn', { onclick: () => setOnly({ clear_passphrase: true }, tr('Chiffrement désactivé')) }, tr('Retirer')) : null);
+        })()),
+      h('section.panel', h('h2', tr('Sauvegardes de ce serveur')),
+        h('div.actions-row', nowBtn, h('button.btn', { onclick: () => pick(true) }, tr('Restaurer depuis un fichier…')),
+          h('button.btn', { onclick: restorePath }, tr('Restaurer depuis un fichier du serveur…')),
+          h('button.btn', { onclick: () => pick(false) }, tr('Ajouter un fichier à la liste…'))),
+        h('p.muted.small', tr('Pour passer sur un nouveau serveur, ou remplacer un serveur en panne : installez Nexis, créez le compte administrateur, puis « Restaurer depuis un fichier… » avec sa sauvegarde (téléchargée depuis un autre serveur lié ou un stockage externe).')),
+        mine.length ? h('div.backup-list', mine.map(row)) : h('p.muted', tr('Aucune sauvegarde pour l’instant.'))),
+      ...Object.entries(others).map(([server, list]) => h('section.panel', h('h2', tr('Copies de « {name} »', { name: server })),
+        h('p.muted.small', tr('Sauvegardes reçues de ce serveur lié. Pour le reconstruire, téléchargez la plus récente et restaurez-la sur sa nouvelle installation.')),
+        h('div.backup-list', list.map(row)))));
+  };
+
+  // stockages externes : S3, Google Drive, OneDrive
+  function remotesPanel() {
+    const box = h('section.panel', h('h2', tr('Stockages externes')), spinner());
+    const kinds = { s3: 'S3', gdrive: 'Google Drive', onedrive: 'OneDrive' };
+    const load = async () => {
+      let r;
+      try { r = await get('/api/admin/backups/remotes'); } catch (e) { clear(box, h('h2', tr('Stockages externes')), h('p.muted', e.message)); return; }
+      const card = (s) => {
+        const files = h('div');
+        const on = toggle(tr('Envoyer chaque sauvegarde'), s.enabled);
+        on.querySelector('input').addEventListener('change', async (e) => { await put(`/api/admin/backups/remotes/${s.id}`, { enabled: e.target.checked }); load(); });
+        const showFiles = async () => {
+          files.replaceChildren(spinner());
+          try {
+            const f = await get(`/api/admin/backups/remotes/${s.id}/files`);
+            files.replaceChildren(f.files.length ? h('div.backup-list', f.files.map((x) => h('div.backup-row',
+              h('div.backup-info', h('strong', x.name), h('div.muted.small', [size(x.size), x.encrypted ? tr('chiffrée') : null, x.server].filter(Boolean).join(' · '))),
+              h('button.btn.small', { onclick: async () => {
+                if (!await confirmRestore(null)) return;
+                let pass = '';
+                if (x.encrypted) { pass = await askPassphrase(tr('Archive chiffrée')); if (pass === null) return; }
+                toast(tr('Téléchargement de la sauvegarde…'));
+                try { restarted(await post(`/api/admin/backups/remotes/${s.id}/restore`, { id: x.id, passphrase: pass || undefined })); } catch (e) { toast(e.message, 'bad'); }
+              } }, tr('Restaurer'))))) : h('p.muted.small', tr('Aucune sauvegarde sur ce stockage.')));
+          } catch (e) { files.replaceChildren(h('p.form-error.small', e.message)); }
+        };
+        const link = async () => {
+          try {
+            const c = await post(`/api/admin/backups/remotes/${s.id}/link`);
+            const status = h('p.muted.small', tr('Cette page se met à jour toute seule une fois l’accès accordé.'));
+            files.replaceChildren(h('p', tr('Sur {url}, saisissez ce code :', { url: c.verification_url })), h('div.trakt-code', c.user_code),
+              h('div.actions-row', h('a.btn.primary', { href: c.verification_url, target: '_blank', rel: 'noopener' }, tr('Ouvrir la page'))), status);
+            const poll = async () => {
+              const p = await post(`/api/admin/backups/remotes/${s.id}/poll`);
+              if (p.status === 'pending') { setTimeout(poll, (c.interval || 5) * 1000); return; }
+              toast(p.status === 'linked' ? tr('Compte relié') : tr('Liaison annulée ou expirée : recommencez'), p.status === 'linked' ? 'ok' : 'bad');
+              load();
+            };
+            setTimeout(poll, (c.interval || 5) * 1000);
+          } catch (e) { toast(e.message, 'bad'); }
+        };
+        return h('div.remote-card',
+          h('div.remote-head', h('strong', s.name), h('span.os-badge', kinds[s.kind]),
+            s.kind === 's3' ? h('span.muted.small', `${s.conf.bucket}${s.conf.prefix ? `/${s.conf.prefix}` : ''}`) : null,
+            !s.linked ? h('span.os-badge', tr('à relier')) : null),
+          h('p.small', s.last ? h('span', { class: s.last.ok ? 'muted' : 'bad' }, s.last.ok ? tr('dernière copie {date}', { date: when(s.last.at) }) : tr('échec le {date} : {error}', { date: when(s.last.at), error: s.last.error || '?' })) : h('span.muted', tr('pas encore de copie'))),
+          on,
+          h('div.actions-row',
+            !s.linked ? h('button.btn.primary', { onclick: link }, tr('Relier le compte')) : null,
+            s.linked ? h('button.btn.small', { onclick: async (e) => {
+              e.target.disabled = true;
+              try { await post(`/api/admin/backups/remotes/${s.id}/push`); toast(tr('Sauvegarde envoyée'), 'ok'); load(); } catch (ex) { toast(ex.message, 'bad'); e.target.disabled = false; }
+            } }, tr('Envoyer maintenant')) : null,
+            s.linked ? h('button.btn.small', { onclick: showFiles }, tr('Voir les sauvegardes')) : null,
+            h('button.btn.small', { onclick: () => remoteForm(s.kind, s).then((ok) => ok && load()) }, tr('Modifier')),
+            h('button.icon-btn', { title: tr('Supprimer'), onclick: async () => {
+              if (!await confirmDialog(tr('Retirer ce stockage ?'), tr('Les sauvegardes déjà envoyées y restent.'), tr('Retirer'))) return;
+              await del(`/api/admin/backups/remotes/${s.id}`);
+              load();
+            } }, icon('trash'))),
+          files);
+      };
+      clear(box, h('h2', tr('Stockages externes')),
+        h('p.muted.small', tr('Chaque sauvegarde est aussi envoyée sur ces stockages, hors de chez vous : un compartiment S3 (AWS, Backblaze B2, Wasabi, Scaleway, OVH, MinIO…), Google Drive ou OneDrive. Chacun garde le nombre de copies automatiques choisi.')),
+        r.remotes.length ? h('div.remote-list', r.remotes.map(card)) : null,
+        h('div.actions-row', Object.entries(kinds).map(([k, label]) => h('button.btn', { onclick: () => remoteForm(k).then((ok) => ok && load()) }, `+ ${label}`))));
+    };
+    load();
+    return box;
+  }
+
+  async function remoteForm(kind, existing = null) {
+    const c = (existing && existing.conf) || {};
+    const has = (k) => (c.secrets_set || []).includes(k);
+    const inp = (k, opts = {}) => h('input', { value: c[k] || opts.value || '', spellcheck: false, autocomplete: 'off', ...opts, type: opts.type || 'text' });
+    const name = h('input', { value: existing ? existing.name : '', placeholder: { s3: 'S3', gdrive: 'Google Drive', onedrive: 'OneDrive' }[kind] });
+    const keepIn = h('input', { type: 'number', min: 1, max: 90, value: existing ? existing.keep : 7 });
+    let fields, help;
+    if (kind === 's3') {
+      fields = { endpoint: inp('endpoint', { placeholder: 'https://s3.eu-west-3.amazonaws.com' }), region: inp('region', { placeholder: 'eu-west-3' }),
+        bucket: inp('bucket'), prefix: inp('prefix', { value: existing ? '' : 'nexis' }), access_key: inp('access_key'),
+        secret_key: inp('secret_key', { type: 'password', value: '', placeholder: has('secret_key') ? tr('Enregistrée (laisser vide pour la garder)') : '' }) };
+      help = tr('Adresse du service (vide pour AWS), région, compartiment existant, et une clé d’accès qui peut y lire, écrire et supprimer. Exemples d’adresse : https://s3.eu-central-003.backblazeb2.com, https://s3.fr-par.scw.cloud, https://s3.gra.io.cloud.ovh.net.');
+    } else if (kind === 'gdrive') {
+      fields = { client_id: inp('client_id'), client_secret: inp('client_secret', { type: 'password', value: '', placeholder: has('client_secret') ? tr('Enregistré (laisser vide pour le garder)') : '' }),
+        folder: inp('folder', { value: existing ? '' : 'Nexis' }) };
+      help = tr('Une fois : console.cloud.google.com → nouveau projet → activer « Google Drive API » → Identifiants → ID client OAuth de type « TV et appareils à saisie limitée » (écran de consentement en mode test, avec votre adresse comme testeur). Copiez ici l’ID client et le code secret, puis reliez le compte avec le code affiché. Nexis ne voit que les fichiers qu’il a créés.');
+    } else {
+      fields = { client_id: inp('client_id', { placeholder: '00000000-0000-0000-0000-000000000000' }) };
+      help = tr('Une fois : portal.azure.com → Inscriptions d’applications → Nouvelle inscription (comptes personnels Microsoft et professionnels), puis dans « Authentification » : « Autoriser les flux clients publics » = Oui. Copiez ici l’ID d’application (client), puis reliez le compte avec le code affiché. Nexis n’écrit que dans son dossier d’application (Applications/Nexis).');
+    }
+    const labels = { endpoint: tr('Adresse du service'), region: tr('Région'), bucket: tr('Compartiment (bucket)'), prefix: tr('Dossier dans le compartiment'),
+      access_key: tr('Clé d’accès'), secret_key: tr('Clé secrète'), client_id: tr('ID client'), client_secret: tr('Code secret du client'), folder: tr('Dossier dans Google Drive') };
+    const err = h('p.form-error');
+    return modal(existing ? tr('Modifier {name}', { name: existing.name }) : { s3: tr('Ajouter un stockage S3'), gdrive: tr('Ajouter Google Drive'), onedrive: tr('Ajouter OneDrive') }[kind],
+      h('div.form', h('p.muted.small', help), field(tr('Nom'), name),
+        h('div.grid2', ...Object.entries(fields).map(([k, el]) => field(labels[k], el))),
+        field(tr('Copies automatiques gardées'), keepIn), err),
+      [{ label: tr('Annuler'), value: false }, { label: existing ? tr('Enregistrer') : tr('Ajouter'), primary: true, handler: async () => {
+        const conf = Object.fromEntries(Object.entries(fields).map(([k, el]) => [k, el.value.trim()]));
+        try {
+          if (existing) await put(`/api/admin/backups/remotes/${existing.id}`, { name: name.value.trim(), keep: Number(keepIn.value), conf });
+          else await post('/api/admin/backups/remotes', { kind, name: name.value.trim(), keep: Number(keepIn.value), conf });
+          return true;
+        } catch (e) { err.textContent = e.message; return false; }
+      } }]);
+  }
+
+  await reload();
+}
+
+// --------------------------------------------------------------- statistiques
+async function statsPage(body, ctx) {
+  const GB = 1e9;
+  const size = (b) => (b >= GB ? tr('{n} Go', { n: (b / GB).toLocaleString(locale(), { maximumFractionDigits: 1 }) }) : tr('{n} Mo', { n: Math.max(0, Math.round(b / 1e6)) }));
+  const hours = (s) => (s >= 3600 ? tr('{n} h', { n: (s / 3600).toLocaleString(locale(), { maximumFractionDigits: 1 }) }) : tr('{n} min', { n: Math.round(s / 60) }));
+  const when = (ts) => new Date(ts * 1000).toLocaleDateString(locale(), { day: 'numeric', month: 'short' });
+  const days = select([['7', tr('7 derniers jours')], ['30', tr('30 derniers jours')], ['90', tr('3 derniers mois')], ['365', tr('12 derniers mois')]],
+    store('stats-days') || '30', { onchange: () => { store('stats-days', days.value); load(); } });
+  const out = h('div', spinner());
+  clear(body, h('div.actions-row.stats-head', days), out);
+  async function load() {
+    clear(out, spinner());
+    let r;
+    try { r = await get(`/api/admin/stats?days=${days.value}`); } catch (e) { clear(out, h('p.form-error', e.message)); return; }
+    if (!ctx.isCurrent()) return;
+    const t = r.totals;
+    const tile = (label, value, sub) => h('div.stat-tile', h('div.stat-label', label), h('div.stat-value', value), sub ? h('div.stat-sub', sub) : null);
+    const tModes = r.modes;
+    const pct = (n) => (t.plays ? Math.round((n / t.plays) * 100) : 0);
+    // une seule série (heures par jour) : barres, valeur au survol, titre qui la nomme
+    const max = Math.max(1, ...r.per_day.map((d) => d.seconds));
+    const chart = h('div.stat-chart', { role: 'img', 'aria-label': tr('Heures de visionnage par jour') },
+      r.per_day.map((d) => h('div.stat-col', { title: `${new Date(d.day).toLocaleDateString(locale(), { weekday: 'short', day: 'numeric', month: 'short' })} : ${hours(d.seconds)}` },
+        h('span', { style: { height: `${d.seconds ? Math.max(3, (d.seconds / max) * 100) : 0}%` } }))));
+    const table = (head, rows) => h('div.table-wrap', h('table.stat-table', h('thead', h('tr', head.map((x) => h('th', x)))), h('tbody', rows)));
+    clear(out,
+      h('div.stat-tiles',
+        tile(tr('Temps de visionnage'), hours(t.seconds), plural(t.plays, '{n} lecture', '{n} lectures')),
+        tile(tr('Données envoyées (estimation)'), size(t.bytes), tr('débit de la vidéo et du son')),
+        tile(tr('Comptes actifs'), String(t.users)),
+        tile(tr('Conversions'), `${pct(t.transcodes)} %`, tr('des lectures demandent une conversion par le processeur ou la carte graphique'))),
+      h('section.panel', h('h2', tr('Heures de visionnage par jour')),
+        t.plays ? chart : h('p.muted.small', tr('Aucune lecture sur cette période. Les statistiques commencent avec cette version de Nexis.')),
+        t.plays ? h('div.stat-axis.muted.small', h('span', when(Date.parse(r.per_day[0].day) / 1000)), h('span', when(Date.parse(r.per_day[r.per_day.length - 1].day) / 1000))) : null),
+      h('section.panel', h('h2', tr('Par compte')),
+        r.users.length ? table([tr('Compte'), tr('Temps'), tr('Lectures'), tr('Titres'), tr('Données'), tr('Conversions'), tr('Dernière lecture')],
+          r.users.map((u) => h('tr', h('td', h('strong', u.name)), h('td', hours(u.seconds)), h('td', String(u.plays)), h('td', String(u.titles)),
+            h('td', size(u.bytes)), h('td', `${u.plays ? Math.round((u.transcodes / u.plays) * 100) : 0} %`), h('td', when(u.last)))))
+          : h('p.muted.small', tr('Aucune lecture sur cette période.')),
+        Object.keys(tModes).length ? h('p.muted.small', tr('Lecture directe {a} % · copie (remux) {b} % · conversion {c} %',
+          { a: pct((tModes.direct || {}).plays || 0), b: pct((tModes.copy || {}).plays || 0), c: pct((tModes.transcode || {}).plays || 0) })) : null),
+      h('section.panel', h('h2', tr('Les plus regardés')),
+        r.top.length ? table([tr('Titre'), tr('Temps'), tr('Lectures'), tr('Spectateurs')],
+          r.top.map((x) => h('tr', h('td', h('a', { href: `#/item/${x.id}` }, x.title), x.year ? h('span.muted', ` (${x.year})`) : null, x.show ? h('span.muted.small', ` · ${tr('série')}`) : null),
+            h('td', hours(x.seconds)), h('td', String(x.plays)), h('td', String(x.viewers)))))
+          : h('p.muted.small', tr('Aucune lecture sur cette période.'))),
+      h('section.panel', h('h2', tr('Jamais regardés')),
+        h('p.muted.small', tr('Films et séries de ce serveur que personne n’a commencés, ajoutés il y a plus de {d} jours : {n} titre(s), {size} au total. Les plus gros d’abord.',
+          { d: r.never.after_days, n: r.never.count, size: size(r.never.size) })),
+        r.never.items.length ? table([tr('Titre'), tr('Bibliothèque'), tr('Ajouté le'), tr('Taille')],
+          r.never.items.map((x) => h('tr', h('td', h('a', { href: `#/item/${x.id}` }, x.title), x.year ? h('span.muted', ` (${x.year})`) : null),
+            h('td', x.library), h('td', when(x.added_at)), h('td', size(x.size))))) : null));
+  }
+  await load();
+}
+
+const PAGES = { stats: statsPage, dashboard: dashboardPage, backups: backupsPage, users: usersTab, update: updatePage, tasks: tasksTab, libraries: librariesTab,
+  federation: federationPage, dlna: dlnaPage, shares: sharesTab, metadata: metadataPage, detection: detectionPage, requests: requestsTab, transcoding: transcodingPage,
   subtitles: subtitlesPage, downloads: downloadsPage, live: liveTab };
 
 export async function renderAdminSection(id, body, ctx) {

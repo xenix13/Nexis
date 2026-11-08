@@ -93,6 +93,11 @@ class Request:
         return out
 
 
+# requêtes plus longues que ce délai notées dans le journal (hors flux vidéo, attentes volontaires, événements)
+SLOW_REQUEST = 5.0
+SLOW_EXEMPT = re.compile(r"^/(api/(stream/|live/|together/|remote/|share/|photos/\d+/stream|items/\d+/prepare|admin/update)|fed/|dlna/)")
+
+
 class Response:
     def __init__(self, body=b"", status=200, content_type="application/octet-stream",
                  headers=None, stream=None, length=None, on_close=None):
@@ -136,7 +141,7 @@ class App:
         return deco
 
     def dispatch(self, req):
-        if req.path.startswith(("/api/", "/fed/")) or req.path in self.plain_paths:
+        if req.path.startswith(("/api/", "/fed/", "/dlna/", "/apps/")) or req.path in self.plain_paths:
             allowed = False
             for method, regex, fn, opts in self.routes:
                 m = regex.match(req.path)
@@ -227,6 +232,10 @@ class App:
         with open(full, encoding="utf-8") as f:
             html = f.read()
         html = html.replace('href="/css/', f'href="/v/{version}/css/').replace('src="/js/', f'src="/v/{version}/js/')
+        # requêtes de démarrage lancées tout de suite, et tout le code chargé en parallèle (pas import après import)
+        modules = ",".join(module_graph(root, version))
+        html = html.replace('  <link rel="stylesheet"', f'  <meta name="nexis-modules" data-base="/v/{version}/js/" content="{modules}">\n'
+                            f'  <script>{BOOT_JS}</script>\n  <link rel="stylesheet"', 1)
         # langue par défaut du serveur : celle de l'interface tant que personne n'est connecté sur cet appareil
         html = html.replace('<html lang="fr"', f'<html lang="{lang}" data-default-lang="{lang}"', 1)
         if lang == "en":
@@ -285,6 +294,36 @@ def ui_version(root):
     return _ui["version"]
 
 
+_graph = {}
+_IMPORT = re.compile(r"""^\s*(?:import|export)\s[^;'"]*?from\s*['"](\./[^'"]+|\.\./[^'"]+)['"]|^\s*import\s*['"](\.{1,2}/[^'"]+)['"]""", re.M)
+
+
+def module_graph(root, version):
+    """Modules importés (directement ou non) par app.js, sans les pages chargées à la demande (import())."""
+    if version in _graph:
+        return _graph[version]
+    base = os.path.join(root, "js")
+    seen, todo = [], ["app.js"]
+    while todo:
+        m = todo.pop()
+        if m in seen:
+            continue
+        seen.append(m)
+        try:
+            with open(os.path.join(base, m), encoding="utf-8") as f:
+                code = f.read()
+        except OSError:
+            continue
+        for a, b in _IMPORT.findall(code):
+            dep = os.path.normpath(os.path.join(os.path.dirname(m), a or b)).replace(os.sep, "/")
+            if not dep.startswith("..") and dep not in seen:
+                todo.append(dep)
+    out = sorted(seen[1:])
+    _graph.clear()
+    _graph[version] = out
+    return out
+
+
 COMPRESSIBLE = ("text/", "application/javascript", "application/json", "application/wasm", "image/svg+xml",
                 "application/manifest+json")
 _gz_lock = threading.Lock()
@@ -308,6 +347,25 @@ def _gzipped(full, etag):
     return data
 
 
+# Démarrage de l'interface : les premières requêtes partent dès la réception de la page, pendant que le code se
+# charge (sinon /api/status, puis /api/me, puis /api/home attendent chacune la précédente, et tout le code avant :
+# autant d'allers-retours, longs quand le serveur est loin). api.js reprend ces réponses au lieu de redemander.
+BOOT_JS = (
+    "(function(){var l=null;try{l=localStorage.getItem('nexis.lang')}catch(e){}"
+    "if(l!=='fr'&&l!=='en')l=document.documentElement.getAttribute('data-default-lang')||'fr';"
+    "var o={headers:{'X-Seance':'1','X-Lang':l},credentials:'same-origin'},b={};"
+    "function g(p){b[p]=fetch(p,o).then(function(r){return r.text().then(function(t){return{status:r.status,ok:r.ok,text:t}})})"
+    "['catch'](function(){return null})}"
+    "g('/api/status');g('/api/me');var k=location.hash;if(!k||k==='#'||k==='#/')g('/api/home');"
+    "window.__nexisBoot={at:Date.now(),req:b};"
+    # tout le code demandé en parallèle, au premier chargement seulement (ensuite il vient du service worker)
+    "var m=document.querySelector('meta[name=nexis-modules]');"
+    "if(m&&!(navigator.serviceWorker&&navigator.serviceWorker.controller))m.content.split(',').forEach(function(f){"
+    "var x=document.createElement('link');x.rel='modulepreload';x.href=m.getAttribute('data-base')+f;document.head.appendChild(x)})"
+    "})();"
+)
+BOOT_HASH = "'sha256-" + __import__("base64").b64encode(hashlib.sha256(BOOT_JS.encode()).digest()).decode() + "'"
+
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
@@ -315,8 +373,9 @@ SECURITY_HEADERS = {
     "Cross-Origin-Opener-Policy": "same-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
     "Content-Security-Policy": (
-        "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
-        "script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; "
+        "default-src 'self'; img-src 'self' data: blob: https://tile.openstreetmap.org; media-src 'self' blob:; "
+        f"script-src 'self' {BOOT_HASH} https://www.gstatic.com; "
+        "style-src 'self' 'unsafe-inline'; connect-src 'self'; "
         "worker-src 'self' blob:; frame-src https://www.youtube-nocookie.com; frame-ancestors 'none'; "
         "base-uri 'none'; form-action 'self'; object-src 'none'"
     ),
@@ -362,6 +421,7 @@ def make_handler(app, trust_proxy=False, hsts=False, fed=None):
             parsed = urllib.parse.urlsplit(self.path)
             req = Request(self, method if method != "HEAD" else "GET", parsed.path,
                           urllib.parse.parse_qs(parsed.query), self.headers, self._client_ip())
+            started = time.monotonic()
             try:
                 if app.begin:
                     app.begin(req)
@@ -385,6 +445,9 @@ def make_handler(app, trust_proxy=False, hsts=False, fed=None):
                 msg = "Erreur interne du serveur"
                 resp = json_response({"error": app.translate(msg) if app.translate else msg}, 500)
             finally:
+                spent = time.monotonic() - started
+                if spent > SLOW_REQUEST and not SLOW_EXEMPT.match(parsed.path):
+                    log.warning("Requête lente : %s %s (%.1f s)", method, parsed.path, spent)
                 for fn in app.teardown:
                     try:
                         fn()
@@ -460,6 +523,12 @@ def make_handler(app, trust_proxy=False, hsts=False, fed=None):
 
         def do_DELETE(self):
             self._handle("DELETE")
+
+        def do_SUBSCRIBE(self):  # événements UPnP (serveur DLNA)
+            self._handle("SUBSCRIBE")
+
+        def do_UNSUBSCRIBE(self):
+            self._handle("UNSUBSCRIBE")
 
     return Handler
 

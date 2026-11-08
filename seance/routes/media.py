@@ -1,4 +1,5 @@
 """Lecture : préparation et sous-titres, polices, aperçus, chapitres, flux vidéo, progression."""
+import hashlib
 import json
 import os
 import re
@@ -9,9 +10,10 @@ import time
 from .. import i18n, media
 from ..catalog import EXTERNAL_BASE, PREPARE_WINDOW_MS, RK, SID, WATCHED_RATIO, stream_lists
 from ..keyframes import mkv_keyframes
+from ..limits import LimitError, cap_quality
 from ..subtitles import parse_subtitles
 from ..downloads import DownloadError
-from ..transcoder import Busy, QUALITY, StreamError, plan
+from ..transcoder import Busy, QUALITIES, QUALITY, StreamError, auto_quality, plan, source_kbps
 from ..web import HTTPError, Response
 
 
@@ -80,7 +82,9 @@ def register(app, ctx, x):
         ext = probe.get("external", [])
         if sub - EXTERNAL_BASE >= len(ext):
             raise HTTPError(404, "Sous-titres introuvables")
-        cache = os.path.join(ctx.data_dir, "cache", "subs", f"ext_{r['id']}_{sub}_{r['file_mtime']}.json")
+        # clé : le fichier lui-même (un sous-titre ajouté dans le dossier décale les numéros des suivants)
+        tag = hashlib.sha1(f"{ext[sub - EXTERNAL_BASE]['path']}|{r['file_mtime']}".encode()).hexdigest()[:16]
+        cache = os.path.join(ctx.data_dir, "cache", "subs", f"ext_{r['id']}_{tag}.json")
         if os.path.isfile(cache):
             with open(cache, "rb") as f:
                 return Response(f.read(), 200, json_type, {"Cache-Control": "private, max-age=3600"})
@@ -245,6 +249,41 @@ def register(app, ctx, x):
         elif uid is None:
             ctx.transcoder.stop(sid)
 
+    # ----------------------------------------------------------- débit de l'appareil
+    BW_CHUNK = os.urandom(256 * 1024)  # incompressible : un proxy ne fausse pas la mesure
+    BW_KEEP = 3600
+    bandwidths = {}  # (compte, adresse IP) -> (kbit/s, instant) : dernière mesure de cet appareil
+
+    @app.route("GET", "/api/bandwidth")
+    def bandwidth_probe(req):
+        """Octets à télécharger : l'appareil mesure son débit depuis le serveur (qualité automatique)."""
+        size = req.int_arg("size", 1 << 20, 1 << 16, 32 << 20)
+        db.release()
+
+        def gen():
+            left = size
+            while left > 0:
+                n = min(len(BW_CHUNK), left)
+                left -= n
+                yield BW_CHUNK[:n]
+        return Response(stream=gen(), content_type="application/octet-stream", length=size,
+                        headers={"Cache-Control": "no-store", "Content-Encoding": "identity"})
+
+    def measured_bandwidth(req, b):
+        """Débit (kbit/s) mesuré par l'appareil, envoyé avec la demande de lecture ; sinon la dernière mesure
+        du même compte depuis la même adresse (moins d'une heure)."""
+        key = (req.user["id"], req.client_ip)
+        v = b.get("bandwidth")
+        now = time.time()
+        if isinstance(v, (int, float)) and 50 <= v <= 10_000_000:
+            bandwidths[key] = (int(v), now)
+            if len(bandwidths) > 2000:
+                for k in [k for k, (_, t) in bandwidths.items() if now - t > BW_KEEP]:
+                    bandwidths.pop(k, None)
+            return int(v)
+        hit = bandwidths.get(key)
+        return hit[0] if hit and now - hit[1] < BW_KEEP else None
+
     @app.route("POST", "/api/play")
     def play(req):
         b = req.json()
@@ -263,8 +302,20 @@ def register(app, ctx, x):
         audio, subs = stream_lists(probe)
         prefs = get_prefs(uid)
         quality = b.get("quality") or prefs["quality"]
-        if quality not in QUALITY:
+        if quality not in QUALITIES:
             raise HTTPError(400, "Qualité invalide")
+        try:
+            ctx.account_limits.check_play(req.user, b.get("replace"))  # temps d'écran, lectures simultanées du compte
+        except LimitError as e:
+            raise HTTPError(e.status, e.message.format(**e.values))
+        requested, kbps = quality, measured_bandwidth(req, b)
+        cap = ctx.account_limits.remote_cap(req.user, req)  # débit maximum de ce compte hors du réseau local
+        if cap:
+            kbps = min(kbps, cap) if kbps else cap
+        if quality == "auto":
+            quality = auto_quality(probe, kbps, r["file_size"] or 0, r["duration_ms"] or 0)
+        if cap:
+            quality = cap_quality(quality, probe, cap, r["file_size"] or 0, r["duration_ms"] or 0)
         duration = int(r["duration_ms"] or 0)
         try:
             offset = max(0, int(b.get("offset") or 0))
@@ -286,8 +337,16 @@ def register(app, ctx, x):
         burn = sub["id"] if sub and not sub["overlay"] and not pgs_client else None
         if b.get("replace"):
             stop_stream(str(b["replace"]), uid)
-        p = plan(probe, audio_id, burn, quality, caps, db.setting("downmix_algo", "none"),
-                 float(db.setting("downmix_boost", "2") or 2))
+        # son « nuit » choisi par la personne (dialogues renforcés, effets atténués), sinon le mixage du serveur
+        algo = "nightmode" if prefs.get("night_audio") else db.setting("downmix_algo", "none")
+        p = plan(probe, audio_id, burn, quality, caps, algo,
+                 float(db.setting("downmix_boost", "2") or 2), db.setting("tonemap", "hable"))
+        if cap and p["mode"] == "transcode" and quality != "original":
+            p["reasons"].append(f"débit limité à {cap / 1000:.1f} Mbit/s hors de la maison")
+        elif requested == "auto" and p["mode"] == "transcode" and quality != "original" and kbps:
+            p["reasons"].append(f"connexion à {kbps / 1000:.1f} Mbit/s")
+        if b.get("cast"):
+            p["cast"] = True  # lu par une TV (Chromecast, AirPlay) : adresse du flux utilisable sans session
         if p["mode"] == "direct" and (b.get("no_direct") or media.is_strm(r["key"])):
             p["mode"] = "copy"  # le navigateur a refusé la lecture directe, ou flux distant (.strm) relayé par Nexis
         sid = secrets.token_urlsafe(12)
@@ -308,6 +367,12 @@ def register(app, ctx, x):
         nxt = next_episode(r)
         if b.get("playlist"):
             nxt = x.playlist_next(req.user, b["playlist"], r["id"]) if str(b["playlist"]).isdigit() else None
+        elif b.get("shuffle") and r["type"] == "episode" and str(b["shuffle"]) == str(r["show_id"]):
+            # lecture aléatoire d'une série : un autre épisode au hasard, de préférence pas encore vu
+            pick = x.ITEM_SQL + "WHERE i.show_id=? AND i.type='episode' AND i.id<>? {} ORDER BY random() LIMIT 1"
+            nxt = db.one(pick.format("AND NOT EXISTS (SELECT 1 FROM progress pr WHERE pr.user_id=? AND "
+                                     "pr.rating_key=CAST(i.id AS TEXT) AND pr.watched=1)"), (r["show_id"], r["id"], uid)) \
+                or db.one(pick.format(""), (r["show_id"], r["id"]))
         if ctx.subtitles.missing(r):
             ctx.subtitles.ensure_now(r)
         elif ctx.subtitles.needs_trick(r):
@@ -317,7 +382,8 @@ def register(app, ctx, x):
         url = f"/api/stream/{sid}/file" if p["mode"] == "direct" else f"/api/stream/{sid}/main.m3u8"
         return {
             "stream": sid, "mode": p["mode"], "reasons": [i18n.tr(r) for r in p["reasons"]], "url": url, "offset": actual,
-            "duration": duration, "quality": quality, "item": c, "audio": audio, "subtitles": subs,
+            "duration": duration, "quality": requested, "auto_quality": quality if requested == "auto" else None,
+            "bandwidth": kbps, "source_kbps": source_kbps(probe, r["file_size"] or 0, r["duration_ms"] or 0), "item": c, "audio": audio, "subtitles": subs,
             "audio_selected": p["audio_index"], "subtitle_selected": sub["id"] if sub else 0,
             "subtitle_overlay": f"/api/items/{rk}/subtitles/{sub['id']}" if sub and sub["overlay"] else None,
             "subtitle_ass": f"/api/items/{rk}/subtitles/{sub['id']}/ass" if sub and sub.get("ass") else None,
@@ -350,7 +416,15 @@ def register(app, ctx, x):
         return kf_cache[key]
 
     def own_stream(req, sid):
-        st = db.one("SELECT * FROM streams WHERE id=? AND user_id=?", (sid, req.user["id"]))
+        """Flux de la personne connectée ; ou, sans session, un flux lancé pour une TV (Chromecast, AirPlay) : la TV
+        va chercher la vidéo elle-même, sans le cookie du navigateur. Son adresse (identifiant aléatoire de 96 bits,
+        valable le temps de la lecture) suffit alors."""
+        if req.user:
+            st = db.one("SELECT * FROM streams WHERE id=? AND user_id=?", (sid, req.user["id"]))
+        else:
+            st = db.one("SELECT * FROM streams WHERE id=?", (sid,))
+            if st and not json.loads(st["params"] or "{}").get("cast"):
+                st = None
         if not st:
             raise HTTPError(404, "Flux expiré")
         now = int(time.time())
@@ -358,38 +432,45 @@ def register(app, ctx, x):
             db.run("UPDATE streams SET last_seen=? WHERE id=?", (now, sid))
         return st
 
-    @app.route("GET", f"/api/stream/{SID}/main.m3u8")
+    @app.route("GET", f"/api/stream/{SID}/main.m3u8", auth=None)
     def stream_playlist(req):
         sid = req.params["sid"]
-        own_stream(req, sid)
+        st = own_stream(req, sid)
         try:
             text = ctx.transcoder.playlist(sid)
         except StreamError as e:
             raise HTTPError(404, str(e))
-        return Response(text, 200, "application/vnd.apple.mpegurl", {"Cache-Control": "no-store"})
+        return cast_cors(st, Response(text, 200, "application/vnd.apple.mpegurl", {"Cache-Control": "no-store"}))
+
+    def cast_cors(st, resp):
+        """Flux lancé pour une TV : le lecteur du Chromecast le lit depuis une page de Google (autre origine)."""
+        if json.loads(st["params"] or "{}").get("cast"):
+            resp.headers["Access-Control-Allow-Origin"] = "*"
+            resp.headers["Access-Control-Expose-Headers"] = "Content-Length, Content-Range"
+        return resp
 
     def segment_response(path, ctype):
         with open(path, "rb") as f:
             data = f.read()
         return Response(data, 200, ctype, {"Cache-Control": "no-store"})
 
-    @app.route("GET", f"/api/stream/{SID}/init.mp4")
+    @app.route("GET", f"/api/stream/{SID}/init.mp4", auth=None)
     def stream_init(req):
         sid = req.params["sid"]
-        own_stream(req, sid)
+        st = own_stream(req, sid)
         db.release()  # l'attente peut durer : on ne garde pas la connexion SQLite
         try:
-            return segment_response(ctx.transcoder.init(sid), "video/mp4")
+            return cast_cors(st, segment_response(ctx.transcoder.init(sid), "video/mp4"))
         except StreamError as e:
             raise HTTPError(502, str(e))
 
-    @app.route("GET", f"/api/stream/{SID}/(?P<seg>\\d{{1,6}}\\.m4s)")
+    @app.route("GET", f"/api/stream/{SID}/(?P<seg>\\d{{1,6}}\\.m4s)", auth=None)
     def stream_segment(req):
         sid = req.params["sid"]
-        own_stream(req, sid)
+        st = own_stream(req, sid)
         db.release()
         try:
-            return segment_response(ctx.transcoder.segment(sid, req.params["seg"]), "video/iso.segment")
+            return cast_cors(st, segment_response(ctx.transcoder.segment(sid, req.params["seg"]), "video/iso.segment"))
         except StreamError as e:
             raise HTTPError(404, str(e))
 
@@ -404,15 +485,15 @@ def register(app, ctx, x):
             data, until = part
         return Response(data, 200, "application/octet-stream", until_headers(until))
 
-    @app.route("GET", f"/api/stream/{SID}/file")
+    @app.route("GET", f"/api/stream/{SID}/file", auth=None)
     def stream_file(req):
         st = own_stream(req, req.params["sid"])
         r = db.one("SELECT key FROM items WHERE id=?", (int(st["rating_key"]),))
         if not r or not os.path.isfile(r["key"]) or media.is_strm(r["key"]):
             raise HTTPError(404, "Fichier introuvable")
-        return file_response(req, r["key"])
+        return cast_cors(st, file_response(req, r["key"]))
 
-    def file_response(req, path):
+    def file_response(req, path, ctype=None):
         size = os.path.getsize(path)
         start, end, status = 0, size - 1, 200
         rng = (req.headers.get("Range") or "").strip()
@@ -444,8 +525,8 @@ def register(app, ctx, x):
         if status == 206:
             headers["Content-Range"] = f"bytes {start}-{end}/{size}"
         low = path.lower()
-        ctype = ("video/mp4" if low.endswith((".mp4", ".m4v", ".mov")) else "video/x-matroska"
-                 if low.endswith((".mkv", ".mk3d")) else "video/mp2t" if low.endswith((".ts", ".m2ts")) else "video/webm")
+        ctype = ctype or ("video/mp4" if low.endswith((".mp4", ".m4v", ".mov")) else "video/x-matroska"
+                          if low.endswith((".mkv", ".mk3d")) else "video/mp2t" if low.endswith((".ts", ".m2ts")) else "video/webm")
         return Response(stream=gen(), status=status, content_type=ctype, length=length, headers=headers,
                         on_close=f.close)
 
@@ -499,7 +580,13 @@ def register(app, ctx, x):
         state = b.get("state") if b.get("state") in ("playing", "paused", "stopped") else "playing"
         r = require_item(req.user, rk)
         watched = record_progress(req.user, r, pos, dur, state, str(b.get("stream") or ""), b.get("ended"))
-        return {"ok": True, "watched": watched}
+        out = {"ok": True, "watched": watched}
+        screen = ctx.account_limits.count(req.user, str(b.get("stream") or ""), state)
+        if screen:
+            # temps d'écran : le lecteur prévient quelques minutes avant, puis s'arrête
+            out["screen"] = {"left": screen["left"], "blocked": screen["blocked"], "reason": screen["reason"],
+                             "bedtime": screen["bedtime"]}
+        return out
 
     # ------------------------------------------------------------ téléchargements (hors ligne)
     JID = r"(?P<jid>[A-Za-z0-9_-]{8,20})"
@@ -537,7 +624,8 @@ def register(app, ctx, x):
         caps = parse_caps(b.get("caps"))
         caps["containers"] = {"mp4"}  # le fichier gardé est un MP4
         p = plan(probe, audio_id, burn, "original" if quality == "auto" else quality, caps,
-                 db.setting("downmix_algo", "none"), float(db.setting("downmix_boost", "2") or 2))
+                 db.setting("downmix_algo", "none"), float(db.setting("downmix_boost", "2") or 2),
+                 db.setting("tonemap", "hable"))
         if p["mode"] == "direct" and media.is_strm(r["key"]):
             p["mode"] = "copy"  # flux distant : on en fait un fichier
         duration = probe.get("duration") or (r["duration_ms"] or 0) / 1000
@@ -568,7 +656,7 @@ def register(app, ctx, x):
         if p["mode"] == "transcode" and ctx.limits()[1] == 0:
             raise HTTPError(403, "Ce titre doit être converti pour être téléchargé, et la conversion est désactivée sur ce serveur")
         try:
-            job = ctx.downloads.request(req.user["id"], r, p, duration)
+            job = ctx.downloads.request(req.user["id"], r, p, duration, progressive=b.get("progressive") is True)
         except DownloadError as e:
             raise HTTPError(429, str(e))
         out = job.view()
@@ -582,10 +670,17 @@ def register(app, ctx, x):
     @app.route("GET", f"/api/downloads/{JID}/file")
     def download_file(req):
         job = own_job(req)
+        path = job.path
         if job.state != "ready":
-            raise HTTPError(409, "Pas encore prêt")
+            # transfert pendant la préparation : seulement une partie déjà écrite (plage demandée explicitement)
+            m = re.match(r"^bytes=(\d+)-(\d+)$", (req.headers.get("Range") or "").strip())
+            if not (job.progressive and job.state == "preparing" and job.part and m and int(m.group(2)) < job.ready):
+                raise HTTPError(409, "Pas encore prêt")
+            path = job.part
+        if not os.path.isfile(path) and job.state == "ready":
+            path = job.path  # préparation finie entre-temps : le fichier a pris son nom définitif
         db.release()  # transfert long : pas de connexion à la base pendant ce temps
-        resp = file_response(req, job.path)
+        resp = file_response(req, path)
         resp.headers["Content-Type"] = "video/mp4"
         return resp
 

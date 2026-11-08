@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "author": "xenix13",
+ "version": 1,
+ "id": "cine-club",
+ "name": {
+  "fr": "Ciné-club",
+  "en": "Film society"
+ },
+ "description": {
+  "fr": "Velours rouge et dorures de vieille salle de cinéma.",
+  "en": "Red velvet and gilding of an old picture palace."
+ },
+ "dark": true,
+ "colors": {
+  "bg": "#14070a",
+  "surface": "#220c11",
+  "surface2": "#331219",
+  "text": "#fbefe6",
+  "muted": "#d1aca3",
+  "line": "#4a1c25",
+  "accent": "#d9a441",
+  "on_accent": "#241600"
+ },
+ "background": {
+  "type": "gradient",
+  "angle": 180,
+  "stops": [
+   "#2a0b12",
+   "#14070a",
+   "#0c0406"
+  ]
+ },
+ "effects": [
+  "vignette"
+ ],
+ "font": "serif",
+ "radius": 8
+}

@@ -35,7 +35,7 @@ from .names import fold
 from .catalog import CARD_SQL, SID, stream_lists
 from .discover import Seerr, SeerrError
 from .metadata import TMDB, MetaError
-from .web import HTTPError, Response, TLSServer, json_response, make_handler
+from .web import MAX_BODY, HTTPError, Response, TLSServer, json_response, make_handler
 
 log = logging.getLogger("seance.fed")
 
@@ -48,11 +48,13 @@ TUNNEL_TTL = 240         # s : une connexion de tunnel inutilisée est renouvel�
 CATALOG_PAGE = 400
 PROGRESS_PAGE = 1000
 HEX32 = re.compile(r"^[0-9a-f]{32}$")
+BEDTIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 ADDRESS = re.compile(r"^(\[[0-9a-fA-F:.]{2,45}\]|[A-Za-z0-9.-]{1,253})(:\d{1,5})?$")
 USER_FIELDS = ("username", "display_name", "password_hash", "is_admin", "all_libraries", "disabled", "avatar_color",
                "pin_hash", "managed", "home", "max_age", "allow_unrated", "avatar_ver", "kids", "totp_enabled",
-               "totp_secret", "totp_recovery", "language")
+               "totp_secret", "totp_recovery", "language", "max_streams", "remote_kbps", "daily_minutes", "bedtime")
+LIMIT_FIELDS = ("max_streams", "remote_kbps", "daily_minutes", "bedtime")  # depuis la 3.34 : absents chez un serveur plus ancien
 ITEM_LOCAL = {"id", "library_id", "parent_id", "show_id", "key", "fseq", "peer_id", "remote_id", "src_lib", "src_parent",
               "src_show", "alias_of"}
 ITEM_SUB = re.compile(r"^/api/items/(\d{1,12})/(prepare|subtitles/.+|fonts/.+|trickplay(?:/.+)?|chapters/.+)$")
@@ -70,6 +72,24 @@ SEERR_ALLOWED = (("GET", re.compile(r"^/media\?[A-Za-z0-9=&_.-]{0,200}$")),
 PEER_USER_PATHS = re.compile(r"^/api/(play|progress|stop|stream/.+|downloads(/options|/[A-Za-z0-9_-]{8,20}(/file)?)?|"
                              r"items/\d{1,12}/(prepare|subtitles/.+|fonts/.+|"
                              r"trickplay(/.+)?|chapters/.+|watched))$")
+# administration à distance : un administrateur connecté à un serveur lié règle celui-ci (même compte, répliqué)
+PEER_ADMIN_PATHS = re.compile(r"^/api/admin/.+$")
+LOCAL_ADMIN_ONLY = re.compile(r"^/api/admin/servers$")  # la liste des serveurs administrables : toujours d'ici
+STREAMED_UPLOAD = re.compile(r"^/api/admin/backups/upload$")
+
+
+class _Limited:
+    """Corps d'une requête lu au fur et à mesure (au plus `left` octets), pour le relayer sans le copier en mémoire."""
+
+    def __init__(self, f, left):
+        self.f, self.left = f, left
+
+    def read(self, n=65536):
+        if self.left <= 0:
+            return b""
+        chunk = self.f.read(min(n, self.left, 1024 * 1024))
+        self.left -= len(chunk)
+        return chunk
 
 
 class FedError(Exception):
@@ -487,7 +507,7 @@ class Federation:
              "X-Lang": i18n.current()}
         if user:
             h["X-Fed-User"] = user["uid"]
-        if body is not None and not isinstance(body, bytes):
+        if isinstance(body, (dict, list)):
             body = json.dumps(body).encode()
             h["Content-Type"] = "application/json"
         h.update(headers or {})
@@ -876,10 +896,121 @@ class Federation:
         return c
 
     # comptes ---------------------------------------------------------------
+    # ------------------------------------------------------------------ préférences des comptes
+    # Elles suivent le compte sur les serveurs liés. Ce qui désigne une bibliothèque (lib:N, bibliothèques masquées,
+    # rangées épinglées d'un genre ou de filtres) passe par l'identifiant commun des bibliothèques, le fond d'écran
+    # par la désignation commune de l'élément. Les rangées épinglées d'une collection ou d'une playlist restent
+    # propres à chaque serveur (elles n'existent que sur le leur).
+    LIB_KEYS = ("home_order", "home_hidden", "nav_order", "nav_hidden")
+
+    def prefs_out(self, user_id):
+        raw = self.ctx.db.scalar("SELECT data FROM prefs WHERE user_id=?", (user_id,))
+        if raw is None:
+            return {}
+        try:
+            p = json.loads(raw)
+        except ValueError:
+            return {}
+        uids = {str(r["id"]): r["uid"] for r in self.ctx.db.all("SELECT id, uid FROM libraries WHERE uid IS NOT NULL")}
+        pins = [pin for pin in p.get("home_pins") or [] if pin.get("type") in ("genre", "filter") and uids.get(str(pin.get("lib")))]
+        kept = {pin["id"] for pin in pins}
+
+        def key(k):
+            if k.startswith("lib:"):
+                return f"lib@{uids[k[4:]]}" if k[4:] in uids else None
+            if k.startswith("pin:"):
+                return k if k[4:].isdigit() and int(k[4:]) in kept else None
+            return k
+        out = dict(p)
+        out["hidden_libraries"] = [uids[i] for i in p.get("hidden_libraries") or [] if i in uids]
+        out["lib_langs"] = {uids[k]: v for k, v in (p.get("lib_langs") or {}).items() if k in uids}
+        out["home_pins"] = [dict(pin, lib=uids[str(pin["lib"])]) for pin in pins]
+        for k in self.LIB_KEYS:
+            if k in p:
+                out[k] = [v for v in (key(x) for x in p[k]) if v]
+        if "start_page" in p:
+            out["start_page"] = key(p["start_page"]) or "home"
+        wp = p.get("wallpaper") or ""
+        m = re.match(r"^/library/metadata/(\d{1,12})/art/(\d{1,14})$", wp)
+        out["wallpaper"] = {"ref": self.ref_of(int(m.group(1))), "v": m.group(2)} if m else wp
+        if "muted_shows" in p:  # séries dont on ne veut plus être prévenu : désignées pour tous les serveurs
+            out["muted_shows"] = [r for r in (self.ref_of(int(i)) for i in p["muted_shows"] if str(i).isdigit()) if r]
+        return {"_v": 1, **out}  # présent même vide : un retour aux réglages par défaut se propage aussi
+
+    def prefs_in(self, user_id, incoming):
+        """Préférences reçues d'un serveur lié, traduites pour ce serveur, puis vérifiées une à une."""
+        from .catalog import validate_prefs
+        db = self.ctx.db
+        if not isinstance(incoming, dict):
+            return
+        local = {}
+        raw = db.scalar("SELECT data FROM prefs WHERE user_id=?", (user_id,))
+        if raw:
+            try:
+                local = json.loads(raw)
+            except ValueError:
+                local = {}
+        ids = {}
+        for r in db.all("SELECT id, uid, merge_into FROM libraries WHERE uid IS NOT NULL"):
+            ids[r["uid"]] = str(r["merge_into"] or r["id"])  # bibliothèque fusionnée : celle qu'on affiche ici
+        p = {k: v for k, v in incoming.items() if k != "_v"}
+        mine = [pin for pin in local.get("home_pins") or [] if pin.get("type") in ("collection", "playlist")]
+        used = {pin["id"] for pin in mine}
+        renum, pins = {}, []
+        for pin in incoming.get("home_pins") or []:
+            if not isinstance(pin, dict) or pin.get("lib") not in ids:
+                continue
+            new = pin.get("id")
+            if not isinstance(new, int) or new in used:
+                new = max(used | {0}) + 1
+            renum[pin.get("id")] = new
+            used.add(new)
+            pins.append(dict(pin, id=new, lib=ids[pin["lib"]]))
+        p["home_pins"] = mine + pins
+
+        def key(k):
+            if not isinstance(k, str):
+                return None
+            if k.startswith("lib@"):
+                return f"lib:{ids[k[4:]]}" if k[4:] in ids else None
+            if k.startswith("pin:"):
+                n = int(k[4:]) if k[4:].isdigit() else None
+                return f"pin:{renum[n]}" if n in renum else None
+            return k
+        p["hidden_libraries"] = [ids[u] for u in incoming.get("hidden_libraries") or [] if u in ids]
+        if isinstance(incoming.get("lib_langs"), dict):
+            p["lib_langs"] = {ids[u]: v for u, v in incoming["lib_langs"].items() if u in ids}
+        for k in self.LIB_KEYS:
+            if isinstance(incoming.get(k), list):
+                lst = [v for v in (key(x) for x in incoming[k]) if v]
+                # rangées propres à ce serveur (collections, playlists épinglées) : gardées à leur place
+                lst += [x for x in local.get(k) or [] if x.startswith("pin:") and int(x[4:]) in {q["id"] for q in mine}
+                        and x not in lst]
+                p[k] = list(dict.fromkeys(lst))
+        if "start_page" in incoming:
+            p["start_page"] = key(incoming["start_page"]) or "home"
+        if isinstance(incoming.get("muted_shows"), list):
+            p["muted_shows"] = list(dict.fromkeys(str(i) for i in (self.resolve_ref(r) for r in incoming["muted_shows"][:500]) if i))
+        wp = incoming.get("wallpaper")
+        if isinstance(wp, dict):
+            iid = self.resolve_ref(wp.get("ref"))
+            p["wallpaper"] = f"/library/metadata/{iid}/art/{int(wp.get('v') or 1)}" if iid else ""
+        clean = {}
+        for k, v in p.items():
+            try:
+                clean.update(validate_prefs({k: v}))
+            except HTTPError:
+                continue  # réglage inconnu ici (version différente) ou devenu invalide : on garde celui d'ici
+        if not clean.get("home_pins"):
+            clean.pop("home_pins", None)
+        db.run("INSERT INTO prefs(user_id,data) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data",
+               (user_id, json.dumps(clean)))
+
     def user_payload(self, u):
         db = self.ctx.db
         d = {f: u[f] for f in USER_FIELDS}
         d.update(uid=u["uid"], rev=u["rev"] or 0, created_at=u["created_at"])
+        d["prefs"] = self.prefs_out(u["id"])
         libs = [r["uid"] for r in db.all("SELECT l.uid FROM user_libraries ul JOIN libraries l ON l.id=ul.section_id "
                                          "WHERE ul.user_id=?", (u["id"],))]
         libs += [r["uid"] for r in db.all("SELECT uid FROM fed_pending_libs WHERE user_id=?", (u["id"],))]
@@ -964,6 +1095,13 @@ class Federation:
                     fields["language"] = i18n.valid(fields["language"]) or None
                     if fields["max_age"] is not None and not isinstance(fields["max_age"], int):
                         fields["max_age"] = None
+                    for f in LIMIT_FIELDS:
+                        if f not in u:
+                            fields.pop(f)  # serveur d'une version plus ancienne : nos limites restent
+                        elif f == "bedtime":
+                            fields[f] = u[f] if isinstance(u[f], str) and BEDTIME.match(u[f]) else None
+                        elif not isinstance(u[f], int) or isinstance(u[f], bool) or u[f] <= 0:
+                            fields[f] = None
                     if local:
                         if mode == "adopt" and local["is_admin"]:
                             fields["is_admin"] = 1  # on ne perd pas l'administration de ce serveur en le liant
@@ -993,6 +1131,8 @@ class Federation:
                             db.run("INSERT OR IGNORE INTO user_libraries(user_id,section_id) VALUES(?,?)", (lid, str(lib)))
                         else:  # bibliothèque pas encore reçue (catalogue d'un serveur lié) : posée à son arrivée
                             db.run("INSERT OR IGNORE INTO fed_pending_libs(user_id,uid) VALUES(?,?)", (lid, luid))
+                    if isinstance(u.get("prefs"), dict) and u["prefs"]:
+                        self.prefs_in(lid, u["prefs"])  # thème, langues, accueil… : les mêmes sur chaque serveur
                     if fields["avatar_ver"] != old_avatar or (fields["avatar_ver"] and not self.has_avatar(lid)):
                         avatars.append((lid, u["uid"], fields["avatar_ver"]))
                 for uid in gone:
@@ -1072,12 +1212,14 @@ class Federation:
         c = self._snapshot()
         try:
             clock = db.scalar("SELECT n FROM fed_clock")
-            rows = db.all("SELECT * FROM items WHERE peer_id IS NULL AND fseq>? ORDER BY fseq LIMIT ?", (since, limit))
+            # photothèques : pas partagées entre serveurs (photos personnelles, et rien à y fusionner)
+            rows = db.all("SELECT * FROM items WHERE peer_id IS NULL AND fseq>? AND type NOT IN ('photo','album','book') "
+                          "ORDER BY fseq LIMIT ?", (since, limit))
             more = len(rows) == limit
             until = rows[-1]["fseq"] if more else clock
             gone = [int(r["ref"]) for r in db.all("SELECT ref FROM fed_gone WHERE kind='item' AND seq>? AND seq<=?",
                                                   (since, until))]
-            libs = db.all("SELECT id, uid, name, kind, position FROM libraries WHERE peer_id IS NULL")
+            libs = db.all("SELECT id, uid, name, kind, position FROM libraries WHERE peer_id IS NULL AND kind NOT IN ('photo','audiobook')")
         finally:
             c.execute("COMMIT")
         items = [{k: v for k, v in r.items() if k not in ITEM_LOCAL or k in ("id", "library_id", "parent_id", "show_id")}
@@ -1256,6 +1398,8 @@ class Federation:
         if cur is not None and bool(cur) != online:
             db.run("UPDATE peers SET online=? WHERE id=?", (1 if online else 0, pid))
             log.warning("Serveur lié %s %s", pid, "de nouveau joignable" if online else "injoignable : ses titres sont masqués")
+            if online and getattr(self.ctx, "images", None):
+                self.ctx.images.forget_missing()  # ses images sont redemandées
             self.relink(pid)
 
     # progression -----------------------------------------------------------
@@ -1322,8 +1466,10 @@ class Federation:
             return dest
         try:
             peer = self.peer(item["peer_id"])
+            if not peer["online"]:  # serveur lié injoignable : pas d'attente, l'image viendra à son retour
+                return None
             self.ctx.db.release()
-            resp, close = self.request(peer, "GET", f"/fed/img/{int(item['remote_id'])}/{kind}?w={w}&h={h}", timeout=30)
+            resp, close = self.request(peer, "GET", f"/fed/img/{int(item['remote_id'])}/{kind}?w={w}&h={h}", timeout=10)
             try:
                 data = resp.read(20 * 1024 * 1024) if resp.status == 200 else None
             finally:
@@ -1345,7 +1491,16 @@ class Federation:
         if qs:
             path += "?" + qs
         headers = {k: req.headers[k] for k in ("Range", "If-None-Match") if req.headers.get(k)}
-        body = req.body if req.method in ("POST", "PUT") else None
+        body = None
+        if req.method in ("POST", "PUT"):
+            length = int(req.headers.get("Content-Length") or 0) if str(req.headers.get("Content-Length") or "0").isdigit() else 0
+            if STREAMED_UPLOAD.match(path.split("?")[0]) and length > MAX_BODY:
+                # gros fichier (archive de sauvegarde) : transmis par morceaux, sans tout garder en mémoire
+                body = _Limited(req.handler.rfile, length)
+                headers["Content-Length"] = str(length)
+                req._body = b""
+            else:
+                body = req.body
         self.ctx.db.release()
         try:
             resp, close = self.request(peer, req.method, path, body, headers=headers, user=req.user, timeout=90)
@@ -1364,6 +1519,18 @@ class Federation:
         return Response(stream=gen(), status=resp.status, content_type=resp.getheader("Content-Type") or "application/octet-stream",
                         length=int(length) if length and length.isdigit() else None, headers=out, on_close=close)
 
+    def admin_relay(self, req, target):
+        """Paramètres d'un serveur lié, choisis dans le sélecteur de serveur : la requête d'administration lui est
+        transmise telle quelle, au nom du même administrateur (il vérifie lui-même ses droits)."""
+        try:
+            pid = int(target)
+            peer = self.peer(pid)
+        except (ValueError, FedError):
+            raise HTTPError(404, "Serveur lié introuvable")
+        req.query = {k: v for k, v in req.query.items() if k != "_server"}
+        log.info("Administration de %s par %s : %s %s", peer["name"], req.user["username"], req.method, req.path)
+        return self.relay(req, pid, req.path)
+
     def active_source(self, user_id, rk):
         """Copie d'un serveur lié en cours de lecture par ce compte pour cet élément (la plus récente)."""
         with self.lock:
@@ -1375,7 +1542,19 @@ class Federation:
     def intercept(self, req):
         """Requête d'un appareil connecté à ce serveur, portant sur un élément d'un serveur lié : relayée.
         -> Response, ou None si la route locale s'en charge (éventuellement après avoir prévenu le serveur lié)."""
-        if not req.user or not self.has_peers():
+        if not self.has_peers():
+            return None
+        if not req.user:
+            # flux d'un serveur lié lu par une TV (sans session) : relayé si ce flux a été lancé pour elle
+            m = STREAM.match(req.path) if req.method == "GET" else None
+            entry = self.proxied.get(m.group("sid")) if m else None
+            row = self.ctx.db.one("SELECT params FROM streams WHERE id=?", (m.group("sid"),)) if entry else None
+            if row and json.loads(row["params"] or "{}").get("cast"):
+                req.user = self.ctx.db.one("SELECT * FROM users WHERE id=?", (entry[1],))
+                resp = self.relay(req, entry[0], req.path)
+                req.user = None
+                resp.headers["Access-Control-Allow-Origin"] = "*"
+                return resp
             return None
         path, x = req.path, self.x
         m = DOWNLOAD_JOB.match(path)
@@ -1653,7 +1832,7 @@ class Federation:
         data["next"] = x.card(nxt) if nxt else None
         now = int(time.time())
         title = card["title"] if card["type"] == "movie" else f"{card.get('show')} · S{card.get('season')}E{card.get('episode')}"
-        params = {"mode": data.get("mode"), "reasons": data.get("reasons") or [], "peer": peer["name"]}
+        params = {"mode": data.get("mode"), "reasons": data.get("reasons") or [], "peer": peer["name"], "cast": bool(body.get("cast"))}
         db.run("INSERT OR REPLACE INTO streams(id,user_id,plex_session,rating_key,params,title,quality,position_ms,"
                "created_at,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?)",
                (sid, uid, sid, rk, json.dumps(params), title, data.get("quality"), int(data.get("offset") or 0), now, now))
@@ -1974,6 +2153,22 @@ def register(app, ctx, x):
             return fn(*args)
         except FedError as e:
             raise HTTPError(404 if "introuvable" in str(e) else 502, str(e))
+
+    # ------------------------------------------------------------ administration des serveurs liés depuis celui-ci
+    @app.route("GET", "/api/admin/servers", auth="admin")
+    def admin_servers(req):
+        """Serveurs que cet administrateur peut régler depuis ici : celui-ci, et les serveurs liés."""
+        return {"local": {"id": "", "name": fed.name(), "version": __version__},
+                "peers": [{"id": str(p["id"]), "name": p["name"], "online": bool(p["online"]), "version": p["version"]}
+                          for p in fed.peers()],
+                "remote_admin": db.setting("fed_remote_admin", "1") == "1"}
+
+    @app.route("PUT", "/api/admin/servers", auth="admin")
+    def admin_servers_put(req):
+        """Accepter ou non d'être administré depuis un serveur lié (réglage propre à chaque serveur, fait sur place)."""
+        if "remote_admin" in req.json():
+            db.set_setting("fed_remote_admin", "1" if req.json()["remote_admin"] else "0")
+        return admin_servers(req)
 
     @app.route("GET", "/api/admin/federation", auth="admin")
     def admin_federation(req):

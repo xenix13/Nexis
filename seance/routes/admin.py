@@ -5,15 +5,17 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import threading
 import time
 
 from .. import __version__ as VERSION, i18n, media, mountd, transcoder, twofa, update
+from ..limits import valid_limits
 from ..auth import USERNAME, USERNAME_RULE, find_user, hash_password, normalize_username, validate_password
 from ..catalog import HEX, RK, SID
 from ..metadata import MetaError
 from ..scanner import like_prefix
-from ..transcoder import DOWNMIX_ALGOS, system_memory
+from ..transcoder import DOWNMIX_ALGOS, TONEMAPS, system_memory
 from ..web import HTTPError, Response
 
 log = logging.getLogger("seance.admin")
@@ -30,6 +32,9 @@ def register(app, ctx, x):
         v = user_view(u)
         v.update(all_libraries=bool(u["all_libraries"]), disabled=bool(u["disabled"]), created_at=u["created_at"],
                  allow_unrated=bool(u["allow_unrated"]),
+                 max_streams=u["max_streams"], remote_kbps=u["remote_kbps"], daily_minutes=u["daily_minutes"],
+                 bedtime=u["bedtime"],
+                 screen_used=(ctx.account_limits.used_today(u["id"]) // 60) if u["daily_minutes"] else None,
                  libraries=[r["section_id"] for r in db.all(
                      "SELECT section_id FROM user_libraries WHERE user_id=?", (u["id"],))],
                  last_seen=db.scalar("SELECT MAX(last_seen) FROM sessions WHERE user_id=?", (u["id"],)))
@@ -65,6 +70,13 @@ def register(app, ctx, x):
             fields["max_age"] = b["max_age"]
         if "pin" in b:
             fields["pin_hash"] = hash_pin(b["pin"])
+        try:
+            fields.update(valid_limits(b))  # lectures simultanées, débit hors de la maison, temps d'écran
+        except ValueError as e:
+            raise HTTPError(400, {"max_streams": "Lectures simultanées : de 1 à 20",
+                                  "remote_kbps": "Débit hors de la maison : de 0,5 à 200 Mbit/s",
+                                  "daily_minutes": "Temps d'écran : de 10 minutes à 24 heures par jour",
+                                  "bedtime": "Heure du coucher invalide (ex. 21:00-07:00)"}.get(str(e), "Limite invalide"))
         if "language" in b:
             if b["language"] is not None and not i18n.valid(b["language"]):
                 raise HTTPError(400, "Langue invalide")
@@ -94,6 +106,18 @@ def register(app, ctx, x):
                        "WHERE merge_into=?", (uid, int(sid)))
         if not creating and (fields.get("disabled") or "password_hash" in fields):
             db.run("DELETE FROM sessions WHERE user_id=?", (uid,))
+
+    @app.route("POST", r"/api/admin/users/(?P<uid>\d{1,10})/prefs", auth="admin")
+    def admin_copy_prefs(req):
+        """Copier tous les réglages d'un compte vers un autre (régler d'un coup les profils des enfants)."""
+        uid, src = int(req.params["uid"]), req.json().get("from")
+        if not isinstance(src, (int, str)) or not str(src).isdigit() or int(src) == uid:
+            raise HTTPError(400, "Compte d'origine invalide")
+        if not db.one("SELECT 1 FROM users WHERE id=?", (uid,)) or not db.one("SELECT 1 FROM users WHERE id=?", (int(src),)):
+            raise HTTPError(404, "Utilisateur introuvable")
+        data = db.scalar("SELECT data FROM prefs WHERE user_id=?", (int(src),)) or "{}"
+        db.run("INSERT INTO prefs(user_id,data) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data", (uid, data))
+        return {"ok": True}
 
     @app.route("POST", "/api/admin/users", auth="admin")
     def admin_create_user(req):
@@ -177,7 +201,7 @@ def register(app, ctx, x):
         name = str(b.get("name") or "").strip()
         if not 1 <= len(name) <= 40:
             raise HTTPError(400, "Nom : 1 à 40 caractères")
-        if b.get("kind") not in ("movie", "show"):
+        if b.get("kind") not in ("movie", "show", "photo", "audiobook"):
             raise HTTPError(400, "Type invalide")
         paths = b.get("paths")
         if not isinstance(paths, list) or not paths or len(paths) > 20:
@@ -352,8 +376,10 @@ def register(app, ctx, x):
                 "subs_prefetch": db.setting("subs_prefetch", "1") == "1",
                 "trickplay": db.setting("trickplay", "1") == "1",
                 "downloads": db.setting("downloads", "1") == "1",
+                "downloads_priority": ctx.downloads.priority(), "cpus": os.cpu_count() or 1,
                 "downmix_algo": db.setting("downmix_algo", "none"),
                 "downmix_boost": float(db.setting("downmix_boost", "2") or 2),
+                "tonemap": db.setting("tonemap", "hable"), "tonemap_ok": media.has_filter("zscale") and media.has_filter("tonemap"),
                 "subs_queue": len(ctx.subtitles.urgent) + len(ctx.subtitles.idle),
                 "webhook_path": f"/api/hooks/scan?token={db.setting('webhook_token')}",
                 "watch_events": [dict(e, text=i18n.tr(e["text"])) for e in ctx.watcher.events[:8]],"tmdb_set": bool(db.setting("tmdb_key")),
@@ -388,6 +414,10 @@ def register(app, ctx, x):
                 raise HTTPError(400, "Langue invalide")
             db.set_setting("default_language", b["default_language"])
             i18n.set_server_default(b["default_language"])
+        if "tonemap" in b:
+            if b["tonemap"] not in TONEMAPS:
+                raise HTTPError(400, "Conversion HDR inconnue")
+            db.set_setting("tonemap", b["tonemap"])
         if "downmix_algo" in b:
             if b["downmix_algo"] not in DOWNMIX_ALGOS:
                 raise HTTPError(400, "Algorithme de mixage inconnu")
@@ -406,6 +436,10 @@ def register(app, ctx, x):
                 threading.Thread(target=ctx.prefetch_missing_subtitles, daemon=True).start()
         if "downloads" in b:
             db.set_setting("downloads", "1" if b["downloads"] else "0")
+        if "downloads_priority" in b:
+            if b["downloads_priority"] not in ("low", "normal", "high"):
+                raise HTTPError(400, "Priorité invalide")
+            db.set_setting("downloads_priority", b["downloads_priority"])
         if "subs_prefetch" in b:
             db.set_setting("subs_prefetch", "1" if b["subs_prefetch"] else "0")
             if b["subs_prefetch"]:
@@ -441,13 +475,17 @@ def register(app, ctx, x):
     @app.route("GET", "/api/admin/streams", auth="admin")
     def admin_streams(req):
         rows = db.all("SELECT s.id, s.title, s.quality, s.position_ms, s.state, s.created_at, s.last_seen, s.params, "
-                      "u.display_name AS user FROM streams s JOIN users u ON u.id=s.user_id "
+                      "u.display_name AS user, u.id AS uid FROM streams s JOIN users u ON u.id=s.user_id "
                       "WHERE s.last_seen > ? ORDER BY s.created_at DESC", (int(time.time()) - 180,))
         for r in rows:
             p = json.loads(r.pop("params") or "{}")
             r["mode"] = p.get("mode")
             r["reasons"] = [i18n.tr(x) for x in p.get("reasons", [])]
             r["peer"] = p.get("peer")  # lecture d'un titre d'un serveur lié, relayée par ce serveur
+            if x.get_prefs(r["uid"]).get("private_mode"):
+                r["title"] = i18n.tr("Lecture privée")
+                r["private"] = True
+            r.pop("uid", None)
             r.update(ctx.transcoder.stats(r["id"]))
             if p.get("video_codec"):
                 r["source"] = f"{str(p['video_codec']).upper()} {p.get('src_height') or '?'}p"
@@ -476,7 +514,7 @@ def register(app, ctx, x):
         rk = req.params["rk"]
         b = req.json()
         kind = b.get("kind")
-        if kind not in ("intro", "credits"):
+        if kind not in ("intro", "recap", "credits"):
             raise HTTPError(400, "Type de marqueur invalide")
         if b.get("clear"):
             db.run("DELETE FROM markers WHERE rating_key=? AND kind=?", (rk, kind))
@@ -491,6 +529,130 @@ def register(app, ctx, x):
                "ON CONFLICT(rating_key,kind) DO UPDATE SET start_ms=excluded.start_ms, end_ms=excluded.end_ms, "
                "source='manual'", (rk, kind, start, end))
         return {"ok": True}
+
+    # ---------------------------------------------------- sauvegardes
+    BK = r"(?P<name>nexis-[0-9a-z_-]{15,70}\.tar\.gz)"
+
+    def backups_view():
+        from .. import backup  # noqa: F811
+        d = backup.directory(ctx)
+        try:
+            free = shutil.disk_usage(d if os.path.isdir(d) else ctx.data_dir).free
+        except OSError:
+            free = None
+        last = ctx.tasks.last("backup")
+        conf = ctx.tasks.conf("backup")
+        return {"backups": backup.listing(ctx), "dir": d, "custom_dir": bool(db.setting("backup_dir")),
+                "default_dir": os.path.join(ctx.data_dir, "backups"), "free": free, "last": last,
+                "schedule": conf["schedule"], "keep": conf["options"].get("keep", 7),
+                "restored": ctx.restored and {"version": ctx.restored.get("version"), "created": ctx.restored.get("created"),
+                                              "server": ctx.restored.get("server")},
+                "can_restart": bool(ctx.restart), "server": ctx.fed.name(),
+                "passphrase_set": bool(db.setting("backup_passphrase")),
+                "to_peers": db.setting("backup_to_peers", "1") == "1", "from_peers": db.setting("backup_from_peers", "1") == "1",
+                "peers": [{"id": str(p["id"]), "name": p["name"], "online": bool(p["online"]),
+                           "last": backup.copies_status(ctx).get(f"peer:{p['id']}")} for p in ctx.fed.peers()]}
+
+    def backup_error(e):
+        return HTTPError(400, str(e))
+
+    @app.route("GET", "/api/admin/backups", auth="admin")
+    def admin_backups(req):
+        return backups_view()
+
+    @app.route("POST", "/api/admin/backups", auth="admin")
+    def admin_backup_now(req):
+        from .. import backup
+        try:
+            b = backup.create(ctx)
+        except backup.BackupError as e:
+            raise backup_error(e)
+        return {"backup": b, **backups_view()}
+
+    @app.route("PUT", "/api/admin/backups/settings", auth="admin")
+    def admin_backup_settings(req):
+        from .. import backup
+        b = req.json()
+        if "dir" in b:
+            if not b["dir"]:
+                db.set_setting("backup_dir", None)
+            else:
+                try:
+                    db.set_setting("backup_dir", backup.check_directory(b["dir"]))
+                except backup.BackupError as e:
+                    raise backup_error(e)
+        if b.get("passphrase"):
+            pw = str(b["passphrase"])
+            if len(pw) < 10 or len(pw) > 200:
+                raise HTTPError(400, "Phrase secrète : de 10 à 200 caractères")
+            db.set_setting("backup_passphrase", pw)
+        if b.get("clear_passphrase"):
+            db.set_setting("backup_passphrase", None)
+        for k, setting in (("to_peers", "backup_to_peers"), ("from_peers", "backup_from_peers")):
+            if k in b:
+                db.set_setting(setting, "1" if b[k] else "0")
+        if "schedule" in b or "keep" in b:
+            try:
+                ctx.tasks.update("backup", schedule=b.get("schedule"),
+                                 options={"keep": b["keep"]} if "keep" in b else None)
+            except ValueError as e:
+                raise HTTPError(400, str(e))
+        return backups_view()
+
+    @app.route("GET", f"/api/admin/backups/{BK}", auth="admin")
+    def admin_backup_download(req):
+        from .. import backup
+        try:
+            path = backup.path_of(ctx, req.params["name"])
+        except backup.BackupError as e:
+            raise HTTPError(404, str(e))
+        size = os.path.getsize(path)
+        f = open(path, "rb")
+        db.release()
+
+        def gen():
+            while True:
+                chunk = f.read(256 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+        return Response(stream=gen(), content_type="application/gzip", length=size, on_close=f.close,
+                        headers={"Content-Disposition": f'attachment; filename="{req.params["name"]}"',
+                                 "Cache-Control": "no-store"})
+
+    @app.route("DELETE", f"/api/admin/backups/{BK}", auth="admin")
+    def admin_backup_delete(req):
+        from .. import backup
+        try:
+            os.remove(backup.path_of(ctx, req.params["name"]))
+        except backup.BackupError as e:
+            raise HTTPError(404, str(e))
+        return backups_view()
+
+    @app.route("POST", "/api/admin/backups/upload", auth="admin")
+    def admin_backup_upload(req):
+        """Archive d'un autre serveur (ou d'avant une réinstallation), ajoutée à la liste pour la restaurer."""
+        from .. import backup
+        db.release()
+        try:
+            b = backup.receive(ctx, req)
+        except backup.BackupError as e:
+            raise backup_error(e)
+        return {"backup": b, **backups_view()}
+
+    @app.route("POST", f"/api/admin/backups/{BK}/restore", auth="admin")
+    def admin_backup_restore(req):
+        """Prépare la restauration, puis redémarre Nexis (la base ne peut pas être remplacée en marche)."""
+        from .. import backup
+        try:
+            man = backup.stage(ctx.data_dir, backup.path_of(ctx, req.params["name"]))
+        except backup.BackupError as e:
+            raise backup_error(e)
+        log.warning("Restauration de %s demandée par %s", req.params["name"], req.user["username"])
+        restarting = bool(ctx.restart)
+        if restarting:
+            threading.Timer(1.5, ctx.restart).start()  # le temps d'envoyer la réponse
+        return {"ok": True, "restarting": restarting, "version": man.get("version"), "created": man.get("created")}
 
     # ---------------------------------------------------- mise à jour de Nexis
     @app.route("GET", "/api/admin/update", auth="admin")

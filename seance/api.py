@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from . import __version__, catalog, collections_api, discover, federation, i18n, livetv, media, notify, suggest, syncplay, tasks, update
+from . import __version__, apps, backup, books, catalog, health, limits, opensubs, stats, themes, tracking, whisper, collections_api, discover, dlna, federation, i18n, push, remote, livetv, media, notify, photos, suggest, syncplay, tasks, update
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
@@ -39,6 +39,8 @@ class Ctx:
         self.trust_proxy = trust_proxy
         for d in ("cache/img", "cache/orig", "cache/subs"):
             os.makedirs(os.path.join(data_dir, d), exist_ok=True)
+        self.restored = backup.apply_pending(data_dir)  # restauration préparée avant l'arrêt : avant d'ouvrir la base
+        self.restart = None  # fourni par __main__ : arrêt avec un code qui fait relancer Nexis par son superviseur
         self.db = DB(os.path.join(data_dir, "seance.db"))
         self.throttle = Throttle()
         self.lock = threading.Lock()
@@ -55,6 +57,16 @@ class Ctx:
         self.live = livetv.LiveTV(self)
         self.together = syncplay.Groups(self)
         self.fed = federation.Federation(self)
+        self.dlna = dlna.DLNA(self)
+        self.remote = remote.Remote()
+        self.push = push.Push(self)
+        self.opensubs = opensubs.OpenSubtitles(self)
+        self.account_limits = limits.Limits(self)
+        self.health = health.Health(self)
+        self.whisper = whisper.Whisper(self)
+        self.tracking = tracking.Tracking(self)
+        self.themes = themes.Store(self, static_dir)
+        self.apps = apps.Apps(self)
         for r in self.db.all("SELECT id, content_rating FROM items WHERE content_rating IS NOT NULL AND age IS NULL"):
             age = age_of(r["content_rating"])
             if age is not None:
@@ -120,6 +132,11 @@ class Ctx:
             self.tasks.after_scan(self.scanner.status().get("added", 0))
         except Exception:
             log.exception("Tâches après le scan")
+        try:
+            if self.scanner.status().get("added", 0):
+                self.push.after_scan(self.x)  # nouveaux épisodes des séries suivies : notification push
+        except Exception:
+            log.exception("Notifications push après le scan")
 
     def prefetch_missing_subtitles(self):
         """Au démarrage : met en file les fichiers dont les sous-titres internes ne sont pas encore prêts."""
@@ -144,7 +161,7 @@ class Ctx:
 
 def build_app(ctx):
     """Assemble l'application : contrôles d'accès communs, catalogue partagé, puis les routes par thème."""
-    x = types.SimpleNamespace()  # outils partagés entre les modules de routes
+    x = ctx.x = types.SimpleNamespace()  # outils partagés entre les modules de routes (ctx.x : pour les tâches de fond)
     app = App()
     app.static_dir = ctx.static_dir
     db = ctx.db
@@ -162,6 +179,14 @@ def build_app(ctx):
 
     def before(req, opts):
         auth = opts.get("auth", "user")
+        if auth == "dlna":
+            # serveur DLNA : pas de compte (les téléviseurs n'en ont pas), seulement s'il est activé et depuis le
+            # réseau local
+            if not ctx.dlna.enabled():
+                raise HTTPError(404, "Introuvable")
+            if not dlna.is_local(req.client_ip):
+                raise HTTPError(403, "Réservé au réseau local")
+            return
         if auth == "webhook":
             token = req.arg("token") or ""
             if not hmac.compare_digest(token, db.setting("webhook_token") or "\0"):
@@ -175,9 +200,15 @@ def build_app(ctx):
         if req.fed_peer:
             # requête d'un serveur lié au nom d'un compte (le même, répliqué) : la lecture d'un élément de ce
             # serveur depuis l'autre. Pas de cookie ni d'en-tête anti-CSRF : la requête est signée par le serveur.
-            if not federation.PEER_USER_PATHS.match(req.path):
+            remote_admin = federation.PEER_ADMIN_PATHS.match(req.path)
+            if not (federation.PEER_USER_PATHS.match(req.path) or remote_admin):
                 raise HTTPError(403, "Non autorisé entre serveurs liés")
+            if remote_admin and db.setting("fed_remote_admin", "1") != "1":
+                raise HTTPError(403, "Ce serveur n'accepte pas d'être administré depuis un serveur lié")
             req.user = ctx.fed.user_for(req)
+            if remote_admin and req.user:
+                log.info("Administration depuis %s par %s : %s %s", req.fed_peer["name"], req.user["username"],
+                         req.method, req.path)
         else:
             # protection CSRF : un autre site ne peut pas ajouter cet en-tête sans l'accord du serveur (CORS)
             if req.method != "GET" and req.headers.get("X-Seance") != "1":
@@ -194,13 +225,19 @@ def build_app(ctx):
                 ctx.throttle.fail("setup:" + req.client_ip)
                 raise HTTPError(403, "Code d'installation invalide")
         if not req.fed_peer:
+            # paramètres d'un serveur lié choisi dans le sélecteur : la requête d'administration lui est transmise
+            target = req.headers.get("X-Nexis-Server") or req.arg("_server")
+            if target and req.path.startswith("/api/admin/") and not federation.LOCAL_ADMIN_ONLY.match(req.path):
+                if not (req.user and req.user["is_admin"]):
+                    raise HTTPError(403, "Réservé aux administrateurs")
+                return ctx.fed.admin_relay(req, target)
             # élément d'un serveur lié : la requête lui est relayée (ou il est prévenu)
             return ctx.fed.intercept(req)
     app.before.append(before)
 
     catalog.install(ctx, x)
-    for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify,
-                   federation):
+    for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify, photos, dlna, remote, push,
+                   opensubs, health, whisper, tracking, books, backup, themes, stats, apps, federation):
         module.register(app, ctx, x)
     return app
 
@@ -218,6 +255,7 @@ def janitor(ctx, stop_event):
             ctx.live.reap()
             ctx.together.reap()
             ctx.downloads.reap()
+            ctx.health.tick()  # alertes pour les administrateurs (toutes les 5 min, en tâche de fond)
             if time.time() - ctx.update_checked > 6 * 3600:
                 ctx.update_checked = time.time()
                 threading.Thread(target=ctx.check_update, daemon=True).start()

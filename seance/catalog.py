@@ -4,12 +4,12 @@ import re
 import threading
 import time
 
-from . import media
+from . import media, themes
 from .markers import from_chapters as chapter_markers
 from .i18n import tr
 from .names import fold
 from .scanner import EXTRA_LABELS
-from .transcoder import QUALITY
+from .transcoder import QUALITIES
 from .web import HTTPError
 
 RK = r"(?P<rk>\d{1,12})"
@@ -23,7 +23,7 @@ EXTERNAL_BASE = 1000  # identifiants des sous-titres externes
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 LANG = re.compile(r"^[a-z]{2,3}$")
 # rangées de l'accueil et liens de la barre du haut : ordre et masquage propres à chaque utilisateur
-LAYOUT_KEY = re.compile(r"^(together|continue|watchlist|suggest|because|home|discover|live|lib:\d{1,9}|pin:\d{1,6})$")
+LAYOUT_KEY = re.compile(r"^(together|continue|watchlist|suggest|because|short|unfinished|home|discover|live|lib:\d{1,9}|pin:\d{1,6})$")
 IMG_PATH = re.compile(r"^/library/metadata/(\d{1,12})/(thumb|art)/\d{1,14}$")
 LANG_NAMES = {"fra": "Français", "eng": "Anglais", "jpn": "Japonais", "deu": "Allemand", "spa": "Espagnol",
               "ita": "Italien", "por": "Portugais", "kor": "Coréen", "zho": "Chinois", "rus": "Russe",
@@ -35,7 +35,7 @@ CODEC_NAMES = {"aac": "AAC", "ac3": "Dolby Digital", "eac3": "Dolby Digital+", "
                "dvd_subtitle": "VobSub", "dvb_subtitle": "DVB"}
 
 DEFAULT_PREFS = {
-    "quality": "original",
+    "quality": "auto",
     "audio_lang": "fra",
     "sub_mode": "foreign",
     "sub_lang": "fra",
@@ -47,14 +47,46 @@ DEFAULT_PREFS = {
     "sub_position": "bottom",
     "autoplay_next": True,
     "auto_skip_intro": False,
+    "auto_skip_recap": False,
     "next_delay": 5,
     "accent": "#ffa43a",
-    "theme": "dark",
+    "theme": "dark",  # un des THEMES, ou "t:<id>" : un thème installé (my_themes)
+    "my_themes": [],  # thèmes installés depuis le magasin, importés ou créés (décrits en entier : valables hors ligne)
+    "ui_style": "classic",  # mise en page : classique, verre, barre latérale, épuré, cinéma, arrondi
     "poster_size": "m",
+    "text_size": "m",
+    "density": "normal",
+    # cartes des films et séries : l'essentiel affiché, la note en option
+    "card_titles": True,
+    "card_progress": True,
+    "card_watched": True,
+    "card_quality": True,
+    "card_new": True,
+    "card_rating": False,
+    "wallpaper": "",
+    "wallpaper_mode": "title",  # title (image d'un titre), color, gradient, daily (un de vos titres chaque jour), upload
+    "wallpaper_color": "#1d2a44",
+    "wallpaper_gradient": "aurora",
     "hidden_libraries": [],
     "show_continue": True,
     "hide_spoilers": False,
     "home_pins": [],
+    "home_hero": "auto",  # auto (reprise, sinon ajout récent), recent, resume, random, watchlist, none
+    # langues par bibliothèque : {id : {audio_lang, sub_mode, sub_lang}} (sinon les langues générales)
+    "lib_langs": {},
+    # lecteur
+    "skip_back": 10,
+    "skip_forward": 30,
+    "default_speed": 1,
+    "remember_volume": True,
+    "night_audio": False,
+    # contenu et vie privée
+    "hidden_genres": [],
+    "private_mode": False,
+    # notifications : nouveaux épisodes ; séries dont on ne veut plus être prévenu ; heures calmes
+    "notify_episodes": True,
+    "muted_shows": [],
+    "quiet_hours": "",
     "start_page": "home",
     "home_order": [],
     "home_hidden": [],
@@ -63,7 +95,25 @@ DEFAULT_PREFS = {
 }
 
 
-PIN_TYPES = ("collection", "playlist", "genre")
+THEMES = ("dark", "oled", "midnight", "light", "sepia", "contrast", "auto")
+MAX_MY_THEMES = 20
+# styles d'interface : changent la mise en page (barre de navigation, cartes, panneaux, bannière), pas seulement les couleurs
+UI_STYLES = ("classic", "glass", "sidebar", "minimal", "cinema", "rounded")
+GRADIENTS = ("aurora", "sunset", "ocean", "forest", "berry", "ember", "steel", "mint")
+PIN_TYPES = ("collection", "playlist", "genre", "filter")
+FILTER_KEYS = {"genre", "watched", "decade", "duration", "res", "hdr", "audio", "subs", "rating", "sort"}
+
+
+def valid_filter_ref(ref):
+    """Filtres d'une bibliothèque épinglés sur l'accueil : « watched=unwatched&decade=1990 »."""
+    import urllib.parse
+    if not isinstance(ref, str) or not 1 <= len(ref) <= 300:
+        return False
+    try:
+        pairs = urllib.parse.parse_qsl(ref, strict_parsing=True)
+    except ValueError:
+        return False
+    return bool(pairs) and all(k in FILTER_KEYS and 1 <= len(v) <= 80 for k, v in pairs)
 
 
 def valid_pins(v):
@@ -72,7 +122,9 @@ def valid_pins(v):
         return False
     ids = set()
     for p in v:
-        if not isinstance(p, dict) or set(p) - {"id", "type", "ref", "lib", "title"}:
+        if not isinstance(p, dict) or set(p) - {"id", "type", "ref", "lib", "title", "count"}:
+            return False
+        if "count" in p and not (isinstance(p["count"], int) and not isinstance(p["count"], bool) and 6 <= p["count"] <= 60):
             return False
         if not (isinstance(p.get("id"), int) and 0 <= p["id"] < 1_000_000) or p["id"] in ids:
             return False
@@ -80,8 +132,9 @@ def valid_pins(v):
         if p.get("type") not in PIN_TYPES or not (isinstance(p.get("title"), str) and 1 <= len(p["title"]) <= 100):
             return False
         ref = p.get("ref")
-        if p["type"] == "genre":
-            if not (isinstance(ref, str) and 1 <= len(ref) <= 80 and isinstance(p.get("lib"), str) and p["lib"].isdigit()):
+        if p["type"] in ("genre", "filter"):
+            ok_ref = valid_filter_ref(ref) if p["type"] == "filter" else isinstance(ref, str) and 1 <= len(ref) <= 80
+            if not (ok_ref and isinstance(p.get("lib"), str) and p["lib"].isdigit()):
                 return False
         elif not (isinstance(ref, str) and ref.isdigit() and len(ref) <= 10):
             return False
@@ -95,7 +148,7 @@ def validate_prefs(data):
             continue
         ok = False
         if k == "quality":
-            ok = v in QUALITY
+            ok = v in QUALITIES
         elif k in ("audio_lang", "sub_lang"):
             ok = isinstance(v, str) and (v == "" or LANG.match(v))
         elif k == "sub_mode":
@@ -114,14 +167,58 @@ def validate_prefs(data):
             ok = v in ("bottom", "high")
         elif k == "next_delay":
             ok = v in (0, 3, 5, 10, 15, 20, 30)
-        elif k in ("autoplay_next", "auto_skip_intro", "show_continue", "hide_spoilers"):
+        elif k in ("autoplay_next", "auto_skip_intro", "auto_skip_recap", "show_continue", "hide_spoilers", "card_titles",
+                   "card_progress", "card_watched", "card_quality", "card_new", "card_rating"):
             ok = isinstance(v, bool)
+        elif k == "home_hero":
+            ok = v in ("auto", "recent", "resume", "random", "watchlist", "none")
+        elif k == "skip_back":
+            ok = v in (5, 10, 15, 30)
+        elif k == "skip_forward":
+            ok = v in (10, 15, 30, 60, 90)
+        elif k == "default_speed":
+            ok = v in (0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2)
+        elif k in ("remember_volume", "night_audio", "private_mode", "notify_episodes"):
+            ok = isinstance(v, bool)
+        elif k == "hidden_genres":
+            ok = isinstance(v, list) and len(v) <= 40 and all(isinstance(g, str) and 1 <= len(g) <= 60 for g in v)
+        elif k == "muted_shows":
+            ok = isinstance(v, list) and len(v) <= 500 and all(isinstance(x, str) and x.isdigit() and len(x) <= 12 for x in v)
+        elif k == "quiet_hours":
+            ok = v == "" or isinstance(v, str) and bool(re.match(r"^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$", v)) and v[:5] != v[6:]
+        elif k == "lib_langs":
+            ok = isinstance(v, dict) and len(v) <= 100 and all(
+                isinstance(lk, str) and lk.isdigit() and isinstance(lv, dict) and set(lv) <= {"audio_lang", "sub_mode", "sub_lang"}
+                and (lv.get("audio_lang") in (None, "") or LANG.match(str(lv.get("audio_lang"))))
+                and (lv.get("sub_lang") in (None, "") or LANG.match(str(lv.get("sub_lang"))))
+                and lv.get("sub_mode") in (None, "never", "foreign", "always") for lk, lv in v.items())
+        elif k == "text_size":
+            ok = v in ("s", "m", "l", "xl")
+        elif k == "density":
+            ok = v in ("compact", "normal", "comfy")
+        elif k == "wallpaper_mode":
+            ok = v in ("none", "title", "color", "gradient", "daily", "upload")
+        elif k == "wallpaper_color":
+            ok = isinstance(v, str) and bool(HEX.match(v))
+        elif k == "wallpaper_gradient":
+            ok = v in GRADIENTS
         elif k == "accent":
             ok = isinstance(v, str) and HEX.match(v)
         elif k == "theme":
-            ok = v in ("dark", "oled", "light")
+            ok = v in THEMES or isinstance(v, str) and v.startswith("t:") and bool(themes.ID.match(v[2:]))
+        elif k == "my_themes":
+            if isinstance(v, list) and len(v) <= MAX_MY_THEMES:
+                try:
+                    v = [themes.validate(t) for t in v]
+                    ok = len({t["id"] for t in v}) == len(v)
+                except themes.ThemeError:
+                    ok = False
+        elif k == "ui_style":
+            ok = v in UI_STYLES
         elif k == "poster_size":
             ok = v in ("s", "m", "l")
+        elif k == "wallpaper":  # image de fond du profil : l'arrière-plan d'un film ou d'une série
+            ok = v == "" or isinstance(v, str) and bool(IMG_PATH.match(v)) and IMG_PATH.match(v).group(2) == "art"
         elif k == "hidden_libraries":
             ok = isinstance(v, list) and len(v) <= 100 and all(isinstance(x, str) and x.isdigit() for x in v)
         elif k in ("home_order", "home_hidden", "nav_order", "nav_hidden"):
@@ -149,7 +246,8 @@ ITEM_SQL = "SELECT i.*, p.idx AS parent_idx, COALESCE(sh.age, i.age) AS eff_age,
 # l'analyse ffprobe ni la distribution, qui pèsent plusieurs Ko par élément.
 CARD_SQL = ("SELECT i.id, i.type, i.title, i.year, i.idx, i.img_version, i.duration_ms, i.library_id, i.rating, "
             "i.content_rating, i.added_at, i.show_id, i.parent_id, i.released, i.extra_kind, i.age, i.summary, "
-            "p.idx AS parent_idx, COALESCE(sh.age, i.age) AS eff_age, " + _COUNTS + _JOINS)
+            "p.idx AS parent_idx, COALESCE(sh.age, i.age) AS eff_age, json_extract(i.probe, '$.video.height') AS vh, "
+            "json_extract(i.probe, '$.video.transfer') AS vt, " + _COUNTS + _JOINS)
 AGE_EXPR = "COALESCE(sh.age, i.age)"
 EPISODE_ORDER = "ORDER BY (p.idx=0), p.idx, i.idx, i.id"
 
@@ -195,9 +293,11 @@ def stream_lists(probe):
             bits.append(tr("forcés"))
         if e.get("sdh"):
             bits.append("SDH")
+        if e.get("dl") == "whisper":
+            bits.append(tr("généré"))
         subs.append({"id": EXTERNAL_BASE + n, "lang": lang, "title": f"{label} ({', '.join(bits)})",
                      "codec": e["codec"], "forced": e.get("forced", False), "external": True, "overlay": True,
-                     "ass": e["codec"] in ("ass", "ssa"), "selected": False})
+                     "ass": e["codec"] in ("ass", "ssa"), "selected": False, "generated": e.get("dl") == "whisper"})
     return audio, subs
 
 
@@ -236,12 +336,27 @@ def install(ctx, x):
             raise HTTPError(404, "Introuvable")
         return row
 
-    def age_filter(user):
-        """Clause SQL du contrôle parental (profil limité à un âge)."""
-        if user.get("max_age") is None:
-            return "", []
-        return (f" AND ({AGE_EXPR} <= ? OR ({AGE_EXPR} IS NULL AND ?=1))",
-                [user["max_age"], 1 if user.get("allow_unrated") else 0])
+    def age_filter(user, hidden=True):
+        """Clause SQL des listes : contrôle parental (profil limité à un âge) et titres que la personne a masqués
+        pour elle (hidden=False : on les garde, ex. pour savoir qu'un titre est déjà sur le serveur)."""
+        sql, args = "", []
+        if user.get("max_age") is not None:
+            sql, args = (f" AND ({AGE_EXPR} <= ? OR ({AGE_EXPR} IS NULL AND ?=1))",
+                         [user["max_age"], 1 if user.get("allow_unrated") else 0])
+        if hidden and hidden_ids(user):
+            sql += " AND COALESCE(i.show_id, i.id) NOT IN (SELECT item_id FROM hidden_items WHERE user_id=?)"
+            args = [*args, user["id"]]
+        genres = get_prefs(user["id"]).get("hidden_genres") if hidden else None
+        if genres:
+            # genres masqués pour soi (ceux de la série pour un épisode)
+            sql += (" AND NOT EXISTS (SELECT 1 FROM json_each((SELECT g0.genres FROM items g0 WHERE g0.id=COALESCE(i.show_id, i.id))) gg "
+                    f"WHERE gg.value IN ({','.join('?' * len(genres))}))")
+            args = [*args, *genres]
+        return sql, args
+
+    def hidden_ids(user):
+        """Films et séries masqués par cette personne (dans les listes ; leur fiche reste accessible)."""
+        return {r["item_id"] for r in db.all("SELECT item_id FROM hidden_items WHERE user_id=?", (user["id"],))}
 
     def visible(user, row):
         if user.get("max_age") is None:
@@ -279,6 +394,19 @@ def install(ctx, x):
              "thumb": img(r["id"], "thumb", v), "art": img(r["id"], "art", v), "duration": r["duration_ms"],
              "section": str(r["library_id"]), "rating": r["rating"], "content_rating": r["content_rating"],
              "added": r["added_at"]}
+        if t in ("movie", "episode"):
+            # définition et HDR pour les badges des cartes (colonnes légères des grilles, sinon l'analyse du fichier)
+            vh, vt = r.get("vh"), r.get("vt")
+            if vh is None and r.get("probe"):
+                try:
+                    v = json.loads(r["probe"]).get("video") or {}
+                    vh, vt = v.get("height"), v.get("transfer")
+                except (ValueError, AttributeError):
+                    pass
+            if vh:
+                c["res"] = "4K" if vh >= 1700 else "1080p" if vh >= 1000 else "720p" if vh >= 700 else "SD"
+            if vt in ("smpte2084", "arib-std-b67"):
+                c["hdr"] = True
         if t in ("season", "episode"):
             c["title"] = tr(r["title"])  # titres créés par le scan : « Saison 2 », « Spéciaux », « Épisode 3 »
         if t == "episode":
@@ -367,7 +495,7 @@ def install(ctx, x):
                    "last_watched_at=?, updated_at=? WHERE user_id=? AND rating_key=?", (now, now, uid, c["id"]))
             recent = db.scalar("SELECT MAX(watched_at) FROM history WHERE user_id=? AND rating_key=?",
                                (uid, c["id"]))
-            if not recent or now - recent > 3 * 3600:
+            if (not recent or now - recent > 3 * 3600) and not get_prefs(uid).get("private_mode"):  # mode privé : pas d'historique
                 db.run("INSERT INTO history(user_id,rating_key,watched_at,section_id,meta) VALUES(?,?,?,?,?)",
                        (uid, c["id"], now, c.get("section"), json.dumps(c, ensure_ascii=False)))
         else:
@@ -414,7 +542,7 @@ def install(ctx, x):
                 for n, c in enumerate(chapters)]
 
     for name in (
-        "age_filter", "allowed_ids", "allowed_set", "attach_state", "card", "chapters_for", "get_prefs",
+        "age_filter", "hidden_ids", "allowed_ids", "allowed_set", "attach_state", "card", "chapters_for", "get_prefs",
         "item_row", "leaves", "libraries_all", "markers_for", "next_episode", "require_item",
         "require_section", "set_watched", "undo_watched", "show_of", "track_prefs", "track_scope", "upsert_meta", "visible",
     ):

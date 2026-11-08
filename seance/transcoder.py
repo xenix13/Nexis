@@ -31,6 +31,9 @@ from .keyframes import equal_segments, segments_from_keyframes
 log = logging.getLogger("seance.transcode")
 
 QUALITY = {"original": None, "1080p": (1080, 8000), "720p": (720, 4000), "480p": (480, 1500)}
+QUALITIES = ("auto", *QUALITY)  # « auto » : choisie selon le débit mesuré de l'appareil (auto_quality)
+AUDIO_KBPS = 192
+HEADROOM = 1.3  # marge sur le débit : pointes du fichier, variations de la connexion
 SEGMENT = 6            # secondes
 COPY_SEEK_PAD = 0.25   # remux : viser juste après l'image clé
 SEG_RE = re.compile(r"^(\d{1,6})\.m4s$")
@@ -72,6 +75,19 @@ DOWNMIX_FILTERS = {
                     "pan=stereo|c0=c0+0.707*c2+0.707*c4|c1=c1+0.707*c2+0.707*c5",
 }
 DOWNMIX_ALGOS = ("none", "dave750", "nightmode", "rfc7845", "ac4")
+# HDR (PQ : HDR10, HDR10+, Dolby Vision avec base HDR10 ; HLG) converti en SDR quand la vidéo est transcodée :
+# sans cela, le H.264 produit a des couleurs délavées et grises. « off » : rien n'est converti.
+HDR_TRANSFERS = ("smpte2084", "arib-std-b67")
+TONEMAPS = ("hable", "mobius", "reinhard", "off")
+
+
+def tonemap_filter(p):
+    """Chaîne de filtres HDR -> SDR (BT.709), ou "" (source SDR, réglage « off », ou ffmpeg sans zscale)."""
+    algo = p.get("tonemap")
+    if not p.get("hdr") or algo in (None, "off") or not media.has_filter("zscale") or not media.has_filter("tonemap"):
+        return ""
+    return (f"zscale=tin={p['hdr']}:min=bt2020nc:pin=bt2020:t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,"
+            f"tonemap=tonemap={algo}:desat=0,zscale=t=bt709:m=bt709:r=tv,")
 # notre touche : un limiteur APRÈS le mixage et le gain, pour qu'aucun réglage ne puisse saturer
 LIMITER = "alimiter=limit=0.8:attack=5:release=80:level=disabled"
 # compat : ancien nom utilisé par les tests
@@ -134,7 +150,34 @@ def video_ok(v, caps=None):
     return False
 
 
-def plan(probe, audio_index=None, burn_index=None, quality="original", caps=None, algo="none", boost=2.0):
+def source_kbps(probe, file_size=0, duration_ms=0):
+    """Débit moyen du fichier (kbit/s), d'après l'analyse, sinon d'après sa taille et sa durée."""
+    rate = int((probe.get("bitrate") or 0) / 1000)
+    if not rate and file_size and duration_ms:
+        rate = int(file_size * 8 / (duration_ms / 1000) / 1000)
+    return rate
+
+
+def auto_quality(probe, kbps, file_size=0, duration_ms=0):
+    """Qualité pour un débit mesuré (kbit/s) : l'original s'il passe avec de la marge, sinon la meilleure
+    qualité convertie qui tient dans le débit, au plus 480p. Sans mesure : l'original."""
+    if not kbps:
+        return "original"
+    src = source_kbps(probe, file_size, duration_ms)
+    src_h = (probe.get("video") or {}).get("height") or 0
+    if src and kbps >= src * HEADROOM or not src and kbps >= 25000:
+        return "original"
+    for q in ("1080p", "720p", "480p"):
+        height, rate = QUALITY[q]
+        if src_h and height > src_h and (not src or rate * HEADROOM >= src):
+            continue  # au-dessus de la définition et du débit du fichier : rien à y gagner
+        if kbps >= (rate + AUDIO_KBPS) * HEADROOM:
+            return q
+    return "480p"
+
+
+def plan(probe, audio_index=None, burn_index=None, quality="original", caps=None, algo="none", boost=2.0,
+         tonemap="hable"):
     caps = caps or DEFAULT_CAPS
     v = probe.get("video")
     audios = probe.get("audio") or []
@@ -179,6 +222,9 @@ def plan(probe, audio_index=None, burn_index=None, quality="original", caps=None
             reasons.append("sous-titres incrustés")
         if need_scale or over_rate:
             reasons.append(f"qualité {quality}")
+    hdr = (v or {}).get("transfer") if (v or {}).get("transfer") in HDR_TRANSFERS else None
+    if mode == "transcode" and hdr and tonemap != "off" and media.has_filter("zscale"):
+        reasons.append("HDR converti en SDR")
     if mode != "direct" and a and not acopy:
         if (a.get("channels") or 2) > 2:
             reasons.append(f"audio {str(a['codec']).upper()} {a['channels']} canaux mixé en stéréo")
@@ -192,8 +238,9 @@ def plan(probe, audio_index=None, burn_index=None, quality="original", caps=None
     return {"mode": mode, "video_index": (v or {}).get("index"), "video_codec": (v or {}).get("codec"),
             "audio_index": a["index"] if a else None, "acopy": acopy, "audio_codec": (a or {}).get("codec"),
             "audio_channels": (a or {}).get("channels") or 2, "audio_filter": audio_filter(a, algo, boost) if a else "",
-            "burn_index": burn_index, "height": height, "kbps": kbps, "src_height": src_h,
-            "src_width": (v or {}).get("width") or 0, "fps": fps, "seglen": seglen, "reasons": reasons}
+            "burn_index": burn_index, "height": height, "kbps": kbps, "src_kbps": rate_kbps, "src_height": src_h,
+            "src_width": (v or {}).get("width") or 0, "fps": fps, "seglen": seglen, "reasons": reasons,
+            "hdr": hdr, "tonemap": tonemap if tonemap in TONEMAPS else "hable"}
 
 
 # Transcodage matériel, choisi par l'administrateur. Décodage par la carte (repli logiciel automatique si
@@ -258,13 +305,16 @@ def media_args(p, hw=None, seglen=SEGMENT):
     else:
         scale = f"scale=-2:{p['height']}:flags=bicubic," if p["src_height"] > p["height"] else ""
         fmt = "format=nv12,hwupload" if hw and hw["engine"] == "vaapi" else "format=yuv420p"
+        tm = tonemap_filter(p)  # après la réduction de taille : moins de pixels à convertir
         if p["burn_index"] is not None:
+            # HDR : converti avant d'y poser les sous-titres (sinon ils seraient convertis avec la vidéo)
+            base = f"[0:{vi}]{tm.rstrip(',')}[b];[b]" if tm else f"[0:{vi}]"
             out = ["-filter_complex",
                    f"[0:{p['burn_index']}]format=yuva420p[s];"
-                   f"[0:{vi}][s]overlay=eof_action=pass:repeatlast=0[o];[o]{scale}{fmt}[v]",
+                   f"{base}[s]overlay=eof_action=pass:repeatlast=0[o];[o]{scale}{fmt}[v]",
                    "-map", "[v]"]
         else:
-            out = ["-map", f"0:{vi}", "-vf", f"{scale}{fmt}"]
+            out = ["-map", f"0:{vi}", "-vf", f"{scale}{tm}{fmt}"]
         gop = math.ceil(seglen * (p.get("fps") or 24))
         out += video_encoder(hw, p["kbps"], gop, seglen)
     if p["audio_index"] is not None:

@@ -3,7 +3,7 @@ import { del, get, put } from '../api.js';
 import { state } from '../app.js';
 import { discoverCard } from './discover.js';
 import { pinButton } from '../pins.js';
-import { clear, confirmDialog, episodeCode, fmtDuration, h, icon, img, modal, field, posterCard, progressBar, toast } from '../ui.js';
+import { clear, confirmDialog, episodeCode, fmtDuration, h, icon, img, modal, field, posterCard, progressBar, toast, toggle } from '../ui.js';
 import { tr } from '../i18n.js';
 
 export async function renderCollection(main, cid, ctx) {
@@ -55,10 +55,12 @@ export async function renderWatchlist(main, ctx) {
 export async function renderPlaylists(main, ctx) {
   const lists = await get('/api/playlists');
   if (!ctx.isCurrent()) return;
-  clear(main, h('div.page-head', h('h1', tr('Mes playlists'))),
+  clear(main, h('div.page-head', h('h1', tr('Playlists'))),
     lists.length ? h('div.grid.wide', lists.map((p) => h('a.card.wide.playlist-card', { href: `#/playlist/${p.id}` },
       h('div.card-img.mosaic', p.thumbs.length ? p.thumbs.map((t) => h('img', { src: img(t, 200, 300), alt: '' })) : h('div.noimg', p.title)),
-      h('div.card-title', p.title), h('div.card-sub', tr('{count} élément(s) · {p2}', { count: p.count, p2: fmtDuration(p.duration) })))))
+      h('div.card-title', p.title, p.shared ? h('span.chip.small', { title: tr('Partagée avec le foyer') }, icon('group')) : null),
+      h('div.card-sub', tr('{count} élément(s) · {p2}', { count: p.count, p2: fmtDuration(p.duration) }),
+        p.mine ? '' : h('span.muted', ` · ${tr('de {owner}', { owner: p.owner })}`)))))
       : h('div.empty', tr('Aucune playlist. Pour en créer une : menu ⋯ d’un film ou d’un épisode, puis « Ajouter à une playlist… ».')));
 }
 
@@ -81,17 +83,22 @@ export async function renderPlaylist(main, pid, ctx) {
       h('div.filters',
         first ? h('a.btn.primary', { href: `#/play/${first.id}?playlist=${p.id}` }, icon('play'), tr('Tout lire')) : null,
         pinButton({ type: 'playlist', ref: p.id, title: p.title }),
-        h('button.btn.ghost', { onclick: async () => {
+        // partagée : tout le foyer la voit, la complète et la réordonne (chacun n'y voit que ce à quoi il a accès)
+        p.mine ? toggle(tr('Partager avec le foyer'), p.shared, { onchange: async (e) => {
+          try { await put(`/api/playlists/${p.id}`, { shared: e.target.checked }); toast(e.target.checked ? tr('Playlist partagée avec le foyer') : tr('Playlist de nouveau personnelle'), 'ok'); }
+          catch (ex) { toast(ex.message, 'bad'); e.target.checked = !e.target.checked; }
+        } }) : h('span.muted', tr('Partagée par {owner}', { owner: p.owner })),
+        p.mine ? h('button.btn.ghost', { onclick: async () => {
           const t = h('input', { value: p.title, maxlength: 100 });
           const ok = await modal(tr('Renommer'), field(tr('Titre'), t), [{ label: tr('Annuler'), value: null },
             { label: tr('Enregistrer'), primary: true, handler: async () => { await put(`/api/playlists/${p.id}`, { title: t.value }); return true; } }]);
           if (ok) reload();
-        } }, tr('Renommer')),
-        h('button.btn.ghost', { onclick: async () => {
+        } }, tr('Renommer')) : null,
+        p.mine ? h('button.btn.ghost', { onclick: async () => {
           if (!await confirmDialog(tr('Supprimer la playlist ?'), tr('« {title} » sera supprimée.', { title: p.title }), tr('Supprimer'))) return;
           await del(`/api/playlists/${p.id}`);
           location.hash = '#/playlists';
-        } }, tr('Supprimer')))),
+        } }, tr('Supprimer')) : null)),
     p.items.length ? h('div.episodes', p.items.map((x, i) => h('div.episode', { class: x.watched ? 'episode watched' : 'episode' },
       h('a.episode-thumb', { href: `#/play/${x.id}?playlist=${p.id}${x.position && !x.watched ? '&resume=1' : ''}` },
         h('img', { src: img(x.type === 'episode' ? x.thumb : (x.art || x.thumb), 320, 180), alt: '', loading: 'lazy' }),

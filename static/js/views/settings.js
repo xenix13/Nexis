@@ -1,16 +1,70 @@
-import { del, get, post, put } from '../api.js';
+import { adminTarget, del, get, post, put, setAdminTarget } from '../api.js';
 import { qrSvg } from '../qr.js';
 import { ADMIN_ALIASES, ADMIN_GROUPS, renderAdminSection } from './admin.js';
-import { applyPrefs, navItems, refreshMe, repaintNav, repaintUser, state } from '../app.js';
+import { GRADIENTS, applyPrefs, navItems, refreshMe, repaintNav, repaintUser, state } from '../app.js';
 import { PIN_LABELS, pins, removePin } from '../pins.js';
 import { SUB_BGS, SUB_COLORS, SUB_EDGES, SUB_FONTS, SUB_POSITIONS, applySubStyle } from '../substyle.js';
-import { arrange, avatar, clear, field, h, icon, modal, select, spinner, toast, toggle } from '../ui.js';
+import { arrange, avatar, clear, confirmDialog, field, h, icon, img, modal, select, spinner, toast, toggle } from '../ui.js';
 import { ART, BACKGROUNDS, CATEGORIES, DEFAULT_BG, artDataUrl, artSvg } from '../avatar-art.js';
-import { device, setDevice } from '../device.js';
+import { device, deviceName, modestDevice, setDevice } from '../device.js';
+import { shortcutsPanel } from '../keys.js';
+import { renderThemeStore, themePreview } from './themes.js';
+import { disablePush, enablePush, pushState, pushSupported } from '../push.js';
+import { nativeApp } from '../install.js';
+
+// application Nexis installée (bureau, Android) : sa version, le serveur, la recherche de mise à jour
+function nativePanel() {
+  const n = nativeApp();
+  if (!n) return null;
+  return h('section.panel', h('h2', tr('Cette application')),
+    h('p.small', tr('Application Nexis {v} · serveur {s}', { v: n.version || '?', s: n.server || location.origin })),
+    h('p.muted.small', tr('L’interface vient du serveur et suit ses mises à jour ; l’application elle-même se met à jour depuis le serveur.')),
+    h('div.actions-row',
+      h('button.btn', { onclick: () => n.checkUpdate() }, tr('Rechercher une mise à jour')),
+      h('button.btn', { onclick: () => n.changeServer() }, tr('Changer de serveur…'))));
+}
+
+// notifications push : nouvel épisode d'une série suivie, titre demandé arrivé
+function pushPanel() {
+  const box = h('div');
+  const panel = h('section.panel', h('h2', tr('Notifications')),
+    h('p.muted.small', tr('Un nouvel épisode d’une série que vous suivez, ou un titre demandé qui arrive : une notification sur cet appareil, même Nexis fermé.')), box);
+  const paint = async () => {
+    const st = await pushState().catch(() => 'off');
+    if (st === 'unsupported') {
+      clear(box, h('p.small', /iphone|ipad/i.test(navigator.userAgent) ? tr('Sur iPhone et iPad : installez d’abord Nexis sur l’écran d’accueil (iOS 16.4 ou plus récent), puis ouvrez ce réglage depuis l’application.')
+        : tr('Ce navigateur ne gère pas les notifications push, ou Nexis n’est pas ouvert en HTTPS.')));
+      return;
+    }
+    if (st === 'denied') { clear(box, h('p.small', tr('Notifications bloquées pour ce site : autorisez-les dans les réglages du navigateur.'))); return; }
+    const sw = toggle(tr('Recevoir les notifications sur cet appareil'), st === 'on', { onchange: async (e) => {
+      e.target.disabled = true;
+      try {
+        if (e.target.checked) { await enablePush(); toast(tr('Notifications activées sur cet appareil'), 'ok'); }
+        else { await disablePush(); toast(tr('Notifications désactivées sur cet appareil'), 'ok'); }
+      } catch (ex) { toast(ex.message, 'bad'); }
+      paint();
+    } });
+    clear(box, sw, st === 'on' ? h('div.actions-row', h('button.btn.small', { type: 'button', onclick: async () => {
+      try { await post('/api/push/test'); toast(tr('Notification d’essai envoyée'), 'ok'); } catch (ex) { toast(ex.message, 'bad'); }
+    } }, tr('Envoyer une notification d’essai'))) : null);
+  };
+  paint();
+  return panel;
+}
 import { LANGUAGES, lang, locale, tr, useLanguage } from '../i18n.js';
 
 const LANGS = [['fra', tr('Français')], ['eng', tr('Anglais')], ['jpn', tr('Japonais')], ['spa', tr('Espagnol')], ['deu', tr('Allemand')],
   ['ita', tr('Italien')], ['por', tr('Portugais')], ['kor', tr('Coréen')], ['zho', tr('Chinois')], ['', tr('Pas de préférence')]];
+// styles d'interface : [valeur, nom, description]
+export const UI_STYLES = [
+  ['classic', tr('Classique'), tr('Barre en haut sur la grande image, affiches à coins doux.')],
+  ['glass', tr('Verre dépoli'), tr('Barre flottante et panneaux translucides, bannière en carte arrondie.')],
+  ['sidebar', tr('Barre latérale'), tr('Navigation à gauche avec icônes, recherche et profil en bas (sur grand écran).')],
+  ['minimal', tr('Épuré'), tr('Plat et sobre : pas d’ombres, angles droits, titres discrets.')],
+  ['cinema', tr('Cinéma plein écran'), tr('Bannière plein écran, titres sur les affiches au survol, fiche en grand.')],
+  ['rounded', tr('Arrondi'), tr('Formes très arrondies, menu en pastilles, boutons en dégradé.')],
+];
 const ACCENTS = ['#ffa43a', '#e0a84f', '#e5484d', '#3dd68c', '#4c9aff', '#a78bfa', '#f472b6', '#2dd4bf', '#f97316'];
 
 // Liste à réordonner (flèches ou glisser-déposer) avec un interrupteur par ligne.
@@ -179,13 +233,108 @@ export const ACCOUNT_GROUP = { title: tr('Mon compte'), items: [
     keys: tr('nom avatar photo couleur langue language pin code mot de passe sécurité double authentification 2fa totp codes de secours') },
   { id: 'playback', label: tr('Lecture'), icon: 'play', lead: tr('Qualité, langues, sous-titres et enchaînement des épisodes.'),
     keys: tr('qualité langue audio sous-titres taille police couleur style épisode suivant générique intro automatique spoiler anti-spoiler résumé') },
-  { id: 'appearance', label: tr('Apparence'), icon: 'palette', lead: tr('Thème, couleur d’accent et taille des affiches.'),
-    keys: tr('thème sombre clair oled couleur accent affiches taille') },
+  { id: 'appearance', label: tr('Apparence'), icon: 'palette', lead: tr('Style de l’interface, thème, couleur d’accent, affiches et fond d’écran.'),
+    keys: tr('style mise en page disposition barre latérale verre épuré cinéma arrondi thème sombre clair oled couleur accent affiches taille fond d’écran') },
+  { id: 'themes', label: tr('Magasin de thèmes'), icon: 'palette', lead: tr('Thèmes fournis avec Nexis et proposés par la communauté, création de vos propres thèmes.'),
+    keys: tr('thèmes magasin boutique cyberpunk néon rétro terminal galaxie films couleurs créer importer exporter github communauté') },
   { id: 'device', label: tr('Cet appareil'), icon: 'tv', lead: tr('Réglages propres à ce navigateur ou à cette TV, prioritaires sur ceux du profil.'),
     keys: tr('appareil tv téléphone qualité sous-titres taille animations mouvement télécommande manette navigateur') },
+  { id: 'services', label: tr('Trakt et Letterboxd'), icon: 'link', lead: tr('Ce que vous regardez, vos notes et votre liste « À regarder », partagés avec Trakt ou Letterboxd.'),
+    keys: tr('trakt letterboxd synchroniser historique notes import export csv scrobble') },
+  { id: 'privacy', label: tr('Contenu et notifications'), icon: 'bell', lead: tr('Genres masqués, mode privé, notifications et heures calmes.'),
+    keys: tr('genres masquer mode privé historique vie privée notifications épisodes heures calmes nuit silence') },
   { id: 'layout', label: tr('Accueil et menu'), icon: 'home', lead: tr('Ordre et affichage des rangées de l’accueil et des liens de la barre du haut.'),
     keys: tr('accueil rangées ordre barre du haut menu liens masquer réorganiser épingler page d’ouverture démarrage') },
 ] };
+
+// Trakt (compte relié par un code, synchronisé toutes les 6 h) et Letterboxd (export / import de fichiers)
+async function servicesPage(body) {
+  const when = (ts) => new Date(ts * 1000).toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' });
+  const traktBox = h('section.panel', h('h2', 'Trakt'), spinner());
+  const lbResult = h('div');
+  const lbFile = h('input', { type: 'file', accept: '.zip,.csv,text/csv,application/zip', hidden: true, onchange: async () => {
+    const f = lbFile.files[0];
+    if (!f) return;
+    lbResult.replaceChildren(spinner());
+    try {
+      const r = await fetch('/api/me/letterboxd', { method: 'POST', body: f, credentials: 'same-origin', headers: { 'X-Seance': '1', 'X-Lang': lang } });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || r.statusText);
+      lbResult.replaceChildren(h('div.status-box.ok', tr('Import terminé : {w} film(s) marqué(s) comme vu(s), {r} note(s), {l} ajout(s) à « À regarder ».', { w: j.watched, r: j.rated, l: j.watchlist })),
+        j.unmatched_count ? h('details.small', h('summary', tr('{n} film(s) absent(s) de ce serveur', { n: j.unmatched_count })),
+          h('ul', j.unmatched.map((n) => h('li', n)))) : null);
+    } catch (e) { lbResult.replaceChildren(h('p.form-error', e.message)); }
+    lbFile.value = '';
+  } });
+  clear(body, traktBox, h('section.panel', h('h2', 'Letterboxd'),
+    h('p.muted.small', tr('Letterboxd n’a pas d’API publique : on passe par des fichiers. L’export contient vos films vus sur Nexis, avec la date et votre note, au format d’import de Letterboxd (letterboxd.com → Settings → Import & Export → Import). Pour l’import, téléchargez votre export Letterboxd (fichier ZIP) et envoyez-le ici : les films vus, les notes et la liste « À regarder » sont reconnus par titre et année.')),
+    h('div.actions-row', h('a.btn', { href: '/api/me/letterboxd.csv', download: 'nexis-letterboxd.csv' }, icon('download'), tr('Exporter pour Letterboxd')),
+      h('button.btn', { onclick: () => lbFile.click() }, tr('Importer l’export Letterboxd…')), lbFile),
+    lbResult));
+
+  let timer = null;
+  const paint = (v) => {
+    clearTimeout(timer);
+    const admin = state.me.user.is_admin ? (() => {
+      const id = h('input', { value: v.client_id || '', spellcheck: false, autocomplete: 'off' });
+      const secret = h('input', { type: 'password', autocomplete: 'off', placeholder: v.secret_set ? tr('Enregistré (laisser vide pour le garder)') : '' });
+      return h('details.alert-conf', { open: !v.configured },
+        h('summary.small', tr('Application Trakt du serveur (administrateur)')),
+        h('p.muted.small', tr('Une fois pour tout le serveur : sur trakt.tv → Settings → Your API Apps → New Application, nom « Nexis », Redirect URI : urn:ietf:wg:oauth:2.0:oob. Copiez ici le Client ID et le Client Secret.')),
+        h('div.grid2', field('Client ID', id), field('Client Secret', secret)),
+        h('button.btn', { onclick: async () => {
+          const b = { client_id: id.value.trim() };
+          if (secret.value.trim()) b.client_secret = secret.value.trim();
+          try { paint(await put('/api/admin/trakt', b)); toast(tr('Enregistré'), 'ok'); } catch (e) { toast(e.message, 'bad'); }
+        } }, tr('Enregistrer')));
+    })() : null;
+    const intro = h('p.muted.small', tr('Relié à Trakt, Nexis y envoie ce que vous regardez et récupère ce que vous avez vu ailleurs (toutes les 6 heures) ; les notes et la liste « À regarder » s’ajoutent dans les deux sens. Rien n’est jamais retiré.'));
+    if (!v.configured) {
+      clear(traktBox, h('h2', 'Trakt'), intro, state.me.user.is_admin ? null : h('div.status-box', tr('L’administrateur du serveur doit d’abord enregistrer une application Trakt.')), admin);
+      return;
+    }
+    if (v.linked) {
+      const r = v.last_result;
+      clear(traktBox, h('h2', 'Trakt'), intro,
+        h('div.status-box.ok', tr('Relié au compte Trakt {name}.', { name: v.username || '?' })),
+        v.last_sync ? h('p.small.muted', tr('Dernière synchronisation : {date}', { date: when(v.last_sync) }),
+          r ? ` · ${tr('{a} reçu(s), {b} envoyé(s)', { a: r.imported + r.ratings_in + r.watchlist_in, b: r.exported + r.ratings_out + r.watchlist_out })}` : '') : null,
+        v.last_error ? h('p.form-error.small', v.last_error) : null,
+        h('div.actions-row',
+          h('button.btn.primary', { onclick: async (e) => {
+            e.target.disabled = true;
+            e.target.textContent = tr('Synchronisation…');
+            try { const j = await post('/api/me/trakt/sync'); paint(j); toast(tr('Synchronisé'), 'ok'); } catch (ex) { toast(ex.message, 'bad'); paint(await get('/api/me/trakt')); }
+          } }, tr('Synchroniser maintenant')),
+          h('button.btn', { onclick: async () => { paint(await del('/api/me/trakt')); toast(tr('Compte Trakt délié'), 'ok'); } }, tr('Délier'))),
+        admin);
+      return;
+    }
+    clear(traktBox, h('h2', 'Trakt'), intro,
+      h('button.btn.primary', { onclick: async () => {
+        try {
+          const c = await post('/api/me/trakt/link');
+          const poll = async () => {
+            try {
+              const r = await post('/api/me/trakt/poll');
+              if (r.status === 'pending') { timer = setTimeout(poll, (c.interval || 5) * 1000); return; }
+              if (r.status === 'linked') { toast(tr('Compte Trakt relié : première synchronisation en cours'), 'ok'); paint(await get('/api/me/trakt')); return; }
+              toast(r.status === 'denied' ? tr('Accès refusé sur Trakt') : tr('Code expiré : recommencez'), 'bad');
+              paint(await get('/api/me/trakt'));
+            } catch (e) { toast(e.message, 'bad'); }
+          };
+          clear(traktBox, h('h2', 'Trakt'),
+            h('p', tr('Sur {url}, saisissez ce code :', { url: c.verification_url })),
+            h('div.trakt-code', c.user_code),
+            h('div.actions-row', h('a.btn.primary', { href: c.verification_url, target: '_blank', rel: 'noopener' }, tr('Ouvrir trakt.tv')),
+              h('button.btn', { onclick: () => { clearTimeout(timer); get('/api/me/trakt').then(paint); } }, tr('Annuler'))),
+            h('p.muted.small', tr('Cette page se met à jour toute seule une fois l’accès accordé.')));
+          timer = setTimeout(poll, (c.interval || 5) * 1000);
+        } catch (e) { toast(e.message, 'bad'); }
+      } }, tr('Relier mon compte Trakt')), admin);
+  };
+  try { paint(await get('/api/me/trakt')); } catch (e) { clear(traktBox, h('h2', 'Trakt'), h('p.muted', e.message)); }
+}
 
 function accountPage(id, body, rerender) {
   const me = state.me;
@@ -330,9 +479,49 @@ function accountPage(id, body, rerender) {
       } });
     const languagePanel = h('section.panel', h('h2', tr('Langue')), field('Langue / Language', language,
       tr('Langue des menus et des messages de Nexis, pour ce compte sur tous les appareils.')));
-    clear(body, profile, languagePanel, pinPanel, security, me.user.managed ? null : twoFactorPanel(rerender));
+    // tous les réglages du profil : les mêmes sur chaque serveur lié ; retour aux valeurs par défaut
+    const resetPanel = h('section.panel', h('h2', tr('Mes réglages')),
+      h('p.muted.small', tr('Vos réglages (apparence, langues, lecture, accueil et menu) sont propres à votre profil et vous suivent sur tous les serveurs liés. Ceux de « Cet appareil » restent propres à ce navigateur.')),
+      h('button.btn', { onclick: async () => {
+        if (!await confirmDialog(tr('Revenir aux réglages par défaut ?'), tr('Apparence, langues, lecture, accueil et menu reprennent leurs valeurs de départ, sur tous les serveurs liés.'), tr('Réinitialiser'))) return;
+        try {
+          const r = await post('/api/me/prefs/reset');
+          state.me.prefs = r;
+          applyPrefs(r);
+          repaintNav();
+          toast(tr('Réglages par défaut rétablis'), 'ok');
+          rerender();
+        } catch (e) { toast(e.message, 'bad'); }
+      } }, tr('Revenir aux réglages par défaut')));
+    clear(body, profile, languagePanel, pinPanel, security, me.user.managed ? null : twoFactorPanel(rerender), resetPanel);
     return;
   }
+
+  // langues propres à une bibliothèque : par exemple les animes en VO sous-titrée, les films en VF
+  const libLangsPanel = () => {
+    const libs = me.libraries.filter((l) => ['movie', 'show'].includes(l.type));
+    if (!libs.length) return null;
+    const cur = { ...(p.lib_langs || {}) };
+    const rowFor = (l) => {
+      const o = cur[l.id] || {};
+      const set = (k, v) => {
+        const next = { ...(cur[l.id] || {}) };
+        if (v === '' || v == null) delete next[k]; else next[k] = v;
+        if (Object.keys(next).length) cur[l.id] = next; else delete cur[l.id];
+        save({ lib_langs: { ...cur } }, tr('Langues de « {name} » enregistrées', { name: l.title }));
+      };
+      const same = [['', tr('Comme ailleurs')]];
+      return h('div.lib-lang-row', h('strong', l.title),
+        h('div.grid3',
+          field(tr('Audio'), select([...same, ...LANGS.filter(([v]) => v)], o.audio_lang || '', { onchange: (e) => set('audio_lang', e.target.value) })),
+          field(tr('Sous-titres'), select([...same, ['foreign', tr('Si l’audio n’est pas dans ma langue')], ['always', tr('Toujours')], ['never', tr('Jamais')]],
+            o.sub_mode || '', { onchange: (e) => set('sub_mode', e.target.value) })),
+          field(tr('Langue des sous-titres'), select([...same, ...LANGS.filter(([v]) => v)], o.sub_lang || '', { onchange: (e) => set('sub_lang', e.target.value) }))));
+    };
+    return h('section.panel', h('h2', tr('Langues par bibliothèque')),
+      h('p.muted.small', tr('Pour une bibliothèque, d’autres langues que celles du profil : par exemple les animes en japonais sous-titré, les films en français. « Comme ailleurs » garde le réglage général. Le choix fait pour une série ou un film reste prioritaire.')),
+      libs.map(rowFor));
+  };
 
   if (id === 'playback') {
     // apparence des sous-titres, avec un aperçu qui suit chaque réglage
@@ -372,9 +561,9 @@ function accountPage(id, body, rerender) {
     clear(body,
       h('section.panel', h('h2', tr('Qualité et langue')),
         h('div.grid2',
-          field(tr('Qualité par défaut'), bindSelect('quality', [['original', tr('Originale (le moins de transcodage)')],
+          field(tr('Qualité par défaut'), bindSelect('quality', [['auto', tr('Automatique (selon le débit)')], ['original', tr('Originale (le moins de transcodage)')],
             ['1080p', '1080p · 10 Mb/s'], ['720p', '720p · 4 Mb/s'], ['480p', '480p · 1,5 Mb/s']]),
-          tr('« Originale » limite la charge du serveur : lecture directe ou remux lorsque c’est possible.')),
+          tr('« Automatique » mesure le débit de l’appareil à chaque lecture : l’original quand la connexion suffit, sinon la meilleure qualité qui passe.')),
           field(tr('Langue audio préférée'), bindSelect('audio_lang', LANGS)))),
       h('section.panel', h('h2', tr('Sous-titres')),
         h('div.grid2',
@@ -387,8 +576,76 @@ function accountPage(id, body, rerender) {
         field(tr('Délai avant l’épisode suivant'), bindSelect('next_delay', [0, 3, 5, 10, 15, 20, 30].map((n) => [String(n), n ? tr('{n} secondes', { n }) : tr('Immédiatement')]), Number),
           tr('Un compte à rebours s’affiche à la fin de l’épisode, avec « Lire maintenant » et « Annuler ». Pendant le générique, l’épisode suivant est seulement proposé.')),
         bindToggle('auto_skip_intro', tr('Passer les génériques d’ouverture automatiquement')),
+        bindToggle('auto_skip_recap', tr('Passer les récapitulatifs (« Précédemment… ») automatiquement')),
         bindToggle('hide_spoilers', tr('Anti-spoiler : flouter les vignettes et masquer les résumés des épisodes non vus')),
-        h('p.field-hint.toggle-hint', tr('Un clic sur un résumé masqué l’affiche.'))));
+        h('p.field-hint.toggle-hint', tr('Un clic sur un résumé masqué l’affiche.'))),
+      h('section.panel', h('h2', tr('Lecteur')),
+        h('div.grid2',
+          field(tr('Bouton reculer'), bindSelect('skip_back', [5, 10, 15, 30].map((n) => [String(n), tr('{n} secondes', { n })]), Number),
+            tr('Aussi les flèches gauche et droite du clavier.')),
+          field(tr('Bouton avancer'), bindSelect('skip_forward', [10, 15, 30, 60, 90].map((n) => [String(n), tr('{n} secondes', { n })]), Number))),
+        field(tr('Vitesse de départ'), bindSelect('default_speed', [0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2].map((v) => [String(v), v === 1 ? tr('Normale') : `×${String(v).replace('.', ',')}`]), Number)),
+        bindToggle('remember_volume', tr('Garder le volume d’une lecture à l’autre')),
+        bindToggle('night_audio', tr('Son « nuit » : dialogues renforcés, explosions et musique atténuées (son 5.1 / 7.1 converti)'))),
+      libLangsPanel());
+    return;
+  }
+
+  if (id === 'privacy') {
+    // genres masqués : bascule par genre (tous les genres des bibliothèques du compte)
+    const hidden = new Set(p.hidden_genres || []);
+    const genreBox = h('div.chips', spinner());
+    get('/api/me/genres').then((gs) => {
+      const names = [...new Set([...gs.map((g) => g.name), ...hidden])].sort((a, b) => a.localeCompare(b, locale()));
+      clear(genreBox, names.length ? names.map((g) => h('button.chip.chip-toggle', { type: 'button', class: hidden.has(g) ? 'chip chip-toggle on' : 'chip chip-toggle',
+        'aria-pressed': String(hidden.has(g)), onclick: async (e) => {
+          const b = e.currentTarget;
+          if (hidden.has(g)) hidden.delete(g); else if (hidden.size >= 40) { toast(tr('40 genres masqués au maximum'), 'bad'); return; } else hidden.add(g);
+          b.classList.toggle('on', hidden.has(g));
+          b.setAttribute('aria-pressed', String(hidden.has(g)));
+          await save({ hidden_genres: [...hidden] }, hidden.has(g) ? tr('Genre « {g} » masqué', { g }) : tr('Genre « {g} » de nouveau visible', { g }));
+        } }, g)) : h('p.muted.small', tr('Aucun genre dans vos bibliothèques.')));
+    }).catch((e) => clear(genreBox, h('p.muted.small', e.message)));
+    // heures calmes : "HH:MM-HH:MM", vide = jamais
+    const [qa, qb] = (p.quiet_hours || '22:00-08:00').split('-');
+    const from = h('input', { type: 'time', value: qa, disabled: !p.quiet_hours });
+    const to = h('input', { type: 'time', value: qb, disabled: !p.quiet_hours });
+    const quietSave = () => {
+      if (!from.value || !to.value || from.value === to.value) { toast(tr('Choisissez deux heures différentes'), 'bad'); return; }
+      save({ quiet_hours: `${from.value}-${to.value}` }, tr('Heures calmes enregistrées'));
+    };
+    from.addEventListener('change', quietSave);
+    to.addEventListener('change', quietSave);
+    const quiet = toggle(tr('Heures calmes : pas de notification sur les appareils pendant cette plage'), !!p.quiet_hours, { onchange: (e) => {
+      from.disabled = to.disabled = !e.target.checked;
+      if (e.target.checked) quietSave(); else save({ quiet_hours: '' }, tr('Heures calmes désactivées'));
+    } });
+    const mutedList = h('div.user-list');
+    const paintMuted = async () => {
+      const list = await get('/api/me/muted').catch(() => []);
+      clear(mutedList, list.length ? list.map((c) => h('div.user-row', h('a.grow', { href: `#/item/${c.id}` }, h('strong', c.title),
+        c.year ? h('span.muted', ` (${c.year})`) : null),
+      h('button.btn.small', { onclick: async () => {
+        await save({ muted_shows: (me.prefs.muted_shows || []).filter((x) => x !== String(c.id)) }, tr('Vous serez prévenu des nouveaux épisodes'));
+        paintMuted();
+      } }, tr('Réactiver')))) : h('p.muted.small', tr('Aucune série en sourdine.')));
+    };
+    paintMuted();
+    clear(body,
+      h('section.panel', h('h2', tr('Genres masqués')),
+        h('p.muted.small', tr('Les films et séries de ces genres n’apparaissent plus pour vous : bibliothèques, accueil, recherche et suggestions. Leur fiche reste accessible par un lien direct.')),
+        genreBox),
+      h('section.panel', h('h2', tr('Mode privé')),
+        h('p.muted.small', tr('Votre progression reste enregistrée (pour reprendre où vous en étiez), mais rien n’est ajouté à votre historique, rien n’est envoyé à Trakt, et les administrateurs voient « Lecture privée » au lieu du titre.')),
+        bindToggle('private_mode', tr('Activer le mode privé'))),
+      h('section.panel', h('h2', tr('Notifications')),
+        h('p.muted.small', tr('Ce que Nexis peut vous signaler. Les notifications s’activent appareil par appareil dans « Cet appareil » ; un titre demandé qui arrive est toujours signalé.')),
+        bindToggle('notify_episodes', tr('Nouveaux épisodes des séries que je suis')),
+        quiet, h('div.grid2', field(tr('De'), from), field(tr('À'), to)),
+        h('p.muted.small', tr('Pendant les heures calmes, les notifications restent dans la cloche de Nexis mais ne font pas sonner vos appareils. Heure du serveur.'))),
+      h('section.panel', h('h2', tr('Séries en sourdine')),
+        h('p.muted.small', tr('Pas de notification pour ces séries (menu ⋯ d’une série → Ne plus être prévenu des nouveaux épisodes).')),
+        mutedList));
     return;
   }
 
@@ -399,26 +656,125 @@ function accountPage(id, body, rerender) {
     clear(body,
       h('section.panel', h('h2', tr('Lecture sur cet appareil')),
         h('div.grid2',
-          field(tr('Qualité'), pick('quality', [['', tr('Selon le profil ({p1})', { p1: ({ original: tr('originale'), '1080p': '1080p', '720p': '720p', '480p': '480p' })[p.quality] || p.quality })],
-            ['original', tr('Originale')], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p']]),
+          field(tr('Qualité'), pick('quality', [['', tr('Selon le profil ({p1})', { p1: ({ auto: tr('automatique'), original: tr('originale'), '1080p': '1080p', '720p': '720p', '480p': '480p' })[p.quality] || p.quality })],
+            ['auto', tr('Automatique')], ['original', tr('Originale')], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p']]),
           tr('Utile pour réduire la qualité sur un téléphone en données mobiles.')),
           field(tr('Taille des sous-titres'), pick('sub_size', [['', tr('Selon le profil ({sub_size} %)', { sub_size: p.sub_size })],
             ...[80, 100, 120, 140, 160, 180, 200].map((n) => [String(n), `${n} %`])]), tr('Une TV regardée de loin demande souvent des sous-titres plus grands.')))),
       h('section.panel', h('h2', tr('Affichage et navigation')),
         h('div.grid2',
           field(tr('Animations'), pick('motion', [['', tr('Selon le système')], ['reduced', tr('Réduites')]])),
+          field(tr('Effets visuels'), pick('effects', [['', modestDevice() ? tr('Automatique (allégés sur cet appareil)') : tr('Automatique (complets sur cet appareil)')],
+            ['full', tr('Complets')], ['lite', tr('Allégés')]]),
+          tr('Allégés : sans flou, transparence ni ombres. Plus fluide sur une TV ou un appareil modeste ; la disposition du style ne change pas.')),
+          field(tr('Style de l’interface'), select([['', tr('Selon le profil ({p1})', { p1: (UI_STYLES.find((x) => x[0] === (p.ui_style || 'classic')) || UI_STYLES[0])[1] })],
+            ...UI_STYLES.map(([v, l]) => [v, l])], d.ui_style || '', { onchange: (e) => { set({ ui_style: e.target.value }); applyPrefs(me.prefs); } }),
+          tr('Par exemple « Classique » sur la TV et « Barre latérale » sur l’ordinateur.')),
           field(tr('Navigation à la télécommande'), pick('remote', [['', tr('Automatique')], ['on', tr('Toujours activée')], ['off', tr('Désactivée')]]),
             tr('Repères de sélection visibles et déplacement aux flèches, comme sur une TV.')))),
+      pushPanel(),
+      nativePanel(),
+      h('section.panel', h('h2', tr('Télécommande')),
+        field(tr('Nom de cet appareil'), h('input', { value: d.name || '', maxlength: 60, placeholder: deviceName(),
+          onchange: (e) => set({ name: e.target.value.trim() || undefined }) }),
+        tr('Nom affiché dans la page Télécommande des autres appareils quand celui-ci lit une vidéo (ex. « TV du salon »).'))),
+      shortcutsPanel(),
       h('p.muted.small', tr('Ces réglages sont enregistrés dans ce navigateur uniquement.')));
     return;
   }
 
+  if (id === 'services') {
+    servicesPage(body);
+    return;
+  }
+
   if (id === 'appearance') {
-    clear(body, h('section.panel', h('h2', tr('Couleurs et affiches')),
-      field(tr('Couleur d’accent'), swatches(p.accent, (c) => save({ accent: c }, tr('Couleur appliquée')))),
-      h('div.grid2',
-        field(tr('Thème'), bindSelect('theme', [['dark', tr('Sombre')], ['oled', tr('Noir profond (OLED)')], ['light', tr('Clair')]])),
-        field(tr('Taille des affiches'), bindSelect('poster_size', [['s', tr('Petites')], ['m', tr('Moyennes')], ['l', tr('Grandes')]])))));
+    // thèmes : aperçu en vignette (fond, surface, texte, accent)
+    const THEMES = [['dark', tr('Sombre'), '#0b0b0e', '#1c1c22', '#f5f3ef'], ['oled', tr('Noir profond (OLED)'), '#000', '#161619', '#f5f3ef'],
+      ['midnight', tr('Bleu nuit'), '#0a0f1c', '#19243f', '#eef2fb'], ['light', tr('Clair'), '#f5f3ee', '#ffffff', '#16161a'],
+      ['sepia', tr('Sépia'), '#f1e7d6', '#fbf5ea', '#3b2f22'], ['contrast', tr('Contraste élevé'), '#000', '#1b1b1b', '#ffffff'],
+      ['auto', tr('Automatique (comme l’appareil)'), 'linear-gradient(135deg, #0b0b0e 50%, #f5f3ee 50%)', '#888', '#888']];
+    const themeTiles = h('div.theme-tiles', THEMES.map(([v, label, bg, surf, text]) => h('button.theme-tile', {
+      type: 'button', 'aria-pressed': String(p.theme === v), title: label,
+      onclick: async () => { await save({ theme: v }, tr('Thème appliqué')); rerender(); } },
+    h('span.theme-preview', { style: `background:${bg}` }, h('span', { style: `background:${surf}` }, h('i', { style: `background:${text}` }), h('b', { style: 'background:var(--accent)' }))),
+    h('span.theme-name', label))));
+    const picker = h('input.color-input', { type: 'color', value: p.accent, title: tr('Autre couleur'),
+      onchange: (e) => save({ accent: e.target.value }, tr('Couleur appliquée')) });
+    const cardToggle = (key, label) => bindToggle(key, label);
+    // fond d'écran
+    const MODES = [['none', tr('Aucun')], ['title', tr('L’image d’un titre')], ['daily', tr('Un de vos titres, différent chaque jour')],
+      ['gradient', tr('Un dégradé')], ['color', tr('Une couleur')], ['upload', tr('Une image à vous')]];
+    const mode = p.wallpaper_mode === 'title' && !p.wallpaper ? 'none' : p.wallpaper_mode;
+    const modeSel = select(MODES, mode, { onchange: async (e) => { await save({ wallpaper_mode: e.target.value }, tr('Fond d’écran appliqué')); rerender(); } });
+    let detail = null;
+    if (mode === 'title') {
+      detail = h('div', p.wallpaper ? h('div.wallpaper-preview', { style: `background-image: url("${img(p.wallpaper, 480, 270)}")` }) : null,
+        h('p.muted.small', tr('Sur la fiche d’un film ou d’une série, menu ⋯ puis « Utiliser comme fond d’écran ».')));
+    } else if (mode === 'none') {
+      detail = h('p.muted.small', tr('Le fond de la page est celui du thème.'));
+    } else if (mode === 'daily') {
+      detail = h('p.muted.small', tr('Chaque jour, l’image d’un titre de votre liste « À regarder », de ceux que vous avez notés 4 ou 5 étoiles, ou regardés récemment.'));
+    } else if (mode === 'gradient') {
+      detail = h('div.swatches', Object.entries(GRADIENTS).map(([k, css]) => h('button.swatch.grad', { type: 'button', title: k, style: `background:${css}`,
+        'aria-pressed': String(p.wallpaper_gradient === k), onclick: () => save({ wallpaper_gradient: k }, tr('Fond d’écran appliqué')) })));
+    } else if (mode === 'color') {
+      detail = h('input.color-input', { type: 'color', value: p.wallpaper_color, onchange: (e) => save({ wallpaper_color: e.target.value }, tr('Fond d’écran appliqué')) });
+    } else if (mode === 'upload') {
+      const file = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', hidden: true, onchange: async () => {
+        const f = file.files[0];
+        if (!f) return;
+        try {
+          const r = await fetch('/api/me/wallpaper', { method: 'POST', body: f, credentials: 'same-origin', headers: { 'X-Seance': '1', 'X-Lang': lang } });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.error || r.statusText);
+          state.wallVersion = j.wallpaper_version;
+          Object.assign(me.prefs, j);
+          applyPrefs(me.prefs);
+          toast(tr('Fond d’écran appliqué'), 'ok');
+          rerender();
+        } catch (e) { toast(e.message, 'bad'); }
+      } });
+      detail = h('div', h('div.wallpaper-preview', { style: `background-image: url("/api/me/wallpaper/image?v=${state.wallVersion || 0}")` }),
+        h('div.actions-row', h('button.btn', { onclick: () => file.click() }, tr('Choisir une image…')), file),
+        h('p.muted.small', tr('JPEG, PNG ou WebP, 8 Mo au plus. L’image reste sur ce serveur.')));
+    }
+    // styles d'interface : la mise en page elle-même (navigation, cartes, panneaux, bannière), avec une maquette
+    const styleTiles = h('div.theme-tiles.style-tiles', UI_STYLES.map(([v, label, hint]) => h('button.theme-tile.style-tile', {
+      type: 'button', 'aria-pressed': String((p.ui_style || 'classic') === v), title: hint,
+      onclick: async () => { await save({ ui_style: v }, tr('Style appliqué')); rerender(); } },
+    h('span.style-preview', { dataset: { s: v } }, h('span.sp-bar', h('i'), h('i'), h('i')),
+      h('span.sp-main', h('span.sp-hero'), h('span.sp-row', h('b'), h('b'), h('b'), h('b')))),
+    h('span.theme-name', label), h('span.style-hint', hint))));
+    const devStyle = device().ui_style;
+    clear(body,
+      h('section.panel', h('h2', tr('Style de l’interface')),
+        h('p.muted.small', tr('Change la disposition de Nexis (navigation, cartes, panneaux, grande bannière), et pas seulement les couleurs. Se combine avec n’importe quel thème.')),
+        styleTiles,
+        devStyle ? h('p.small.warn-text', tr('Cet appareil utilise son propre style ({s}) : voir « Cet appareil ».', { s: (UI_STYLES.find((x) => x[0] === devStyle) || [0, devStyle])[1] })) : null),
+      h('section.panel', h('h2', tr('Thème')), themeTiles,
+        (p.my_themes || []).length ? h('div', h('h3.small.theme-sub', tr('Mes thèmes')), h('div.store-grid.mini', p.my_themes.map((t) => h('button.theme-tile', {
+          type: 'button', 'aria-pressed': String(p.theme === `t:${t.id}`), title: (t.name[lang] || t.name.fr),
+          onclick: async () => { await save({ theme: `t:${t.id}`, accent: t.colors.accent }, tr('Thème appliqué')); rerender(); } },
+        themePreview(t), h('span.theme-name', t.name[lang] || t.name.fr))))) : null,
+        h('div.actions-row', h('a.btn', { href: '#/settings/themes' }, icon('palette'), tr('Magasin de thèmes…')),
+          h('span.muted.small', tr('Cyberpunk, rétro, terminal, galaxie, ciné-club… ou le vôtre.')))),
+      h('section.panel', h('h2', tr('Couleur d’accent')),
+        h('div.accent-row', swatches(p.accent, (c) => save({ accent: c }, tr('Couleur appliquée'))), h('label.color-pick', picker, tr('Autre couleur…'))),
+        h('p.muted.small', tr('Boutons, liens actifs, barres de progression.'))),
+      h('section.panel', h('h2', tr('Taille et densité')),
+        h('div.grid2',
+          field(tr('Taille du texte'), bindSelect('text_size', [['s', tr('Petite')], ['m', tr('Normale')], ['l', tr('Grande')], ['xl', tr('Très grande')]])),
+          field(tr('Densité'), bindSelect('density', [['compact', tr('Compacte')], ['normal', tr('Normale')], ['comfy', tr('Aérée')]]))),
+        field(tr('Taille des affiches'), bindSelect('poster_size', [['s', tr('Petites')], ['m', tr('Moyennes')], ['l', tr('Grandes')]]))),
+      h('section.panel', h('h2', tr('Cartes des films et séries')),
+        cardToggle('card_titles', tr('Titre et année sous l’affiche')),
+        cardToggle('card_progress', tr('Barre de progression')),
+        cardToggle('card_watched', tr('Coche « vu »')),
+        cardToggle('card_quality', tr('Badges 4K et HDR')),
+        cardToggle('card_new', tr('Badge « Nouveau » (ajouts de la semaine)')),
+        cardToggle('card_rating', tr('Note TMDB'))),
+      h('section.panel', h('h2', tr('Fond d’écran')), field(tr('Derrière les pages'), modeSel), detail));
     return;
   }
 
@@ -431,6 +787,8 @@ function accountPage(id, body, rerender) {
     { key: 'watchlist', label: tr('À regarder') },
     { key: 'suggest', label: tr('Suggestions'), hint: tr('selon vos visionnages récents') },
     { key: 'because', label: tr('Parce que vous avez regardé…'), hint: tr('titres proches de vos derniers visionnages') },
+    { key: 'short', label: tr('Pour une soirée courte'), hint: tr('films de moins de 1 h 30 pas encore vus') },
+    { key: 'unfinished', label: tr('Séries à reprendre'), hint: tr('commencées puis laissées de côté depuis 2 mois') },
     ...me.libraries.map((l) => ({ key: `lib:${l.id}`, label: l.title, hint: l.type === 'show' ? tr('nouveaux épisodes') : tr('ajoutés récemment') })),
     ...pins().map((pn) => ({ key: `pin:${pn.id}`, label: pn.title, hint: tr('rangée épinglée ({p1})', { p1: PIN_LABELS[pn.type] }),
       remove: async () => { try { await removePin(pn.id); rerender(); } catch (e) { toast(e.message, 'bad'); } } })),
@@ -464,7 +822,74 @@ function accountPage(id, body, rerender) {
     { onchange: (e) => save({ start_page: e.target.value }, tr('Page d’ouverture enregistrée')) });
   const startPanel = h('section.panel', h('h2', tr('Page d’ouverture')),
     field(tr('Page affichée à l’ouverture de Nexis'), startSel, tr('Les liens directs (fiche, lecture) s’ouvrent toujours à leur adresse.')));
-  clear(body, startPanel, homePanel, navPanel);
+  // titres masqués pour soi (menu ⋯ d'une fiche) : la liste, pour les rendre de nouveau visibles
+  const hiddenList = h('div.user-list');
+  const hiddenPanel = h('section.panel', h('h2', tr('Titres masqués')),
+    h('p.muted.small', tr('Masqués par vous seul (menu ⋯ d’une fiche → Masquer pour moi) : ils n’apparaissent plus dans vos bibliothèques, l’accueil, la recherche ni les suggestions.')),
+    hiddenList);
+  const paintHidden = async () => {
+    const list = await get('/api/me/hidden').catch(() => []);
+    clear(hiddenList, list.length ? list.map((c) => h('div.user-row', h('a.grow', { href: `#/item/${c.id}` }, h('strong', c.title),
+      c.year ? h('span.muted', ` (${c.year})`) : null),
+    h('button.btn.small', { onclick: async () => { await put(`/api/items/${c.id}/hidden`, { hidden: false }); paintHidden(); } }, tr('Ne plus masquer'))))
+      : h('p.muted.small', tr('Aucun titre masqué.')));
+  };
+  paintHidden();
+  const heroPanel = h('section.panel', h('h2', tr('Grande bannière')),
+    field(tr('En haut de l’accueil'), bindSelect('home_hero', [['auto', tr('Reprise en cours, sinon un ajout récent')], ['resume', tr('Reprise en cours seulement')],
+      ['recent', tr('Un ajout récent')], ['random', tr('Un titre au hasard (change toutes les heures)')], ['watchlist', tr('Un titre de ma liste « À regarder »')],
+      ['none', tr('Pas de bannière')]])));
+  const rowsPanel = h('section.panel', h('h2', tr('Mes rangées')),
+    h('p.muted.small', tr('Des rangées à vous sur l’accueil : une bibliothèque, des filtres, un tri et un nom. Elles se réordonnent avec les autres ci-dessous.')),
+    pins().filter((pn) => ['filter', 'genre'].includes(pn.type)).map((pn) => h('div.user-row', h('div.grow', h('strong', pn.title),
+      h('div.muted.small', tr('{n} titres', { n: pn.count || 24 }))),
+    h('button.btn.small', { onclick: async () => { if (await rowDialog(pn)) rerender(); } }, tr('Modifier')),
+    h('button.icon-btn', { title: tr('Supprimer'), onclick: async () => { await removePin(pn.id); rerender(); } }, icon('trash')))),
+    h('button.btn', { onclick: async () => { if (await rowDialog(null)) rerender(); } }, tr('+ Nouvelle rangée')));
+  // création / modification d'une rangée : bibliothèque, filtres, tri, nombre de titres, nom
+  const rowDialog = async (pn) => {
+    const libs = me.libraries.filter((l) => ['movie', 'show'].includes(l.type));
+    if (!libs.length) { toast(tr('Aucune bibliothèque de films ou de séries'), 'bad'); return false; }
+    const q = new URLSearchParams(pn ? (pn.type === 'genre' ? `genre=${encodeURIComponent(pn.ref)}` : pn.ref) : '');
+    const libSel = select(libs.map((l) => [l.id, l.title]), pn ? pn.lib : libs[0].id);
+    const genre = select([['', tr('Tous les genres')]], q.get('genre') || '');
+    const loadGenres = async () => {
+      try {
+        const gs = await get(`/api/libraries/${libSel.value}/genres`);
+        genre.replaceChildren(...[['', tr('Tous les genres')], ...gs.map((g) => [g.id, g.title])]
+          .map(([v, l]) => h('option', { value: v, selected: v === (q.get('genre') || '') }, l)));
+      } catch { /* sans genres */ }
+    };
+    libSel.addEventListener('change', loadGenres);
+    loadGenres();
+    const watched = select([['', tr('Vus et non vus')], ['unwatched', tr('Pas encore vus')], ['watched', tr('Déjà vus')]], q.get('watched') || '');
+    const decade = select([['', tr('Toutes les années')], ...[2020, 2010, 2000, 1990, 1980, 1970, 1960].map((d) => [String(d), tr('Années {d}', { d })])], q.get('decade') || '');
+    const sort = select([['added', tr('Ajout récent')], ['title', tr('Titre')], ['year', tr('Année')], ['rating', tr('Note')], ['release', tr('Date de sortie')]], q.get('sort') || 'added');
+    const count = select([12, 24, 36, 48].map((n) => [String(n), String(n)]), String((pn && pn.count) || 24));
+    const name = h('input', { value: pn ? pn.title : '', maxlength: 100, placeholder: tr('Ex. Comédies des années 90 pas encore vues') });
+    const err = h('p.form-error');
+    return modal(pn ? tr('Modifier la rangée') : tr('Nouvelle rangée'), h('div.form',
+      field(tr('Nom'), name), h('div.grid2', field(tr('Bibliothèque'), libSel), field(tr('Genre'), genre)),
+      h('div.grid2', field(tr('Visionnage'), watched), field(tr('Années'), decade)),
+      h('div.grid2', field(tr('Tri'), sort), field(tr('Nombre de titres'), count)), err),
+    [{ label: tr('Annuler'), value: false }, { label: pn ? tr('Enregistrer') : tr('Ajouter'), primary: true, handler: async () => {
+      const f = new URLSearchParams();
+      for (const [k, el] of [['genre', genre], ['watched', watched], ['decade', decade], ['sort', sort]]) if (el.value) f.set(k, el.value);
+      const lib = libs.find((l) => String(l.id) === String(libSel.value));
+      const title = name.value.trim() || [genre.value, decade.value && tr('Années {d}', { d: decade.value }), lib.title].filter(Boolean).join(' · ');
+      const list = pins().filter((x) => !pn || x.id !== pn.id);
+      if (!pn && list.length >= 20) { err.textContent = tr('20 rangées épinglées au maximum'); return false; }
+      const id = pn ? pn.id : Math.max(0, ...pins().map((x) => x.id + 1));
+      const entry = { id, type: 'filter', ref: f.toString() || 'sort=added', lib: String(lib.id), title: title.slice(0, 100), count: Number(count.value) };
+      try {
+        const r = await put('/api/me/prefs', { home_pins: [...list, entry] });
+        Object.assign(me.prefs, r);
+        toast(pn ? tr('Rangée modifiée') : tr('Rangée ajoutée à l’accueil'), 'ok');
+        return true;
+      } catch (e) { err.textContent = e.message; return false; }
+    } }]);
+  };
+  clear(body, startPanel, heroPanel, rowsPanel, homePanel, navPanel, hiddenPanel);
 }
 
 // ---------------------------------------------------------------- l'espace Paramètres
@@ -513,13 +938,38 @@ export async function renderSettingsArea(main, area, section, ctx) {
   });
 
   const body = h('div.settings-body');
+  // administration des serveurs liés : choix du serveur réglé par les pages « Serveur », « Médiathèque », « Lecture »
+  const serverBar = h('div.server-pick', { hidden: true });
   const content = h('section.settings-content',
     h('a.settings-back', { href: `#/${area}` }, icon('back'), tr('Paramètres')),
+    current.area === 'admin' ? serverBar : null,
     h('header.settings-head', h('h2', current.label), h('p.muted', current.lead)),
     body);
+  if (current.area === 'admin') {
+    try {
+      const sv = await get('/api/admin/servers');
+      const t = adminTarget();
+      if (t && !sv.peers.some((p) => p.id === t.id)) setAdminTarget(null);  // serveur délié depuis
+      if (sv.peers.length) {
+        const sel = select([['', tr('{name} (ce serveur)', { name: sv.local.name })],
+          ...sv.peers.map((p) => [p.id, p.online ? p.name : tr('{name} (injoignable)', { name: p.name })])], (adminTarget() || {}).id || '');
+        sel.addEventListener('change', () => {
+          const p = sv.peers.find((x) => x.id === sel.value);
+          setAdminTarget(p ? { id: p.id, name: p.name } : null);
+          renderSettingsArea(main, area, section, ctx);
+        });
+        const remote = adminTarget();
+        serverBar.className = remote ? 'server-pick remote' : 'server-pick';
+        serverBar.replaceChildren(h('label', icon('link'), h('span', tr('Serveur administré')), sel),
+          remote ? h('p.small', tr('Les réglages de ces pages s’appliquent à « {name} », relayés par ce serveur. Vos préférences (Mon compte) restent celles de ce serveur.', { name: remote.name })) : null);
+        serverBar.hidden = false;
+      }
+    } catch { setAdminTarget(null); }
+  }
   clear(main, h('div.settings-page', { class: section ? 'settings-page' : 'settings-page no-section' },
     h('div.page-head', h('h1', tr('Paramètres'))), h('div.settings-layout', nav, content)));
   document.title = tr('{label} · Paramètres · Nexis', { label: current.label });
   if (current.area === 'admin') await renderAdminSection(current.id, body, ctx);
+  else if (current.id === 'themes') await renderThemeStore(body, ctx);
   else accountPage(current.id, body, () => renderSettingsArea(main, area, section, ctx));
 }

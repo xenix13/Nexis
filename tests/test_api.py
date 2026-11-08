@@ -16,6 +16,7 @@ import types
 import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -49,12 +50,14 @@ class Client:
         self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar),
                                                   urllib.request.ProxyHandler({}))
 
-    def call(self, method, path, body=None, headers=None, csrf=True, raw=False):
+    def call(self, method, path, body=None, headers=None, csrf=True, raw=False, raw_body=None):
         h = {"Content-Type": "application/json"}
         if csrf:
             h["X-Seance"] = "1"
         h.update(headers or {})
         data = json.dumps(body).encode() if body is not None else (b"" if method != "GET" else None)
+        if raw_body is not None:
+            data = raw_body
         req = urllib.request.Request(self.base + path, data=data, headers=h, method=method)
         try:
             with self.opener.open(req, timeout=120) as r:
@@ -742,7 +745,10 @@ class SeanceTest(unittest.TestCase):
     def test_progressive_subtitles(self):
         """Gros fichier : la lecture démarre dès que les premières minutes sont prêtes, la suite arrive en route."""
         import seance.routes.media as api_mod  # lecture : fenêtre de préparation des sous-titres
-        from seance import subcache
+        from seance import media, subcache
+        if not media.readrate_ok():
+            # l'extraction n'est ralentie (pour l'observer en cours) qu'avec -readrate, écarté depuis ffmpeg 7
+            self.skipTest(f"lecture limitée non utilisée avec ffmpeg {media.ffmpeg_major()}")
         m = self.movie("Nuit polaire")
         row = self.ctx.db.one("SELECT * FROM items WHERE id=?", (int(m["id"]),))
         st, d = self.admin.call("GET", f"/api/items/{m['id']}")
@@ -860,7 +866,7 @@ class SeanceTest(unittest.TestCase):
         try:
             src = os.path.join(work, "in.mkv")
             subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=s=160x90:r=24:d=6", "-f", "lavfi",
-                            "-i", "anoisesrc=d=6:a=0.5:c=pink", "-f", "lavfi", "-i", "sine=f=180:d=6", "-filter_complex",
+                            "-i", "anoisesrc=d=6:a=0.5:c=pink:seed=20261107", "-f", "lavfi", "-i", "sine=f=180:d=6", "-filter_complex",
                             # dialogue + ambiance très forts, identiques sur les 6 canaux (cas réel le plus exigeant)
                             "[1][2]amix=inputs=2:normalize=0,volume=1.6,asplit=6[a][b][c][d][e][f];"
                             "[a][b][c][d][e][f]join=inputs=6:channel_layout=5.1[o]",
@@ -1106,6 +1112,394 @@ class SeanceTest(unittest.TestCase):
         c.call("POST", f"/api/items/{show['id']}/watchlist", {"on": False})
 
     # ------------------------------------------------ Découvrir et demandes (Seerr)
+    def test_person_and_random(self):
+        """Fiche d'une personne (distribution, réalisation) ; un titre au hasard ; épisodes dans le désordre."""
+        st, r = self.lea.call("GET", "/api/person?name=" + urllib.parse.quote("Actrice Une"))
+        self.assertEqual(st, 200, r)
+        self.assertTrue(r["items"], r)
+        self.assertTrue(all(c["type"] in ("movie", "show") for c in r["items"]))
+        self.assertTrue(any(c.get("role") == "Héroïne" for c in r["items"]), r["items"])
+        st, r = self.lea.call("GET", "/api/person?name=R%C3%A9alisatrice")
+        self.assertTrue(r["items"] and all(c.get("director") for c in r["items"]), r)
+        self.assertEqual(self.lea.call("GET", "/api/person?name=Personne%20Inconnue")[1]["items"], [])
+        self.assertEqual(self.lea.call("GET", "/api/person?name=")[0], 400)
+        # au hasard : un film de la bibliothèque, une série, un épisode d'une série
+        st, c = self.lea.call("GET", f"/api/random?library={self.libs['Films']}")
+        self.assertEqual((st, c["type"], c["section"]), (200, "movie", self.libs["Films"]))
+        self.assertEqual(self.lea.call("GET", f"/api/random?library={self.libs['Séries']}")[0], 404)  # sans accès
+        st, c = self.admin.call("GET", f"/api/random?library={self.libs['Séries']}")
+        self.assertEqual((st, c["type"]), (200, "show"))
+        st, ep = self.admin.call("GET", f"/api/random?show={c['id']}")
+        self.assertEqual((st, ep["type"], ep["show_id"]), (200, "episode", c["id"]))
+        self.assertEqual(self.lea.call("GET", f"/api/random?library={self.libs['Films']}&genre=Inexistant")[0], 404)
+        # lecture aléatoire : l'épisode suivant est un autre épisode de la série
+        st, p = self.admin.call("POST", "/api/play", {"id": ep["id"], "shuffle": c["id"]})
+        self.assertEqual(st, 200, p)
+        self.assertTrue(p["next"] and p["next"]["show_id"] == c["id"] and p["next"]["id"] != ep["id"], p["next"])
+        self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
+
+    def test_library_filters_and_search(self):
+        """Filtres d'une bibliothèque (vus, décennie, durée, définition, langues), rangée de filtres épinglée,
+        recherche par personne, année et avec une faute de frappe."""
+        lib = self.libs["Films"]
+
+        def titles(q):
+            st, r = self.admin.call("GET", f"/api/libraries/{lib}/items?size=100&{q}")
+            self.assertEqual(st, 200, r)
+            return sorted(c["title"] for c in r["items"])
+        everything = titles("")
+        self.assertIn("Nuit polaire", everything)
+        self.assertEqual(titles("decade=2010"), ["Le Grand Voyage"])
+        self.assertEqual(titles("decade=2020"), [t for t in everything if t in ("Nuit polaire", "Brume")])
+        self.assertEqual(titles("duration=short"), everything)  # films de test : quelques secondes
+        self.assertEqual(titles("duration=long"), [])
+        self.assertEqual(titles("res=sd"), everything)          # 320x180
+        self.assertEqual(titles("res=4k"), [])
+        self.assertIn("Nuit polaire", titles("audio=jpn"))
+        self.assertNotIn("Le Grand Voyage", titles("audio=jpn"))
+        self.assertIn("Nuit polaire", titles("subs=fra"))
+        self.assertEqual(self.admin.call("GET", f"/api/libraries/{lib}/items?audio=x%27")[0], 400)
+        polar = self.movie("Nuit polaire")
+        self.admin.call("POST", f"/api/items/{polar['id']}/watched", {"watched": True})
+        try:
+            self.assertEqual(titles("watched=watched"), ["Nuit polaire"])
+            self.assertNotIn("Nuit polaire", titles("watched=unwatched"))
+        finally:  # « annuler » : la vue ajoutée à l'historique est retirée aussi
+            self.admin.call("POST", f"/api/items/{polar['id']}/watched", {"watched": False, "undo": True, "position": 0})
+        st, f = self.admin.call("GET", f"/api/libraries/{lib}/facets")
+        self.assertIn(2020, f["decades"])
+        self.assertIn("jpn", [l["id"] for l in f["audio"]])
+        # séries : « terminées » = tous les épisodes vus
+        st, r = self.admin.call("GET", f"/api/libraries/{self.libs['Séries']}/items?watched=watched")
+        self.assertEqual((st, r["items"]), (200, []))
+        # rangée épinglée d'une combinaison de filtres ; une clé inconnue est refusée
+        pin = {"id": 1, "type": "filter", "ref": "decade=2020&audio=jpn", "lib": lib, "title": "Années 2020 · Japonais"}
+        st, r = self.admin.call("PUT", "/api/me/prefs", {"home_pins": [pin]})
+        self.assertEqual(st, 200, r)
+        bad = dict(pin, ref="decade=2020&sql=1")
+        self.assertEqual(self.admin.call("PUT", "/api/me/prefs", {"home_pins": [bad]})[0], 400)
+        self.admin.call("PUT", "/api/me/prefs", {"home_pins": []})
+        # recherche : une personne, une année, une faute de frappe
+        st, r = self.admin.call("GET", "/api/search?q=actrice")
+        self.assertIn("Actrice Une", r["people"])
+        st, r = self.admin.call("GET", "/api/search?q=2019")
+        self.assertIn("Le Grand Voyage", [c["title"] for c in r["movies"]])
+        st, r = self.admin.call("GET", "/api/search?q=nuit%20polair")  # préfixe : correspondance exacte
+        self.assertIn("Nuit polaire", [c["title"] for c in r["movies"]])
+        st, r = self.admin.call("GET", "/api/search?q=nuitt%20polaira")
+        self.assertTrue(r.get("approximate"), r)
+        self.assertIn("Nuit polaire", [c["title"] for c in r["movies"]])
+        # accueil : nouvelles rangées
+        st, home = self.admin.call("GET", "/api/home")
+        self.assertIn("short", home)
+        self.assertIn("unfinished", home)
+
+    def test_appearance_prefs(self):
+        """Thèmes, taille du texte, densité, cartes, fonds d'écran (couleur, dégradé, du jour, image envoyée)."""
+        c = self.lea
+        st, r = c.call("PUT", "/api/me/prefs", {"theme": "midnight", "text_size": "l", "density": "compact", "accent": "#123abc",
+                                                "card_rating": True, "card_titles": False, "wallpaper_mode": "gradient",
+                                                "wallpaper_gradient": "ocean", "wallpaper_color": "#203040"})
+        self.assertEqual(st, 200, r)
+        self.assertEqual((r["theme"], r["text_size"], r["density"], r["card_rating"], r["card_titles"], r["card_quality"]),
+                         ("midnight", "l", "compact", True, False, True))  # l'essentiel reste affiché par défaut
+        for bad in ({"theme": "rose"}, {"text_size": "xxl"}, {"density": 3}, {"card_new": "oui"}, {"wallpaper_mode": "video"},
+                    {"wallpaper_gradient": "plaid"}, {"wallpaper_color": "bleu"}):
+            self.assertEqual(c.call("PUT", "/api/me/prefs", bad)[0], 400, bad)
+        # définition des films pour les badges 4K / HDR
+        st, items = c.call("GET", f"/api/libraries/{self.libs['Films']}/items")
+        self.assertTrue(all(i.get("res") in ("4K", "1080p", "720p", "SD") for i in items["items"] if i["type"] == "movie"))
+        # fond du jour : un titre de la liste « À regarder » de la personne, le même toute la journée
+        polar = self.movie("Nuit polaire")
+        self.ctx.db.run("UPDATE items SET backdrop='fanart.jpg' WHERE id=?", (int(polar["id"]),))
+        st, r = c.call("POST", f"/api/items/{polar['id']}/watchlist", {"on": True})
+        self.assertEqual(st, 200, r)
+        st, d1 = c.call("GET", "/api/me/wallpaper/daily")
+        st, d2 = c.call("GET", "/api/me/wallpaper/daily")
+        self.assertEqual(d1, d2)
+        self.assertTrue(d1["path"].startswith(f"/library/metadata/{polar['id']}/art/"), d1)
+        # image envoyée : réencodée en JPEG, servie à son propriétaire seulement
+        png = os.path.join(tempfile.mkdtemp(), "fond.png")
+        subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=teal:s=2400x1350", "-frames:v", "1", png], check=True)
+        with open(png, "rb") as f:
+            data = f.read()
+        st, r = c.call("POST", "/api/me/wallpaper", raw_body=data, headers={"Content-Type": "image/png"})
+        self.assertEqual((st, r.get("wallpaper_mode")), (200, "upload"), r)
+        st, img_data, h = c.call("GET", "/api/me/wallpaper/image", raw=True)
+        self.assertEqual((st, img_data[:2], h["Content-Type"]), (200, b"\xff\xd8", "image/jpeg"))
+        self.assertEqual(self.admin.call("GET", "/api/me/wallpaper/image")[0], 404)  # pas celle d'un autre
+        self.assertEqual(c.call("POST", "/api/me/wallpaper", raw_body=b"pas une image" * 20)[0], 400)
+        c.call("DELETE", "/api/me/wallpaper")
+        c.call("POST", "/api/me/prefs/reset")
+
+    def test_home_and_player_prefs(self):
+        """Bannière de l'accueil, rangée personnelle (nombre de titres), langues par bibliothèque, lecteur, son nuit."""
+        c, lib = self.lea, self.libs["Films"]
+        st, r = c.call("PUT", "/api/me/prefs", {"home_hero": "none", "skip_back": 15, "skip_forward": 60, "default_speed": 1.25,
+                                                "remember_volume": False, "lib_langs": {str(lib): {"audio_lang": "jpn", "sub_mode": "always"}},
+                                                "home_pins": [{"id": 1, "type": "filter", "ref": "watched=unwatched", "lib": str(lib),
+                                                               "title": "Pas vus", "count": 12}]})
+        self.assertEqual(st, 200, r)
+        self.assertEqual((r["home_hero"], r["skip_forward"], r["lib_langs"][str(lib)]["audio_lang"]), ("none", 60, "jpn"))
+        self.assertEqual(c.call("GET", "/api/home")[1]["hero_mode"], "none")
+        c.call("PUT", "/api/me/prefs", {"home_hero": "random"})
+        st, home = c.call("GET", "/api/home")
+        self.assertEqual(home["hero_mode"], "random")
+        for bad in ({"home_hero": "film"}, {"skip_back": 7}, {"default_speed": 3}, {"lib_langs": {"x": {}}},
+                    {"lib_langs": {str(lib): {"audio_lang": "japonais"}}}, {"lib_langs": {str(lib): {"sub_mode": "parfois"}}},
+                    {"home_pins": [{"id": 1, "type": "filter", "ref": "watched=unwatched", "lib": str(lib), "title": "x", "count": 500}]}):
+            self.assertEqual(c.call("PUT", "/api/me/prefs", bad)[0], 400, bad)
+        # son « nuit » : le mixage nuit est demandé pour ce compte, quel que soit celui du serveur
+        c.call("PUT", "/api/me/prefs", {"night_audio": True})
+        m = next(x for x in c.call("GET", f"/api/libraries/{lib}/items")[1]["items"] if x["title"] == "Brume")
+        st, r = c.call("POST", "/api/play", {"id": m["id"], "caps": {"video": ["h264"], "audio": ["aac"], "containers": ["mp4"]}})
+        self.assertEqual(st, 200, r)
+        params = json.loads(self.ctx.db.scalar("SELECT params FROM streams WHERE id=?", (r["stream"],)))
+        if params.get("audio_channels", 2) > 2 and not params.get("acopy"):
+            self.assertIn("pan=", params.get("audio_filter") or "")
+        c.call("POST", "/api/stop", {"stream": r["stream"]})
+        c.call("POST", "/api/me/prefs/reset")
+
+    def test_missing_images_are_not_retried(self):
+        """Image introuvable : pas recherchée de nouveau à chaque affichage, 404 gardé par le navigateur ;
+        TMDB injoignable : plus de tentative pendant un moment (régression : accueil très lent au retour)."""
+        db, images = self.ctx.db, self.ctx.images
+        lib = int(self.libs["Films"])
+        now = int(time.time())
+        iid = db.run("INSERT INTO items(library_id,type,key,title,sort_title,added_at,updated_at,meta_state) "
+                     "VALUES(?,?,?,?,?,?,?,'done')", (lib, "movie", "/nulle/part.mkv", "Sans image", "sans image", now, now)).lastrowid
+        calls = []
+        real = images._get
+        images._get = lambda *a: calls.append(a) or real(*a)
+        try:
+            url = f"/api/img?p=/library/metadata/{iid}/thumb/1&w=200&h=300"
+            for _ in range(3):
+                st, body, hdrs = self.lea.call("GET", url, raw=True)
+                self.assertEqual(st, 404)
+                self.assertIn("max-age=600", hdrs.get("Cache-Control", ""))
+            self.assertEqual(len(calls), 1)  # cherchée une seule fois
+            # une affiche arrive (métadonnées) : la désignation change, l'image est cherchée de nouveau
+            db.run("UPDATE items SET poster='local:/nulle/part.jpg', img_version=img_version+1 WHERE id=?", (iid,))
+            self.lea.call("GET", url, raw=True)
+            self.assertEqual(len(calls), 2)
+            # TMDB injoignable : une seule tentative réseau, les suivantes échouent tout de suite
+            import urllib.request as ur
+            tries = []
+
+            def down(*a, **k):
+                tries.append(1)
+                raise OSError("réseau coupé")
+            old_open, images._tmdb_down_until = ur.urlopen, 0
+            ur.urlopen = down
+            try:
+                for n in range(3):
+                    with self.assertRaises(OSError):
+                        images._download(f"/absente{n}.jpg", "poster")
+            finally:
+                ur.urlopen, images._tmdb_down_until = old_open, 0
+            self.assertEqual(len(tries), 1)
+        finally:
+            images._get = real
+            images.forget_missing()
+            db.run("DELETE FROM items WHERE id=?", (iid,))
+
+    def test_admin_stats(self):
+        """Journal des lectures (fin de chaque lecture de plus de 30 s), statistiques, titres jamais regardés ;
+        une lecture en mode privé compte sans être nommée."""
+        db = self.ctx.db
+        polar, voyage = self.movie("Nuit polaire"), self.movie("Le Grand Voyage")
+        db.run("DELETE FROM play_log")
+        caps = {"video": ["h264"], "audio": ["aac"], "containers": ["mp4"]}
+
+        def watch(client, item, seconds):
+            st, r = client.call("POST", "/api/play", {"id": item["id"], "caps": caps})
+            self.assertEqual(st, 200, r)
+            db.run("UPDATE streams SET created_at=created_at-? WHERE id=?", (seconds, r["stream"]))
+            client.call("POST", "/api/stop", {"stream": r["stream"]})
+        watch(self.lea, polar, 600)
+        watch(self.lea, voyage, 10)  # moins de 30 s : pas comptée
+        self.lea.call("PUT", "/api/me/prefs", {"private_mode": True})
+        watch(self.lea, voyage, 300)
+        self.lea.call("PUT", "/api/me/prefs", {"private_mode": False})
+        rows = db.all("SELECT rating_key, title, seconds, kbps FROM play_log ORDER BY id")
+        self.assertEqual([r["rating_key"] for r in rows], [str(polar["id"]), "private"])
+        self.assertIsNone(rows[1]["title"])
+        self.assertGreater(rows[0]["kbps"] or 0, 0)
+        st, r = self.admin.call("GET", "/api/admin/stats?days=7")
+        self.assertEqual(st, 200, r)
+        self.assertEqual((r["totals"]["plays"], r["totals"]["users"]), (2, 1))
+        self.assertGreaterEqual(r["totals"]["seconds"], 900)
+        self.assertGreater(r["totals"]["bytes"], 0)
+        self.assertEqual([u["name"] for u in r["users"]], ["Léa"])
+        self.assertEqual([t["title"] for t in r["top"]], ["Nuit polaire"])  # la lecture privée n'est pas nommée
+        self.assertEqual(len(r["per_day"]), 7)
+        # jamais regardé : ajouté il y a longtemps, personne ne l'a commencé
+        brume = self.movie("Brume")
+        old = db.scalar("SELECT added_at FROM items WHERE id=?", (brume["id"],))
+        db.run("UPDATE items SET added_at=? WHERE id=?", (int(time.time()) - 200 * 86400, brume["id"]))
+        try:
+            seen = {p["rating_key"] for p in db.all("SELECT rating_key FROM progress")}
+            never = [x["title"] for x in self.admin.call("GET", "/api/admin/stats")[1]["never"]["items"]]
+            if str(brume["id"]) not in seen:
+                self.assertIn("Brume", never)
+            self.assertNotIn("Nuit polaire", never)
+        finally:
+            db.run("UPDATE items SET added_at=? WHERE id=?", (old, brume["id"]))
+        self.assertEqual(self.lea.call("GET", "/api/admin/stats")[0], 403)
+
+    def test_ui_style(self):
+        """Style de l'interface (mise en page) : « classique » par défaut, valeurs connues seulement."""
+        c = self.lea
+        self.assertEqual(c.call("GET", "/api/me")[1]["prefs"]["ui_style"], "classic")
+        for v in ("glass", "sidebar", "minimal", "cinema", "rounded", "classic"):
+            st, r = c.call("PUT", "/api/me/prefs", {"ui_style": v})
+            self.assertEqual((st, r["ui_style"]), (200, v))
+        for bad in ("ElegantFin", "", 3, None):
+            self.assertEqual(c.call("PUT", "/api/me/prefs", {"ui_style": bad})[0], 400, bad)
+        st, r = c.call("PUT", "/api/me/prefs", {"ui_style": "sidebar", "theme": "light"})
+        self.assertEqual((r["ui_style"], r["theme"]), ("sidebar", "light"))  # style et thème se combinent
+        c.call("POST", "/api/me/prefs/reset")
+
+    def test_content_privacy_notifications(self):
+        """Genres masqués, mode privé (pas d'historique, titre caché aux admins), choix des notifications, heures calmes."""
+        from seance import push as pushmod
+        c, lib, db = self.lea, self.libs["Films"], self.ctx.db
+        brume, polar = self.movie("Brume"), self.movie("Nuit polaire")
+        old = {r["id"]: r["genres"] for r in db.all("SELECT id, genres FROM items WHERE id IN (?,?)", (brume["id"], polar["id"]))}
+        db.run("UPDATE items SET genres=? WHERE id=?", (json.dumps(["Horreur", "Thriller"]), brume["id"]))
+        db.run("UPDATE items SET genres=? WHERE id=?", (json.dumps(["Drame"]), polar["id"]))
+        try:
+            p = c.call("GET", "/api/me")[1]["prefs"]
+            self.assertEqual((p["hidden_genres"], p["private_mode"], p["notify_episodes"], p["quiet_hours"]), ([], False, True, ""))
+            self.assertNotIn("notify_podcasts", p)
+            self.assertNotIn("notify_podcasts", c.call("PUT", "/api/me/prefs", {"notify_podcasts": False})[1])  # podcasts retirés
+            self.assertEqual(c.call("GET", "/api/podcasts")[0], 404)
+            self.assertIsNone(db.scalar("SELECT name FROM sqlite_master WHERE name='podcasts'"))
+            self.assertIn("Horreur", [g["name"] for g in c.call("GET", "/api/me/genres")[1]])
+            st, r = c.call("PUT", "/api/me/prefs", {"hidden_genres": ["Horreur"]})
+            self.assertEqual(st, 200, r)
+            titles = [x["title"] for x in c.call("GET", f"/api/libraries/{lib}/items")[1]["items"]]
+            self.assertNotIn("Brume", titles)
+            self.assertIn("Nuit polaire", titles)
+            self.assertNotIn("Horreur", [g["id"] for g in c.call("GET", f"/api/libraries/{lib}/genres")[1]])
+            self.assertIn("Horreur", [g["name"] for g in c.call("GET", "/api/me/genres")[1]])  # pour pouvoir le réafficher
+            self.assertEqual(c.call("GET", f"/api/items/{brume['id']}")[0], 200)  # la fiche reste accessible
+            self.assertIn("Brume", [x["title"] for x in self.admin.call("GET", f"/api/libraries/{lib}/items")[1]["items"]])
+            for bad in ({"hidden_genres": "Horreur"}, {"hidden_genres": [""]}, {"private_mode": "oui"}, {"quiet_hours": "22:00"},
+                        {"quiet_hours": "25:00-07:00"}, {"quiet_hours": "07:00-07:00"}, {"muted_shows": ["abc"]}):
+                self.assertEqual(c.call("PUT", "/api/me/prefs", bad)[0], 400, bad)
+            # mode privé : la progression est gardée, l'historique non ; les admins ne voient pas le titre
+            uid = c.call("GET", "/api/me")[1]["user"]["id"]
+            before = db.scalar("SELECT COUNT(*) FROM history WHERE user_id=?", (uid,))
+            c.call("PUT", "/api/me/prefs", {"private_mode": True})
+            self.assertEqual(c.call("POST", f"/api/items/{polar['id']}/watched", {"watched": True})[0], 200)
+            self.assertEqual(db.scalar("SELECT COUNT(*) FROM history WHERE user_id=?", (uid,)), before)
+            self.assertTrue(c.call("GET", f"/api/items/{polar['id']}")[1]["watched"])
+            st, r = c.call("POST", "/api/play", {"id": polar["id"], "caps": {"video": ["h264"], "audio": ["aac"], "containers": ["mp4"]}})
+            self.assertEqual(st, 200, r)
+            row = next(s for s in self.admin.call("GET", "/api/admin/streams")[1] if s["id"] == r["stream"])
+            self.assertTrue(row["private"])
+            self.assertNotEqual(row["title"], "Nuit polaire")
+            c.call("POST", "/api/stop", {"stream": r["stream"]})
+            c.call("POST", f"/api/items/{polar['id']}/watched", {"watched": False})
+            c.call("PUT", "/api/me/prefs", {"private_mode": False})
+            c.call("POST", f"/api/items/{polar['id']}/watched", {"watched": True})
+            self.assertEqual(db.scalar("SELECT COUNT(*) FROM history WHERE user_id=?", (uid,)), before + 1)
+            c.call("POST", f"/api/items/{polar['id']}/watched", {"watched": False})
+            # notifications : refusées par type, heures calmes (dans la cloche, sans faire sonner), séries en sourdine
+            show = self.items("Séries")["Les Veilleurs"]
+            st, r = c.call("PUT", "/api/me/prefs", {"notify_episodes": False, "muted_shows": [str(show["id"])]})
+            self.assertEqual(st, 200, r)
+            self.assertEqual([m["title"] for m in c.call("GET", "/api/me/muted")[1]], ["Les Veilleurs"])
+            push = self.ctx.push
+            push.messages.pop(uid, None)
+            push.notify(uid, "Épisode", "x", kind="episodes")
+            push.notify(uid, "Alerte", "x")
+            self.assertEqual([m["title"] for m in push.pending(uid, 0)], ["Alerte"])  # épisodes refusés, alertes toujours
+            c.call("PUT", "/api/me/prefs", {"notify_episodes": True})
+            push.notify(uid, "Épisode", "x", kind="episodes")
+            self.assertEqual([m["title"] for m in push.pending(uid, 0)], ["Alerte", "Épisode"])
+            self.assertTrue(pushmod.in_quiet_hours("00:00-23:59", time.mktime((2026, 1, 1, 12, 0, 0, 0, 0, -1))))
+            self.assertTrue(pushmod.in_quiet_hours("22:00-07:00", time.mktime((2026, 1, 1, 23, 30, 0, 0, 0, -1))))
+            self.assertTrue(pushmod.in_quiet_hours("22:00-07:00", time.mktime((2026, 1, 1, 6, 59, 0, 0, 0, -1))))
+            self.assertFalse(pushmod.in_quiet_hours("22:00-07:00", time.mktime((2026, 1, 1, 7, 0, 0, 0, 0, -1))))
+            self.assertFalse(pushmod.in_quiet_hours("", None))
+            ep = self.episodes("Les Veilleurs", "Séries")[2][0]
+            c.call("POST", f"/api/items/{ep['id']}/watched", {"watched": True})  # série suivie
+            c.call("POST", f"/api/items/{ep['id']}/watched", {"watched": False})
+            user = db.one("SELECT * FROM users WHERE id=?", (uid,))
+            self.assertNotIn(show["id"], [sh["id"] for sh, _ in self.ctx.x.new_episodes(user)])
+        finally:
+            for iid, g in old.items():
+                db.run("UPDATE items SET genres=? WHERE id=?", (g, iid))
+            c.call("POST", "/api/me/prefs/reset")
+
+    def test_wallpaper_and_recap_marker(self):
+        """Fond d'écran du profil (l'arrière-plan d'un titre) et repère de récapitulatif posé à la main."""
+        polar = self.movie("Nuit polaire")
+        art = f"/library/metadata/{polar['id']}/art/1"
+        st, r = self.lea.call("PUT", "/api/me/prefs", {"wallpaper": art})
+        self.assertEqual((st, r["wallpaper"]), (200, art))
+        for bad in (f"/library/metadata/{polar['id']}/thumb/1", "https://exemple.org/a.jpg", 3):
+            self.assertEqual(self.lea.call("PUT", "/api/me/prefs", {"wallpaper": bad})[0], 400)
+        self.assertEqual(self.lea.call("GET", "/api/me")[1]["prefs"]["wallpaper"], art)
+        self.assertEqual(self.lea.call("PUT", "/api/me/prefs", {"wallpaper": ""})[1]["wallpaper"], "")
+        st, r = self.admin.call("PUT", f"/api/admin/markers/{polar['id']}", {"kind": "recap", "start": 0, "end": 45000})
+        self.assertEqual(st, 200, r)
+        st, d = self.admin.call("GET", f"/api/items/{polar['id']}")
+        self.assertEqual(d["markers"]["recap"], {"start": 0, "end": 45000, "source": "manual"})
+        self.admin.call("PUT", f"/api/admin/markers/{polar['id']}", {"kind": "recap", "clear": True})
+        self.assertNotIn("recap", self.admin.call("GET", f"/api/items/{polar['id']}")[1]["markers"])
+        self.assertEqual(self.admin.call("PUT", f"/api/admin/markers/{polar['id']}", {"kind": "outro", "start": 0, "end": 5})[0], 400)
+
+    def test_stars_hidden_and_shared_playlists(self):
+        """Note en étoiles (et avis qui en découle), titre masqué pour soi, playlist partagée avec le foyer."""
+        polar, voyage = self.movie("Nuit polaire"), self.movie("Le Grand Voyage")
+        lib = self.libs["Films"]
+        st, r = self.lea.call("PUT", f"/api/items/{polar['id']}/stars", {"stars": 5})
+        self.assertEqual((st, r["stars"], r["opinion"]), (200, 5, 1))
+        st, r = self.lea.call("PUT", f"/api/items/{polar['id']}/stars", {"stars": 2})
+        self.assertEqual(r["opinion"], -1)
+        self.assertEqual(self.lea.call("PUT", f"/api/items/{polar['id']}/stars", {"stars": 9})[0], 400)
+        st, d = self.lea.call("GET", f"/api/items/{polar['id']}")
+        self.assertEqual((d["stars"], d["hidden"]), (2, False))
+        st, r = self.lea.call("GET", f"/api/libraries/{lib}/items?sort=mine")
+        self.assertEqual(r["items"][0]["id"], polar["id"])  # les titres notés d'abord
+        self.lea.call("PUT", f"/api/items/{polar['id']}/stars", {"stars": None})
+        self.lea.call("PUT", f"/api/items/{polar['id']}/opinion", {"value": None})
+        # masqué pour Léa seulement : absent de sa bibliothèque et de sa recherche, fiche toujours ouverte
+        st, r = self.lea.call("PUT", f"/api/items/{voyage['id']}/hidden", {"hidden": True})
+        self.assertEqual((st, r["hidden"]), (200, True))
+        try:
+            st, r = self.lea.call("GET", f"/api/libraries/{lib}/items?size=100")
+            self.assertNotIn(voyage["id"], [c["id"] for c in r["items"]])
+            st, r = self.lea.call("GET", "/api/search?q=grand%20voyage")
+            self.assertNotIn(voyage["id"], [c["id"] for c in r["movies"]])
+            self.assertEqual(self.lea.call("GET", f"/api/items/{voyage['id']}")[1]["hidden"], True)
+            self.assertEqual([c["id"] for c in self.lea.call("GET", "/api/me/hidden")[1]], [voyage["id"]])
+            st, r = self.admin.call("GET", f"/api/libraries/{lib}/items?size=100")
+            self.assertIn(voyage["id"], [c["id"] for c in r["items"]])  # pas pour les autres
+        finally:
+            self.lea.call("PUT", f"/api/items/{voyage['id']}/hidden", {"hidden": False})
+        # playlist partagée : visible et complétée par Léa, renommée seulement par sa créatrice
+        st, pl = self.admin.call("POST", "/api/playlists", {"title": "Soirées en famille", "item_id": voyage["id"]})
+        pid = pl["id"]
+        try:
+            self.assertEqual(self.lea.call("GET", f"/api/playlists/{pid}")[0], 404)  # pas encore partagée
+            self.assertEqual(self.admin.call("PUT", f"/api/playlists/{pid}", {"shared": True})[0], 200)
+            st, lists = self.lea.call("GET", "/api/playlists")
+            mine = next(p for p in lists if p["id"] == pid)
+            self.assertEqual((mine["shared"], mine["mine"]), (True, False))
+            st, r = self.lea.call("POST", f"/api/playlists/{pid}/items", {"item_id": polar["id"]})
+            self.assertEqual(st, 200, r)
+            st, p = self.admin.call("GET", f"/api/playlists/{pid}")
+            self.assertEqual(sorted(c["id"] for c in p["items"]), sorted([voyage["id"], polar["id"]]))
+            self.assertEqual(self.lea.call("PUT", f"/api/playlists/{pid}", {"title": "À moi"})[0], 403)
+            self.assertEqual(self.lea.call("DELETE", f"/api/playlists/{pid}")[0], 403)
+            self.assertEqual(self.lea.call("PUT", f"/api/playlists/{pid}", {"shared": False})[0], 403)
+        finally:
+            self.admin.call("DELETE", f"/api/playlists/{pid}")
+
     def test_discover_and_requests_through_seerr(self):
         seerr = FakeSeerr()
         try:
@@ -1295,6 +1689,30 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(ffprobe_codec(data), "h264")
         self.admin.call("DELETE", f"/api/downloads/{j['id']}")
         self.assertEqual(self.admin.call("GET", f"/api/downloads/{j['id']}")[0], 404)
+        # transfert pendant la préparation (MP4 fragmenté) : les octets déjà écrits se lisent tout de suite, ceux
+        # qui ne le sont pas encore sont refusés, et le fichier final commence par ce qui a été lu
+        st, j = self.admin.call("POST", "/api/downloads", {"id": polar["id"], "quality": "original", "progressive": True})
+        self.assertTrue(j["progressive"], j)
+        early = b""
+        for _ in range(240):
+            st, j = self.admin.call("GET", f"/api/downloads/{j['id']}")
+            if j["state"] == "preparing" and j["ready"] > 4096 and not early:
+                st, early, h = self.admin.call("GET", f"/api/downloads/{j['id']}/file", raw=True, headers={"Range": f"bytes=0-{j['ready'] - 1}"})
+                self.assertEqual((st, len(early)), (206, j["ready"]))
+                st, _, _ = self.admin.call("GET", f"/api/downloads/{j['id']}/file", raw=True, headers={"Range": f"bytes={j['ready'] + 10 ** 9}-{j['ready'] + 10 ** 9 + 99}"})
+                if st != 409:  # préparation finie entre-temps : plage hors du fichier final
+                    self.assertEqual((st, self.admin.call("GET", f"/api/downloads/{j['id']}")[1]["state"]), (416, "ready"))
+            if j["state"] in ("ready", "error"):
+                break
+            time.sleep(0.05)
+        self.assertEqual(j["state"], "ready", j)
+        self.assertEqual(j["ready"], j["size"])
+        st, data, h = self.admin.call("GET", f"/api/downloads/{j['id']}/file", raw=True)
+        self.assertEqual(len(data), j["size"])
+        if early:
+            self.assertEqual(data[:len(early)], early)  # rien de réécrit après coup
+        self.assertEqual(ffprobe_codec(data), "h264")
+        self.admin.call("DELETE", f"/api/downloads/{j['id']}")
         # le dialogue annonce ce que coûte chaque qualité : ici, « auto » se contente d'une copie
         st, o = self.admin.call("POST", "/api/downloads/options", {"id": polar["id"]})
         auto = next(x for x in o["options"] if x["quality"] == "auto")
@@ -1356,6 +1774,16 @@ class SeanceTest(unittest.TestCase):
         m = re.search(r'src="/v/([0-9a-f]{12})/js/app\.js"', html)
         self.assertTrue(m, html)
         self.assertIn(f'href="/v/{m.group(1)}/css/app.css"', html)
+        # démarrage : script en ligne autorisé par son empreinte (CSP), liste du code à précharger
+        import base64, hashlib
+        boot = re.search(r"<script>(.*?)</script>", html).group(1)
+        digest = base64.b64encode(hashlib.sha256(boot.encode()).digest()).decode()
+        self.assertIn(f"'sha256-{digest}'", h["Content-Security-Policy"])
+        self.assertIn("/api/me", boot)
+        mods = re.search(r'name="nexis-modules" data-base="/v/[0-9a-f]{12}/js/" content="([^"]+)"', html).group(1).split(",")
+        self.assertIn("api.js", mods)
+        self.assertIn("views/home.js", mods)
+        self.assertTrue(all(os.path.isfile(os.path.join(STATIC, "js", x)) for x in mods), mods)
         st, body, h2 = self.admin.call("GET", f"/v/{m.group(1)}/js/views/home.js", raw=True)
         self.assertEqual((st, h2["Cache-Control"]), (200, "public, max-age=31536000, immutable"))
         self.assertIn(b"renderHome", body)
@@ -1536,29 +1964,58 @@ class UnitTests(unittest.TestCase):
         self.assertIsNone(twofa.use_recovery_code(left, codes[3]))
 
     def test_download_prep_yields_to_viewers(self):
-        """La préparation d'un téléchargement se met en pause tant que quelqu'un regarde."""
+        """Priorité discrète : la préparation se met en pause tant que quelqu'un regarde. Normale : une copie continue,
+        une conversion ne s'arrête que si un spectateur fait lui-même convertir."""
         from seance import downloads as dl
         viewing = {"v": True}
+        transcodes = {"n": 0}
         mgr = dl.Downloads.__new__(dl.Downloads)
-        mgr.ctx = types.SimpleNamespace(viewing=lambda: viewing["v"])
-        job = types.SimpleNamespace(waiting=False)
+        mgr.ctx = types.SimpleNamespace(viewing=lambda: viewing["v"],
+                                        transcoder=types.SimpleNamespace(counts=lambda: (1, transcodes["n"])))
+        def state(pid):
+            with open(f"/proc/{pid}/stat") as f:
+                return f.read().split(") ")[1][0]
+        for mode, n in (("copy", 0), ("transcode", 0)):
+            job = types.SimpleNamespace(waiting=False, mode=mode)
+            proc = subprocess.Popen(["sleep", "30"])
+            try:
+                threading.Thread(target=mgr._yield_to_viewers, args=(job, proc, "normal", 10), daemon=True).start()
+                time.sleep(0.6)
+                self.assertNotEqual(state(proc.pid), "T", mode)  # normale : pas de pause sans conversion d'un spectateur
+                self.assertEqual(os.getpriority(os.PRIO_PROCESS, proc.pid), 19)  # mais priorité basse pendant la lecture
+            finally:
+                proc.kill()
+                proc.wait()
+        transcodes["n"] = 1
+        job = types.SimpleNamespace(waiting=False, mode="transcode")
         proc = subprocess.Popen(["sleep", "30"])
-        old = dl.time.sleep
         try:
-            t = threading.Thread(target=mgr._yield_to_viewers, args=(job, proc), daemon=True)
-            t.start()
-            state = lambda: open(f"/proc/{proc.pid}/stat").read().split(") ")[1][0]
+            threading.Thread(target=mgr._yield_to_viewers, args=(job, proc, "normal", 10), daemon=True).start()
             for _ in range(50):
-                if state() == "T":
+                if state(proc.pid) == "T":
                     break
                 time.sleep(0.1)
-            self.assertEqual((state(), job.waiting), ("T", True))  # arrêtée pendant la lecture
+            self.assertEqual((state(proc.pid), job.waiting), ("T", True))  # cède le processeur au spectateur
+        finally:
+            proc.kill()
+            proc.wait()
+        viewing["v"] = True
+        job = types.SimpleNamespace(waiting=False, mode="copy")
+        proc = subprocess.Popen(["sleep", "30"])
+        try:
+            t = threading.Thread(target=mgr._yield_to_viewers, args=(job, proc, "low", 19), daemon=True)
+            t.start()
+            for _ in range(50):
+                if state(proc.pid) == "T":
+                    break
+                time.sleep(0.1)
+            self.assertEqual((state(proc.pid), job.waiting), ("T", True))  # arrêtée pendant la lecture
             viewing["v"] = False
             for _ in range(60):
-                if state() != "T":
+                if state(proc.pid) != "T":
                     break
                 time.sleep(0.1)
-            self.assertNotEqual(state(), "T")  # reprend ensuite
+            self.assertNotEqual(state(proc.pid), "T")  # reprend ensuite
             self.assertFalse(job.waiting)
         finally:
             proc.kill()

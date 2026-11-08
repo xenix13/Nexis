@@ -1,0 +1,108 @@
+{
+  "name": "nexis-desktop",
+  "productName": "Nexis",
+  "version": "1.0.0",
+  "description": "Nexis pour Windows, macOS et Linux : l'interface de votre serveur Nexis, dans une vraie application.",
+  "homepage": "https://github.com/xenix13/Nexis",
+  "author": {
+    "name": "Nexis",
+    "email": "nexis@users.noreply.github.com"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "desktopName": "nexis.desktop",
+  "scripts": {
+    "start": "electron .",
+    "icon": "node -e \"const fs=require('fs');fs.mkdirSync('build',{recursive:true});fs.copyFileSync('../../static/icons/icon-512.png','build/icon.png')\"",
+    "dist": "npm run icon && electron-builder --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.10"
+  },
+  "devDependencies": {
+    "electron": "39.8.10",
+    "electron-builder": "26.16.0"
+  },
+  "build": {
+    "appId": "fr.nexis.desktop",
+    "productName": "Nexis",
+    "copyright": "Nexis",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "setup.html",
+      "strings.js",
+      "package.json"
+    ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://localhost/apps/desktop"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Nexis-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "shortcutName": "Nexis"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.entertainment",
+      "identity": "-",
+      "artifactName": "Nexis-mac.${ext}"
+    },
+    "dmg": {
+      "artifactName": "Nexis.dmg"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "AudioVideo",
+      "maintainer": "Nexis <nexis@users.noreply.github.com>",
+      "synopsis": "Nexis : films, séries et TV de votre serveur",
+      "syncDesktopName": true
+    },
+    "appImage": {
+      "artifactName": "Nexis.AppImage"
+    },
+    "deb": {
+      "artifactName": "nexis-desktop.deb"
+    }
+  }
+}
