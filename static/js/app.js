@@ -327,8 +327,9 @@ function shell(active) {
     h('a', { href: '#/history' }, tr('Historique')),
     me.features && me.features.downloads && offlineSupported() ? h('a', { href: '#/downloads' }, tr('Téléchargements')) : null,
     h('a', { href: '#/settings' }, tr('Paramètres')),
+    // installer Nexis (application native ou web, et les autres appareils) ; dans l'application : la page Applications
     h('button.install-app', { hidden: !canInstall(), onclick: () => install() }, icon('install'), tr('Installer l’application')),
-    h('a', { href: '#/apps' }, tr('Applications')),
+    h('a.apps-link', { href: '#/apps', hidden: canInstall() }, tr('Applications')),
     h('button', { onclick: () => aboutDialog(state.status && state.status.version) }, tr('À propos')),
     h('button', { onclick: logout }, tr('Se déconnecter')),
     state.status ? h('div.menu-version', `Nexis ${state.status.version}`) : null);
@@ -577,7 +578,10 @@ document.addEventListener('keydown', (e) => {
     if (s) { e.preventDefault(); s.focus(); s.select(); }
   }
 });
-onInstallChange(() => document.querySelectorAll('.install-app').forEach((b) => { b.hidden = !canInstall(); }));
+onInstallChange(() => {
+  document.querySelectorAll('.install-app').forEach((b) => { b.hidden = !canInstall(); });
+  document.querySelectorAll('.apps-link').forEach((b) => { b.hidden = canInstall(); });
+});
 
 window.addEventListener('hashchange', route);
 route();

@@ -679,4 +679,5 @@ EN = {
     "Priorité invalide": "Invalid priority",
     "Application pas encore publiée pour cette version": "App not published for this version yet",
     "Application inconnue": "Unknown app",
+    "Appareil désinscrit des notifications": "Device unsubscribed from notifications",
 }

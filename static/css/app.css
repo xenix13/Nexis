@@ -1808,6 +1808,11 @@ html.has-audio .bulk-bar { bottom: 108px; }
 .app-steps ol { margin: 8px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.5; color: var(--muted); }
 .app-steps li + li { margin-top: 4px; }
 .install-choices { display: flex; flex-direction: column; gap: 10px; }
+.modal:has(.install-all) { max-width: 920px; }
+.install-all .install-sub { font-size: 15px; margin: 4px 0 10px; color: var(--muted); font-weight: 600; }
+.install-all .install-sub + .app-grid, .install-all .install-choices + .install-sub { margin-top: 18px; }
+.install-all .app-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.user-menu .apps-link[hidden] { display: none; }
 .install-choice { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); }
 .install-choice.recommended { border-color: var(--accent); }
 .install-choice p { margin: 4px 0 0; }

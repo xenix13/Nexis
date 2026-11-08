@@ -525,6 +525,40 @@ class PhotosDlnaTest(unittest.TestCase):
         self.admin.call("POST", "/api/push/unsubscribe", {"endpoint": "https://fcm.googleapis.com/fcm/send/abc"})
         self.assertEqual(self.admin.call("POST", "/api/push/test")[0], 409)
 
+    def test_31b_push_android_app(self):
+        """Application Android : jeton d'appareil, messages relevés par l'appareil lui-même (pas de Web Push)."""
+        sent = []
+        self.ctx.push._send_one = lambda sub: sent.append(sub["endpoint"]) or True
+        st, r = self.admin.call("POST", "/api/push/device")
+        self.assertEqual(st, 200, r)
+        token = r["token"]
+        phone = Client(self.base)  # l'application, sans cookie : seulement son jeton
+        self.assertEqual(phone.call("GET", "/api/push/device", headers={"X-Nexis-Device": "x" * 40})[0], 410)
+        st, r = phone.call("GET", "/api/push/device", headers={"X-Nexis-Device": token})
+        self.assertEqual((st, r["messages"]), (200, []))
+        st, r = self.admin.call("POST", "/api/push/test")
+        self.assertEqual((st, r["sent"]), (200, 1))  # l'appareil compte, sans envoi vers un service push
+        st, r = phone.call("GET", "/api/push/device", headers={"X-Nexis-Device": token})
+        self.assertEqual([m["tag"] for m in r["messages"]], ["test"])
+        self.assertNotIn("ring", r["messages"][0])
+        # heures calmes : le message reste dans la cloche, le téléphone ne sonne pas
+        uid = self.ctx.db.scalar("SELECT id FROM users WHERE username='admin'")
+        prefs = self.ctx.push.prefs
+        self.ctx.push.prefs = lambda u: {"quiet_hours": "00:00-23:59"}
+        try:
+            self.ctx.push.notify(uid, "Calme", "", kind="episodes", tag="calme")
+        finally:
+            self.ctx.push.prefs = prefs
+        self.ctx.push.notify(uid, "Nouveau", "S1E2", "#/item/1", tag="show-1", kind="episodes")
+        st, r = phone.call("GET", "/api/push/device", headers={"X-Nexis-Device": token})
+        self.assertEqual([m["tag"] for m in r["messages"]], ["show-1"])
+        self.assertEqual(r["messages"][0]["url"], "#/item/1")
+        self.assertEqual(sent, [])
+        # désinscription : le jeton ne sert plus à rien
+        self.admin.call("POST", "/api/push/device/remove", {"token": token})
+        self.assertEqual(phone.call("GET", "/api/push/device", headers={"X-Nexis-Device": token})[0], 410)
+        self.assertEqual(self.admin.call("POST", "/api/push/test")[0], 409)
+
     def test_32_cast_streams(self):
         """Flux pour une TV (Chromecast, AirPlay) : lisible sans session, avec CORS ; les autres flux demandent un compte."""
         movie = self.ctx.db.scalar("SELECT id FROM items WHERE type='movie' ORDER BY id LIMIT 1")

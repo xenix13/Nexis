@@ -2,13 +2,16 @@ package fr.nexis.app;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.Manifest;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.app.NotificationManager;
 import android.app.ProgressDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -54,6 +57,7 @@ import java.util.Locale;
 public class MainActivity extends Activity {
     private static final String PREFS = "nexis";
     private static final int PICK_FILE = 1;
+    private static final int ASK_NOTIFY = 2;
     private static final long UPDATE_EVERY = 6 * 3600 * 1000L;
 
     private WebView web;
@@ -166,9 +170,45 @@ public class MainActivity extends Activity {
             }
         });
 
-        if (saved != null) web.restoreState(saved);
+        NotifyJob.channel(this);
+        if (prefs().getString("push_token", null) != null) NotifyJob.schedule(this); // remise en route après une mise à jour
+
+        String open = opened(getIntent());
+        if (open != null && server() != null) web.loadUrl(server() + "/" + open);
+        else if (saved != null) web.restoreState(saved);
         else if (server() != null) web.loadUrl(server());
         else showSetup("");
+    }
+
+    // notification touchée : la page qu'elle annonce (adresse de l'interface, « #/item/12 »)
+    private static String opened(Intent i) {
+        String u = i == null ? null : i.getStringExtra("open");
+        return u != null && u.startsWith("#/") ? u : null;
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        String open = opened(intent);
+        if (open != null && server() != null) web.loadUrl(server() + "/" + open);
+    }
+
+    // ------------------------------------------------------------------ notifications
+    private boolean notificationsAllowed() {
+        return getSystemService(NotificationManager.class).areNotificationsEnabled();
+    }
+
+    private void answerPush(boolean ok) {
+        web.evaluateJavascript("window.onNexisPush && onNexisPush(" + ok + ")", null);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
+        if (request == ASK_NOTIFY) {
+            answerPush(results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED && notificationsAllowed());
+            return;
+        }
+        super.onRequestPermissionsResult(request, permissions, results);
     }
 
     private void showSetup(String query) {
@@ -441,5 +481,62 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void checkUpdate() { ui.post(() -> MainActivity.this.checkUpdate(true)); }
+
+        // notifications : inscrit (jeton du serveur) et autorisées par Android ?
+        @JavascriptInterface
+        public String pushStatus() {
+            try {
+                JSONObject j = new JSONObject();
+                j.put("registered", prefs().getString("push_token", null) != null);
+                j.put("allowed", notificationsAllowed());
+                return j.toString();
+            } catch (Exception e) {
+                return "{}";
+            }
+        }
+
+        @JavascriptInterface
+        public void pushEnable(String token) {
+            if (token == null || token.length() < 20) { ui.post(() -> answerPush(false)); return; }
+            prefs().edit().putString("push_token", token).apply();
+            ui.post(() -> {
+                NotifyJob.schedule(MainActivity.this);
+                if (Build.VERSION.SDK_INT >= 33
+                        && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, ASK_NOTIFY);
+                } else {
+                    answerPush(notificationsAllowed());
+                }
+            });
+        }
+
+        /** Désinscrit cet appareil ; rend le jeton pour que la page le retire aussi du serveur. */
+        @JavascriptInterface
+        public String pushDisable() {
+            String token = prefs().getString("push_token", null);
+            prefs().edit().remove("push_token").apply();
+            NotifyJob.cancel(MainActivity.this);
+            return token;
+        }
+
+        // notification d'essai : on va la chercher tout de suite (le serveur l'a déjà en attente)
+        @JavascriptInterface
+        public void pushCheck() {
+            new Thread(() -> {
+                try { Thread.sleep(800); } catch (InterruptedException ignored) { }
+                NotifyJob.poll(MainActivity.this);
+            }, "nexis-notify-now").start();
+        }
+
+        @JavascriptInterface
+        public void notificationSettings() {
+            ui.post(() -> {
+                try {
+                    startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName()));
+                } catch (ActivityNotFoundException e) {
+                    startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
+                }
+            });
+        }
     }
 }

@@ -45,38 +45,43 @@ export function webAppPossible() {
 
 export function onInstallChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 
-// Choix proposé par « Installer l'application » : l'application native (conseillée) ou l'application web
+// « Installer l'application » : sur cet appareil, l'application native (conseillée) ou l'application web au choix
+// (iPhone, iPad : l'application web seulement), puis tout ce que propose la page Applications pour les autres appareils.
 export async function install() {
-  const { PLATFORMS, detectPlatform } = await import('./views/apps.js');
+  const { PLATFORMS, card, detectPlatform } = await import('./views/apps.js');
   const { platformLogo } = await import('./platforms.js');
   const here = detectPlatform();
   const known = PLATFORMS.find((x) => x.id === here && !x.web);
-  // l'application de cette plateforme est-elle publiée pour ce serveur ?
-  let published = new Set();
-  try { published = new Set((await (await import('./api.js')).get('/api/apps')).apps.filter((a) => a.available).map((a) => a.id)); } catch { /* ignore */ }
-  const p = known && published.has(known.files[0][0]) ? known : null;
+  let data = null;
+  try { data = await (await import('./api.js')).get('/api/apps'); } catch { /* GitHub injoignable : étapes seulement */ }
+  const published = new Set((data ? data.apps : []).filter((a) => a.available).map((a) => a.id));
   const close = () => document.querySelector('.modal-overlay')?.remove();
-  const options = [];
-  if (p) {
-    const file = p.files[0][0];
-    options.push(h('div.install-choice.recommended',
-      h('span.app-logo', platformLogo(p.logo, 30), p.tv ? h('span.app-tv', icon('tv')) : null),
-      h('div.grow', h('strong', tr('Application Nexis pour {os}', { os: p.name })), h('span.install-tag', tr('Conseillé')),
-        h('p.muted.small', tr('Un vrai programme installé : lecteur et téléchargements sans les limites du navigateur, et son interface suit les mises à jour du serveur.'))),
-      h('a.btn.primary', { href: `/apps/${file}`, download: '', onclick: () => setTimeout(() => { close(); location.hash = `#/apps`; }, 400) },
-        icon('download'), tr('Télécharger'))));
+  const choices = [];
+  if (known && !ios()) {
+    const file = known.files[0][0];
+    const ok = published.has(file);
+    choices.push(h('div.install-choice.recommended',
+      h('span.app-logo', platformLogo(known.logo, 30), known.tv ? h('span.app-tv', icon('tv')) : null),
+      h('div.grow', h('strong', tr('Application Nexis pour {os}', { os: known.name })), h('span.install-tag', tr('Conseillé')),
+        h('p.muted.small', ok ? tr('Un vrai programme installé : lecteur et téléchargements sans les limites du navigateur, et son interface suit les mises à jour du serveur.')
+          : tr('Pas encore publiée pour cette version du serveur'))),
+      ok ? h('a.btn.primary', { href: `/apps/${file}`, download: '' }, icon('download'), tr('Télécharger')) : null));
   } else if (ios()) {
-    options.push(h('p.small.muted', tr('Apple ne permet pas d’installer une application en dehors de l’App Store : sur iPhone et iPad, Nexis s’installe comme application web.')));
+    choices.push(h('p.small.muted', tr('Apple ne permet pas d’installer une application en dehors de l’App Store : sur iPhone et iPad, Nexis s’installe comme application web.')));
   }
   const webOk = webAppPossible();
-  options.push(h('div.install-choice',
+  choices.push(h('div.install-choice', { class: ios() ? 'install-choice recommended' : 'install-choice' },
     h('span.app-logo', icon('install')),
     h('div.grow', h('strong', tr('Application web')),
       h('p.muted.small', webOk ? tr('Plus légère, installée par le navigateur. Le navigateur fixe la place disponible pour les téléchargements.')
         : tr('Ce navigateur ne sait pas installer d’application web sur cet appareil : prenez l’application native.'))),
-    webOk ? h('button.btn', { type: 'button', onclick: () => { close(); installWebApp(); } }, tr('Installer')) : null));
-  options.push(h('p.small', h('a', { href: '#/apps', onclick: close }, tr('Toutes les applications : Windows, macOS, Linux, Android, Android TV, iPhone et iPad'))));
-  modal(tr('Installer Nexis'), h('div.install-choices', ...options), [{ label: tr('Fermer'), value: false }]);
+    webOk ? h('button.btn', { class: ios() ? 'btn primary' : 'btn', type: 'button', onclick: () => { close(); installWebApp(); } }, tr('Installer')) : null));
+  // les autres appareils : comme la page Applications (fichiers, versions, étapes d'installation)
+  const others = PLATFORMS.filter((x) => x.id !== here);
+  modal(tr('Installer Nexis'), h('div.install-all',
+    h('h3.install-sub', tr('Sur cet appareil')), h('div.install-choices', ...choices),
+    h('h3.install-sub', tr('Sur vos autres appareils')),
+    h('div.app-grid', others.map((x) => card(x, data, false)))), [{ label: tr('Fermer'), value: false }]);
 }
 
 // Application web : invite du navigateur, sinon le chemin dans son menu

@@ -47,7 +47,7 @@ export const PLATFORMS = [
       tr('Apple ne permet pas d’installer une application en dehors de l’App Store : sur iPhone et iPad, Nexis s’installe comme application web. Une fois sur l’écran d’accueil, ses téléchargements sont gardés.')] },
 ];
 
-function card(p, data, here) {
+export function card(p, data, here) {
   const avail = new Map((data ? data.apps : []).map((a) => [a.id, a]));
   const ver = data && data.versions ? (p.id === 'android' ? data.versions.android : ['windows', 'macos', 'linux'].includes(p.id) ? data.versions.desktop : null) : null;
   return h('section.app-card', { class: here ? 'app-card here' : 'app-card', id: `app-${p.id}` },

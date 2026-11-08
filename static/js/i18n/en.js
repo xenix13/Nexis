@@ -2097,4 +2097,12 @@ export default {
   "Y taper l’adresse de ce serveur suivie de /tv (par exemple {url}), puis installer.": "Type this server’s address followed by /tv (for example {url}), then install.",
   "macOS 12 ou plus récent, Mac Intel et Apple Silicon": "macOS 12 or later, Intel and Apple Silicon Macs",
   "version {v}": "version {v}",
+  "Mettez à jour l’application Nexis pour recevoir les notifications sur ce téléphone.": "Update the Nexis app to get notifications on this phone.",
+  "Notifications bloquées pour l’application Nexis : autorisez-les dans les réglages d’Android.": "Notifications are blocked for the Nexis app: allow them in Android settings.",
+  "Notifications refusées pour l’application Nexis : autorisez-les dans les réglages d’Android.": "Notifications were refused for the Nexis app: allow them in Android settings.",
+  "Ouvrir les réglages": "Open settings",
+  "Sur cet appareil": "On this device",
+  "Sur vos autres appareils": "On your other devices",
+  "Application Nexis : les téléchargements sont gardés par l’application, sans limite propre au navigateur. La place disponible est celle de l’appareil.": "Nexis app: downloads are kept by the app, with no browser-specific limit. The available space is the device’s.",
+  "Plus de place sur l’appareil. Supprimez un téléchargement ou libérez de l’espace.": "No space left on the device. Delete a download or free up space.",
 };

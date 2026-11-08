@@ -3,6 +3,7 @@ import { state } from '../app.js';
 import { askPersist, list, onDownloads, posterUrl, pump, removeDownload, removeMany, retry, setSmart, smartPrefs, supported, usage } from '../offline.js';
 import { clear, confirmDialog, episodeCode, fmtDuration, h, icon, select, toast, toggle } from '../ui.js';
 import { tr, locale } from '../i18n.js';
+import { nativeApp } from '../install.js';
 
 const GB = 1024 ** 3;
 const size = (b) => (b >= GB ? tr('{n} Go', { n: (b / GB).toLocaleString(locale(), { maximumFractionDigits: 1, minimumFractionDigits: 1 }) }) : tr('{n} Mo', { n: Math.max(1, Math.round(b / 1024 ** 2)) }));
@@ -123,7 +124,12 @@ export async function renderDownloads(main, ctx, { offline = false } = {}) {
         watched ? ` · ${tr('dont {n} déjà vus', { n: size(watched) })}` : '') : null);
     // La limite vient du navigateur, pas du téléphone : Firefox plafonne un site à 10 Go tant qu'on ne l'autorise pas
     // à garder ses données (jusqu'à la moitié de l'appareil ensuite) ; Chrome, Edge et Safari vont jusqu'à ~60 %.
-    room.replaceChildren(...(u && !u.persisted ? [
+    // Application Nexis (ordinateur, Android) : les téléchargements sont dans les données de l'application, que le
+    // système n'efface pas ; la demande « stockage persistant » n'existe que dans un navigateur (l'application répond
+    // toujours non). Rien à autoriser : la place est celle de l'appareil.
+    if (nativeApp()) {
+      room.replaceChildren(h('p.small.muted', tr('Application Nexis : les téléchargements sont gardés par l’application, sans limite propre au navigateur. La place disponible est celle de l’appareil.')));
+    } else room.replaceChildren(...(u && !u.persisted ? [
       h('p.small', firefox
         ? tr('Firefox limite chaque site à 10 Go tant que le stockage persistant n’est pas autorisé. Une fois autorisé, Nexis peut utiliser jusqu’à la moitié du stockage de l’appareil, et les téléchargements ne sont plus effacés automatiquement.')
         : tr('Le navigateur peut effacer ces téléchargements s’il manque de place. Autoriser le stockage persistant les protège ; installer l’application sur l’écran d’accueil aide également.')),
