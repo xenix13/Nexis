@@ -14,7 +14,7 @@
   "desktopName": "nexis.desktop",
   "scripts": {
     "start": "electron .",
-    "icon": "node -e \"require('fs').copyFileSync('../../static/icons/icon-512.png','build/icon.png')\"",
+    "icon": "node -e \"const fs=require('fs');fs.mkdirSync('build',{recursive:true});fs.copyFileSync('../../static/icons/icon-512.png','build/icon.png')\"",
     "dist": "npm run icon && electron-builder --publish never"
   },
   "dependencies": {
