@@ -1700,7 +1700,8 @@ class SeanceTest(unittest.TestCase):
                 st, early, h = self.admin.call("GET", f"/api/downloads/{j['id']}/file", raw=True, headers={"Range": f"bytes=0-{j['ready'] - 1}"})
                 self.assertEqual((st, len(early)), (206, j["ready"]))
                 st, _, _ = self.admin.call("GET", f"/api/downloads/{j['id']}/file", raw=True, headers={"Range": f"bytes={j['ready'] + 10 ** 9}-{j['ready'] + 10 ** 9 + 99}"})
-                self.assertEqual(st, 409)
+                if st != 409:  # préparation finie entre-temps : plage hors du fichier final
+                    self.assertEqual((st, self.admin.call("GET", f"/api/downloads/{j['id']}")[1]["state"]), (416, "ready"))
             if j["state"] in ("ready", "error"):
                 break
             time.sleep(0.05)
