@@ -1,0 +1,59 @@
+// Nexis pour téléphones et tablettes Android : l'interface du serveur Nexis (elle suit chaque mise à jour du
+// serveur) dans une vraie application, avec ce qu'un navigateur ne fait pas bien : plein écran, envoi de fichiers,
+// mises à jour de l'application depuis le serveur. Version propre à l'application (indépendante du serveur) :
+// à augmenter ici quand le code Java change ; la CI la publie avec chaque version du serveur.
+plugins {
+    id 'com.android.application'
+}
+
+def keystore = System.getenv('NEXIS_KEYSTORE')
+
+android {
+    namespace 'fr.nexis.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'fr.nexis.app'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    signingConfigs {
+        release {
+            if (keystore) {
+                storeFile file(keystore)
+                storePassword System.getenv('NEXIS_KEYSTORE_PASSWORD')
+                keyAlias 'nexis'
+                keyPassword System.getenv('NEXIS_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystore ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // FileProvider : donner l'APK téléchargé à l'installateur d'Android
+    implementation 'androidx.core:core:1.13.1'
+}

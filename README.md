@@ -23,7 +23,7 @@ Serveur multimédia auto-hébergé pour films, séries et animes. Nexis analyse 
 | **TV en direct** | Listes M3U (IPTV, box opérateur) et guide XMLTV : grille des chaînes, guide des programmes, favoris, changement de chaîne |
 | **Tâches planifiées** | Scan, métadonnées, images de chapitres, détection des intros et génériques, sous-titres, guide TV, nettoyage |
 | **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou externes : `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. ASS rendus par libass (positionnement, karaoké, polices jointes), PGS rendus par le navigateur, VobSub incrustés |
-| **Applications** | Web app installable (Windows, macOS, Linux, Android, iPhone, iPad), téléchargements hors ligne, application Android TV native |
+| **Applications** | Applications natives Windows, macOS, Linux et Android (installées depuis le serveur, mises à jour par lui), application Android TV, web app pour iPhone et iPad, téléchargements hors ligne |
 | **Paramètres** | Un seul espace, organisé en Mon compte, Serveur, Médiathèque et Lecture, avec recherche |
 | **Livres audio** | Bibliothèque de livres audio (chapitres, couvertures, reprise), lecteur audio en bas de l'écran (vitesse, minuterie, écran verrouillé) |
 | **Photothèque** | Bibliothèque de photos : albums (les sous-dossiers), toutes les photos par mois, carte des lieux (GPS), visionneuse plein écran avec diaporama, date et orientation lues dans les données EXIF |
@@ -330,6 +330,24 @@ L'interface se parcourt entièrement sans souris.
 - **Retour** (télécommande, Retour arrière, ou B à la manette) : fermer le menu ouvert ou revenir à la page précédente.
 - **Manettes** (Xbox, PlayStation…) : croix ou stick gauche pour se déplacer, A pour valider, B pour revenir, Start pour lecture/pause.
 - **Lecteur** : gauche/droite pour reculer ou avancer ; avec une télécommande ou une manette, haut/bas affichent les commandes, puis les flèches passent d'un bouton à l'autre ; Retour masque les commandes puis quitte le lecteur ; les touches multimédia sont prises en charge.
+
+### Applications Windows, macOS, Linux et Android
+
+Page **Applications** (menu du profil, ou lien de la page de connexion, sans compte) : chaque plateforme avec son logo, le fichier à télécharger et les étapes d'installation. **Installer l'application** (menu du profil) propose l'application native de l'appareil, conseillée, ou l'application web. Firefox, qui ne sait pas installer d'application web sur ordinateur, a ainsi une vraie application.
+
+| Plateforme | Fichier | Premier lancement |
+|---|---|---|
+| Windows 10 et 11 | `Nexis-Setup.exe` | « Windows a protégé votre ordinateur » : *Informations complémentaires* → *Exécuter quand même* (application non signée par un certificat payant) |
+| macOS 12 et plus (Intel, Apple Silicon) | `Nexis.dmg` | *Réglages Système → Confidentialité et sécurité → Ouvrir quand même* (pas de compte développeur Apple) |
+| Linux | `Nexis.AppImage` ou `nexis-desktop.deb` | AppImage à rendre exécutable |
+| Android 8 et plus (téléphone, tablette) | `nexis-android.apk` | autoriser l'installation depuis le navigateur, une fois |
+| Android TV | `nexis-tv.apk` | appli *Downloader*, adresse `<serveur>/tv` |
+| iPhone, iPad | application web | Apple n'autorise pas d'installation en dehors de l'App Store |
+
+- **Comment elles marchent** : chaque application affiche l'interface du serveur choisi au premier lancement. Elle suit donc chaque mise à jour du serveur, sans réinstaller. Le moteur est celui de l'application (Chromium sur ordinateur, WebView sur Android) : même affichage et mêmes formats partout, quel que soit le navigateur habituel.
+- **Ce qu'elles apportent** : sur ordinateur, un serveur en `http://` du réseau local est traité comme sûr, ce qui permet les téléchargements hors ligne, refusés par les navigateurs ; pas de limite de place propre au navigateur. Sur Android : plein écran vidéo, envoi de fichiers (photo du profil, sauvegarde, thème), enregistrement des fichiers exportés dans Téléchargements.
+- **Mises à jour** : l'application vérifie auprès du serveur toutes les 6 heures. Windows et Linux (AppImage) installent la nouvelle version au redémarrage ; Android télécharge l'APK et propose de l'installer ; macOS et le paquet `.deb` proposent de télécharger la nouvelle version. *Paramètres → Cet appareil → Cette application* : version, *Rechercher une mise à jour*, *Changer de serveur…*.
+- **Distribution** : l'intégration continue construit les applications et les joint à la publication de chaque version (pré-version `apps-test` pour la branche test). Le serveur lit cette publication et garde une copie des fichiers demandés (dans `<données>/apps`) : les appareils les téléchargent depuis le serveur, jamais depuis GitHub (le tout premier téléchargement d'un fichier est redirigé vers GitHub le temps de la copie). Sources : `apps/desktop` (Electron) et `android/mobile`.
 
 ### Application Android TV
 

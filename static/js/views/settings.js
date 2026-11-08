@@ -10,6 +10,19 @@ import { device, deviceName, modestDevice, setDevice } from '../device.js';
 import { shortcutsPanel } from '../keys.js';
 import { renderThemeStore, themePreview } from './themes.js';
 import { disablePush, enablePush, pushState, pushSupported } from '../push.js';
+import { nativeApp } from '../install.js';
+
+// application Nexis installée (bureau, Android) : sa version, le serveur, la recherche de mise à jour
+function nativePanel() {
+  const n = nativeApp();
+  if (!n) return null;
+  return h('section.panel', h('h2', tr('Cette application')),
+    h('p.small', tr('Application Nexis {v} · serveur {s}', { v: n.version || '?', s: n.server || location.origin })),
+    h('p.muted.small', tr('L’interface vient du serveur et suit ses mises à jour ; l’application elle-même se met à jour depuis le serveur.')),
+    h('div.actions-row',
+      h('button.btn', { onclick: () => n.checkUpdate() }, tr('Rechercher une mise à jour')),
+      h('button.btn', { onclick: () => n.changeServer() }, tr('Changer de serveur…'))));
+}
 
 // notifications push : nouvel épisode d'une série suivie, titre demandé arrivé
 function pushPanel() {
@@ -660,6 +673,7 @@ function accountPage(id, body, rerender) {
           field(tr('Navigation à la télécommande'), pick('remote', [['', tr('Automatique')], ['on', tr('Toujours activée')], ['off', tr('Désactivée')]]),
             tr('Repères de sélection visibles et déplacement aux flèches, comme sur une TV.')))),
       pushPanel(),
+      nativePanel(),
       h('section.panel', h('h2', tr('Télécommande')),
         field(tr('Nom de cet appareil'), h('input', { value: d.name || '', maxlength: 60, placeholder: deviceName(),
           onchange: (e) => set({ name: e.target.value.trim() || undefined }) }),

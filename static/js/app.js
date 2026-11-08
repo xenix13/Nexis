@@ -328,6 +328,7 @@ function shell(active) {
     me.features && me.features.downloads && offlineSupported() ? h('a', { href: '#/downloads' }, tr('Téléchargements')) : null,
     h('a', { href: '#/settings' }, tr('Paramètres')),
     h('button.install-app', { hidden: !canInstall(), onclick: () => install() }, icon('install'), tr('Installer l’application')),
+    h('a', { href: '#/apps' }, tr('Applications')),
     h('button', { onclick: () => aboutDialog(state.status && state.status.version) }, tr('À propos')),
     h('button', { onclick: logout }, tr('Se déconnecter')),
     state.status ? h('div.menu-version', `Nexis ${state.status.version}`) : null);
@@ -418,6 +419,20 @@ async function route() {
       return;
     }
     if (await resumeUpdate(state.status)) return;
+  }
+  if (page === 'apps') {
+    // applications à installer : lisible sans être connecté (lien de la page de connexion)
+    document.body.classList.remove('playing');
+    if (!state.me) {
+      try { await get('/api/me', { quiet401: true }); await refreshMe(); } catch { /* pas connecté */ }
+    }
+    if (token !== renderToken) return;
+    const { renderApps } = await import('./views/apps.js');
+    if (state.me) { await renderApps(shell('apps')); return; }
+    const main = h('main.main.share-page');
+    clear(root, h('header.share-head', h('a.logo', { href: '#/' }, h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis')), main);
+    await renderApps(main);
+    return;
   }
   if (page === 'share' && parts[1]) {
     // album photo partagé par lien : consultable sans compte

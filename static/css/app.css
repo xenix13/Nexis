@@ -1783,3 +1783,31 @@ html.has-audio .bulk-bar { bottom: 108px; }
 .stat-table td a { color: inherit; }
 .stat-table td a:hover { color: var(--accent); }
 .stat-tiles ~ .panel { margin-bottom: 14px; }
+
+/* ---------- applications (page Applications, bouton Installer) ---------- */
+.app-lead { max-width: 70ch; margin: -8px 0 18px; }
+.app-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.app-card { display: flex; flex-direction: column; gap: 12px; padding: 18px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+.app-card.here { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.app-head { display: flex; align-items: center; gap: 14px; }
+.app-head h2 { font-size: 19px; }
+.app-logo { position: relative; display: grid; place-items: center; width: 52px; height: 52px; flex: none; border-radius: 14px; background: var(--surface-2); color: var(--text); }
+.platform-logo { fill: currentColor; display: block; }
+.logo-android { fill: #3ddc84; }
+.app-tv { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--accent); color: var(--ink-on-accent); }
+.app-tv .icon { width: 14px; height: 14px; }
+.app-here { margin-left: auto; align-self: flex-start; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px;
+  background: var(--accent); color: var(--ink-on-accent); white-space: nowrap; }
+.app-files { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.app-size { font-weight: 400; opacity: .7; font-size: 12px; }
+.btn.disabled { opacity: .45; cursor: not-allowed; }
+.app-steps summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.app-steps ol { margin: 8px 0 0; padding-left: 20px; font-size: 13px; line-height: 1.5; color: var(--muted); }
+.app-steps li + li { margin-top: 4px; }
+.install-choices { display: flex; flex-direction: column; gap: 10px; }
+.install-choice { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); }
+.install-choice.recommended { border-color: var(--accent); }
+.install-choice p { margin: 4px 0 0; }
+.install-tag { margin-left: 8px; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--accent); color: var(--ink-on-accent); }
+@media (max-width: 520px) { .install-choice { flex-wrap: wrap; } .install-choice .btn { width: 100%; justify-content: center; } }

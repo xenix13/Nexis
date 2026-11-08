@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_title">Nexis %1$s is available</string>
+    <string name="update_text">The new version downloads from your Nexis server, then Android asks to install it.</string>
+    <string name="update_now">Update</string>
+    <string name="later">Later</string>
+    <string name="update_downloading">Downloading the update…</string>
+    <string name="update_failed">Update failed: %1$s</string>
+    <string name="allow_install">Allow Nexis to install its updates, then come back.</string>
+    <string name="up_to_date">Nexis is up to date (%1$s).</string>
+    <string name="download_started">Download started</string>
+    <string name="no_browser">No app can open this link.</string>
+</resources>

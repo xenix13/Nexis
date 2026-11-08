@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="update_title">Nexis %1$s est disponible</string>
+    <string name="update_text">La nouvelle version se télécharge depuis votre serveur Nexis, puis Android propose de l’installer.</string>
+    <string name="update_now">Mettre à jour</string>
+    <string name="later">Plus tard</string>
+    <string name="update_downloading">Téléchargement de la mise à jour…</string>
+    <string name="update_failed">Mise à jour impossible : %1$s</string>
+    <string name="allow_install">Autorisez Nexis à installer ses mises à jour, puis revenez.</string>
+    <string name="up_to_date">Nexis est à jour (%1$s).</string>
+    <string name="download_started">Téléchargement lancé</string>
+    <string name="no_browser">Aucune application ne peut ouvrir ce lien.</string>
+</resources>

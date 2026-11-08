@@ -52,7 +52,8 @@ export function renderLogin(root, onDone) {
     },
   }, brand(tr('Connexion'), tr('Identifiez-vous avec votre compte Nexis.')),
   field(tr('Identifiant'), user), field(tr('Mot de passe'), pass), err, btn,
-  h('p.auth-foot', tr('Mot de passe oublié ? Contactez l’administrateur du serveur.')));
+  h('p.auth-foot', tr('Mot de passe oublié ? Contactez l’administrateur du serveur.')),
+  h('p.auth-foot', h('a', { href: '#/apps' }, tr('Applications pour Windows, macOS, Linux, Android et TV'))));
   layout(root, form);
 
   // double authentification : le mot de passe est bon, le code de l'application est demandé
