@@ -1774,6 +1774,16 @@ class SeanceTest(unittest.TestCase):
         m = re.search(r'src="/v/([0-9a-f]{12})/js/app\.js"', html)
         self.assertTrue(m, html)
         self.assertIn(f'href="/v/{m.group(1)}/css/app.css"', html)
+        # démarrage : script en ligne autorisé par son empreinte (CSP), liste du code à précharger
+        import base64, hashlib
+        boot = re.search(r"<script>(.*?)</script>", html).group(1)
+        digest = base64.b64encode(hashlib.sha256(boot.encode()).digest()).decode()
+        self.assertIn(f"'sha256-{digest}'", h["Content-Security-Policy"])
+        self.assertIn("/api/me", boot)
+        mods = re.search(r'name="nexis-modules" data-base="/v/[0-9a-f]{12}/js/" content="([^"]+)"', html).group(1).split(",")
+        self.assertIn("api.js", mods)
+        self.assertIn("views/home.js", mods)
+        self.assertTrue(all(os.path.isfile(os.path.join(STATIC, "js", x)) for x in mods), mods)
         st, body, h2 = self.admin.call("GET", f"/v/{m.group(1)}/js/views/home.js", raw=True)
         self.assertEqual((st, h2["Cache-Control"]), (200, "public, max-age=31536000, immutable"))
         self.assertIn(b"renderHome", body)

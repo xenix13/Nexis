@@ -22,6 +22,14 @@ export async function renderLibrary(main, sid, ctx) {
   const sort = ctx.query.get('sort') || 'title';
   const genre = ctx.query.get('genre') || '';
   const view = ctx.query.get('view') || '';
+  // première page des titres demandée en même temps que les filtres (un aller-retour de moins si le serveur est loin)
+  const firstQ = new URLSearchParams();
+  for (const k of FILTERS) if (ctx.query.get(k)) firstQ.set(k, ctx.query.get(k));
+  firstQ.set('start', 0);
+  firstQ.set('size', PAGE);
+  firstQ.set('sort', sort);
+  let firstPage = get(`/api/libraries/${sid}/items?${firstQ}`);
+  firstPage.catch(() => {}); // erreur reprise par more()
   const [genres, collections, facets] = await Promise.all([
     get(`/api/libraries/${sid}/genres`).catch(() => []),
     get(`/api/libraries/${sid}/collections`).catch(() => []),
@@ -133,7 +141,9 @@ export async function renderLibrary(main, sid, ctx) {
       q.set('start', start);
       q.set('size', PAGE);
       q.set('sort', sort);
-      const r = await get(`/api/libraries/${sid}/items?${q}`);
+      const early = start === 0 ? firstPage : null;
+      firstPage = null;
+      const r = await (early || get(`/api/libraries/${sid}/items?${q}`));
       if (!ctx.isCurrent()) return;
       total = r.total;
       start += r.items.length;

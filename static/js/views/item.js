@@ -560,6 +560,8 @@ function episodeRow(e, refresh) {
 }
 
 export async function renderItem(main, rk, ctx) {
+  // titres proches demandés en même temps que la fiche : un aller-retour de moins quand le serveur est loin
+  const early = /^\d+$/.test(String(rk)) ? get(`/api/items/${rk}/similar`).catch(() => null) : null;
   const d = await get(`/api/items/${rk}`);
   if (!ctx.isCurrent()) return;
   if (d.type === 'season') { location.replace(`#/item/${d.show_id}?season=${d.id}`); return; }
@@ -653,8 +655,8 @@ export async function renderItem(main, rk, ctx) {
   if (['movie', 'show', 'episode'].includes(d.type)) {
     const similar = h('section.block', { hidden: true });
     parts.push(similar);
-    get(`/api/items/${d.id}/similar`).then((r) => {
-      if (!r.items.length || !similar.isConnected) return;
+    (early && String(d.id) === String(rk) ? early : get(`/api/items/${d.id}/similar`)).then((r) => {
+      if (!r || !r.items.length || !similar.isConnected) return;
       similar.append(h('h2', d.type === 'movie' ? tr('Films similaires') : tr('Titres similaires')),
         h('div.grid.small', r.items.slice(0, 12).map((x) => posterCard(x))));
       similar.hidden = false;
