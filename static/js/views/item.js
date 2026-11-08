@@ -422,7 +422,7 @@ async function qualityChoices(one, tracks) {
   }
   return out;
 }
-const canDownload = () => state.me.features && state.me.features.downloads && offlineSupported();
+export const canDownload = () => state.me.features && state.me.features.downloads && offlineSupported();
 
 // choix des pistes comme au lancement de la lecture (langues préférées, sous-titres forcés…)
 function defaultTracks(it) {
@@ -442,7 +442,7 @@ async function startDownloads(items, opts) {
     { label: tr('Voir'), onClick: () => { location.hash = '#/downloads'; } });
 }
 
-async function downloadDialog(items, title) {
+export async function downloadDialog(items, title) {
   const one = items.length === 1 && items[0].audio ? items[0] : null;
   const choices = one ? await qualityChoices(one, defaultTracks(one)) : SEASON_QUALITIES;
   const wanted = dlQuality();

@@ -1,3 +1,5 @@
+import { bulkSelection } from './bulk.js';
+import { canDownload, downloadDialog } from './item.js';
 import { get } from '../api.js';
 import { state } from '../app.js';
 import { clear, fmtDuration, h, icon, img, posterCard, progressBar, select, spinner, store, toast } from '../ui.js';
@@ -114,10 +116,13 @@ export async function renderLibrary(main, sid, ctx) {
   const sentinel = h('div.sentinel');
   // bibliothèque d'un serveur lié : un simple badge, elle s'utilise comme les autres
   const server = lib.server ? h('span.server-badge', { title: tr('Bibliothèque du serveur lié « {server} »', { server: lib.server }) }, icon('link'), lib.server) : null;
+  // sélection multiple : marquer vus, télécharger, playlist, masquer… (et métadonnées, collection pour un administrateur)
+  const cards = new Map();
+  const bulk = bulkSelection(grid, cards, { downloadDialog, canDownload });
   clear(main, h('div.page-head', h('h1', lib.title), server, count,
-    h('div.filters', sortSel, genreSel, filterBtn, random, modes, pin)), panel, viewTabs, grid, sentinel);
+    h('div.filters', sortSel, genreSel, filterBtn, random, modes, bulk.button, pin)), panel, viewTabs, grid, sentinel, bulk.bar);
 
-  const render = (c) => (mode === 'list' ? listRow(c) : mode === 'wide' ? wideLibCard(c) : posterCard(c));
+  const render = (c) => { cards.set(String(c.id), c); return mode === 'list' ? listRow(c) : mode === 'wide' ? wideLibCard(c) : posterCard(c); };
   let start = 0, total = Infinity, loading = false;
   async function more() {
     if (loading || start >= total || !ctx.isCurrent()) return;

@@ -656,7 +656,7 @@ def register(app, ctx, x):
         if p["mode"] == "transcode" and ctx.limits()[1] == 0:
             raise HTTPError(403, "Ce titre doit être converti pour être téléchargé, et la conversion est désactivée sur ce serveur")
         try:
-            job = ctx.downloads.request(req.user["id"], r, p, duration)
+            job = ctx.downloads.request(req.user["id"], r, p, duration, progressive=b.get("progressive") is True)
         except DownloadError as e:
             raise HTTPError(429, str(e))
         out = job.view()
@@ -670,10 +670,17 @@ def register(app, ctx, x):
     @app.route("GET", f"/api/downloads/{JID}/file")
     def download_file(req):
         job = own_job(req)
+        path = job.path
         if job.state != "ready":
-            raise HTTPError(409, "Pas encore prêt")
+            # transfert pendant la préparation : seulement une partie déjà écrite (plage demandée explicitement)
+            m = re.match(r"^bytes=(\d+)-(\d+)$", (req.headers.get("Range") or "").strip())
+            if not (job.progressive and job.state == "preparing" and job.part and m and int(m.group(2)) < job.ready):
+                raise HTTPError(409, "Pas encore prêt")
+            path = job.part
+        if not os.path.isfile(path) and job.state == "ready":
+            path = job.path  # préparation finie entre-temps : le fichier a pris son nom définitif
         db.release()  # transfert long : pas de connexion à la base pendant ce temps
-        resp = file_response(req, job.path)
+        resp = file_response(req, path)
         resp.headers["Content-Type"] = "video/mp4"
         return resp
 

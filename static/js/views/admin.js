@@ -1,7 +1,7 @@
 import { adminTarget, adminUrl, del, get, post, put } from '../api.js';
 import { refreshMe, state } from '../app.js';
 import { followUpdate } from '../updater.js';
-import { avatar, clear, confirmDialog, field, fmtTime, h, icon, modal, select, spinner, toast, toggle } from '../ui.js';
+import { avatar, clear, confirmDialog, field, fmtTime, h, icon, modal, select, spinner, store, toast, toggle } from '../ui.js';
 import { LANGUAGES, locale, plural, tr } from '../i18n.js';
 
 // Pages de l'administration, rangées par thème dans le menu des Paramètres.
@@ -10,6 +10,8 @@ export const ADMIN_GROUPS = [
   { title: tr('Serveur'), items: [
     { id: 'dashboard', label: tr('Vue d’ensemble'), icon: 'dashboard', lead: tr('Version, état du serveur et lectures en cours.'),
       keys: tr('tableau de bord lectures en cours streams mémoire swap charge processeur version arrêter') },
+    { id: 'stats', label: tr('Statistiques'), icon: 'list', lead: tr('Qui regarde quoi, combien de temps, débit utilisé, et les titres jamais regardés.'),
+      keys: tr('statistiques activité heures visionnage débit données comptes titres populaires jamais regardés place disque') },
     { id: 'users', label: tr('Utilisateurs'), icon: 'group', lead: tr('Comptes, profils du foyer, contrôle parental et accès aux bibliothèques.'),
       keys: tr('compte profil enfant pin âge restriction administrateur désactiver mot de passe foyer langue language') },
     { id: 'update', label: tr('Mise à jour'), icon: 'upgrade', lead: tr('Version installée et mises à jour de Nexis.'),
@@ -687,9 +689,15 @@ const transcodingPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
 const downloadsPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   const downloadsToggle = toggle(tr('Autoriser les téléchargements'), s.downloads);
   downloadsToggle.querySelector('input').addEventListener('change', (e) => save({ downloads: e.target.checked }, tr('Enregistré')));
+  const prio = select([['low', tr('Discrète : le moins de ressources possible, en pause pendant les lectures')],
+    ['normal', tr('Normale : pleine vitesse quand personne ne regarde (conseillé)')],
+    ['high', tr('Rapide : tout le processeur, même pendant les lectures')]], s.downloads_priority || 'normal',
+  { onchange: (e) => save({ downloads_priority: e.target.value }, tr('Enregistré')) });
   return h('section.panel', h('h2', tr('Visionnage hors ligne')),
-    h('p.muted.small', tr('Les utilisateurs peuvent télécharger films et épisodes dans l’application pour les regarder sans connexion. Le serveur prépare une copie à la qualité choisie (conversions une à la fois, en priorité basse), puis la supprime une fois récupérée.')),
-    downloadsToggle);
+    h('p.muted.small', tr('Les utilisateurs peuvent télécharger films et épisodes dans l’application pour les regarder sans connexion. Le serveur prépare une copie à la qualité choisie, que l’appareil récupère pendant la préparation, puis la supprime une fois récupérée.')),
+    downloadsToggle,
+    field(tr('Vitesse de préparation'), prio,
+      tr('Normale : en priorité basse pendant une lecture, et une conversion attend si un spectateur a besoin du processeur ; deux préparations à la fois sur un serveur de 8 cœurs ou plus. Rapide : deux à la fois, sans jamais attendre (les lectures peuvent en pâtir sur un petit serveur).')));
 });
 
 // --------------------------------------------------------------- mise à jour
@@ -1581,7 +1589,63 @@ async function backupsPage(body, ctx) {
   await reload();
 }
 
-const PAGES = { dashboard: dashboardPage, backups: backupsPage, users: usersTab, update: updatePage, tasks: tasksTab, libraries: librariesTab,
+// --------------------------------------------------------------- statistiques
+async function statsPage(body, ctx) {
+  const GB = 1e9;
+  const size = (b) => (b >= GB ? tr('{n} Go', { n: (b / GB).toLocaleString(locale(), { maximumFractionDigits: 1 }) }) : tr('{n} Mo', { n: Math.max(0, Math.round(b / 1e6)) }));
+  const hours = (s) => (s >= 3600 ? tr('{n} h', { n: (s / 3600).toLocaleString(locale(), { maximumFractionDigits: 1 }) }) : tr('{n} min', { n: Math.round(s / 60) }));
+  const when = (ts) => new Date(ts * 1000).toLocaleDateString(locale(), { day: 'numeric', month: 'short' });
+  const days = select([['7', tr('7 derniers jours')], ['30', tr('30 derniers jours')], ['90', tr('3 derniers mois')], ['365', tr('12 derniers mois')]],
+    store('stats-days') || '30', { onchange: () => { store('stats-days', days.value); load(); } });
+  const out = h('div', spinner());
+  clear(body, h('div.actions-row.stats-head', days), out);
+  async function load() {
+    clear(out, spinner());
+    let r;
+    try { r = await get(`/api/admin/stats?days=${days.value}`); } catch (e) { clear(out, h('p.form-error', e.message)); return; }
+    if (!ctx.isCurrent()) return;
+    const t = r.totals;
+    const tile = (label, value, sub) => h('div.stat-tile', h('div.stat-label', label), h('div.stat-value', value), sub ? h('div.stat-sub', sub) : null);
+    const tModes = r.modes;
+    const pct = (n) => (t.plays ? Math.round((n / t.plays) * 100) : 0);
+    // une seule série (heures par jour) : barres, valeur au survol, titre qui la nomme
+    const max = Math.max(1, ...r.per_day.map((d) => d.seconds));
+    const chart = h('div.stat-chart', { role: 'img', 'aria-label': tr('Heures de visionnage par jour') },
+      r.per_day.map((d) => h('div.stat-col', { title: `${new Date(d.day).toLocaleDateString(locale(), { weekday: 'short', day: 'numeric', month: 'short' })} : ${hours(d.seconds)}` },
+        h('span', { style: { height: `${d.seconds ? Math.max(3, (d.seconds / max) * 100) : 0}%` } }))));
+    const table = (head, rows) => h('div.table-wrap', h('table.stat-table', h('thead', h('tr', head.map((x) => h('th', x)))), h('tbody', rows)));
+    clear(out,
+      h('div.stat-tiles',
+        tile(tr('Temps de visionnage'), hours(t.seconds), plural(t.plays, '{n} lecture', '{n} lectures')),
+        tile(tr('Données envoyées (estimation)'), size(t.bytes), tr('débit de la vidéo et du son')),
+        tile(tr('Comptes actifs'), String(t.users)),
+        tile(tr('Conversions'), `${pct(t.transcodes)} %`, tr('des lectures demandent une conversion par le processeur ou la carte graphique'))),
+      h('section.panel', h('h2', tr('Heures de visionnage par jour')),
+        t.plays ? chart : h('p.muted.small', tr('Aucune lecture sur cette période. Les statistiques commencent avec cette version de Nexis.')),
+        t.plays ? h('div.stat-axis.muted.small', h('span', when(Date.parse(r.per_day[0].day) / 1000)), h('span', when(Date.parse(r.per_day[r.per_day.length - 1].day) / 1000))) : null),
+      h('section.panel', h('h2', tr('Par compte')),
+        r.users.length ? table([tr('Compte'), tr('Temps'), tr('Lectures'), tr('Titres'), tr('Données'), tr('Conversions'), tr('Dernière lecture')],
+          r.users.map((u) => h('tr', h('td', h('strong', u.name)), h('td', hours(u.seconds)), h('td', String(u.plays)), h('td', String(u.titles)),
+            h('td', size(u.bytes)), h('td', `${u.plays ? Math.round((u.transcodes / u.plays) * 100) : 0} %`), h('td', when(u.last)))))
+          : h('p.muted.small', tr('Aucune lecture sur cette période.')),
+        Object.keys(tModes).length ? h('p.muted.small', tr('Lecture directe {a} % · copie (remux) {b} % · conversion {c} %',
+          { a: pct((tModes.direct || {}).plays || 0), b: pct((tModes.copy || {}).plays || 0), c: pct((tModes.transcode || {}).plays || 0) })) : null),
+      h('section.panel', h('h2', tr('Les plus regardés')),
+        r.top.length ? table([tr('Titre'), tr('Temps'), tr('Lectures'), tr('Spectateurs')],
+          r.top.map((x) => h('tr', h('td', h('a', { href: `#/item/${x.id}` }, x.title), x.year ? h('span.muted', ` (${x.year})`) : null, x.show ? h('span.muted.small', ` · ${tr('série')}`) : null),
+            h('td', hours(x.seconds)), h('td', String(x.plays)), h('td', String(x.viewers)))))
+          : h('p.muted.small', tr('Aucune lecture sur cette période.'))),
+      h('section.panel', h('h2', tr('Jamais regardés')),
+        h('p.muted.small', tr('Films et séries de ce serveur que personne n’a commencés, ajoutés il y a plus de {d} jours : {n} titre(s), {size} au total. Les plus gros d’abord.',
+          { d: r.never.after_days, n: r.never.count, size: size(r.never.size) })),
+        r.never.items.length ? table([tr('Titre'), tr('Bibliothèque'), tr('Ajouté le'), tr('Taille')],
+          r.never.items.map((x) => h('tr', h('td', h('a', { href: `#/item/${x.id}` }, x.title), x.year ? h('span.muted', ` (${x.year})`) : null),
+            h('td', x.library), h('td', when(x.added_at)), h('td', size(x.size))))) : null));
+  }
+  await load();
+}
+
+const PAGES = { stats: statsPage, dashboard: dashboardPage, backups: backupsPage, users: usersTab, update: updatePage, tasks: tasksTab, libraries: librariesTab,
   federation: federationPage, dlna: dlnaPage, shares: sharesTab, metadata: metadataPage, detection: detectionPage, requests: requestsTab, transcoding: transcodingPage,
   subtitles: subtitlesPage, downloads: downloadsPage, live: liveTab };
 

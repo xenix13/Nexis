@@ -676,4 +676,5 @@ EN = {
     "Lecture privée": "Private playback",
     "Adresse invalide (https://…)": "Invalid address (https://…)",
     "Thème invalide": "Invalid theme",
+    "Priorité invalide": "Invalid priority",
 }

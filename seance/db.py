@@ -658,6 +658,35 @@ MIGRATIONS = [
     UPDATE prefs SET data=json_set(data, '$.start_page', 'home') WHERE json_valid(data) AND json_extract(data, '$.start_page')='podcasts';
     UPDATE fed_clock SET applying=0;
     """,
+    # 27 : journal des lectures (statistiques de l'administration) : une ligne à la fin de chaque lecture de plus
+    # de 30 s, quelle qu'en soit la raison (arrêt, abandon, lecture remplacée), avec le débit estimé
+    """
+    CREATE TABLE play_log(
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        rating_key TEXT NOT NULL,
+        title TEXT,
+        mode TEXT,
+        kbps INTEGER,
+        started INTEGER NOT NULL,
+        ended INTEGER NOT NULL,
+        seconds INTEGER NOT NULL,
+        relayed INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX play_log_time ON play_log(ended);
+    CREATE INDEX play_log_user ON play_log(user_id, ended);
+    CREATE TRIGGER streams_log AFTER DELETE ON streams WHEN OLD.last_seen - OLD.created_at >= 30 BEGIN
+        INSERT INTO play_log(user_id, rating_key, title, mode, kbps, started, ended, seconds, relayed) VALUES(
+            OLD.user_id,
+            -- mode privé : la durée compte, le titre n'est pas gardé
+            CASE WHEN (SELECT json_extract(data, '$.private_mode') FROM prefs WHERE user_id = OLD.user_id) = 1 THEN 'private' ELSE OLD.rating_key END,
+            CASE WHEN (SELECT json_extract(data, '$.private_mode') FROM prefs WHERE user_id = OLD.user_id) = 1 THEN NULL ELSE OLD.title END,
+            json_extract(OLD.params, '$.mode'),
+            CASE WHEN json_extract(OLD.params, '$.mode') = 'transcode' THEN json_extract(OLD.params, '$.kbps')
+                 ELSE COALESCE(NULLIF(json_extract(OLD.params, '$.src_kbps'), 0), json_extract(OLD.params, '$.kbps')) END,
+            OLD.created_at, OLD.last_seen, OLD.last_seen - OLD.created_at, json_extract(OLD.params, '$.peer') IS NOT NULL);
+    END;
+    """,
 ]
 
 

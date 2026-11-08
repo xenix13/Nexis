@@ -1303,6 +1303,50 @@ class SeanceTest(unittest.TestCase):
             images.forget_missing()
             db.run("DELETE FROM items WHERE id=?", (iid,))
 
+    def test_admin_stats(self):
+        """Journal des lectures (fin de chaque lecture de plus de 30 s), statistiques, titres jamais regardés ;
+        une lecture en mode privé compte sans être nommée."""
+        db = self.ctx.db
+        polar, voyage = self.movie("Nuit polaire"), self.movie("Le Grand Voyage")
+        db.run("DELETE FROM play_log")
+        caps = {"video": ["h264"], "audio": ["aac"], "containers": ["mp4"]}
+
+        def watch(client, item, seconds):
+            st, r = client.call("POST", "/api/play", {"id": item["id"], "caps": caps})
+            self.assertEqual(st, 200, r)
+            db.run("UPDATE streams SET created_at=created_at-? WHERE id=?", (seconds, r["stream"]))
+            client.call("POST", "/api/stop", {"stream": r["stream"]})
+        watch(self.lea, polar, 600)
+        watch(self.lea, voyage, 10)  # moins de 30 s : pas comptée
+        self.lea.call("PUT", "/api/me/prefs", {"private_mode": True})
+        watch(self.lea, voyage, 300)
+        self.lea.call("PUT", "/api/me/prefs", {"private_mode": False})
+        rows = db.all("SELECT rating_key, title, seconds, kbps FROM play_log ORDER BY id")
+        self.assertEqual([r["rating_key"] for r in rows], [str(polar["id"]), "private"])
+        self.assertIsNone(rows[1]["title"])
+        self.assertGreater(rows[0]["kbps"] or 0, 0)
+        st, r = self.admin.call("GET", "/api/admin/stats?days=7")
+        self.assertEqual(st, 200, r)
+        self.assertEqual((r["totals"]["plays"], r["totals"]["users"]), (2, 1))
+        self.assertGreaterEqual(r["totals"]["seconds"], 900)
+        self.assertGreater(r["totals"]["bytes"], 0)
+        self.assertEqual([u["name"] for u in r["users"]], ["Léa"])
+        self.assertEqual([t["title"] for t in r["top"]], ["Nuit polaire"])  # la lecture privée n'est pas nommée
+        self.assertEqual(len(r["per_day"]), 7)
+        # jamais regardé : ajouté il y a longtemps, personne ne l'a commencé
+        brume = self.movie("Brume")
+        old = db.scalar("SELECT added_at FROM items WHERE id=?", (brume["id"],))
+        db.run("UPDATE items SET added_at=? WHERE id=?", (int(time.time()) - 200 * 86400, brume["id"]))
+        try:
+            seen = {p["rating_key"] for p in db.all("SELECT rating_key FROM progress")}
+            never = [x["title"] for x in self.admin.call("GET", "/api/admin/stats")[1]["never"]["items"]]
+            if str(brume["id"]) not in seen:
+                self.assertIn("Brume", never)
+            self.assertNotIn("Nuit polaire", never)
+        finally:
+            db.run("UPDATE items SET added_at=? WHERE id=?", (old, brume["id"]))
+        self.assertEqual(self.lea.call("GET", "/api/admin/stats")[0], 403)
+
     def test_ui_style(self):
         """Style de l'interface (mise en page) : « classique » par défaut, valeurs connues seulement."""
         c = self.lea
@@ -1645,6 +1689,29 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(ffprobe_codec(data), "h264")
         self.admin.call("DELETE", f"/api/downloads/{j['id']}")
         self.assertEqual(self.admin.call("GET", f"/api/downloads/{j['id']}")[0], 404)
+        # transfert pendant la préparation (MP4 fragmenté) : les octets déjà écrits se lisent tout de suite, ceux
+        # qui ne le sont pas encore sont refusés, et le fichier final commence par ce qui a été lu
+        st, j = self.admin.call("POST", "/api/downloads", {"id": polar["id"], "quality": "original", "progressive": True})
+        self.assertTrue(j["progressive"], j)
+        early = b""
+        for _ in range(240):
+            st, j = self.admin.call("GET", f"/api/downloads/{j['id']}")
+            if j["state"] == "preparing" and j["ready"] > 4096 and not early:
+                st, early, h = self.admin.call("GET", f"/api/downloads/{j['id']}/file", raw=True, headers={"Range": f"bytes=0-{j['ready'] - 1}"})
+                self.assertEqual((st, len(early)), (206, j["ready"]))
+                st, _, _ = self.admin.call("GET", f"/api/downloads/{j['id']}/file", raw=True, headers={"Range": f"bytes={j['ready'] + 10 ** 9}-{j['ready'] + 10 ** 9 + 99}"})
+                self.assertEqual(st, 409)
+            if j["state"] in ("ready", "error"):
+                break
+            time.sleep(0.05)
+        self.assertEqual(j["state"], "ready", j)
+        self.assertEqual(j["ready"], j["size"])
+        st, data, h = self.admin.call("GET", f"/api/downloads/{j['id']}/file", raw=True)
+        self.assertEqual(len(data), j["size"])
+        if early:
+            self.assertEqual(data[:len(early)], early)  # rien de réécrit après coup
+        self.assertEqual(ffprobe_codec(data), "h264")
+        self.admin.call("DELETE", f"/api/downloads/{j['id']}")
         # le dialogue annonce ce que coûte chaque qualité : ici, « auto » se contente d'une copie
         st, o = self.admin.call("POST", "/api/downloads/options", {"id": polar["id"]})
         auto = next(x for x in o["options"] if x["quality"] == "auto")
@@ -1886,29 +1953,58 @@ class UnitTests(unittest.TestCase):
         self.assertIsNone(twofa.use_recovery_code(left, codes[3]))
 
     def test_download_prep_yields_to_viewers(self):
-        """La préparation d'un téléchargement se met en pause tant que quelqu'un regarde."""
+        """Priorité discrète : la préparation se met en pause tant que quelqu'un regarde. Normale : une copie continue,
+        une conversion ne s'arrête que si un spectateur fait lui-même convertir."""
         from seance import downloads as dl
         viewing = {"v": True}
+        transcodes = {"n": 0}
         mgr = dl.Downloads.__new__(dl.Downloads)
-        mgr.ctx = types.SimpleNamespace(viewing=lambda: viewing["v"])
-        job = types.SimpleNamespace(waiting=False)
+        mgr.ctx = types.SimpleNamespace(viewing=lambda: viewing["v"],
+                                        transcoder=types.SimpleNamespace(counts=lambda: (1, transcodes["n"])))
+        def state(pid):
+            with open(f"/proc/{pid}/stat") as f:
+                return f.read().split(") ")[1][0]
+        for mode, n in (("copy", 0), ("transcode", 0)):
+            job = types.SimpleNamespace(waiting=False, mode=mode)
+            proc = subprocess.Popen(["sleep", "30"])
+            try:
+                threading.Thread(target=mgr._yield_to_viewers, args=(job, proc, "normal", 10), daemon=True).start()
+                time.sleep(0.6)
+                self.assertNotEqual(state(proc.pid), "T", mode)  # normale : pas de pause sans conversion d'un spectateur
+                self.assertEqual(os.getpriority(os.PRIO_PROCESS, proc.pid), 19)  # mais priorité basse pendant la lecture
+            finally:
+                proc.kill()
+                proc.wait()
+        transcodes["n"] = 1
+        job = types.SimpleNamespace(waiting=False, mode="transcode")
         proc = subprocess.Popen(["sleep", "30"])
-        old = dl.time.sleep
         try:
-            t = threading.Thread(target=mgr._yield_to_viewers, args=(job, proc), daemon=True)
-            t.start()
-            state = lambda: open(f"/proc/{proc.pid}/stat").read().split(") ")[1][0]
+            threading.Thread(target=mgr._yield_to_viewers, args=(job, proc, "normal", 10), daemon=True).start()
             for _ in range(50):
-                if state() == "T":
+                if state(proc.pid) == "T":
                     break
                 time.sleep(0.1)
-            self.assertEqual((state(), job.waiting), ("T", True))  # arrêtée pendant la lecture
+            self.assertEqual((state(proc.pid), job.waiting), ("T", True))  # cède le processeur au spectateur
+        finally:
+            proc.kill()
+            proc.wait()
+        viewing["v"] = True
+        job = types.SimpleNamespace(waiting=False, mode="copy")
+        proc = subprocess.Popen(["sleep", "30"])
+        try:
+            t = threading.Thread(target=mgr._yield_to_viewers, args=(job, proc, "low", 19), daemon=True)
+            t.start()
+            for _ in range(50):
+                if state(proc.pid) == "T":
+                    break
+                time.sleep(0.1)
+            self.assertEqual((state(proc.pid), job.waiting), ("T", True))  # arrêtée pendant la lecture
             viewing["v"] = False
             for _ in range(60):
-                if state() != "T":
+                if state(proc.pid) != "T":
                     break
                 time.sleep(0.1)
-            self.assertNotEqual(state(), "T")  # reprend ensuite
+            self.assertNotEqual(state(proc.pid), "T")  # reprend ensuite
             self.assertFalse(job.waiting)
         finally:
             proc.kill()

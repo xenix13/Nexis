@@ -304,11 +304,16 @@ L'application se met à jour avec le serveur : le code de l'interface est charg�
 Films, épisodes ou saisons entières peuvent être téléchargés pour être regardés sans connexion.
 
 - **Télécharger** : bouton ⤓ sur la fiche d'un film ou d'un épisode, ou **Télécharger la saison** (épisodes non vus en priorité). Pour chaque qualité, la fenêtre indique la taille et la nécessité d'une conversion. **Automatique** (par défaut) conserve le fichier tel quel lorsque l'appareil sait le lire : environ 2 s de processeur par minute de vidéo, contre 30 s pour une conversion. 720p et 480p réduisent la taille au prix d'une conversion. La langue et les sous-titres se choisissent au même endroit.
-- **Suivi** : menu du profil → **Téléchargements** (préparation, transfert, espace utilisé, suppression). Le transfert se fait par morceaux et reprend après une coupure ou à la réouverture de l'application.
+- **Suivi** : menu du profil → **Téléchargements** (préparation, transfert, espace utilisé par les films et par les séries, tri par titre, taille ou date). Le transfert se fait par morceaux de 16 Mo, quatre à la fois, et reprend après une coupure ou à la réouverture de l'application. Hors Safari (iPhone, iPad, Mac), l'appareil récupère le fichier **pendant** sa préparation : le téléchargement dure à peu près le temps de la préparation, au lieu de la préparation puis du transfert. La préparation des deux téléchargements suivants est demandée d'avance.
+- **Supprimer vite** : *Sélectionner*, puis cocher, ou choisir *Tout*, *Déjà vus*, *Plus de 30 jours*, *En échec* ou toute une série, et *Supprimer* (la place libérée est annoncée).
+- **Téléchargements intelligents** (réglage de l'appareil, page Téléchargements) : un épisode téléchargé regardé jusqu'au bout fait télécharger l'épisode suivant, dans les mêmes langues et la même qualité (activé par défaut) ; l'épisode vu peut aussi être supprimé (désactivé par défaut). Regardé hors ligne : fait au retour de la connexion.
 - **Hors ligne** : lecture avec le lecteur habituel (sous-titres, « Passer l'intro », chapitres, épisode suivant téléchargé). La position de lecture est renvoyée au serveur au retour du réseau, sans écraser un visionnage plus récent fait ailleurs.
 - **Côté serveur** : Nexis prépare un MP4 (H.264 / AAC). Un MP4 compatible est envoyé tel quel, un MKV H.264 est recopié sans perte, le reste est converti.
-  - Une préparation à la fois, 4 cœurs au maximum, priorité processeur et disque la plus basse ; lecture du NAS limitée en copie.
-  - Mise en **pause pendant les lectures**. Les conversions utilisent la carte graphique si elle est configurée.
+  - **Vitesse de préparation** (*Paramètres → Lecture → Téléchargements*) :
+    - *Normale* (par défaut) : pleine vitesse quand personne ne regarde ; pendant une lecture, priorité basse, et une conversion ne s'arrête que si un spectateur fait lui-même convertir. Deux préparations à la fois sur un serveur de 8 cœurs ou plus ;
+    - *Discrète* : une préparation à la fois, priorité la plus basse, lecture du NAS limitée, en pause pendant toutes les lectures ;
+    - *Rapide* : tout le processeur, deux à la fois, jamais en pause.
+  - Les conversions utilisent la carte graphique si elle est configurée.
   - Copie supprimée dès sa récupération, ou au bout de 48 h.
   - Activation : *Paramètres → Lecture → Téléchargements*.
 
@@ -522,6 +527,18 @@ Configuration : *Paramètres → Serveur → Utilisateurs*. Les limites suivent 
 - **Trakt.** L'administrateur enregistre une fois une application sur trakt.tv (*Settings → Your API Apps → New Application*, Redirect URI `urn:ietf:wg:oauth:2.0:oob`) et colle son Client ID et son Client Secret sur cette page. Chacun relie ensuite son compte avec un code à saisir sur trakt.tv : Nexis ne connaît jamais le mot de passe Trakt. Toutes les 6 heures (tâche *Synchroniser avec Trakt*) et à la demande : les films et épisodes vus d'un côté deviennent vus de l'autre (avec leur date), les notes s'ajoutent (1 à 5 étoiles ici, 1 à 10 sur Trakt) ainsi que la liste « À regarder ». Rien n'est jamais retiré : un « non vu » ou une note effacée ne se propage pas. Les titres sont reconnus par leur identifiant TMDB.
 - **Letterboxd** (pas d'API publique, donc des fichiers). *Exporter pour Letterboxd* produit un CSV de vos films vus, avec la date et la note, à importer sur letterboxd.com (*Settings → Import & Export*). *Importer l'export Letterboxd…* lit le ZIP téléchargé depuis Letterboxd (films vus, journal, notes, liste « À regarder ») et reconnaît les films par titre et année (à un an près) ; ceux qui ne sont pas sur le serveur sont listés.
 
+## Statistiques
+
+*Paramètres → Serveur → Statistiques* (sur 7 jours, 30 jours, 3 ou 12 mois) :
+
+- temps de visionnage, nombre de lectures, comptes actifs, part des lectures converties, données envoyées (estimées d'après le débit de la vidéo et du son) ;
+- heures de visionnage par jour ;
+- par compte : temps, lectures, titres, données, conversions, dernière lecture ;
+- les titres les plus regardés (un épisode compte pour sa série) ;
+- les **titres jamais regardés** : films et séries que personne n'a commencés, ajoutés il y a plus de 90 jours, les plus gros d'abord, avec la place qu'ils occupent.
+
+Chaque lecture de plus de 30 secondes est notée à sa fin. En **mode privé**, la durée compte mais le titre n'est pas gardé. Les statistiques commencent avec la version 3.49 ; avec le sélecteur de serveur, celles d'un serveur lié.
+
 ## Alertes pour les administrateurs
 
 *Paramètres → Serveur → Vue d'ensemble → Alertes* : Nexis vérifie toutes les 5 minutes que tout va bien, et prévient les administrateurs par **notification push** (sur les appareils où elles sont activées, *Paramètres → Profil*) :
@@ -572,6 +589,8 @@ Chaque utilisateur règle son interface dans *Paramètres → Mon compte* ; ces 
 - **Sécurité** : un thème n'est qu'une description vérifiée par le serveur, jamais du code ni une image (ni CSS libre, ni adresse) : un thème venu d'ailleurs ne peut ni imiter un écran de connexion, ni envoyer quoi que ce soit hors du serveur. Le contraste du texte est contrôlé pour qu'il reste lisible.
 - **Noms** : pas de nom de film, de personnage ou de marque dans le magasin ; on s'en inspire librement sous un nom à soi (« Héros », « Terminal »…).
 - **Administrateur** : en bas de la page, désactiver le magasin en ligne ou le faire pointer vers son propre dépôt de thèmes.
+
+**Sélection multiple** : bouton **Sélectionner** d'une bibliothèque ; un clic coche les titres au lieu de les ouvrir (*Tout* pour ceux affichés). Ensuite : marquer vus ou non vus, télécharger (films et épisodes), ajouter à une playlist (existante ou nouvelle), masquer pour soi ; pour un administrateur, actualiser les métadonnées ou ajouter à une collection.
 
 **Bibliothèques** : bouton **Filtres** pour trier par visionnage (non vus, en cours, vus), décennie, durée, définition (4K, 1080p…), HDR, langue audio, sous-titres et note ; une combinaison de filtres s'épingle sur l'accueil. Affichage en affiches, vignettes larges ou liste détaillée (retenu par bibliothèque). **Au hasard** lance un film (ou ouvre une série) pas encore vu, selon le genre choisi.
 
@@ -745,7 +764,7 @@ Organisation de `seance/` :
 - `watcher.py` : détection des nouveautés ; `subcache.py` : préparation des sous-titres
 - `tasks.py` : tâches planifiées ; `chapters.py` : images de chapitres ; `introdetect.py` : intros par empreinte audio
 - `livetv.py` : TV en direct ; `syncplay.py` : « Regarder ensemble »
-- `update.py` : mise à jour depuis l'interface ; `downloads.py` : téléchargements hors ligne ; `suggest.py` : suggestions et avis ; `notify.py` : notifications et bilan
+- `update.py` : mise à jour depuis l'interface ; `downloads.py` : téléchargements hors ligne ; `stats.py` : statistiques ; `themes.py` : magasin de thèmes ; `suggest.py` : suggestions et avis ; `notify.py` : notifications et bilan
 - `api.py` : assemblage du serveur ; `catalog.py` : outils partagés par les routes ; `routes/` : routes HTTP par thème
 - `twofa.py` : double authentification ; `auth.py`, `db.py`, `web.py` : socle
 - `i18n.py`, `lang_en.py` : langue des messages du serveur

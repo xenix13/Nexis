@@ -238,7 +238,7 @@ def plan(probe, audio_index=None, burn_index=None, quality="original", caps=None
     return {"mode": mode, "video_index": (v or {}).get("index"), "video_codec": (v or {}).get("codec"),
             "audio_index": a["index"] if a else None, "acopy": acopy, "audio_codec": (a or {}).get("codec"),
             "audio_channels": (a or {}).get("channels") or 2, "audio_filter": audio_filter(a, algo, boost) if a else "",
-            "burn_index": burn_index, "height": height, "kbps": kbps, "src_height": src_h,
+            "burn_index": burn_index, "height": height, "kbps": kbps, "src_kbps": rate_kbps, "src_height": src_h,
             "src_width": (v or {}).get("width") or 0, "fps": fps, "seglen": seglen, "reasons": reasons,
             "hdr": hdr, "tonemap": tonemap if tonemap in TONEMAPS else "hable"}
 

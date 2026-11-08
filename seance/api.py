@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from . import __version__, backup, books, catalog, health, limits, opensubs, themes, tracking, whisper, collections_api, discover, dlna, federation, i18n, push, remote, livetv, media, notify, photos, suggest, syncplay, tasks, update
+from . import __version__, backup, books, catalog, health, limits, opensubs, stats, themes, tracking, whisper, collections_api, discover, dlna, federation, i18n, push, remote, livetv, media, notify, photos, suggest, syncplay, tasks, update
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
@@ -236,7 +236,7 @@ def build_app(ctx):
 
     catalog.install(ctx, x)
     for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify, photos, dlna, remote, push,
-                   opensubs, health, whisper, tracking, books, backup, themes, federation):
+                   opensubs, health, whisper, tracking, books, backup, themes, stats, federation):
         module.register(app, ctx, x)
     return app
 

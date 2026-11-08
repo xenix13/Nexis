@@ -376,6 +376,7 @@ def register(app, ctx, x):
                 "subs_prefetch": db.setting("subs_prefetch", "1") == "1",
                 "trickplay": db.setting("trickplay", "1") == "1",
                 "downloads": db.setting("downloads", "1") == "1",
+                "downloads_priority": ctx.downloads.priority(), "cpus": os.cpu_count() or 1,
                 "downmix_algo": db.setting("downmix_algo", "none"),
                 "downmix_boost": float(db.setting("downmix_boost", "2") or 2),
                 "tonemap": db.setting("tonemap", "hable"), "tonemap_ok": media.has_filter("zscale") and media.has_filter("tonemap"),
@@ -435,6 +436,10 @@ def register(app, ctx, x):
                 threading.Thread(target=ctx.prefetch_missing_subtitles, daemon=True).start()
         if "downloads" in b:
             db.set_setting("downloads", "1" if b["downloads"] else "0")
+        if "downloads_priority" in b:
+            if b["downloads_priority"] not in ("low", "normal", "high"):
+                raise HTTPError(400, "Priorité invalide")
+            db.set_setting("downloads_priority", b["downloads_priority"])
         if "subs_prefetch" in b:
             db.set_setting("subs_prefetch", "1" if b["subs_prefetch"] else "0")
             if b["subs_prefetch"]:
