@@ -9,7 +9,7 @@ import { ART, BACKGROUNDS, CATEGORIES, DEFAULT_BG, artDataUrl, artSvg } from '..
 import { device, deviceName, modestDevice, setDevice } from '../device.js';
 import { shortcutsPanel } from '../keys.js';
 import { renderThemeStore, themePreview } from './themes.js';
-import { disablePush, enablePush, pushState, pushSupported } from '../push.js';
+import { disablePush, enablePush, openPushSettings, pushCheckNow, pushState } from '../push.js';
 import { nativeApp } from '../install.js';
 
 // application Nexis installée (bureau, Android) : sa version, le serveur, la recherche de mise à jour
@@ -36,6 +36,17 @@ function pushPanel() {
         : tr('Ce navigateur ne gère pas les notifications push, ou Nexis n’est pas ouvert en HTTPS.')));
       return;
     }
+    if (st === 'update') {
+      clear(box, h('p.small', tr('Mettez à jour l’application Nexis pour recevoir les notifications sur ce téléphone.')),
+        h('div.actions-row', h('button.btn.small', { type: 'button', onclick: () => nativeApp()?.checkUpdate() }, tr('Rechercher une mise à jour'))));
+      return;
+    }
+    if (st === 'denied' && window.NexisAndroid) {
+      clear(box, h('p.small', tr('Notifications bloquées pour l’application Nexis : autorisez-les dans les réglages d’Android.')),
+        h('div.actions-row', h('button.btn.small', { type: 'button', onclick: () => openPushSettings() }, tr('Ouvrir les réglages')),
+          h('button.btn.small.ghost', { type: 'button', onclick: async () => { await disablePush(); paint(); } }, tr('Désactiver'))));
+      return;
+    }
     if (st === 'denied') { clear(box, h('p.small', tr('Notifications bloquées pour ce site : autorisez-les dans les réglages du navigateur.'))); return; }
     const sw = toggle(tr('Recevoir les notifications sur cet appareil'), st === 'on', { onchange: async (e) => {
       e.target.disabled = true;
@@ -46,7 +57,7 @@ function pushPanel() {
       paint();
     } });
     clear(box, sw, st === 'on' ? h('div.actions-row', h('button.btn.small', { type: 'button', onclick: async () => {
-      try { await post('/api/push/test'); toast(tr('Notification d’essai envoyée'), 'ok'); } catch (ex) { toast(ex.message, 'bad'); }
+      try { await post('/api/push/test'); pushCheckNow(); toast(tr('Notification d’essai envoyée'), 'ok'); } catch (ex) { toast(ex.message, 'bad'); }
     } }, tr('Envoyer une notification d’essai'))) : null);
   };
   paint();

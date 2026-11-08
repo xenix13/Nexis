@@ -10,4 +10,6 @@
     <string name="up_to_date">Nexis est à jour (%1$s).</string>
     <string name="download_started">Téléchargement lancé</string>
     <string name="no_browser">Aucune application ne peut ouvrir ce lien.</string>
+    <string name="channel_name">Nouveaux épisodes et alertes</string>
+    <string name="channel_text">Nouveaux épisodes des séries suivies, titres demandés qui arrivent, alertes du serveur.</string>
 </resources>

@@ -5,7 +5,12 @@
   de ce serveur. Le service worker de l'appareil, réveillé, demande alors à Nexis ce qu'il doit afficher.
 - Seuls les services push des navigateurs sont contactés (Google, Mozilla, Apple, Microsoft) : une adresse
   d'abonnement quelconque ne peut pas servir à faire appeler une machine du réseau par le serveur.
+- Application Android : sa vue web ne connaît pas Web Push. L'appareil reçoit un jeton (inscription
+  « device:<empreinte du jeton> ») et vient lui-même chercher ses messages (/api/push/device, toutes les 15 min
+  environ) : ni Google ni compte développeur.
 """
+import hashlib
+import secrets
 import base64
 import json
 import logging
@@ -23,6 +28,12 @@ PUSH_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.com", "push.s
               "web.push.apple.com", "notify.windows.com")
 CONTACT = "https://github.com/xenix13/Nexis"
 KEEP_MESSAGES = 20
+DEVICE = "device:"  # inscription d'une application Android (messages récupérés par l'appareil)
+DEVICE_IDLE = 60 * 86400  # appareil qui ne demande plus rien depuis 60 jours : désinscrit
+
+
+def device_key(token):
+    return DEVICE + hashlib.sha256(str(token).encode()).hexdigest()
 
 
 def in_quiet_hours(spec, now=None):
@@ -151,18 +162,21 @@ class Push:
         prefs = self.prefs(uid) if kind else {}
         if kind and prefs.get(f"notify_{kind}") is False:
             return 0
-        msg = {"title": title[:120], "body": body[:240], "url": url, "tag": tag, "at": int(time.time())}
+        quiet = bool(kind and in_quiet_hours(prefs.get("quiet_hours")))
+        msg = {"title": title[:120], "body": body[:240], "url": url, "tag": tag, "at": time.time(), "ring": not quiet}
         with self.lock:
             lst = self.messages.setdefault(uid, [])
             lst.append(msg)
             del lst[:-KEEP_MESSAGES]
-        if kind and in_quiet_hours(prefs.get("quiet_hours")):
+        if quiet:
             return 0
         subs = self.ctx.db.all("SELECT * FROM push_subs WHERE user_id=?", (uid,))
-        if not subs or not self.public_key():
-            return 0
-        threading.Thread(target=self._send_all, args=(subs,), daemon=True, name="push").start()
-        return len(subs)
+        devices = [x for x in subs if x["endpoint"].startswith(DEVICE)]  # viendront chercher le message
+        web = [x for x in subs if not x["endpoint"].startswith(DEVICE)]
+        if web and self.public_key():
+            threading.Thread(target=self._send_all, args=(web,), daemon=True, name="push").start()
+            return len(subs)
+        return len(devices)
 
     def _send_all(self, subs):
         try:
@@ -171,13 +185,16 @@ class Push:
         finally:
             self.ctx.db.release()
 
-    def pending(self, uid, since):
+    def pending(self, uid, since, ringing=False):
         with self.lock:
-            return [m for m in self.messages.get(uid, []) if m["at"] >= since]
+            return [{k: v for k, v in m.items() if k != "ring"} | {"at": int(m["at"])}
+                    for m in self.messages.get(uid, []) if m["at"] >= since and (m["ring"] or not ringing)]
 
     # ------------------------------------------------------------ nouveaux épisodes (après un scan)
     def after_scan(self, x):
         db = self.ctx.db
+        db.run("DELETE FROM push_subs WHERE endpoint LIKE ? AND COALESCE(last_ok, created_at) < ?",
+               (DEVICE + "%", int(time.time()) - DEVICE_IDLE))
         uids = [r["user_id"] for r in db.all("SELECT DISTINCT user_id FROM push_subs")]
         for uid in uids:
             user = db.one("SELECT * FROM users WHERE id=? AND disabled=0", (uid,))
@@ -239,6 +256,37 @@ def register(app, ctx, x):
         if not n:
             raise HTTPError(409, "Aucun appareil inscrit aux notifications")
         return {"sent": n}
+
+    # ------------------------------------------------------------ application Android
+    @app.route("POST", "/api/push/device")
+    def push_device_add(req):
+        """Inscrit l'application Android de cet appareil : le jeton rendu ne sert qu'à lire ses notifications."""
+        uid, now = req.user["id"], int(time.time())
+        token = secrets.token_urlsafe(32)
+        if db.scalar("SELECT COUNT(*) FROM push_subs WHERE user_id=?", (uid,)) >= 20:
+            db.run("DELETE FROM push_subs WHERE id=(SELECT id FROM push_subs WHERE user_id=? ORDER BY created_at LIMIT 1)", (uid,))
+        # last_ok : curseur de lecture de l'appareil, à la fraction de seconde (rien d'avant l'inscription)
+        db.run("INSERT INTO push_subs(user_id,endpoint,created_at,last_ok) VALUES(?,?,?,?)", (uid, device_key(token), now, time.time()))
+        db.run("UPDATE users SET push_seen=? WHERE id=? AND push_seen<?", (now, uid, now - 31 * 86400))
+        return {"token": token}
+
+    @app.route("POST", "/api/push/device/remove")
+    def push_device_remove(req):
+        db.run("DELETE FROM push_subs WHERE user_id=? AND endpoint=?", (req.user["id"], device_key(req.json().get("token") or "")))
+        return {"ok": True}
+
+    @app.route("GET", "/api/push/device", auth=None)
+    def push_device_poll(req):
+        """Messages à afficher par l'application Android depuis sa dernière visite (en-tête X-Nexis-Device)."""
+        token = (req.headers.get("X-Nexis-Device") or "").strip()
+        sub = db.one("SELECT s.* FROM push_subs s JOIN users u ON u.id=s.user_id WHERE s.endpoint=? AND u.disabled=0",
+                     (device_key(token),)) if 20 <= len(token) <= 100 else None
+        if not sub:
+            raise HTTPError(410, "Appareil désinscrit des notifications")
+        now = time.time()
+        since = sub["last_ok"] or sub["created_at"]
+        db.run("UPDATE push_subs SET last_ok=? WHERE id=?", (now, sub["id"]))
+        return {"messages": push.pending(sub["user_id"], since, ringing=True)}
 
     @app.route("GET", "/api/push/pending")
     def push_pending(req):
