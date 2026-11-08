@@ -237,7 +237,9 @@ async function work(rec) {
     return true;
   } catch (e) {
     if (e.name === 'QuotaExceededError') {
-      await save(rec, { state: 'error', error: tr('Espace de stockage épuisé. Autorisez plus d’espace ou supprimez un téléchargement.') });
+      const app = window.nexisNative || window.NexisAndroid; // application : pas d'autorisation à donner, l'appareil est plein
+      await save(rec, { state: 'error', error: app ? tr('Plus de place sur l’appareil. Supprimez un téléchargement ou libérez de l’espace.')
+        : tr('Espace de stockage épuisé. Autorisez plus d’espace ou supprimez un téléchargement.') });
       return true;
     }
     if (!navigator.onLine || e.status === 0 || e instanceof TypeError) {
