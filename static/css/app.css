@@ -1685,11 +1685,13 @@ html.lite .topbar.scrolled { background: var(--bg); }
 :root[data-fx~="glow"] .card:hover .card-img, :root[data-fx~="glow"] .card:focus-visible .card-img {
   box-shadow: 0 0 0 2px var(--accent), 0 0 34px color-mix(in srgb, var(--accent-2) 50%, transparent); }
 :root[data-fx~="glow"] .btn.primary { box-shadow: 0 8px 26px color-mix(in srgb, var(--accent) 35%, transparent); }
-/* calques par-dessus la page (jamais pendant la lecture d'une vidéo) : lignes d'écran, grain, vignettage */
+/* calques de texture (lignes d'écran, grain, vignettage) : DERRIÈRE l'interface, sur le fond de la page seulement —
+   jamais par-dessus le texte, les affiches ou l'avatar, ni pendant la lecture d'une vidéo */
 :root[data-fx~="scanlines"] { --fx-scan: repeating-linear-gradient(0deg, rgba(0, 0, 0, .2) 0 1px, transparent 1px 3px); }
 :root[data-fx~="vignette"] { --fx-vig: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, .55) 100%); }
 :root[data-fx~="grain"] { --fx-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.09'/%3E%3C/svg%3E"); }
-:root[data-overlay] body:not(.playing)::after { content: ''; position: fixed; inset: 0; z-index: 150; pointer-events: none;
+:root[data-overlay] body { background: transparent; }
+:root[data-overlay] body:not(.playing)::after { content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background: var(--fx-grain, none), var(--fx-scan, none), var(--fx-vig, none); background-size: 180px 180px, auto, auto; }
 html.lite[data-overlay] body::after { display: none; }
 html.lite[data-fx] * { text-shadow: none !important; }
@@ -1811,3 +1813,6 @@ html.has-audio .bulk-bar { bottom: 108px; }
 .install-choice p { margin: 4px 0 0; }
 .install-tag { margin-left: 8px; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--accent); color: var(--ink-on-accent); }
 @media (max-width: 520px) { .install-choice { flex-wrap: wrap; } .install-choice .btn { width: 100%; justify-content: center; } }
+/* aperçus du magasin : la texture reste sous la barre et le panneau, comme dans l'interface */
+.store-preview > * { position: relative; z-index: 1; }
+.store-preview::before, .store-preview::after { z-index: 0; }
