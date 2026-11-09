@@ -750,6 +750,14 @@ MIGRATIONS = [
         last_used INTEGER NOT NULL
     );
     """,
+    # 30 : archives compressées (HEVC) : leur description propre ; tâches « compresser »
+    """
+    ALTER TABLE cold_copies ADD COLUMN compressed INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE cold_copies ADD COLUMN orig_size INTEGER;
+    ALTER TABLE cold_copies ADD COLUMN probe TEXT;
+    ALTER TABLE cold_cache ADD COLUMN probe TEXT;
+    ALTER TABLE cold_jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'copy';
+    """,
 ]
 
 

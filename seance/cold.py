@@ -872,6 +872,42 @@ class _Reader:
                 time.sleep(min(ahead, 2))
 
 
+MIN_GAIN = 0.9  # compressé, le fichier doit faire moins de 90 % de l'original (sinon l'original est gardé)
+QUALITY = {"high": (22, 21), "balanced": (26, 24), "small": (30, 27)}  # (carte graphique : cq, processeur : crf)
+
+
+def compress_cmd(src, out, probe, hw, quality, height):
+    """ffmpeg : vidéo en HEVC, tout le reste recopié (MKV)."""
+    from .transcoder import hw_input
+    v = probe["video"]
+    vi = v["index"]
+    ten = "10" in (v.get("pix_fmt") or "")
+    cq, crf = QUALITY.get(quality, QUALITY["balanced"])
+    cmd = [media.FFMPEG, "-hide_banner", "-nostdin", "-v", "error", "-progress", "pipe:1", "-y"]
+    if hw:
+        cmd += hw_input(hw)
+    cmd += [*media.input_args(src), "-map", "0", "-map", "-0:d", "-c", "copy", "-map_metadata", "0", "-map_chapters", "0",
+            "-max_muxing_queue_size", "4096"]
+    for sub in probe.get("subs") or []:
+        if sub.get("codec") == "mov_text":  # sous-titres d'un MP4 : du texte que le MKV n'accepte qu'en SRT
+            cmd += [f"-c:{sub['index']}", "srt"]
+    vf = [f"scale=-2:{height}"] if height and (v.get("height") or 0) > height else []
+    if hw and hw["engine"] == "vaapi":
+        vf += ["format=p010" if ten else "format=nv12", "hwupload"]
+    if vf:
+        cmd += [f"-filter:{vi}", ",".join(vf)]
+    if hw and hw["engine"] == "nvenc":
+        cmd += [f"-c:{vi}", "hevc_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", str(cq), "-b:v", "0"]
+        if ten:
+            cmd += [f"-pix_fmt:{vi}", "p010le"]
+    elif hw:
+        cmd += [f"-c:{vi}", "hevc_vaapi", "-rc_mode", "CQP", "-qp", str(cq)]
+    else:
+        cmd += [f"-c:{vi}", "libx265", "-preset", "medium", "-crf", str(crf), "-x265-params", "log-level=error",
+                f"-pix_fmt:{vi}", "yuv420p10le" if ten else "yuv420p"]
+    return cmd + [out]
+
+
 def _file_blocks(path, start=0, end=None):
     with open(path, "rb") as f:
         f.seek(start)
@@ -942,12 +978,17 @@ class Cold:
     def source(self, row, prefer_cold=False):
         """Ce que ffmpeg doit lire pour cet élément : son fichier, sinon sa copie ramenée en local (cache), sinon une
         copie froide (chemin d'un dossier, ou « cold:http://127.0.0.1:…/cold/<jeton> »). None si rien n'est lisible."""
+        return self.resolve(row, prefer_cold)[0]
+
+    def resolve(self, row, prefer_cold=False):
+        """-> (source, description) : description (probe) propre à une copie compressée, None sinon (celle de la fiche)."""
         key = row["key"]
         if not prefer_cold and key and (media.is_strm(key) or os.path.isfile(key)):
-            return key
-        cached = self.cached(row["id"])
-        if cached and not prefer_cold:
-            return cached
+            return key, None
+        if not prefer_cold:
+            cached = self.cached(row["id"])
+            if cached:
+                return cached, self._probe_of(row, self.ctx.db.scalar("SELECT probe FROM cold_cache WHERE item_id=?", (row["id"],)))
         copies = [c for c in self.copies(row["id"]) if c["enabled"] and c["verified_at"]]
         # dossiers (disque, partage monté) d'abord : lecture directe, la plus rapide
         copies.sort(key=lambda c: (c["kind"] not in ("local", "smb"), c["position"]))
@@ -960,10 +1001,23 @@ class Cold:
                 continue
             if lp is not None:
                 if os.path.isfile(lp):
-                    return lp
+                    return lp, self._probe_of(row, c["probe"])
                 continue
-            return "cold:" + self.stream_url(c["store_id"], c["name"], c["size"])
-        return key if key and os.path.isfile(key) else None
+            return "cold:" + self.stream_url(c["store_id"], c["name"], c["size"]), self._probe_of(row, c["probe"])
+        return (key, None) if key and os.path.isfile(key) else (None, None)
+
+    @staticmethod
+    def _probe_of(row, copy_probe):
+        """Description d'une copie compressée, avec les sous-titres externes de la fiche (fichiers à part)."""
+        if not copy_probe:
+            return None
+        p = json.loads(copy_probe) if isinstance(copy_probe, str) else dict(copy_probe)
+        try:
+            item = json.loads(row["probe"] or "{}") if isinstance(row["probe"], str) else (row["probe"] or {})
+        except (KeyError, IndexError, TypeError, ValueError):
+            item = {}
+        p["external"] = item.get("external", [])
+        return json.dumps(p)
 
     def stream_url(self, store_id, name, size):
         now = time.time()
@@ -1070,8 +1124,8 @@ class Cold:
             if os.path.exists(tmp):
                 os.remove(tmp)
         now = int(time.time())
-        db.run("INSERT OR REPLACE INTO cold_cache(item_id, path, size, fetched_at, last_used) VALUES(?,?,?,?,?)",
-               (item_id, path, cp["size"], now, now))
+        db.run("INSERT OR REPLACE INTO cold_cache(item_id, path, size, fetched_at, last_used, probe) VALUES(?,?,?,?,?,?)",
+               (item_id, path, cp["size"], now, now, cp["probe"]))
 
     def _make_room(self, need):
         """Place pour `need` octets dans le budget du cache (et en gardant de la place libre sur le disque) :
@@ -1131,6 +1185,184 @@ class Cold:
 
     def hosted_quota(self):
         return float(self.ctx.db.setting("cold_host_gb", "0") or 0) * 1e9
+
+
+    # ---------------------------------------------------------------- compression des archives (HEVC)
+    def compress_conf(self):
+        db = self.ctx.db
+        q = db.setting("cold_compress_quality", "balanced")
+        return {"enabled": db.setting("cold_compress", "0") == "1", "quality": q if q in QUALITY else "balanced",
+                "height": int(db.setting("cold_compress_height", "0") or 0)}
+
+    @staticmethod
+    def compressible(probe):
+        """(oui ?, raison) : vidéo déjà compacte (HEVC, AV1, VP9) ou HDR (gardée telle quelle pour ne rien abîmer)."""
+        from .transcoder import HDR_TRANSFERS
+        v = (probe or {}).get("video")
+        if not v:
+            return False, i18n.tr("pas de vidéo")
+        if v.get("codec") in ("hevc", "av1", "vp9"):
+            return False, i18n.tr("déjà en {codec}").format(codec=v["codec"].upper())
+        if v.get("transfer") in HDR_TRANSFERS or "dovi" in (v.get("profile") or "").lower():
+            return False, i18n.tr("vidéo HDR, gardée telle quelle")
+        return True, None
+
+    def _viewers_converting(self):
+        try:
+            return bool(self.ctx.db.scalar("SELECT 1 FROM streams WHERE last_seen>? AND json_extract(params, '$.mode')='transcode' LIMIT 1",
+                                           (int(time.time()) - 40,)))
+        except Exception:
+            return False
+
+    def compress(self, src, row, job):
+        """Réencode la vidéo en HEVC (carte graphique si configurée, sinon processeur), sons, sous-titres, chapitres et
+        polices recopiés tels quels. -> (fichier, description) ; None si ce n'est pas utile (raison dans job["note"])."""
+        probe = json.loads(row["probe"] or "{}") if isinstance(row["probe"], str) else (row["probe"] or {})
+        ok, why = self.compressible(probe)
+        if not ok:
+            job["note"] = i18n.tr("Sans compression : {why}").format(why=why)
+            return None
+        work = os.path.join(self.ctx.data_dir, "cold-work")
+        os.makedirs(work, exist_ok=True)
+        need = (row["file_size"] or 0) + 2 * 1024 ** 3
+        if shutil.disk_usage(work).free < need:
+            job["note"] = i18n.tr("Sans compression : pas assez de place pour le fichier de travail ({n} Go)").format(n=round(need / 1e9, 1))
+            return None
+        c = self.compress_conf()
+        hw = self.ctx.hw() if hasattr(self.ctx, "hw") else None
+        out = os.path.join(work, f"{row['id']}-{secrets.token_hex(4)}.mkv")
+        cmd = compress_cmd(src, out, probe, hw, c["quality"], c["height"])
+        job.update(phase="compress", pct=0, hw=bool(hw))
+        duration = float(probe.get("duration") or 0) or 1
+        try:
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                                 preexec_fn=lambda: os.nice(19))
+        except OSError as e:
+            job["note"] = i18n.tr("Sans compression : {why}").format(why=e)
+            return None
+        err = []
+        threading.Thread(target=lambda: err.append(p.stderr.read()), daemon=True).start()
+        stop = threading.Event()
+
+        def watch():
+            # annulation ; et par le processeur, pause pendant qu'une lecture est convertie (elle passe d'abord)
+            paused = False
+            while not stop.wait(2):
+                if job.get("cancel"):
+                    p.kill()
+                    return
+                busy = not hw and self._viewers_converting()
+                if busy != paused:
+                    try:
+                        os.kill(p.pid, 19 if busy else 18)  # SIGSTOP / SIGCONT
+                        paused = busy
+                        job["paused"] = busy
+                    except OSError:
+                        return
+        threading.Thread(target=watch, daemon=True).start()
+        try:
+            for line in p.stdout:
+                m = re.match(rb"out_time_us=(\d+)", line)
+                if m:
+                    job["pct"] = min(1.0, int(m.group(1)) / 1e6 / duration)
+            p.wait()
+        finally:
+            stop.set()
+            if p.poll() is None:
+                p.kill()
+                p.wait()
+            p.stdout.close()
+        job["phase"] = "copy"
+        if job.get("cancel"):
+            self._rm(out)
+            raise ColdError("Archivage annulé")
+        if p.returncode != 0 or not os.path.isfile(out):
+            msg = (err[0] if err else b"").decode("utf-8", "replace").strip().splitlines()[-1:] or ["?"]
+            log.warning("Compression de %s impossible : %s", row["key"], msg[0])
+            job["note"] = i18n.tr("Sans compression : {why}").format(why=msg[0][:200])
+            self._rm(out)
+            return None
+        src_size = row["file_size"] or 0
+        if src_size and os.path.getsize(out) > MIN_GAIN * src_size:
+            job["note"] = i18n.tr("Sans compression : gain trop faible")
+            self._rm(out)
+            return None
+        try:
+            new = media.probe(out)
+        except media.MediaError as e:
+            self._rm(out)
+            job["note"] = i18n.tr("Sans compression : {why}").format(why=e)
+            return None
+        return out, new
+
+    @staticmethod
+    def _rm(path):
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+    def recompress(self, item_id, store_id, job):
+        """Compresse une copie déjà archivée : relue depuis le stockage, réencodée, renvoyée, l'ancienne effacée."""
+        db = self.ctx.db
+        c = db.one("SELECT * FROM cold_copies WHERE item_id=? AND store_id=?", (item_id, store_id))
+        row = db.one("SELECT id, key, library_id, file_size, probe FROM items WHERE id=?", (item_id,))
+        if not c or not row or c["compressed"]:
+            return None
+        b = self.backend(self.store(store_id))
+        lp = b.local_path(c["name"])
+        src = lp if lp else "cold:" + self.stream_url(store_id, c["name"], c["size"])
+        res = self.compress(src, {**dict(row), "file_size": c["size"]}, job)
+        if not res:
+            return None
+        tmp, probe = res
+        try:
+            name = os.path.splitext(c["name"])[0] + ".mkv"
+            if name == c["name"]:
+                name = os.path.splitext(c["name"])[0] + ".hevc.mkv"
+            size, sha = self._put_verified(b, name, tmp, job)
+            now = int(time.time())
+            db.run("UPDATE cold_copies SET name=?, size=?, sha256=?, compressed=1, orig_size=?, probe=?, verified_at=? WHERE id=?",
+                   (name, size, sha, c["orig_size"] or c["size"], json.dumps(probe), now, c["id"]))
+            try:
+                b.delete(c["name"])
+            except ColdError as e:
+                log.info("Ancienne copie %s non effacée : %s", c["name"], e)
+            self.uncache(item_id)
+            return name
+        finally:
+            self._rm(tmp)
+
+    def _put_verified(self, b, name, path, job):
+        size = os.path.getsize(path)
+        job["total"], job["done"] = size, 0
+        reader = _Reader(_file_blocks(path), job, self)
+        b.put(name, reader, size)
+        if reader.done != size or b.size(name) != size:
+            raise ColdError("Copie incomplète sur le stockage")
+        for off in sorted({0, max(0, size - SAMPLE)} | {random.randrange(0, max(1, size - SAMPLE)) for _ in range(SAMPLES)}):
+            end = min(size - 1, off + SAMPLE - 1)
+            if b"".join(b.open(name, off, end)) != b"".join(_file_blocks(path, off, end)):
+                raise ColdError("La copie relue ne correspond pas au fichier")
+        return size, reader.sha.hexdigest()
+
+    def queue_compress(self, store_id=None):
+        """Compresser les archives déjà faites (celles qui en valent la peine)."""
+        db = self.ctx.db
+        now = int(time.time())
+        n = 0
+        for c in db.all("SELECT c.item_id, c.store_id, i.probe FROM cold_copies c JOIN items i ON i.id=c.item_id "
+                        "WHERE c.compressed=0 AND c.verified_at IS NOT NULL" + (" AND c.store_id=?" if store_id else ""),
+                        (store_id,) if store_id else ()):
+            if not self.compressible(json.loads(c["probe"] or "{}"))[0]:
+                continue
+            db.run("INSERT INTO cold_jobs(item_id, store_id, state, kind, created_at, updated_at) VALUES(?,?,'queued','compress',?,?) "
+                   "ON CONFLICT(item_id, store_id) DO UPDATE SET state='queued', kind='compress', error=NULL, updated_at=excluded.updated_at",
+                   (c["item_id"], c["store_id"], now, now))
+            n += 1
+        if n:
+            self.start()
+        return n
 
     # ---------------------------------------------------------------- débit
     def rate_limit(self):
@@ -1227,7 +1459,12 @@ class Cold:
                 self.running = {"id": job["id"], "item_id": job["item_id"], "store_id": job["store_id"], "done": 0,
                                 "total": 0, "cancel": False}
                 try:
-                    self.archive(job["item_id"], job["store_id"], self.running)
+                    if job["kind"] == "compress":
+                        self.recompress(job["item_id"], job["store_id"], self.running)
+                    else:
+                        self.archive(job["item_id"], job["store_id"], self.running)
+                    if self.running.get("note"):
+                        log.info("Archivage de l'élément %s : %s", job["item_id"], self.running["note"])
                     db.run("DELETE FROM cold_jobs WHERE id=?", (job["id"],))
                     free = getattr(self.ctx, "coldfree", None)
                     if free:
@@ -1252,7 +1489,7 @@ class Cold:
         """Copie le fichier de l'élément (et ses sous-titres voisins) sur le stockage, puis la vérifie."""
         job = job if job is not None else {"done": 0, "total": 0, "cancel": False}
         db = self.ctx.db
-        row = db.one("SELECT id, key, library_id, file_size FROM items WHERE id=?", (item_id,))
+        row = db.one("SELECT id, key, library_id, file_size, probe FROM items WHERE id=?", (item_id,))
         store = self.store(store_id)
         if not row or not store:
             raise ColdError("Élément ou stockage introuvable")
@@ -1260,8 +1497,10 @@ class Cold:
             raise ColdError("Un fichier .strm n'a rien à archiver")
         b = self.backend(store)
         name = self.name_for(row, store_id)
+        meta = {"compressed": 0, "orig_size": None, "probe": None}
         # source : le fichier de la bibliothèque, sinon une copie déjà faite sur un autre stockage
         if row["key"] and os.path.isfile(row["key"]):
+            src = row["key"]
             size = os.path.getsize(row["key"])
             blocks = _file_blocks(row["key"])
             reread = lambda s, e: b"".join(_file_blocks(row["key"], s, e))
@@ -1272,9 +1511,33 @@ class Cold:
                 raise ColdError("Fichier introuvable (partage non monté ?) et aucune autre copie")
             ob = self.backend(self.store(other["store_id"]))
             size = other["size"]
+            olp = ob.local_path(other["name"])
+            src = olp if olp else "cold:" + self.stream_url(other["store_id"], other["name"], size)
             blocks = ob.open(other["name"], 0, size - 1)
             reread = lambda s, e: b"".join(ob.open(other["name"], s, e))
             sidecars = []
+            if other["compressed"]:
+                meta = {"compressed": 1, "orig_size": other["orig_size"], "probe": other["probe"]}
+                name = os.path.splitext(name)[0] + ".mkv"
+        tmp = None
+        if self.compress_conf()["enabled"] and not meta["compressed"]:
+            res = self.compress(src, row, job)
+            if res:
+                tmp, probe = res
+                orig = size
+                size = os.path.getsize(tmp)
+                blocks = _file_blocks(tmp)
+                reread = lambda s, e: b"".join(_file_blocks(tmp, s, e))
+                name = os.path.splitext(name)[0] + ".mkv"
+                meta = {"compressed": 1, "orig_size": orig, "probe": json.dumps(probe)}
+        try:
+            return self._archive_put(b, name, size, blocks, reread, sidecars, job, item_id, store_id, meta)
+        finally:
+            if tmp:
+                self._rm(tmp)
+
+    def _archive_put(self, b, name, size, blocks, reread, sidecars, job, item_id, store_id, meta):
+        db = self.ctx.db
         job["total"] = size
         reader = _Reader(blocks, job, self)
         b.put(name, reader, size)
@@ -1299,10 +1562,12 @@ class Cold:
             except (OSError, ColdError) as e:
                 log.info("Sous-titres %s non archivés : %s", sc, e)
         now = int(time.time())
-        db.run("INSERT INTO cold_copies(item_id, store_id, name, size, sha256, extras, archived_at, verified_at) "
-               "VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(item_id, store_id) DO UPDATE SET name=excluded.name, size=excluded.size, "
-               "sha256=excluded.sha256, extras=excluded.extras, archived_at=excluded.archived_at, verified_at=excluded.verified_at",
-               (item_id, store_id, name, size, reader.sha.hexdigest(), json.dumps(extras), now, now))
+        db.run("INSERT INTO cold_copies(item_id, store_id, name, size, sha256, extras, archived_at, verified_at, compressed, orig_size, probe) "
+               "VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(item_id, store_id) DO UPDATE SET name=excluded.name, size=excluded.size, "
+               "sha256=excluded.sha256, extras=excluded.extras, archived_at=excluded.archived_at, verified_at=excluded.verified_at, "
+               "compressed=excluded.compressed, orig_size=excluded.orig_size, probe=excluded.probe",
+               (item_id, store_id, name, size, reader.sha.hexdigest(), json.dumps(extras), now, now,
+                meta["compressed"], meta["orig_size"], meta["probe"]))
         return name
 
     def forget(self, item_id, store_id, delete_file=True):
@@ -1338,8 +1603,10 @@ class Cold:
                      else j["title"])
             d = {"id": j["id"], "item_id": j["item_id"], "store_id": j["store_id"], "state": j["state"], "title": label,
                  "error": j["error"]}
+            d["kind"] = j["kind"]
             if run and run.get("id") == j["id"]:
-                d.update(done=run.get("done", 0), total=run.get("total", 0))
+                d.update(done=run.get("done", 0), total=run.get("total", 0), phase=run.get("phase") or "copy",
+                         pct=run.get("pct", 0), paused=bool(run.get("paused")), hw=run.get("hw"))
             out.append(d)
         counts = {r["store_id"]: r for r in db.all("SELECT store_id, COUNT(*) AS n, SUM(size) AS bytes FROM cold_copies GROUP BY store_id")}
         return {"jobs": out, "queued": db.scalar("SELECT COUNT(*) FROM cold_jobs WHERE state='queued'"), "counts": counts}
@@ -1513,7 +1780,32 @@ def register(app, ctx, x):
                 if not 0 <= v <= 10000:
                     raise HTTPError(400, "Débit invalide")
                 db.set_setting(k, str(v))
+        if "compress" in b:
+            db.set_setting("cold_compress", "1" if b["compress"] else "0")
+        if "compress_quality" in b:
+            if b["compress_quality"] not in QUALITY:
+                raise HTTPError(400, "Réglage invalide")
+            db.set_setting("cold_compress_quality", b["compress_quality"])
+        if "compress_height" in b:
+            if int(b["compress_height"] or 0) not in (0, 2160, 1080, 720):
+                raise HTTPError(400, "Réglage invalide")
+            db.set_setting("cold_compress_height", str(int(b["compress_height"] or 0)))
         return {"ok": True}
+
+    @app.route("GET", "/api/admin/cold/compress", auth="admin")
+    def cold_compress_info(req):
+        """Compression des archives : réglages, carte graphique utilisée, archives qui en profiteraient."""
+        hw = ctx.hw()
+        todo = [c for c in db.all("SELECT c.size, i.probe FROM cold_copies c JOIN items i ON i.id=c.item_id "
+                                  "WHERE c.compressed=0 AND c.verified_at IS NOT NULL") if cold.compressible(json.loads(c["probe"] or "{}"))[0]]
+        done = db.one("SELECT COUNT(*) AS n, COALESCE(SUM(orig_size), 0) AS before, COALESCE(SUM(size), 0) AS after "
+                      "FROM cold_copies WHERE compressed=1")
+        return {**cold.compress_conf(), "hw": hw["engine"] if hw else None,
+                "todo": {"count": len(todo), "bytes": sum(c["size"] for c in todo)}, "done": done}
+
+    @app.route("POST", "/api/admin/cold/compress", auth="admin")
+    def cold_compress_existing(req):
+        return {"queued": cold.queue_compress(int(req.json().get("store") or 0) or None)}
 
     @app.route("POST", "/api/admin/cold/archive", auth="admin")
     def cold_archive(req):

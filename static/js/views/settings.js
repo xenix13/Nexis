@@ -1,6 +1,6 @@
 import { adminTarget, del, get, post, put, setAdminTarget } from '../api.js';
 import { qrSvg } from '../qr.js';
-import { ADMIN_ALIASES, ADMIN_GROUPS, renderAdminSection } from './admin.js';
+import { ADMIN_ALIASES, ADMIN_GROUPS, renderAdminSection, settingsPage } from './admin.js';
 import { GRADIENTS, applyPrefs, navItems, refreshMe, repaintNav, repaintUser, state } from '../app.js';
 import { PIN_LABELS, pins, removePin } from '../pins.js';
 import { SUB_BGS, SUB_COLORS, SUB_EDGES, SUB_FONTS, SUB_POSITIONS, applySubStyle } from '../substyle.js';
@@ -239,7 +239,7 @@ function twoFactorPanel(rerender) {
 }
 
 // ---------------------------------------------------------------- Mon compte
-export const ACCOUNT_GROUP = { title: tr('Mon compte'), items: [
+const ACCOUNT_DEFS = [
   { id: 'profile', label: tr('Profil'), icon: 'user', lead: tr('Nom, photo, langue, code PIN, mot de passe et double authentification.'),
     keys: tr('nom avatar photo couleur langue language pin code mot de passe sécurité double authentification 2fa totp codes de secours') },
   { id: 'playback', label: tr('Lecture'), icon: 'play', lead: tr('Qualité, langues, sous-titres et enchaînement des épisodes.'),
@@ -256,6 +256,14 @@ export const ACCOUNT_GROUP = { title: tr('Mon compte'), items: [
     keys: tr('genres masquer mode privé historique vie privée notifications épisodes heures calmes nuit silence') },
   { id: 'layout', label: tr('Accueil et menu'), icon: 'home', lead: tr('Ordre et affichage des rangées de l’accueil et des liens de la barre du haut.'),
     keys: tr('accueil rangées ordre barre du haut menu liens masquer réorganiser épingler page d’ouverture démarrage') },
+];
+const D = Object.fromEntries(ACCOUNT_DEFS.map((it) => [it.id, it]));
+export const ACCOUNT_GROUP = { title: tr('Mon compte'), items: [
+  settingsPage(D, ['profile'], { label: tr('Profil et sécurité') }),
+  settingsPage(D, ['appearance', 'themes', 'layout'], { lead: tr('Style de l’interface, thème et magasin de thèmes, accueil et barre du haut.'), names: { appearance: tr('Style et thème') } }),
+  settingsPage(D, ['playback']),
+  settingsPage(D, ['privacy', 'services'], { label: tr('Confidentialité et services'), lead: tr('Genres masqués, mode privé, notifications, et partage avec Trakt ou Letterboxd.') }),
+  settingsPage(D, ['device']),
 ] };
 
 // Trakt (compte relié par un code, synchronisé toutes les 6 h) et Letterboxd (export / import de fichiers)
@@ -912,34 +920,38 @@ export async function renderSettingsArea(main, area, section, ctx) {
     ...(me.user.is_admin ? ADMIN_GROUPS.map((g) => ({ ...g, area: 'admin' })) : [])];
   if (area === 'admin') section = ADMIN_ALIASES[section] || section;
   const all = groups.flatMap((g) => g.items.map((it) => ({ ...it, area: g.area })));
-  const chosen = section ? all.find((it) => it.area === area && it.id === section) : null;
+  // la page qui contient ce sujet (une ancienne adresse #/admin/tasks ouvre « Maintenance », sous-onglet Tâches)
+  const chosen = section ? all.find((it) => it.area === area && it.tabs.some((t) => t.id === section)) : null;
   const current = chosen || all.find((it) => it.area === area) || all[0];
+  const tab = current.tabs.find((t) => t.id === section) || current.tabs[0];
 
+  const fold = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const search = h('input.settings-search', { type: 'search', placeholder: tr('Rechercher un réglage…'), 'aria-label': tr('Rechercher un réglage') });
+  const links = [];
   const nav = h('nav.settings-nav', { 'aria-label': tr('Sections des paramètres') }, search,
     groups.map((g) => h('div.settings-group', h('div.settings-group-title', g.title),
       g.items.map((it) => {
         const on = it.id === current.id && g.area === current.area;
-        const badge = g.area === 'admin' && it.id === 'update' && me.update
+        const badge = g.area === 'admin' && it.tabs.some((t) => t.id === 'update') && me.update
           ? h('span.settings-badge', { title: tr('Nexis {update} est disponible', { update: me.update }) }, tr('Nouveau')) : null;
-        return h('a.settings-link', { href: `#/${g.area}/${it.id}`, dataset: { keys: `${it.label} ${it.lead} ${it.keys}` },
-          class: on ? 'settings-link active' : 'settings-link', 'aria-current': on ? 'page' : null }, icon(it.icon), h('span', it.label), badge);
+        const a = h('a.settings-link', { href: `#/${g.area}/${it.id}`, class: on ? 'settings-link active' : 'settings-link', 'aria-current': on ? 'page' : null },
+          icon(it.icon), h('span', it.label), badge);
+        links.push({ a, it, area: g.area, all: fold(`${it.label} ${it.lead} ${it.keys}`), tabs: it.tabs.map((t) => ({ id: t.id, text: fold(`${t.label} ${t.keys}`) })) });
+        return a;
       }))),
     h('p.settings-empty.muted.small', { hidden: true }, tr('Aucun réglage ne correspond.')));
-  const fold = (t) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   search.addEventListener('input', () => {
     const words = fold(search.value).split(/\s+/).filter(Boolean);
     let shown = 0;
-    nav.querySelectorAll('.settings-group').forEach((g) => {
-      let any = false;
-      g.querySelectorAll('.settings-link').forEach((a) => {
-        const ok = words.every((w) => fold(a.dataset.keys).includes(w));
-        a.hidden = !ok;
-        any = any || ok;
-        shown += ok ? 1 : 0;
-      });
-      g.hidden = !any;
-    });
+    for (const l of links) {
+      const ok = words.every((w) => l.all.includes(w));
+      l.a.hidden = !ok;
+      shown += ok ? 1 : 0;
+      // le lien mène au sous-onglet qui correspond à la recherche
+      const t = words.length ? l.tabs.find((x) => words.every((w) => x.text.includes(w))) : null;
+      l.a.setAttribute('href', `#/${l.area}/${(t || l.tabs[0]).id}`);
+    }
+    nav.querySelectorAll('.settings-group').forEach((g) => { g.hidden = ![...g.querySelectorAll('.settings-link')].some((a) => !a.hidden); });
     nav.querySelector('.settings-empty').hidden = shown > 0;
   });
   search.addEventListener('keydown', (e) => { // Entrée : ouvre le premier résultat
@@ -947,6 +959,9 @@ export async function renderSettingsArea(main, area, section, ctx) {
     const first = [...nav.querySelectorAll('.settings-link')].find((a) => !a.hidden);
     if (first) { e.preventDefault(); location.hash = first.getAttribute('href'); }
   });
+  // sous-onglets d'une page qui réunit plusieurs sujets
+  const subtabs = current.tabs.length > 1 ? h('div.tabs.settings-subtabs', { role: 'tablist' }, current.tabs.map((t) => h('a.tab', {
+    href: `#/${current.area}/${t.id}`, role: 'tab', class: t.id === tab.id ? 'tab active' : 'tab', 'aria-selected': String(t.id === tab.id) }, t.label))) : null;
 
   const body = h('div.settings-body');
   // administration des serveurs liés : choix du serveur réglé par les pages « Serveur », « Médiathèque », « Lecture »
@@ -955,7 +970,7 @@ export async function renderSettingsArea(main, area, section, ctx) {
     h('a.settings-back', { href: `#/${area}` }, icon('back'), tr('Paramètres')),
     current.area === 'admin' ? serverBar : null,
     h('header.settings-head', h('h2', current.label), h('p.muted', current.lead)),
-    body);
+    subtabs, body);
   if (current.area === 'admin') {
     try {
       const sv = await get('/api/admin/servers');
@@ -979,8 +994,8 @@ export async function renderSettingsArea(main, area, section, ctx) {
   }
   clear(main, h('div.settings-page', { class: section ? 'settings-page' : 'settings-page no-section' },
     h('div.page-head', h('h1', tr('Paramètres'))), h('div.settings-layout', nav, content)));
-  document.title = tr('{label} · Paramètres · Nexis', { label: current.label });
-  if (current.area === 'admin') await renderAdminSection(current.id, body, ctx);
-  else if (current.id === 'themes') await renderThemeStore(body, ctx);
-  else accountPage(current.id, body, () => renderSettingsArea(main, area, section, ctx));
+  document.title = tr('{label} · Paramètres · Nexis', { label: current.tabs.length > 1 ? tab.label : current.label });
+  if (current.area === 'admin') await renderAdminSection(tab.id, body, ctx);
+  else if (tab.id === 'themes') await renderThemeStore(body, ctx);
+  else accountPage(tab.id, body, () => renderSettingsArea(main, area, section, ctx));
 }
