@@ -1,7 +1,7 @@
 {
   "name": "nexis-desktop",
   "productName": "Nexis",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Nexis pour Windows, macOS et Linux : l'interface de votre serveur Nexis, dans une vraie application.",
   "homepage": "https://github.com/xenix13/Nexis",
   "author": {
@@ -37,7 +37,8 @@
       "preload.js",
       "setup.html",
       "strings.js",
-      "package.json"
+      "package.json",
+      "build/icon.png"
     ],
     "publish": [
       {
@@ -73,7 +74,8 @@
       ],
       "category": "public.app-category.entertainment",
       "identity": "-",
-      "artifactName": "Nexis-mac.${ext}"
+      "artifactName": "Nexis-mac.${ext}",
+      "icon": "assets/icon-mac.png"
     },
     "dmg": {
       "artifactName": "Nexis.dmg"
