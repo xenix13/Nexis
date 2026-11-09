@@ -345,11 +345,29 @@ export function row(title, items, render, opts = {}) {
 // Menu « ⋯ » : bouton + liste d'actions, fermé au clic extérieur ou avec Échap.
 export function moreMenu(items, label = tr('Plus d’actions')) {
   const list = h('div.more-list', { role: 'menu', hidden: true });
+  const backdrop = h('div.more-backdrop');
   const close = () => {
     if (list.contains(document.activeElement)) btn.focus({ preventScroll: true }); // télécommande : on revient au bouton
     list.hidden = true; document.removeEventListener('click', onDoc, true); document.removeEventListener('keydown', onKey);
+    backdrop.remove();
+    if (list.classList.contains('sheet')) { list.classList.remove('sheet'); wrap.append(list); }
+    list.style.left = ''; list.style.maxHeight = ''; list.style.overflowY = '';
   };
-  const onDoc = (e) => { if (!wrap.contains(e.target)) close(); };
+  const onDoc = (e) => { if (!wrap.contains(e.target) && !list.contains(e.target)) close(); };
+  // à l'ouverture : sur téléphone, feuille en bas de l'écran (posée sur la page, hors de tout conteneur qui la
+  // couperait) ; sinon, décalée à gauche ou raccourcie pour ne jamais sortir de la fenêtre
+  const place = () => {
+    if (window.innerWidth <= 600) {
+      list.classList.add('sheet');
+      document.body.append(backdrop, list);
+      return;
+    }
+    const r = list.getBoundingClientRect();
+    if (r.right > window.innerWidth - 8) list.style.left = `${Math.round(window.innerWidth - 8 - r.right)}px`;
+    else if (r.left < 8) list.style.left = `${Math.round(8 - r.left)}px`;
+    const room = window.innerHeight - r.top - 8;
+    if (r.height > room) { list.style.maxHeight = `${Math.max(160, room)}px`; list.style.overflowY = 'auto'; }
+  };
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   for (const it of items.filter(Boolean)) {
     if (it.divider) { list.append(h('div.more-divider')); continue; }
@@ -361,6 +379,7 @@ export function moreMenu(items, label = tr('Plus d’actions')) {
     e.stopPropagation();
     if (list.hidden) {
       list.hidden = false;
+      place();
       document.addEventListener('click', onDoc, true);
       document.addEventListener('keydown', onKey);
       const first = list.querySelector('.more-item');

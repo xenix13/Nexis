@@ -565,7 +565,7 @@ h3.sub { font-size: 15px; margin: 22px 0 10px; }
 /* ---------- menu ⋯ et choix des pistes ---------- */
 .more-wrap { position: relative; display: inline-block; }
 .btn.icon-only { padding: 10px; }
-.more-list { position: absolute; left: 0; top: calc(100% + 6px); z-index: 40; min-width: 240px; background: var(--surface);
+.more-list { position: absolute; left: 0; top: calc(100% + 6px); z-index: 40; min-width: 240px; max-width: calc(100vw - 16px); background: var(--surface);
   border: 1px solid var(--line); border-radius: 12px; padding: 6px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45); }
 .more-item { display: block; width: 100%; text-align: left; padding: 9px 12px; border: 0; background: none; cursor: pointer;
   border-radius: 8px; font-size: 14px; }
@@ -1009,7 +1009,9 @@ html.remote .player .ctl:focus { background: rgba(255, 255, 255, 0.2); outline-o
 .update-overlay { position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; padding: 16px;
   background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(4px); }
 .update-box { width: 100%; max-width: 520px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
-  padding: 24px; display: grid; gap: 12px; }
+  padding: 24px; display: grid; gap: 12px; min-width: 0; max-height: calc(100dvh - 32px); overflow-y: auto; }
+.update-box > * { min-width: 0; }  /* le journal déplié ne doit pas élargir l'encadré au-delà de l'écran */
+@media (max-width: 520px) { .update-overlay { padding: 10px; } .update-box { padding: 18px; } }
 .update-box h2 { margin: 0; }
 .update-bar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
 .update-bar-fill { height: 100%; width: 0; background: var(--accent); border-radius: inherit; transition: width 0.6s var(--ease-out, ease-out); }
@@ -1017,7 +1019,7 @@ html.remote .player .ctl:focus { background: rgba(255, 255, 255, 0.2); outline-o
 .update-row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .update-step { margin: 0; }
 .update-pct { font-variant-numeric: tabular-nums; color: var(--muted); }
-.update-log pre { max-height: 220px; overflow: auto; margin: 8px 0 0; }
+.update-log pre { max-height: min(220px, 40dvh); overflow: auto; margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .restart-box { display: grid; justify-items: center; gap: 10px; text-align: center; }
 .restart-box h2 { margin: 6px 0 0; }
 @media (prefers-reduced-motion: reduce) { .update-btn::after { animation: none; } }
@@ -1827,3 +1829,15 @@ html.has-audio .bulk-bar { bottom: 108px; }
 .cold-lib { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .cold-lib .check { display: flex; align-items: center; gap: 8px; min-width: 180px; }
 .cold-bar { margin-top: 6px; }
+
+/* paramètres : sous-onglets d'une page qui réunit plusieurs sujets (défilent sur téléphone) */
+.settings-subtabs, .cold-tabs { margin: 2px 0 18px; flex-wrap: wrap; overflow: visible; }
+.settings-subtabs .tab, .cold-tabs .tab { flex: none; white-space: nowrap; text-decoration: none; }
+
+/* menu ⋯ : sur téléphone, en bas de l'écran (jamais coupé) ; ailleurs, recalé pour rester dans la fenêtre */
+.more-list.sheet { position: fixed; left: 10px; right: 10px; top: auto; bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  min-width: 0; max-width: none; max-height: min(75dvh, 560px); overflow-y: auto; z-index: 310; border-radius: 16px;
+  animation: sheet-in 0.2s var(--ease-out, ease-out); }
+.more-list.sheet .more-item { padding: 13px 14px; font-size: 16px; }
+.more-backdrop { position: fixed; inset: 0; z-index: 309; background: rgba(0, 0, 0, 0.45); }
+@keyframes sheet-in { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }

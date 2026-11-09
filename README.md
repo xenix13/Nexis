@@ -211,6 +211,10 @@ pct exec 120 -- bash -c "apt-get update && apt-get install -y curl && curl -fsSL
 
 `nesting=1` permet au service de conserver son bac à sable systemd ; sans cette option, le script installe une version allégée du service.
 
+## Paramètres
+
+Un seul endroit, *Paramètres* (menu du profil), en quinze pages : *Mon compte* (Profil et sécurité, Apparence, Lecture, Confidentialité et services, Cet appareil) puis, pour les administrateurs, *Serveur* (Vue d'ensemble, Utilisateurs, Maintenance, Serveurs liés), *Médiathèque* (Bibliothèques, Métadonnées et demandes, Stockage froid) et *Lecture et diffusion* (Conversion et son, Diffusion et hors ligne, TV en direct). Une page qui réunit plusieurs sujets les présente en sous-onglets (par exemple *Maintenance* : Mise à jour, Sauvegardes, Tâches planifiées). Dans ce document, « *Paramètres → Tâches planifiées* » désigne ce sous-onglet ; la recherche du menu (« Rechercher un réglage… ») ouvre directement le bon sous-onglet, et les anciennes adresses (`#/admin/tasks`…) y mènent aussi.
+
 ## Premier lancement
 
 1. Ouvrir `http://IP:8420`, saisir le **code d'installation** (`cat /var/lib/seance/setup-code.txt`) et créer le compte administrateur.

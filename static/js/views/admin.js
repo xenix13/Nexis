@@ -6,7 +6,7 @@ import { LANGUAGES, locale, plural, tr } from '../i18n.js';
 
 // Pages de l'administration, rangées par thème dans le menu des Paramètres.
 // keys : mots qui la font trouver avec la recherche du menu.
-export const ADMIN_GROUPS = [
+const ADMIN_DEFS = [
   { title: tr('Serveur'), items: [
     { id: 'dashboard', label: tr('Vue d’ensemble'), icon: 'dashboard', lead: tr('Version, état du serveur et lectures en cours.'),
       keys: tr('tableau de bord lectures en cours streams mémoire swap charge processeur version arrêter') },
@@ -48,6 +48,32 @@ export const ADMIN_GROUPS = [
       keys: tr('hors ligne télécharger offline téléphone') },
     { id: 'live', label: tr('TV en direct'), icon: 'tv', lead: tr('Listes de chaînes IPTV (M3U) et guide des programmes.'),
       keys: tr('iptv m3u xmltv chaînes guide epg télévision box') },
+  ] },
+];
+// Pages du menu : une page peut réunir plusieurs sujets, en sous-onglets (l'adresse de chacun reste #/admin/<id>).
+export function settingsPage(defs, ids, opts = {}) {
+  const first = defs[ids[0]];
+  return { id: ids[0], label: opts.label || first.label, icon: opts.icon || first.icon, lead: opts.lead || first.lead,
+    keys: ids.map((i) => `${defs[i].label} ${defs[i].lead} ${defs[i].keys}`).join(' '),
+    tabs: ids.map((i) => ({ id: i, label: (opts.names || {})[i] || defs[i].label, keys: `${defs[i].label} ${defs[i].lead} ${defs[i].keys}` })) };
+}
+const A = Object.fromEntries(ADMIN_DEFS.flatMap((g) => g.items).map((it) => [it.id, it]));
+export const ADMIN_GROUPS = [
+  { title: tr('Serveur'), items: [
+    settingsPage(A, ['dashboard', 'stats'], { lead: tr('Version, état du serveur, lectures en cours et statistiques.'), names: { dashboard: tr('État du serveur') } }),
+    settingsPage(A, ['users']),
+    settingsPage(A, ['update', 'backups', 'tasks'], { label: tr('Maintenance'), lead: tr('Mises à jour de Nexis, sauvegardes et travaux planifiés.') }),
+    settingsPage(A, ['federation']),
+  ] },
+  { title: tr('Médiathèque'), items: [
+    settingsPage(A, ['libraries', 'shares', 'detection'], { lead: tr('Dossiers de films et de séries, partages réseau du NAS et ajout automatique des nouveautés.') }),
+    settingsPage(A, ['metadata', 'requests'], { label: tr('Métadonnées et demandes'), lead: tr('Affiches et résumés (TMDB), et demandes de films et de séries (Seerr).'), names: { requests: tr('Demandes (Seerr)') } }),
+    settingsPage(A, ['cold']),
+  ] },
+  { title: tr('Lecture et diffusion'), items: [
+    settingsPage(A, ['transcoding', 'subtitles'], { label: tr('Conversion et son'), lead: tr('Lectures simultanées, carte graphique, sous-titres manquants et mixage du son.') }),
+    settingsPage(A, ['dlna', 'downloads'], { label: tr('Diffusion et hors ligne'), icon: 'install', lead: tr('Téléviseurs et consoles du réseau local (DLNA), et visionnage hors ligne.'), names: { downloads: tr('Téléchargements hors ligne') } }),
+    settingsPage(A, ['live']),
   ] },
 ];
 // anciennes adresses (favoris, liens) -> nouvelles pages
@@ -1784,28 +1810,38 @@ async function coldPage(body, ctx) {
     h('button.icon-btn', { title: tr('Annuler'), onclick: async () => { await del(`/api/admin/cold/jobs/${j.id}`); reload(); } }, icon('close')));
   const rate = h('input', { type: 'number', min: 0, step: 1, value: data.settings.cold_rate || 0 });
   const ratePlay = h('input', { type: 'number', min: 0, step: 1, value: data.settings.cold_rate_play });
-  clear(body,
-    h('div.toolbar', h('p.muted', tr('Le titre garde son affiche, son résumé et son historique ; si son fichier quitte la bibliothèque, Nexis le lit depuis la copie (quelques secondes de plus au démarrage). Pour archiver : menu ⋯ d’un titre, ou sélection multiple d’une bibliothèque.')),
-      h('button.btn.primary', { onclick: async () => { if (await coldForm(null, data.available, extra.peers)) { toast(tr('Stockage ajouté'), 'ok'); reload(); } } }, tr('+ Ajouter un stockage'))),
-    stores.length ? h('div.user-list', stores.map(storeRow)) : h('div.empty', tr('Aucun stockage froid. Ajoutez un disque, un NAS ou un stockage en ligne.')),
-    running.length || data.queued || errors.length ? h('section.panel', h('h2', tr('Archivage en cours')),
-      data.queued ? h('p.muted.small', plural(data.queued, '{n} titre en attente', '{n} titres en attente')) : null,
-      h('div.user-list', [...running, ...errors].map(jobRow)),
-      data.jobs.filter((j) => j.state === 'queued').length ? h('details', h('summary.small', tr('File d’attente')),
-        h('div.user-list', data.jobs.filter((j) => j.state === 'queued').map(jobRow))) : null) : null,
-    freePanel(freeData, stores, reload),
-    freeLists(freeData, reload),
-    compressPanel(comp, reload),
-    cachePanel(extra, reload),
-    h('section.panel', h('h2', tr('Débit des copies')),
-      h('p.muted.small', tr('Les copies se font une à la fois, en tâche de fond. Pendant qu’une vidéo est regardée, leur débit est réduit pour ne pas la gêner. 0 : sans limite.')),
-      h('div.grid2', field(tr('Débit maximal (Mo/s)'), rate), field(tr('Pendant une lecture (Mo/s)'), ratePlay)),
-      h('div.actions-row', h('button.btn', { onclick: async () => {
-        try { await put('/api/admin/cold/settings', { cold_rate: Number(rate.value), cold_rate_play: Number(ratePlay.value) }); toast(tr('Enregistré'), 'ok'); } catch (e) { toast(e.message, 'bad'); }
-      } }, tr('Enregistrer')))));
-  // suivi de la copie en cours
-  if (running.length || data.queued) {
-    setTimeout(() => { if (ctx.isCurrent() && body.isConnected) reload(); }, 2500);
+  // la page est longue : en sous-onglets (retenu sur cet appareil)
+  const COLD_TABS = [['stores', tr('Stockages')], ['free', tr('Libérer de la place')], ['compress', tr('Compression')], ['cache', tr('Cache et serveurs liés')]];
+  let tab = store('cold-tab') || 'stores';
+  if (!COLD_TABS.some(([k]) => k === tab)) tab = 'stores';
+  const jobsPanel = running.length || data.queued || errors.length ? h('section.panel', h('h2', tr('Archivage en cours')),
+    data.queued ? h('p.muted.small', plural(data.queued, '{n} titre en attente', '{n} titres en attente')) : null,
+    h('div.user-list', [...running, ...errors].map(jobRow)),
+    data.jobs.filter((j) => j.state === 'queued').length ? h('details', h('summary.small', tr('File d’attente')),
+      h('div.user-list', data.jobs.filter((j) => j.state === 'queued').map(jobRow))) : null) : null;
+  const sections = {
+    stores: () => [
+      h('div.toolbar', h('p.muted', tr('Le titre garde son affiche, son résumé et son historique ; si son fichier quitte la bibliothèque, Nexis le lit depuis la copie (quelques secondes de plus au démarrage). Pour archiver : menu ⋯ d’un titre, ou sélection multiple d’une bibliothèque.')),
+        h('button.btn.primary', { onclick: async () => { if (await coldForm(null, data.available, extra.peers)) { toast(tr('Stockage ajouté'), 'ok'); reload(); } } }, tr('+ Ajouter un stockage'))),
+      stores.length ? h('div.user-list', stores.map(storeRow)) : h('div.empty', tr('Aucun stockage froid. Ajoutez un disque, un NAS ou un stockage en ligne.')),
+      jobsPanel,
+      h('section.panel', h('h2', tr('Débit des copies')),
+        h('p.muted.small', tr('Les copies se font une à la fois, en tâche de fond. Pendant qu’une vidéo est regardée, leur débit est réduit pour ne pas la gêner. 0 : sans limite.')),
+        h('div.grid2', field(tr('Débit maximal (Mo/s)'), rate), field(tr('Pendant une lecture (Mo/s)'), ratePlay)),
+        h('div.actions-row', h('button.btn', { onclick: async () => {
+          try { await put('/api/admin/cold/settings', { cold_rate: Number(rate.value), cold_rate_play: Number(ratePlay.value) }); toast(tr('Enregistré'), 'ok'); } catch (e) { toast(e.message, 'bad'); }
+        } }, tr('Enregistrer'))))],
+    free: () => [freePanel(freeData, stores, reload), freeLists(freeData, reload)],
+    compress: () => [compressPanel(comp, reload), jobsPanel],
+    cache: () => [cachePanel(extra, reload)],
+  };
+  const tabs = h('div.tabs.cold-tabs', { role: 'tablist' }, COLD_TABS.map(([k, label]) => h('button.tab', { type: 'button', role: 'tab',
+    class: k === tab ? 'tab active' : 'tab', 'aria-selected': String(k === tab), onclick: () => { store('cold-tab', k); reload(); } },
+  label, k === 'free' && freeData.groups.some((g) => g.state === 'proposed') ? h('span.count-badge', freeData.groups.filter((g) => g.state === 'proposed').length) : null)));
+  clear(body, tabs, ...sections[tab]());
+  // suivi de la copie en cours (pas sur les onglets à formulaires : la saisie serait perdue)
+  if ((running.length || data.queued) && (tab === 'stores' || tab === 'compress')) {
+    setTimeout(() => { if (ctx.isCurrent() && body.isConnected && (store('cold-tab') || 'stores') === tab) reload(); }, 2500);
   }
 }
 
