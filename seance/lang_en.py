@@ -760,4 +760,10 @@ EN = {
     "Libérer de la place (stockage froid)": "Free up space (cold storage)",
     "Titres que personne n'a regardés depuis le nombre de jours choisi (Paramètres → Stockage froid) : proposés, ou copiés d'office sur le stockage froid, puis leur fichier quitte la bibliothèque une fois le délai passé. Sans effet tant que la règle n'est pas activée.": "Titles nobody has watched for the chosen number of days (Settings → Cold storage): suggested, or copied automatically to cold storage, then their file leaves the library once the delay is over. No effect until the rule is turned on.",
     "Reprise attendue à {n}": "Resume expected at {n}",
+    "pas de vidéo": "no video",
+    "déjà en {codec}": "already {codec}",
+    "vidéo HDR, gardée telle quelle": "HDR video, kept as is",
+    "Sans compression : {why}": "Not compressed: {why}",
+    "Sans compression : pas assez de place pour le fichier de travail ({n} Go)": "Not compressed: not enough space for the work file ({n} GB)",
+    "Sans compression : gain trop faible": "Not compressed: gain too small",
 }

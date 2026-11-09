@@ -686,6 +686,51 @@ class ColdStorageTest(unittest.TestCase):
         finally:
             srv.shutdown()
 
+    def test_09_compress_archives(self):
+        """Archives réencodées en HEVC (processeur ici) : plus petites, lues avec leurs propres pistes."""
+        mid = self.movie["id"]
+        st, c = self.admin.call("GET", "/api/admin/cold/compress")
+        self.assertIsNone(c["hw"])  # pas de carte graphique : l'interface le signale
+        self.assertGreaterEqual(c["todo"]["count"], 1)  # Nuit polaire (H.264) sur WebDAV
+        before = self.ctx.db.one("SELECT * FROM cold_copies WHERE item_id=? AND compressed=0", (mid,))
+        old_gain = cold_mod.MIN_GAIN
+        cold_mod.MIN_GAIN = 5  # vidéo de test minuscule : on accepte tout gain
+        try:
+            self.admin.call("PUT", "/api/admin/cold/settings", {"compress": True, "compress_quality": "small"})
+            st, r = self.admin.call("POST", "/api/admin/cold/compress", {})
+            self.assertGreaterEqual(r["queued"], 1, r)
+            self.wait_jobs(300)
+        finally:
+            cold_mod.MIN_GAIN = old_gain
+        after = self.ctx.db.one("SELECT * FROM cold_copies WHERE item_id=? AND store_id=?", (mid, before["store_id"]))
+        self.assertEqual(after["compressed"], 1, after)
+        self.assertTrue(after["name"].endswith(".mkv"))
+        self.assertEqual(after["orig_size"], before["size"])
+        self.assertEqual(json.loads(after["probe"])["video"]["codec"], "hevc")
+        self.assertEqual(len(json.loads(after["probe"])["audio"]), 2)  # les deux pistes son gardées
+        if after["name"] != before["name"]:
+            self.assertNotIn(urllib.parse.unquote("/dav/" + before["name"]), FakeDAV.files)  # ancienne copie effacée
+        # lecture : la copie compressée décide (HEVC : conversion pour un navigateur qui ne le lit pas)
+        self.admin.call("PUT", "/api/admin/cold/extra", {"clear_cache": True})
+        st, p = self.admin.call("POST", "/api/play", {"id": str(mid), "caps": {"video": ["h264"], "audio": ["aac"], "containers": ["mp4"]}})
+        self.assertEqual(st, 200, p)
+        self.assertEqual(p["mode"], "transcode", p)
+        n, data, _ = hls_segment(self.admin, p["url"], at=5.0)
+        self.assertEqual(ffprobe_codec(data), "h264")
+        self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
+        st, c = self.admin.call("GET", "/api/admin/cold/compress")
+        self.assertGreaterEqual(c["done"]["n"], 1)
+        # vidéo déjà en HEVC : archivée sans changement
+        brume = self.ctx.db.one("SELECT id FROM items WHERE title LIKE 'Brume%'")
+        usb = os.path.join(self.work, "usb-hevc")
+        os.makedirs(usb)
+        st, r = self.admin.call("POST", "/api/admin/cold/stores", {"kind": "local", "name": "USB 3", "conf": {"path": usb}})
+        self.admin.call("POST", "/api/admin/cold/archive", {"ids": [brume["id"]], "store": r["id"]})
+        self.wait_jobs()
+        cp = self.ctx.db.one("SELECT compressed FROM cold_copies WHERE item_id=? AND store_id=?", (brume["id"], r["id"]))
+        self.assertEqual(cp["compressed"], 0)
+        self.admin.call("PUT", "/api/admin/cold/settings", {"compress": False})
+
     def test_06_mountd_writable_only_for_cold(self):
         m = mountd.Mounts.__new__(mountd.Mounts)
         args = {"host": "nas.local", "share": "media", "username": "u", "password": "p", "version": "auto", "writable": True}

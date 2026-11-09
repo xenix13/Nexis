@@ -1743,9 +1743,9 @@ async function coldForm(existing, available, peers = []) {
 }
 
 async function coldPage(body, ctx) {
-  let data, freeData, extra;
+  let data, freeData, extra, comp;
   try {
-    [data, freeData, extra] = await Promise.all([get('/api/admin/cold'), get('/api/admin/cold/free'), get('/api/admin/cold/extra')]);
+    [data, freeData, extra, comp] = await Promise.all([get('/api/admin/cold'), get('/api/admin/cold/free'), get('/api/admin/cold/extra'), get('/api/admin/cold/compress')]);
   } catch (e) { clear(body, h('p.form-error', e.message)); return; }
   if (!ctx.isCurrent()) return;
   const reload = () => coldPage(body, ctx);
@@ -1773,8 +1773,12 @@ async function coldPage(body, ctx) {
   const errors = data.jobs.filter((j) => j.state === 'error');
   const jobRow = (j) => h('div.user-row',
     h('div.grow', h('strong', j.title), h('span.muted', ` → ${(byId[j.store_id] || {}).name || '?'}`),
-      j.state === 'running' && j.total ? h('div.dl-bar.cold-bar', h('span.films', { style: { width: `${Math.round((j.done / j.total) * 100)}%` } })) : null,
-      j.state === 'running' ? h('div.small.muted', j.total ? tr('{a} sur {b}', { a: coldSize(j.done || 0), b: coldSize(j.total) }) : tr('Préparation…')) : null,
+      j.state === 'running' && j.phase === 'compress' ? h('div.dl-bar.cold-bar', h('span.films', { style: { width: `${Math.round((j.pct || 0) * 100)}%` } })) : null,
+      j.state === 'running' && j.phase === 'compress' ? h('div.small.muted', tr('Compression… {p} %', { p: Math.round((j.pct || 0) * 100) }),
+        j.paused ? ` · ${tr('en pause pendant une lecture convertie')}` : '', j.hw ? ` · ${tr('carte graphique')}` : ` · ${tr('processeur')}`) : null,
+      j.state === 'running' && j.phase !== 'compress' && j.total ? h('div.dl-bar.cold-bar', h('span.films', { style: { width: `${Math.round((j.done / j.total) * 100)}%` } })) : null,
+      j.state === 'running' && j.phase !== 'compress' ? h('div.small.muted', j.total ? tr('{a} sur {b}', { a: coldSize(j.done || 0), b: coldSize(j.total) }) : tr('Préparation…')) : null,
+      j.kind === 'compress' && j.state !== 'running' ? h('div.small.muted', tr('Compression d’une archive')) : null,
       j.error ? h('div.form-error.small', j.error) : null),
     j.state === 'error' ? h('button.btn.small', { onclick: async () => { await post(`/api/admin/cold/jobs/${j.id}/retry`); reload(); } }, tr('Réessayer')) : null,
     h('button.icon-btn', { title: tr('Annuler'), onclick: async () => { await del(`/api/admin/cold/jobs/${j.id}`); reload(); } }, icon('close')));
@@ -1791,6 +1795,7 @@ async function coldPage(body, ctx) {
         h('div.user-list', data.jobs.filter((j) => j.state === 'queued').map(jobRow))) : null) : null,
     freePanel(freeData, stores, reload),
     freeLists(freeData, reload),
+    compressPanel(comp, reload),
     cachePanel(extra, reload),
     h('section.panel', h('h2', tr('Débit des copies')),
       h('p.muted.small', tr('Les copies se font une à la fois, en tâche de fond. Pendant qu’une vidéo est regardée, leur débit est réduit pour ne pas la gêner. 0 : sans limite.')),
@@ -1910,6 +1915,29 @@ function freeLists(free, reload) {
     h('div.user-list', free.kept.map((k) => h('div.user-row', h('div.grow', h('a', { href: `#/item/${k.item_id}` }, k.title)),
       act(tr('Ne plus garder'), () => post('/api/admin/cold/free/keep', { root: k.item_id, keep: false }), '.ghost'))))));
   return h('div', ...panels);
+}
+
+// compression des archives (HEVC) : carte graphique recommandée
+function compressPanel(c, reload) {
+  const on = toggle(tr('Compresser les fichiers archivés (HEVC)'), c.enabled);
+  const quality = select([['high', tr('Très bonne qualité (moins de gain)')], ['balanced', tr('Équilibrée')], ['small', tr('Petite taille')]], c.quality);
+  const height = select([['0', tr('Garder la définition')], ['2160', tr('4K au plus')], ['1080', tr('1080p au plus')], ['720', tr('720p au plus')]], String(c.height));
+  const engine = { nvenc: tr('NVIDIA (NVENC)'), vaapi: tr('Intel ou AMD (VAAPI)') }[c.hw];
+  const saved = c.done.n ? Math.round((1 - c.done.after / Math.max(1, c.done.before)) * 100) : 0;
+  return h('section.panel', h('h2', tr('Compression des archives'), ' ', h('span.tag.accent', tr('Carte graphique recommandée'))),
+    h('p.muted.small', tr('Avant d’être copiée, la vidéo est réencodée en HEVC : souvent 30 à 60 % de place en moins sur le stockage froid, pour une qualité très proche. Le son, les sous-titres, les chapitres et les polices sont gardés tels quels. Les vidéos déjà en HEVC, AV1 ou VP9, et les vidéos HDR, sont copiées sans changement ; si le gain est trop faible, l’original est gardé. Les fichiers de la bibliothèque ne sont jamais modifiés.')),
+    c.hw ? h('div.status-box.ok', tr('Carte graphique utilisée : {engine}.', { engine }))
+      : h('div.status-box.bad', tr('Aucune carte graphique configurée (Paramètres → Transcodage) : la compression se fait par le processeur, très lentement sur une petite machine (une à plusieurs heures par film), et se met en pause pendant les lectures converties.')),
+    on, h('div.grid2', field(tr('Qualité'), quality), field(tr('Définition'), height)),
+    c.done.n ? h('p.small', tr('{n} archive(s) compressée(s) : {a} avant, {b} après (−{p} %).', { n: c.done.n, a: coldSize(c.done.before), b: coldSize(c.done.after), p: saved })) : null,
+    h('div.actions-row',
+      h('button.btn', { onclick: async () => {
+        try { await put('/api/admin/cold/settings', { compress: on.querySelector('input').checked, compress_quality: quality.value, compress_height: Number(height.value) }); toast(tr('Enregistré'), 'ok'); reload(); } catch (e) { toast(e.message, 'bad'); }
+      } }, tr('Enregistrer')),
+      c.todo.count ? h('button.btn', { onclick: async () => {
+        if (!await confirmDialog(tr('Compresser les archives déjà faites ?'), tr('{n} archive(s), {size}, seront relues, compressées puis remplacées sur leur stockage, une à la fois.', { n: c.todo.count, size: coldSize(c.todo.bytes) }), tr('Compresser'), false)) return;
+        try { const r = await post('/api/admin/cold/compress', {}); toast(plural(r.queued, '{n} archive à compresser', '{n} archives à compresser'), 'ok'); reload(); } catch (e) { toast(e.message, 'bad'); }
+      } }, tr('Compresser les archives déjà faites ({n})', { n: c.todo.count })) : null));
 }
 
 // titres ramenés en local, et place réservée aux archives des serveurs liés

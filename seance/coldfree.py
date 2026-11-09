@@ -409,6 +409,23 @@ class ColdFree:
             log.info("Sous-titres de %s : %s", row["key"], e)
         if subs.missing(row):
             raise FreeError(i18n.tr("Sous-titres intégrés pas encore extraits : nouvel essai au prochain passage"))
+        # sous-titres posés à côté du fichier (.srt, .ass…) : copiés dans les données de Nexis, la fiche pointe dessus
+        probe = json.loads(row["probe"] or "{}")
+        lib_roots = [os.path.realpath(p) for p in json.loads(row["lib_paths"] or "[]") if p]
+        changed = False
+        for e in probe.get("external", []):
+            path = e.get("path") or ""
+            if not path or not any(os.path.realpath(path).startswith(r + os.sep) for r in lib_roots) or not os.path.isfile(path):
+                continue  # déjà hors de la bibliothèque (OpenSubtitles, Whisper…)
+            dest_dir = os.path.join(self.ctx.data_dir, "subtitles", "kept", str(row["id"]))
+            os.makedirs(dest_dir, exist_ok=True)
+            dest = os.path.join(dest_dir, os.path.basename(path))
+            with open(path, "rb") as src, open(dest, "wb") as out:
+                out.write(src.read(64 * 1024 * 1024))
+            e["path"] = dest
+            changed = True
+        if changed:
+            self.ctx.db.run("UPDATE items SET probe=? WHERE id=?", (json.dumps(probe), row["id"]))
 
     def delete_original(self, row, how, c=None):
         c = c or self.conf()

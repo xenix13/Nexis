@@ -297,10 +297,11 @@ def register(app, ctx, x):
         if not media.available():
             raise HTTPError(503, "ffmpeg n'est pas installé sur le serveur")
         # le fichier, sinon sa copie sur un stockage froid ; « cold » : un administrateur essaie la copie froide
-        src = ctx.cold.source(r, prefer_cold=bool(b.get("cold")) and bool(req.user["is_admin"]))
+        src, cold_probe = ctx.cold.resolve(r, prefer_cold=bool(b.get("cold")) and bool(req.user["is_admin"]))
         if not src:
             raise HTTPError(404, "Fichier introuvable : le partage est-il monté ?")
-        probe = json.loads(r["probe"] or "{}")
+        # copie compressée (HEVC) : ses propres pistes et codecs décident de la lecture directe ou de la conversion
+        probe = json.loads(cold_probe or r["probe"] or "{}")
         audio, subs = stream_lists(probe)
         prefs = get_prefs(uid)
         quality = b.get("quality") or prefs["quality"]
@@ -501,7 +502,7 @@ def register(app, ctx, x):
         src = ctx.cold.source(r) if r else None
         if not src or media.is_remote(src) or not os.path.isfile(src):
             raise HTTPError(404, "Fichier introuvable")
-        return cast_cors(st, file_response(req, src, ctype=file_type(r["key"])))
+        return cast_cors(st, file_response(req, src, ctype=file_type(src)))
 
     def file_type(path):
         low = (path or "").lower()
@@ -624,10 +625,13 @@ def register(app, ctx, x):
         r = require_item(req.user, rk)
         if r["type"] not in ("movie", "episode"):
             raise HTTPError(400, "Seuls les films et les épisodes se téléchargent")
-        src = ctx.cold.source(r)
+        src, cold_probe = ctx.cold.resolve(r)
         if not src:
             raise HTTPError(404, "Fichier introuvable : le partage est-il monté ?")
         r = {**dict(r), "key": src}  # préparation depuis le fichier, ou depuis sa copie froide
+        if cold_probe:
+            r["probe"] = cold_probe  # copie compressée : ses pistes
+            r["file_size"] = os.path.getsize(src) if not media.is_remote(src) else r["file_size"]
         probe = json.loads(r["probe"] or "{}")
         audio, subs = stream_lists(probe)
         if quality not in DL_QUALITIES and quality not in QUALITY:
