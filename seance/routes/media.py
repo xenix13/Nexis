@@ -296,7 +296,9 @@ def register(app, ctx, x):
             raise HTTPError(400, "Cet élément n'est pas lisible")
         if not media.available():
             raise HTTPError(503, "ffmpeg n'est pas installé sur le serveur")
-        if not r["key"] or not os.path.isfile(r["key"]):
+        # le fichier, sinon sa copie sur un stockage froid ; « cold » : un administrateur essaie la copie froide
+        src = ctx.cold.source(r, prefer_cold=bool(b.get("cold")) and bool(req.user["is_admin"]))
+        if not src:
             raise HTTPError(404, "Fichier introuvable : le partage est-il monté ?")
         probe = json.loads(r["probe"] or "{}")
         audio, subs = stream_lists(probe)
@@ -347,12 +349,19 @@ def register(app, ctx, x):
             p["reasons"].append(f"connexion à {kbps / 1000:.1f} Mbit/s")
         if b.get("cast"):
             p["cast"] = True  # lu par une TV (Chromecast, AirPlay) : adresse du flux utilisable sans session
-        if p["mode"] == "direct" and (b.get("no_direct") or media.is_strm(r["key"])):
-            p["mode"] = "copy"  # le navigateur a refusé la lecture directe, ou flux distant (.strm) relayé par Nexis
+        if p["mode"] == "direct" and (b.get("no_direct") or media.is_remote(src)):
+            p["mode"] = "copy"  # le navigateur a refusé la lecture directe, ou flux distant (.strm, stockage froid) relayé par Nexis
+        if src != r["key"]:
+            p["cold"] = True  # lu depuis le stockage froid
+            p["reasons"].append("lu depuis le stockage froid")
+            if media.is_remote(src):
+                ctx.cold.prefetch(r)  # ramené en local, avec les épisodes suivants : les prochaines lectures sont immédiates
+            if p["mode"] == "direct" and b.get("cold"):
+                p["mode"] = "copy"  # essai de la copie froide : la lecture directe relirait le fichier de la bibliothèque
         sid = secrets.token_urlsafe(12)
         try:
-            kf = keyframes_for(r) if p["mode"] == "copy" else None
-            actual = ctx.transcoder.start(sid, r["key"], p, offset, duration, kf)
+            kf = keyframes_for(r) if p["mode"] == "copy" and src == r["key"] else None
+            actual = ctx.transcoder.start(sid, src, p, offset, duration, kf)
         except Busy as e:
             raise HTTPError(503, str(e))
         except media.MediaError as e:
@@ -488,10 +497,16 @@ def register(app, ctx, x):
     @app.route("GET", f"/api/stream/{SID}/file", auth=None)
     def stream_file(req):
         st = own_stream(req, req.params["sid"])
-        r = db.one("SELECT key FROM items WHERE id=?", (int(st["rating_key"]),))
-        if not r or not os.path.isfile(r["key"]) or media.is_strm(r["key"]):
+        r = db.one("SELECT id, key FROM items WHERE id=?", (int(st["rating_key"]),))
+        src = ctx.cold.source(r) if r else None
+        if not src or media.is_remote(src) or not os.path.isfile(src):
             raise HTTPError(404, "Fichier introuvable")
-        return cast_cors(st, file_response(req, r["key"]))
+        return cast_cors(st, file_response(req, src, ctype=file_type(r["key"])))
+
+    def file_type(path):
+        low = (path or "").lower()
+        return ("video/mp4" if low.endswith((".mp4", ".m4v", ".mov")) else "video/x-matroska"
+                if low.endswith((".mkv", ".mk3d")) else "video/mp2t" if low.endswith((".ts", ".m2ts")) else "video/webm")
 
     def file_response(req, path, ctype=None):
         size = os.path.getsize(path)
@@ -609,8 +624,10 @@ def register(app, ctx, x):
         r = require_item(req.user, rk)
         if r["type"] not in ("movie", "episode"):
             raise HTTPError(400, "Seuls les films et les épisodes se téléchargent")
-        if not r["key"] or not os.path.isfile(r["key"]):
+        src = ctx.cold.source(r)
+        if not src:
             raise HTTPError(404, "Fichier introuvable : le partage est-il monté ?")
+        r = {**dict(r), "key": src}  # préparation depuis le fichier, ou depuis sa copie froide
         probe = json.loads(r["probe"] or "{}")
         audio, subs = stream_lists(probe)
         if quality not in DL_QUALITIES and quality not in QUALITY:
@@ -626,13 +643,13 @@ def register(app, ctx, x):
         p = plan(probe, audio_id, burn, "original" if quality == "auto" else quality, caps,
                  db.setting("downmix_algo", "none"), float(db.setting("downmix_boost", "2") or 2),
                  db.setting("tonemap", "hable"))
-        if p["mode"] == "direct" and media.is_strm(r["key"]):
-            p["mode"] = "copy"  # flux distant : on en fait un fichier
+        if p["mode"] == "direct" and media.is_remote(r["key"]):
+            p["mode"] = "copy"  # flux distant (.strm, stockage froid) : on en fait un fichier
         duration = probe.get("duration") or (r["duration_ms"] or 0) / 1000
         if p["mode"] == "direct":
             size = r["file_size"] or 0
         elif p["mode"] == "copy":  # vidéo recopiée, son en AAC stéréo
-            size = int((r["file_size"] or 0) * 0.95) if not media.is_strm(r["key"]) else 0
+            size = int((r["file_size"] or 0) * 0.95) if not media.is_strm(r["key"]) else 0  # copie froide : même taille
         else:
             size = int((p["kbps"] + 192) * 1000 / 8 * duration)
         return r, p, duration, size

@@ -234,6 +234,24 @@ function itemMenu(d, rerender) {
       } });
     if (d.type === 'movie' || d.type === 'show') items.push({ label: tr('Collections…'), onClick: () => manageCollections(d, rerender) });
     if (d.type === 'movie' || d.type === 'episode') items.push({ label: tr('Informations sur le fichier'), onClick: () => fileInfo(d) });
+    // stockage froid : copie du fichier ailleurs (le titre reste ici, lu depuis la copie si le fichier disparaît)
+    if (['movie', 'episode', 'show', 'season'].includes(d.type) && !d.server) {
+      const label = d.type === 'show' ? tr('Archiver toute la série…') : d.type === 'season' ? tr('Archiver la saison…') : tr('Archiver sur un stockage froid…');
+      items.push({ label, onClick: async () => (await import('./admin.js')).archiveDialog([d.id], d.type === 'episode' ? `${d.show} · ${d.title}` : d.title) });
+    }
+    if ('kept' in d) {
+      items.push({ label: d.kept ? tr('Ne plus garder sur le disque d’office') : tr('Toujours garder sur le disque'), onClick: async () => {
+        try {
+          await post('/api/admin/cold/free/keep', { root: d.id, keep: !d.kept });
+          toast(d.kept ? tr('Ce titre peut de nouveau libérer de la place') : tr('Ce titre restera sur le disque'), 'ok');
+          rerender();
+        } catch (e) { toast(e.message, 'bad'); }
+      } });
+    }
+    if (d.archived) {
+      items.push({ label: tr('Copies sur le stockage froid…'), onClick: async () => (await import('./admin.js')).coldCopiesDialog(d) });
+      if (!d.cold_only) items.push({ label: tr('Essayer la lecture depuis la copie froide'), onClick: () => { location.hash = `#/play/${d.id}?cold=1`; } });
+    }
   }
   return moreMenu(items);
 }

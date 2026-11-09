@@ -75,8 +75,11 @@ let toldActive = false;
 let tellTimer = null;
 const nativeDownloads = () => (window.NexisAndroid && window.NexisAndroid.downloads ? (j) => window.NexisAndroid.downloads(j)
   : window.nexisNative && window.nexisNative.downloads ? (j) => window.nexisNative.downloads(j) : null);
+const NET_WAIT = 30 * 60 * 1000; // réseau perdu : l'application reste éveillée 30 min pour réessayer
+const isBusy = (rec) => ['queued', 'preparing', 'downloading'].includes(rec.state)
+  || (rec.state === 'paused' && Date.now() - (rec.pausedAt || 0) < NET_WAIT);
 function track(rec, gone = false) {
-  if (!gone && ['queued', 'preparing', 'downloading'].includes(rec.state)) busy.set(rec.key, rec); else busy.delete(rec.key);
+  if (!gone && isBusy(rec)) busy.set(rec.key, rec); else busy.delete(rec.key);
   tellNative();
 }
 function tellNative() {
@@ -96,7 +99,8 @@ function tellNative() {
       send(JSON.stringify({ active: list.length,
         title: it ? (it.type === 'episode' ? `${it.show || ''} · ${it.title || ''}` : it.title || '') : '',
         state: cur ? cur.state : '', percent: Math.round(pct * 100),
-        text: cur ? (cur.state === 'preparing' ? tr('Préparation sur le serveur…') : cur.state === 'downloading' ? tr('Téléchargement…') : tr('En attente')) : '' }));
+        text: cur ? (cur.state === 'preparing' ? tr('Préparation sur le serveur…') : cur.state === 'downloading' ? tr('Téléchargement…')
+          : cur.state === 'paused' ? tr('En attente du réseau…') : tr('En attente')) : '' }));
     } catch { /* ancienne application */ }
   };
   if (active !== toldActive) { clearTimeout(tellTimer); now(); return; } // début ou fin : tout de suite
@@ -135,9 +139,51 @@ export async function download(uid, item, opts) {
 
 // ------------------------------------------------------------------ file : une préparation / un transfert à la fois
 let running = false;
+// Coupure de réseau (Wi-Fi instable, application mise en arrière-plan par le système…) : on réessaie tout seul,
+// de plus en plus espacé (10 s, 20 s, 40 s, puis chaque minute), et tout de suite quand la connexion revient ou que
+// Nexis repasse au premier plan. Plus besoin de rouvrir la page Téléchargements.
+let resumeTimer = null;
+let resumeDelay = 0;
+function scheduleResume() {
+  clearTimeout(resumeTimer);
+  resumeDelay = Math.min(resumeDelay ? resumeDelay * 2 : 10000, 60000);
+  resumeTimer = setTimeout(() => { resumeTimer = null; pump(); }, resumeDelay);
+}
+function resumeNow() {
+  if (!resumeTimer) return; // rien en attente
+  clearTimeout(resumeTimer);
+  resumeTimer = null;
+  resumeDelay = 0;
+  pump();
+}
+window.addEventListener('online', resumeNow);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) resumeNow(); });
+
+// le serveur répond-il ? (on vérifie avant de déclarer la connexion perdue)
+async function reachable() {
+  try {
+    const r = await fetch('/api/status', { cache: 'no-store', headers: { 'X-Seance': '1' }, signal: AbortSignal.timeout(10000) });
+    return r.status < 500;
+  } catch { return false; }
+}
+// erreur passagère (réseau, morceau coupé, serveur ou proxy momentanément indisponible) : à réessayer, pas une erreur
+const transient = (e) => !navigator.onLine || e instanceof TypeError || e.name === 'AbortError' || e.name === 'TimeoutError'
+  || e.status === 0 || e.status >= 500 || e.incomplete || /^HTTP 5\d\d$/.test(e.message);
+// petites reprises sur place : jusqu'à ~30 s à attendre que le serveur réponde de nouveau
+async function waitNetwork() {
+  for (const ms of [1000, 2000, 4000, 8000, 15000]) {
+    await new Promise((ok) => setTimeout(ok, ms));
+    if (await reachable()) return true;
+  }
+  return false;
+}
+const retries = new Map(); // clé -> { got, n } : reprises sans progrès (évite de tourner en rond)
+
 export async function pump() {
-  if (running || !supported() || !navigator.onLine) return;
+  if (running || !supported()) return;
+  if (!navigator.onLine) { if ((await all('downloads')).some((d) => d.state === 'paused')) scheduleResume(); return; }
   running = true;
+  let stalled = false;
   try {
     await runSmart();
     for (;;) {
@@ -147,13 +193,14 @@ export async function pump() {
       // les deux suivants : préparation demandée tout de suite, le serveur avance pendant ce transfert-ci
       for (const later of pending.slice(1, 3)) if (!later.job) requestJob(later).catch(() => {});
       const ok = await work(next);
-      if (!ok) break; // réseau coupé : on reprendra au retour de la connexion
+      if (!ok) { stalled = true; break; } // réseau coupé : nouvel essai automatique
+      resumeDelay = 0;
     }
   } finally {
     running = false;
-    // file terminée ou interrompue (réseau coupé) : l'application peut se rendormir
-    for (const [k, d] of busy) if (d.state !== 'downloading' && d.state !== 'preparing') busy.delete(k);
-    if (!navigator.onLine) busy.clear();
+    if (stalled) scheduleResume();
+    // file terminée, ou réseau absent depuis plus de 30 min : l'application peut se rendormir
+    for (const [k, d] of busy) if (!isBusy(d) || (!stalled && d.state === 'paused')) busy.delete(k);
     tellNative();
   }
 }
@@ -187,7 +234,7 @@ async function transfer(rec, upto, cache) {
     if (res.status === 404) { const e = new Error('gone'); e.gone = true; throw e; }
     if (res.status !== 206 && res.status !== 200) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
-    if (blob.size !== end - start + 1) throw new Error('morceau incomplet');
+    if (blob.size !== end - start + 1) { const e = new Error('morceau incomplet'); e.incomplete = true; throw e; } // connexion coupée
     await cache.put(mediaUrl(rec.key, `chunk-${n}`), new Response(blob));
     done.add(n);
     let got = rec.got;
@@ -212,6 +259,7 @@ async function resetChunks(rec, cache, patch) {
 async function work(rec) {
   const cache = await caches.open(MEDIA);
   try {
+    if (rec.unstable) await save(rec, { unstable: false }); // reste d'une coupure (application fermée entre-temps)
     if (!rec.posterSaved) {
       const art = rec.item.type === 'episode' ? (rec.item.thumb || rec.item.show_thumb) : rec.item.thumb;
       if (art) {
@@ -284,8 +332,19 @@ async function work(rec) {
         : tr('Espace de stockage épuisé. Autorisez plus d’espace ou supprimez un téléchargement.') });
       return true;
     }
-    if (!navigator.onLine || e.status === 0 || e instanceof TypeError) {
-      await save(rec, { state: 'paused' });
+    if (transient(e)) {
+      // le serveur répond de nouveau (coupure brève) : on reprend tout de suite, là où on en était
+      const r = retries.get(rec.key);
+      const n = r && r.got === rec.got ? r.n + 1 : 0;
+      retries.set(rec.key, { got: rec.got, n });
+      if (n < 6) {
+        await save(rec, { unstable: true }); // affiché : « Connexion instable : nouvel essai… »
+        const back = await waitNetwork();
+        await save(rec, { unstable: false });
+        if (back) return true;
+      }
+      retries.delete(rec.key);
+      await save(rec, { state: 'paused', pausedAt: rec.state === 'paused' ? rec.pausedAt : Date.now() });
       return false;
     }
     await save(rec, { state: 'error', error: e.message });

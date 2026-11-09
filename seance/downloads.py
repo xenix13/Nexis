@@ -169,7 +169,7 @@ class Downloads:
     def _estimate(self, job):
         p = job.plan
         if p["mode"] == "copy":
-            return os.path.getsize(job.source) if not media.is_strm(job.source) else 0
+            return os.path.getsize(job.source) if not media.is_remote(job.source) else 0
         return int((p["kbps"] + 192) * 1000 / 8 * job.duration)
 
     def _prepare(self, job):

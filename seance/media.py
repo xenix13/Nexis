@@ -42,8 +42,18 @@ def strm_url(path):
     return url
 
 
+COLD = "cold:"  # copie froide lue par l'adresse locale de Nexis (voir cold.py) : « cold:http://127.0.0.1:…/cold/<jeton> »
+
+
+def is_remote(path):
+    """Source lue par le réseau (.strm, copie froide distante) : pas de lecture directe du fichier."""
+    return bool(path) and (path.startswith(COLD) or is_strm(path))
+
+
 def input_args(path):
-    """Arguments d'entrée de ffmpeg / ffprobe pour un fichier de bibliothèque (local ou .strm)."""
+    """Arguments d'entrée de ffmpeg / ffprobe pour un fichier de bibliothèque (local, .strm ou copie froide)."""
+    if path.startswith(COLD):
+        return [*REMOTE_ONLY, "-i", path[len(COLD):]]
     if is_strm(path):
         return [*REMOTE_ONLY, "-i", strm_url(path)]
     return [*LOCAL_ONLY, "-i", path]

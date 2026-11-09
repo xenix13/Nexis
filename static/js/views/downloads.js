@@ -14,13 +14,14 @@ const groupOf = (d) => (d.item.type === 'episode' ? `show:${d.item.show_id || d.
 
 function status(d) {
   if (d.state === 'done') return d.item.watched ? tr('Vu') : (d.item.position ? tr('Commencé · {p1} restantes', { p1: fmtDuration(d.item.duration - d.item.position) }) : tr('Prêt à regarder'));
+  if (d.unstable && (d.state === 'downloading' || d.state === 'preparing')) return tr('Connexion instable : nouvel essai…');
   if (d.state === 'preparing' && d.waiting) return tr('En pause pendant une lecture sur le serveur');
   if (d.state === 'preparing') {
     const p = tr(d.convert ? 'Conversion sur le serveur… {p} %' : 'Préparation sur le serveur… {p} %', { p: Math.round((d.prep || 0) * 100) });
     return d.got ? `${p} · ${tr('{n} reçus', { n: size(received(d)) })}` : p; // récupéré pendant la préparation
   }
   if (d.state === 'downloading') return tr('Téléchargement… {p1} %', { p1: d.chunks ? Math.round((d.got / d.chunks) * 100) : 0 });
-  if (d.state === 'paused') return tr('En pause : reprendra avec la connexion');
+  if (d.state === 'paused') return tr('En attente du réseau : nouvel essai automatique');
   if (d.state === 'error') return d.error || tr('Échec');
   return tr('En attente');
 }

@@ -1821,3 +1821,9 @@ html.has-audio .bulk-bar { bottom: 108px; }
 /* aperçus du magasin : la texture reste sous la barre et le panneau, comme dans l'interface */
 .store-preview > * { position: relative; z-index: 1; }
 .store-preview::before, .store-preview::after { z-index: 0; }
+
+/* stockage froid : bibliothèques et moyen de suppression */
+.cold-libs { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 14px; }
+.cold-lib { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.cold-lib .check { display: flex; align-items: center; gap: 8px; min-width: 180px; }
+.cold-bar { margin-top: 6px; }

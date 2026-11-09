@@ -241,6 +241,7 @@ export async function renderPlayer(root, rk, ctx) {
         no_direct: forceHls || undefined,
         caps: airplay ? AIRPLAY_CAPS : browserCaps(), cast: airplay || undefined,
         playlist: ctx.query.get('playlist') || undefined, shuffle: ctx.query.get('shuffle') || undefined,
+        cold: (isAdmin && ctx.query.get('cold') === '1') || undefined, // essai de la copie sur le stockage froid
         audio: audioSel ? audioSel.id : null, subtitle: subSel ? subSel.id : 0, replace: previous || undefined });
     } catch (e) { if (seq === startSeq) showError(e.message, true); return; }
     if (destroyed || seq !== startSeq) {

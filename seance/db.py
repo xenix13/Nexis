@@ -687,6 +687,69 @@ MIGRATIONS = [
             OLD.created_at, OLD.last_seen, OLD.last_seen - OLD.created_at, json_extract(OLD.params, '$.peer') IS NOT NULL);
     END;
     """,
+    # 28 : stockage froid (copies des fichiers sur d'autres stockages, file d'archivage)
+    """
+    CREATE TABLE cold_stores(
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        conf TEXT NOT NULL DEFAULT '{}',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        position INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+    );
+    CREATE TABLE cold_copies(
+        id INTEGER PRIMARY KEY,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        store_id INTEGER NOT NULL REFERENCES cold_stores(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        sha256 TEXT,
+        extras TEXT NOT NULL DEFAULT '[]',
+        archived_at INTEGER NOT NULL,
+        verified_at INTEGER,
+        UNIQUE(item_id, store_id)
+    );
+    CREATE INDEX cold_copies_store ON cold_copies(store_id, name);
+    CREATE TABLE cold_jobs(
+        id INTEGER PRIMARY KEY,
+        item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+        store_id INTEGER NOT NULL REFERENCES cold_stores(id) ON DELETE CASCADE,
+        state TEXT NOT NULL DEFAULT 'queued',
+        error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(item_id, store_id)
+    );
+    """,
+    # 29 : libérer de la place (fichiers archivés puis supprimés de la bibliothèque), titres à garder, cache local
+    """
+    CREATE TABLE cold_free(
+        item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+        root_id INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        size INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        approved_at INTEGER,
+        delete_after INTEGER,
+        freed_at INTEGER,
+        method TEXT,
+        error TEXT
+    );
+    CREATE INDEX cold_free_state ON cold_free(state, root_id);
+    CREATE TABLE cold_keep(
+        item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        user_id INTEGER
+    );
+    CREATE TABLE cold_cache(
+        item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        fetched_at INTEGER NOT NULL,
+        last_used INTEGER NOT NULL
+    );
+    """,
 ]
 
 

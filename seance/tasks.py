@@ -603,8 +603,27 @@ class BackupTask(Task):
         return f"{b['name']} ({b['size'] / 1e6:.1f} Mo)"
 
 
+class ColdFreeTask(Task):
+    id = "cold_free"
+    name = "Libérer de la place (stockage froid)"
+    description = ("Titres que personne n'a regardés depuis le nombre de jours choisi (Paramètres → Stockage froid) : "
+                   "proposés, ou copiés d'office sur le stockage froid, puis leur fichier quitte la bibliothèque une fois "
+                   "le délai passé. Sans effet tant que la règle n'est pas activée.")
+    category = "Maintenance"
+    default = {"mode": "daily", "time": "05:10"}
+
+    def run(self, ctx, job, opts):
+        try:
+            r = ctx.coldfree.run(job)
+        finally:
+            ctx.db.release()
+        job.progress = 1
+        return (f"{r['new']} nouveau(x), {r['queued']} copie(s) demandée(s), {r['pending']} en attente de suppression, "
+                f"{r['freed']} libéré(s), {r['errors']} erreur(s)")
+
+
 TASKS = [ScanTask(), MetadataTask(), TraktTask(), ChapterImagesTask(), IntroTask(), SubtitlesTask(), OpenSubtitlesTask(), WhisperTask(), LiveTask(),
-         CleanupTask(), BackupTask()]
+         CleanupTask(), BackupTask(), ColdFreeTask()]
 
 
 # ------------------------------------------------------------------ planification

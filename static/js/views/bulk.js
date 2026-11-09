@@ -127,6 +127,10 @@ export function bulkSelection(grid, cards, { downloadDialog, canDownload }) {
       if (rest.length) await run(tr('Ajoutés à la collection'), (id) => post(`/api/admin/collections/${cid}/items`, { item_id: id }), rest);
       else toast(tr('Collection créée'), 'ok');
     }) : null,
+    admin ? btn(tr('Archiver…'), 'backup', async () => {
+      const ids = [...picked];
+      (await import('./admin.js')).archiveDialog(ids, plural(ids.length, '{n} titre', '{n} titres'));
+    }) : null,
     h('button.btn.small.primary.bulk-done', { type: 'button', onclick: () => toggle(false) }, tr('Terminé')));
 
   // en mode sélection, un clic coche au lieu d'ouvrir

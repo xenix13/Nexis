@@ -109,6 +109,9 @@ def main(argv=None):
     ctx.tasks.start()
     ctx.fed.start()
     ctx.dlna.start(args.port)
+    ctx.http_port = args.port
+    if ctx.db.scalar("SELECT 1 FROM cold_jobs WHERE state IN ('queued','running') LIMIT 1"):
+        ctx.cold.start()  # archivages interrompus par l'arrêt de Nexis
     threading.Timer(60, ctx.prefetch_missing_subtitles).start()
 
     exit_code = [0]

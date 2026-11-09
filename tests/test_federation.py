@@ -19,7 +19,7 @@ import threading
 import time
 import unittest
 
-from tests.test_api import STATIC, Client, media_root, wait_scan
+from tests.test_api import hls_segment, STATIC, Client, media_root, wait_scan
 
 from seance.api import Ctx, build_app
 from seance.web import Server, make_handler
@@ -29,6 +29,7 @@ def start_server(work, name):
     ctx = Ctx(os.path.join(work, name), STATIC)
     ctx.fed.port = 0
     server = Server(("127.0.0.1", 0), make_handler(build_app(ctx)))
+    ctx.http_port = server.server_address[1]  # comme __main__ : adresse locale des copies froides
     threading.Thread(target=server.serve_forever, daemon=True).start()
     ctx.fed.start(loop=False)
     return ctx, server, f"http://127.0.0.1:{server.server_address[1]}"
@@ -122,6 +123,46 @@ class FederationTest(unittest.TestCase):
             cls.a.fed.sync(cls.peer_on_a)
             cls.b.fed.sync(cls.peer_on_b)
 
+
+    def test_40_peer_as_cold_storage(self):
+        """Un serveur lié garde les archives de l'autre (place réservée par son administrateur)."""
+        st, r = self.admin_b.call("GET", "/api/admin/cold")
+        self.assertIsNone(r["available"]["peer"])
+        # A n'accueille rien tant que son administrateur ne réserve pas de place
+        st, r = self.admin_b.call("POST", "/api/admin/cold/stores", {"kind": "peer", "name": "Chez A", "conf": {"peer": self.peer_on_b}})
+        self.assertEqual(st, 400, r)
+        self.assertIn("accueille pas", r["error"])
+        self.admin_a.call("PUT", "/api/admin/cold/extra", {"host_gb": 5})
+        st, r = self.admin_b.call("POST", "/api/admin/cold/stores", {"kind": "peer", "name": "Chez A", "conf": {"peer": self.peer_on_b}})
+        self.assertEqual(st, 200, r)
+        store = r["id"]
+        movie = self.b.db.one("SELECT * FROM items WHERE type='movie' AND peer_id IS NULL AND key LIKE '%Ciel.Bas%'")
+        st, r = self.admin_b.call("POST", "/api/admin/cold/archive", {"ids": [movie["id"]], "store": store})
+        self.assertEqual(r["queued"], 1, r)
+        for _ in range(300):
+            st, r = self.admin_b.call("GET", "/api/admin/cold")
+            if not [j for j in r["jobs"] if j["state"] in ("queued", "running")]:
+                break
+            time.sleep(0.2)
+        self.assertEqual(r["jobs"], [], r["jobs"])
+        hosted = os.path.join(self.a.data_dir, "cold-hosted", str(self.peer_on_a))
+        files = [os.path.join(d, f) for d, _, fs in os.walk(hosted) for f in fs]
+        self.assertEqual([os.path.getsize(f) for f in files], [movie["file_size"]], files)
+        st, x = self.admin_a.call("GET", "/api/admin/cold/extra")
+        self.assertEqual([h["bytes"] for h in x["hosted"]], [movie["file_size"]])
+        # lecture depuis la copie gardée par A
+        st, p = self.admin_b.call("POST", "/api/play", {"id": str(movie["id"]), "cold": True})
+        self.assertEqual(st, 200, p)
+        self.assertTrue(self.b.transcoder.get(p["stream"]).path.startswith("cold:"))
+        n, data, _ = hls_segment(self.admin_b, p["url"], at=5.0)
+        self.assertGreater(len(data), 1000)
+        self.admin_b.call("POST", "/api/stop", {"stream": p["stream"]})
+        # copie retirée : effacée chez A aussi
+        st, r = self.admin_b.call("DELETE", f"/api/admin/cold/items/{movie['id']}/{store}")
+        self.assertEqual(st, 200, r)
+        self.assertEqual([f for d, _, fs in os.walk(hosted) for f in fs], [])
+        self.admin_b.call("DELETE", f"/api/admin/cold/stores/{store}")
+        self.admin_a.call("PUT", "/api/admin/cold/extra", {"host_gb": 0})
     def login(self, base, username, password):
         c = Client(base)
         st, r = c.call("POST", "/api/login", {"username": username, "password": password})

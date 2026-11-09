@@ -278,7 +278,11 @@ class Scanner:
             except Exception as e:
                 log.exception("Fichier %s", path)
                 self._err(f"{os.path.basename(path)} : {e}")
-        gone = [r["id"] for k, r in existing.items() if k not in seen
+        # fichier disparu mais copié sur un stockage froid : le titre reste (lu depuis la copie), avec tout ce qui le décrit
+        archived = {r["item_id"] for r in db.all(
+            "SELECT DISTINCT c.item_id FROM cold_copies c JOIN items i ON i.id=c.item_id WHERE i.library_id=? "
+            "AND c.verified_at IS NOT NULL", (lib["id"],))}
+        gone = [r["id"] for k, r in existing.items() if k not in seen and r["id"] not in archived
                 and any(k.startswith(os.path.join(r0, "")) for r0 in reachable)]
         for i in range(0, len(gone), 500):
             chunk = gone[i:i + 500]

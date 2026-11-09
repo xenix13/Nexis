@@ -1217,7 +1217,14 @@ class SeanceTest(unittest.TestCase):
         st, d1 = c.call("GET", "/api/me/wallpaper/daily")
         st, d2 = c.call("GET", "/api/me/wallpaper/daily")
         self.assertEqual(d1, d2)
-        self.assertTrue(d1["path"].startswith(f"/library/metadata/{polar['id']}/art/"), d1)
+        # le titre du jour dépend de la date : il est l'un des titres personnels de la personne (liste, notés, commencés)
+        uid = self.ctx.db.scalar("SELECT id FROM users WHERE username='lea'")
+        mine = {r["id"] for r in self.ctx.db.all(
+            "SELECT i.id FROM items i WHERE i.backdrop IS NOT NULL AND i.backdrop<>'' AND (i.id IN (SELECT item_id FROM watchlist "
+            "WHERE user_id=?) OR i.id IN (SELECT item_id FROM stars WHERE user_id=? AND stars>=4) OR CAST(i.id AS TEXT) IN "
+            "(SELECT COALESCE(show_key, rating_key) FROM progress WHERE user_id=?))", (uid, uid, uid))}
+        self.assertIn(int(polar["id"]), mine)
+        self.assertIn(int(re.match(r"^/library/metadata/(\d+)/art/", d1["path"]).group(1)), mine, d1)
         # image envoyée : réencodée en JPEG, servie à son propriétaire seulement
         png = os.path.join(tempfile.mkdtemp(), "fond.png")
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=teal:s=2400x1350", "-frames:v", "1", png], check=True)

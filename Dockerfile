@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 \
 # ffmpeg d'Ubuntu (NVENC, VAAPI, QSV compilés) ; pilotes VAAPI AMD, et Intel (n'existe qu'en amd64)
 RUN apt-get update \
  && INTEL=$([ "$(dpkg --print-architecture)" = amd64 ] && echo intel-media-va-driver || true) \
- && apt-get install -y --no-install-recommends python3 ffmpeg ca-certificates openssl mesa-va-drivers $INTEL \
+ && apt-get install -y --no-install-recommends python3 ffmpeg ca-certificates openssl curl mesa-va-drivers $INTEL \
  && rm -rf /var/lib/apt/lists/* \
  && (userdel -r ubuntu 2>/dev/null || true) \
  && useradd --uid 1000 --user-group --home-dir /data --shell /usr/sbin/nologin seance \

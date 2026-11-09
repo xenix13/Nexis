@@ -33,6 +33,7 @@ MOUNT_ROOT = os.environ.get("SEANCE_MOUNT_ROOT", "/mnt/seance")
 APP_USER = os.environ.get("SEANCE_USER", "seance")
 MOUNTINFO = os.environ.get("SEANCE_MOUNTINFO", "/proc/self/mountinfo")
 MARK = "# seance-smb:"
+COLD = "cold-"  # partages d'un stockage froid : les seuls montés en écriture
 RETRY_EVERY = 300
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
@@ -141,7 +142,8 @@ def entries():
             opts = dict(o.split("=", 1) if "=" in o else (o, "") for o in fields[3].split(","))
             out.append({"name": name, "host": m.group(1) if m else "", "share": m.group(2) if m else "",
                         "subdir": (m.group(3) or "") if m else "", "path": fstab_unescape(fields[1]),
-                        "version": opts.get("vers", "auto"), "credentials": opts.get("credentials", "")})
+                        "version": opts.get("vers", "auto"), "credentials": opts.get("credentials", ""),
+                        "writable": "rw" in opts and name.startswith(COLD)})
     return out
 
 
@@ -311,8 +313,12 @@ class Mounts:
             raise MountError("Version SMB inconnue")
         if need_password and not password:
             raise MountError("Mot de passe requis")
+        # écriture : seulement pour un stockage froid de Nexis (« cold-… ») ; les bibliothèques restent en lecture seule
+        writable = bool(a.get("writable"))
+        if writable and not name.startswith(COLD):
+            raise MountError("Seul un stockage froid peut être monté en écriture")
         return dict(name=name, host=host, share=share, subdir=subdir, username=username, password=password,
-                    domain=domain, version=version)
+                    domain=domain, version=version, writable=writable)
 
     # -- commandes
     def status(self, _a):
@@ -397,8 +403,10 @@ class Mounts:
             failures = []
             for vers in attempts:
                 # nosuid/nodev/noexec : rien de ce qui vient du NAS ne peut être exécuté sur le serveur
-                opts = [f"credentials={cred}", "ro", "nosuid", "nodev", "noexec", f"uid={uid}", f"gid={gid}",
-                        "file_mode=0444", "dir_mode=0555",
+                opts = [f"credentials={cred}", "rw" if v["writable"] else "ro", "nosuid", "nodev", "noexec",
+                        f"uid={uid}", f"gid={gid}",
+                        "file_mode=0644" if v["writable"] else "file_mode=0444",
+                        "dir_mode=0755" if v["writable"] else "dir_mode=0555",
                         "iocharset=utf8", "_netdev", "nofail", "x-systemd.mount-timeout=30"]
                 if vers:
                     opts.append(f"vers={vers}")
