@@ -386,6 +386,27 @@ films.mondomaine.fr {
 
 Avec nginx, ajouter `proxy_read_timeout 120s;` et `proxy_buffering off;` (nécessaire aux mises à jour en direct de « Regarder ensemble »).
 
+## Stockage froid
+
+Une copie des films et épisodes sur un autre stockage, pour pouvoir libérer de la place sur les disques de la bibliothèque. Le titre garde dans Nexis son affiche, son résumé, son historique et ses sous-titres téléchargés : il s'affiche partout comme avant. Quand son fichier n'est plus dans la bibliothèque, Nexis le lit depuis la copie, avec quelques secondes de plus au démarrage. *Paramètres → Stockage froid*.
+
+| Type | Pour | Lecture |
+|---|---|---|
+| Dossier de cette machine | disque USB, NAS déjà monté par le système, volume Docker | directe, comme un fichier de la bibliothèque |
+| Partage SMB (NAS) | NAS, Hetzner Storage Box (SMB) — monté en écriture par Nexis (installation par script ou paquet ; avec Docker, montez-le sur l'hôte et choisissez « Dossier ») | directe |
+| SFTP | Hetzner Storage Box, NAS, serveur SSH (par `curl`) | par morceaux, relayée par Nexis |
+| WebDAV | Nextcloud, Synology, Hetzner Storage Box | par morceaux |
+| S3 et compatibles | Backblaze B2, Wasabi, Scaleway, OVH, AWS, MinIO (envoi en plusieurs parties, fichiers de plusieurs dizaines de Go) | par morceaux |
+| rclone | tout autre service déjà configuré avec `rclone config` (pCloud, Mega, Google Drive…), si rclone est installé | par morceaux |
+
+- **Plusieurs stockages** à la fois, et une copie d'un même titre sur plusieurs d'entre eux. À la lecture, un dossier (disque, partage monté) passe avant un stockage en ligne.
+- **Archiver** : sur la fiche d'un titre, menu ⋯ → *Archiver sur un stockage froid…* (une série ou une saison : tous ses épisodes), ou par la sélection multiple d'une bibliothèque. Les copies se font en tâche de fond, une à la fois ; leur débit est réduit pendant qu'une vidéo est regardée (10 Mo/s par défaut, réglable). Les sous-titres posés à côté du fichier sont copiés avec lui. Sur le stockage, les fichiers gardent l'arborescence de la bibliothèque (`Films/Titre (2020)/Titre.mkv`) : ils restent utilisables sans Nexis.
+- **Vérification** : une copie ne compte qu'une fois vérifiée (taille, et morceaux relus au début, à la fin et au hasard). Un échec reste visible dans la page avec sa raison et un bouton *Réessayer*.
+- **Rien n'est supprimé de la bibliothèque** : les bibliothèques restent en lecture seule. Si un fichier en disparaît (supprimé à la main ou par Radarr / Sonarr), le scan garde le titre puisqu'il a une copie vérifiée.
+- **Essayer** : menu ⋯ → *Essayer la lecture depuis la copie froide* lit la copie même si le fichier est encore là ; *Copies sur le stockage froid…* liste les copies et permet d'en supprimer une (pas la dernière d'un titre absent de la bibliothèque).
+- **SFTP** : au premier essai, Nexis montre l'empreinte de la clé du serveur à confirmer ; il refuse ensuite tout serveur qui présente une autre clé. Les mots de passe ne sont jamais renvoyés à l'interface ni passés en ligne de commande.
+- **Fichiers `.strm`** : un `.strm` posé dans une bibliothèque (une adresse http(s) vers une vidéo) se lit comme un fichier ; Nexis relaie le flux.
+
 ## Serveurs liés
 
 Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et une résidence secondaire, peuvent être reliés dans *Paramètres → Serveurs liés* :
@@ -795,6 +816,7 @@ L'interface (`static/`) est en JavaScript, sans étape de compilation.
 
 ### À faire
 - [ ] « Regarder ensemble » : seconde passe d'optimisation après les tests réels
+- [ ] Stockage froid : un serveur lié comme stockage, archivage automatique des titres non vus depuis 30 jours, suppression des originaux par Radarr / Sonarr, titres ramenés en local (budget de place)
 
 ### Réalisé
 - Interface multi-utilisateurs, profils, code PIN, contrôle parental, photos et galerie d'avatars, interface enfant

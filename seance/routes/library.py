@@ -402,6 +402,11 @@ def register(app, ctx, x):
                     d["path"] = r["key"]
             elif req.user["is_admin"]:
                 d["path"] = r["key"]
+            # stockage froid : copie(s) ailleurs ; « cold_only » : le fichier n'est plus que là (lecture un peu plus lente)
+            if not r["peer_id"]:
+                n = db.scalar("SELECT COUNT(*) FROM cold_copies WHERE item_id=? AND verified_at IS NOT NULL", (r["id"],))
+                d["archived"] = bool(n)
+                d["cold_only"] = bool(n) and ctx.cold.local_missing(r)
         elif d["type"] == "show":
             seasons = db.all(CARD_SQL + "WHERE i.parent_id=? AND i.type='season' ORDER BY (i.idx=0), i.idx", (r["id"],))
             d["seasons"] = attach_state(uid, [card(s) for s in seasons])

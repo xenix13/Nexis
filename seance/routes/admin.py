@@ -718,6 +718,7 @@ def register(app, ctx, x):
                 e = "Avec Docker, les partages se montent sur l'hôte puis se transmettent au conteneur (volumes du docker-compose.yml)"
             return {"available": False, "error": i18n.tr(str(e)), "shares": [], "env": None}
         libs = db.all("SELECT id, name, paths FROM libraries WHERE peer_id IS NULL")
+        st["shares"] = [sh for sh in st["shares"] if not sh["name"].startswith("cold-")]  # stockages froids : leur page
         for sh in st["shares"]:
             sh["libraries"] = [l["name"] for l in libs if any(
                 p == sh["path"] or p.startswith(sh["path"] + os.sep) for p in json.loads(l["paths"]))]

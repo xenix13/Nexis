@@ -141,7 +141,7 @@ class App:
         return deco
 
     def dispatch(self, req):
-        if req.path.startswith(("/api/", "/fed/", "/dlna/", "/apps/")) or req.path in self.plain_paths:
+        if req.path.startswith(("/api/", "/fed/", "/dlna/", "/apps/", "/cold/")) or req.path in self.plain_paths:
             allowed = False
             for method, regex, fn, opts in self.routes:
                 m = regex.match(req.path)
