@@ -16,7 +16,12 @@ Types :
   - sftp   : un serveur SSH (Hetzner Storage Box, NAS…) — par curl, clé du serveur vérifiée (empreinte retenue) ;
   - webdav : Nextcloud, Synology, Hetzner Storage Box… ;
   - s3     : AWS et compatibles (Backblaze B2, Wasabi, Scaleway, OVH, MinIO), envoi en plusieurs parties ;
-  - rclone : n'importe quel « remote » rclone déjà configuré (pCloud, Mega, Google Drive…), si rclone est installé.
+  - rclone : n'importe quel « remote » rclone déjà configuré (pCloud, Mega, Google Drive…), si rclone est installé ;
+  - peer   : un serveur de la fédération qui accepte d'accueillir des archives (place réservée par son administrateur),
+             par le canal chiffré des serveurs liés.
+
+Cache local : un titre lu depuis un stockage en ligne est ramené dans <données>/cold-cache, avec les épisodes qui
+suivent ; la place prise reste dans un budget, les plus anciens repartent d'abord (la copie froide, elle, reste).
 """
 import hashlib
 import http.client
@@ -41,7 +46,7 @@ from .remote_storage import S3 as S3Signer
 
 log = logging.getLogger("seance.cold")
 
-KINDS = ("local", "smb", "sftp", "webdav", "s3", "rclone")
+KINDS = ("local", "smb", "sftp", "webdav", "s3", "rclone", "peer")
 SECRETS = ("password", "secret_key")
 BLOCK = 1 << 20
 SIDECAR_EXT = (".srt", ".ass", ".ssa", ".vtt", ".sub", ".idx", ".sup")
@@ -657,7 +662,93 @@ class Rclone(Backend):
                 raise
 
 
-BACKENDS = {"local": Local, "smb": SMB, "sftp": SFTP, "webdav": WebDAV, "s3": S3, "rclone": Rclone}
+PEER_CHUNK = 16 * 1024 * 1024
+
+
+class Peer(Backend):
+    """Archives gardées par un serveur lié (canal chiffré des serveurs liés, morceaux de 16 Mo)."""
+
+    def _fed(self):
+        from .federation import FedError
+        fed = self.cold.ctx.fed
+        try:
+            return fed, fed.peer(int(self.conf["peer"])), FedError
+        except FedError as e:
+            raise ColdError(str(e))
+
+    def _req(self, method, path, body=None, headers=None, timeout=120):
+        fed, peer, FedError = self._fed()
+        try:
+            return fed.request(peer, method, path, body=body, headers=headers, timeout=timeout)
+        except FedError as e:
+            raise ColdError(str(e))
+
+    def _json(self, method, path, body=None, ok=(200,)):
+        resp, close = self._req(method, path, body)
+        try:
+            raw = resp.read(1 << 20)
+        except OSError as e:
+            raise ColdError(i18n.tr("Stockage injoignable : {e}").format(e=e))
+        finally:
+            close()
+        try:
+            data = json.loads(raw or b"{}")
+        except ValueError:
+            data = {}
+        if resp.status == 404 and 404 in ok:
+            return None
+        if resp.status not in ok:
+            raise ColdError(data.get("error") or f"HTTP {resp.status}")
+        return data
+
+    @staticmethod
+    def _q(name):
+        return urllib.parse.quote(safe_name(name), safe="")
+
+    def put(self, name, reader, size):
+        off, q = 0, self._q(name)
+        while True:
+            chunk = bytearray()
+            while len(chunk) < PEER_CHUNK:
+                b = reader.read(min(BLOCK, PEER_CHUNK - len(chunk)))
+                if not b:
+                    break
+                chunk += b
+            if chunk or not off:
+                self._json("PUT", f"/fed/cold/blob?name={q}&offset={off}", bytes(chunk))
+                off += len(chunk)
+            if not chunk or off >= size:
+                break
+        self._json("POST", f"/fed/cold/commit?name={q}&size={size}")
+
+    def size(self, name):
+        r = self._json("GET", f"/fed/cold/stat?name={self._q(name)}", ok=(200, 404))
+        return None if r is None else int(r.get("size") or 0)
+
+    def open(self, name, start, end):
+        resp, close = self._req("GET", f"/fed/cold/blob?name={self._q(name)}", headers={"Range": f"bytes={start}-{end}"})
+        try:
+            if resp.status not in (200, 206):
+                raise ColdError(f"HTTP {resp.status}")
+            while True:
+                b = resp.read(BLOCK)
+                if not b:
+                    break
+                yield b
+        finally:
+            close()
+
+    def delete(self, name):
+        self._json("DELETE", f"/fed/cold/blob?name={self._q(name)}", ok=(200, 404))
+
+    def free(self):
+        try:
+            return (self._json("GET", "/fed/cold/info") or {}).get("free")
+        except ColdError:
+            return None
+
+
+BACKENDS = {"local": Local, "smb": SMB, "sftp": SFTP, "webdav": WebDAV, "s3": S3, "rclone": Rclone, "peer": Peer}
 
 
 # ====================================================================== réglages d'un stockage
@@ -721,6 +812,11 @@ def valid_conf(kind, b, old=None):
         conf = {"remote": txt("remote", r"^[A-Za-z0-9_. -]{1,64}:[^\n\r]{0,300}$", 370),
                 "config": txt("config", r"^/[^\n\r]{1,500}$", 500, False)}
         return conf
+    if kind == "peer":
+        try:
+            return {"peer": int(b.get("peer") or old.get("peer") or 0)}
+        except (TypeError, ValueError):
+            raise ColdError("Serveur lié invalide")
     raise ColdError("Type de stockage inconnu")
 
 
@@ -798,6 +894,9 @@ class Cold:
         self.running = None    # tâche en cours (dict partagé avec _Reader : done, cancel)
         self.worker = None
         self.wake = threading.Event()
+        self.fetch_queue = []  # titres à ramener en local
+        self.fetching = None
+        self.fetcher = None
 
     # ---------------------------------------------------------------- stockages
     def stores(self, enabled_only=False):
@@ -819,8 +918,7 @@ class Cold:
             raise ColdError("Type de stockage inconnu")
         return cls(store["conf"], self)
 
-    @staticmethod
-    def available():
+    def available(self):
         """Types utilisables sur cette installation (et pourquoi pas)."""
         smb_ok = os.path.exists(os.environ.get("SEANCE_MOUNTD_SOCK") or mountd.SOCK) and not os.environ.get("SEANCE_DOCKER")
         return {"local": None,
@@ -828,7 +926,8 @@ class Cold:
                                                    "partage sur la machine, puis choisissez « Dossier de cette machine »."),
                 "sftp": None if curl_sftp() else i18n.tr("curl avec SFTP est nécessaire (apt install curl)."),
                 "webdav": None, "s3": None,
-                "rclone": None if rclone_exe() else i18n.tr("rclone n'est pas installé (apt install rclone, puis rclone config).")}
+                "rclone": None if rclone_exe() else i18n.tr("rclone n'est pas installé (apt install rclone, puis rclone config)."),
+                "peer": None if self.ctx.db.scalar("SELECT 1 FROM peers LIMIT 1") else i18n.tr("Aucun serveur lié : reliez d'abord un autre serveur Nexis.")}
 
     # ---------------------------------------------------------------- copies
     def copies(self, item_id):
@@ -841,11 +940,14 @@ class Cold:
         return bool(key) and not media.is_strm(key) and not os.path.isfile(key)
 
     def source(self, row, prefer_cold=False):
-        """Ce que ffmpeg doit lire pour cet élément : son fichier, sinon une copie froide (chemin d'un dossier, ou
-        « cold:http://127.0.0.1:…/cold/<jeton> »). None si rien n'est lisible."""
+        """Ce que ffmpeg doit lire pour cet élément : son fichier, sinon sa copie ramenée en local (cache), sinon une
+        copie froide (chemin d'un dossier, ou « cold:http://127.0.0.1:…/cold/<jeton> »). None si rien n'est lisible."""
         key = row["key"]
         if not prefer_cold and key and (media.is_strm(key) or os.path.isfile(key)):
             return key
+        cached = self.cached(row["id"])
+        if cached and not prefer_cold:
+            return cached
         copies = [c for c in self.copies(row["id"]) if c["enabled"] and c["verified_at"]]
         # dossiers (disque, partage monté) d'abord : lecture directe, la plus rapide
         copies.sort(key=lambda c: (c["kind"] not in ("local", "smb"), c["position"]))
@@ -877,6 +979,158 @@ class Cold:
         with self.lock:
             v = self.tokens.get(tok)
         return v if v and v["expires"] >= time.time() else None
+
+
+    # ---------------------------------------------------------------- cache local (titres ramenés)
+    def cache_conf(self):
+        db = self.ctx.db
+        return {"gb": float(db.setting("cold_cache_gb", "20") or 0), "keep_free_gb": float(db.setting("cold_cache_free_gb", "10") or 0),
+                "next": int(db.setting("cold_prefetch", "2") or 0)}
+
+    def cache_dir(self):
+        return os.path.join(self.ctx.data_dir, "cold-cache")
+
+    def cached(self, item_id):
+        r = self.ctx.db.one("SELECT * FROM cold_cache WHERE item_id=?", (item_id,))
+        if not r:
+            return None
+        if not os.path.isfile(r["path"]) or os.path.getsize(r["path"]) != r["size"]:
+            self.ctx.db.run("DELETE FROM cold_cache WHERE item_id=?", (item_id,))
+            return None
+        self.ctx.db.run("UPDATE cold_cache SET last_used=? WHERE item_id=?", (int(time.time()), item_id))
+        return r["path"]
+
+    def prefetch(self, row):
+        """Lecture depuis un stockage en ligne : ce titre, et les épisodes suivants de la série, ramenés en local."""
+        c = self.cache_conf()
+        if c["gb"] <= 0:
+            return 0
+        db = self.ctx.db
+        ids = [row["id"]]
+        if row.get("type") == "episode" and row.get("show_id") and c["next"] > 0:
+            eps = db.all("SELECT e.id FROM items e LEFT JOIN items s ON s.id=e.parent_id WHERE e.show_id=? AND e.type='episode' "
+                         "ORDER BY COALESCE(s.idx, 0)=0, s.idx, e.idx", (row["show_id"],))
+            order = [e["id"] for e in eps]
+            if row["id"] in order:
+                ids += order[order.index(row["id"]) + 1:order.index(row["id"]) + 1 + c["next"]]
+        added = 0
+        with self.lock:
+            for i in ids:
+                if i not in self.fetch_queue and i != self.fetching:
+                    self.fetch_queue.append(i)
+                    added += 1
+            if self.fetch_queue and not (self.fetcher and self.fetcher.is_alive()):
+                self.fetcher = threading.Thread(target=self._fetch_loop, daemon=True, name="cold-cache")
+                self.fetcher.start()
+        return added
+
+    def _fetch_loop(self):
+        db = self.ctx.db
+        try:
+            while True:
+                with self.lock:
+                    if not self.fetch_queue:
+                        self.fetching = None
+                        return
+                    self.fetching = self.fetch_queue.pop(0)
+                try:
+                    self._fetch(self.fetching)
+                except Exception as e:
+                    log.info("Titre %s non ramené en local : %s", self.fetching, e)
+        finally:
+            db.release()
+
+    def _fetch(self, item_id):
+        db = self.ctx.db
+        row = db.one("SELECT id, key FROM items WHERE id=?", (item_id,))
+        if not row or not self.local_missing(row) or self.cached(item_id):
+            return
+        # seulement les copies en ligne : un dossier ou un partage monté se lit déjà directement
+        copies = [cp for cp in self.copies(item_id) if cp["enabled"] and cp["verified_at"] and cp["kind"] not in ("local", "smb")]
+        if not copies:
+            return
+        cp = copies[0]
+        if not self._make_room(cp["size"]):
+            log.info("Pas de place pour ramener %s en local", cp["name"])
+            return
+        b = self.backend(self.store(cp["store_id"]))
+        os.makedirs(self.cache_dir(), exist_ok=True)
+        path = os.path.join(self.cache_dir(), f"{item_id}{os.path.splitext(cp['name'])[1] or '.mkv'}")
+        tmp = path + ".part"
+        sha = hashlib.sha256()
+        try:
+            with open(tmp, "wb") as out:
+                for blk in b.open(cp["name"], 0, cp["size"] - 1):
+                    out.write(blk)
+                    sha.update(blk)
+            if os.path.getsize(tmp) != cp["size"] or (cp["sha256"] and sha.hexdigest() != cp["sha256"]):
+                raise ColdError("Copie ramenée incomplète ou altérée")
+            os.replace(tmp, path)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        now = int(time.time())
+        db.run("INSERT OR REPLACE INTO cold_cache(item_id, path, size, fetched_at, last_used) VALUES(?,?,?,?,?)",
+               (item_id, path, cp["size"], now, now))
+
+    def _make_room(self, need):
+        """Place pour `need` octets dans le budget du cache (et en gardant de la place libre sur le disque) :
+        les titres ramenés depuis le plus longtemps sans lecture repartent d'abord."""
+        c = self.cache_conf()
+        db = self.ctx.db
+        budget = c["gb"] * 1e9
+        if need > budget:
+            return False
+        playing = {int(r["rating_key"]) for r in db.all("SELECT rating_key FROM streams WHERE last_seen>?", (int(time.time()) - 300,))
+                   if str(r["rating_key"]).isdigit()}
+        rows = db.all("SELECT * FROM cold_cache ORDER BY last_used")
+        used = sum(r["size"] for r in rows)
+        os.makedirs(self.cache_dir(), exist_ok=True)
+
+        def free_disk():
+            try:
+                return shutil.disk_usage(self.cache_dir()).free
+            except OSError:
+                return 0
+        for r in rows:
+            if used + need <= budget and free_disk() - need >= c["keep_free_gb"] * 1e9:
+                break
+            if r["item_id"] in playing:
+                continue
+            self.uncache(r["item_id"])
+            used -= r["size"]
+        return used + need <= budget and free_disk() - need >= c["keep_free_gb"] * 1e9
+
+    def uncache(self, item_id):
+        r = self.ctx.db.one("SELECT path FROM cold_cache WHERE item_id=?", (item_id,))
+        if r:
+            try:
+                os.remove(r["path"])
+            except OSError:
+                pass
+            self.ctx.db.run("DELETE FROM cold_cache WHERE item_id=?", (item_id,))
+
+    def cache_status(self):
+        r = self.ctx.db.one("SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM cold_cache")
+        return {**self.cache_conf(), "count": r["n"], "bytes": r["bytes"], "fetching": self.fetching, "queued": len(self.fetch_queue)}
+
+    # ---------------------------------------------------------------- archives d'autres serveurs (hébergées ici)
+    def hosted_dir(self, peer_id):
+        return os.path.join(self.ctx.data_dir, "cold-hosted", str(int(peer_id)))
+
+    def hosted_used(self):
+        root = os.path.join(self.ctx.data_dir, "cold-hosted")
+        total = 0
+        for d, _, files in os.walk(root):
+            for f in files:
+                try:
+                    total += os.path.getsize(os.path.join(d, f))
+                except OSError:
+                    pass
+        return total
+
+    def hosted_quota(self):
+        return float(self.ctx.db.setting("cold_host_gb", "0") or 0) * 1e9
 
     # ---------------------------------------------------------------- débit
     def rate_limit(self):
@@ -975,6 +1229,9 @@ class Cold:
                 try:
                     self.archive(job["item_id"], job["store_id"], self.running)
                     db.run("DELETE FROM cold_jobs WHERE id=?", (job["id"],))
+                    free = getattr(self.ctx, "coldfree", None)
+                    if free:
+                        free.on_archived(job["item_id"])
                 except Exception as e:
                     msg = str(e) if isinstance(e, (ColdError, OSError)) else i18n.tr("Erreur inattendue : {e}").format(e=e)
                     if not isinstance(e, (ColdError, OSError)):
@@ -1296,16 +1553,109 @@ def register(app, ctx, x):
             raise HTTPError(409, str(e))
         return {"ok": ok}
 
-    # lecture d'une copie froide par ffmpeg (adresse locale, jeton secret, jamais derrière un proxy)
-    @app.route("GET", r"/cold/(?P<tok>[A-Za-z0-9_-]{20,64})", auth=None)
-    def cold_stream(req):
-        t = cold.token(req.params["tok"])
-        if not t or req.client_ip not in ("127.0.0.1", "::1") or req.headers.get("X-Forwarded-For"):
+    # ---------------------------------------------------- cache local et accueil des archives des serveurs liés
+    @app.route("GET", "/api/admin/cold/extra", auth="admin")
+    def cold_extra(req):
+        peers = {p["id"]: p["name"] for p in db.all("SELECT id, name FROM peers")}
+        hosted = []
+        root = os.path.join(ctx.data_dir, "cold-hosted")
+        for d in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+            if d.isdigit():
+                size = sum(os.path.getsize(os.path.join(a, f)) for a, _, fs in os.walk(os.path.join(root, d)) for f in fs)
+                hosted.append({"peer": peers.get(int(d), f"#{d}"), "bytes": size})
+        return {"cache": cold.cache_status(), "host_gb": float(db.setting("cold_host_gb", "0") or 0), "hosted": hosted,
+                "peers": [{"id": k, "name": v} for k, v in peers.items()]}
+
+    @app.route("PUT", "/api/admin/cold/extra", auth="admin")
+    def cold_extra_save(req):
+        b = req.json()
+        for k, setting, hi in (("cache_gb", "cold_cache_gb", 100000), ("keep_free_gb", "cold_cache_free_gb", 100000),
+                               ("next", "cold_prefetch", 20), ("host_gb", "cold_host_gb", 1000000)):
+            if k in b:
+                try:
+                    v = float(b[k] or 0)
+                except (TypeError, ValueError):
+                    raise HTTPError(400, "Réglage invalide")
+                if not 0 <= v <= hi:
+                    raise HTTPError(400, "Réglage invalide")
+                db.set_setting(setting, str(int(v) if k == "next" else v))
+        if b.get("clear_cache"):
+            for r in db.all("SELECT item_id FROM cold_cache"):
+                cold.uncache(r["item_id"])
+        return {"ok": True}
+
+    def hosted_path(req, name):
+        if not req.fed_peer:
+            raise HTTPError(403, "Réservé aux serveurs liés")
+        if cold.hosted_quota() <= 0:
+            raise HTTPError(403, i18n.tr("Ce serveur n'accueille pas d'archives (réglage de son administrateur)"))
+        try:
+            rel = safe_name(name or "")
+        except ColdError:
+            raise HTTPError(400, "Nom invalide")
+        root = os.path.realpath(cold.hosted_dir(req.fed_peer["id"]))
+        p = os.path.realpath(os.path.join(root, rel))
+        if not p.startswith(root + os.sep):
+            raise HTTPError(400, "Nom invalide")
+        return p
+
+    @app.route("GET", "/fed/cold/info", auth="peer")
+    def fed_cold_info(req):
+        quota = cold.hosted_quota()
+        used = cold.hosted_used() if quota else 0
+        return {"enabled": quota > 0, "quota": quota, "used": used, "free": max(0, quota - used)}
+
+    @app.route("PUT", "/fed/cold/blob", auth="peer")
+    def fed_cold_put(req):
+        """Un morceau (16 Mo au plus) d'une archive envoyée par un serveur lié, écrit à la suite des précédents."""
+        p = hosted_path(req, req.arg("name"))
+        part = p + ".part"
+        offset = int(req.arg("offset") or 0)
+        length = int(req.headers.get("Content-Length") or 0)
+        if length > 2 * PEER_CHUNK or length < 0:
+            raise HTTPError(413, "Morceau trop gros")
+        have = os.path.getsize(part) if os.path.exists(part) else 0
+        if offset == 0:
+            have = 0
+        elif offset != have:
+            raise HTTPError(409, i18n.tr("Reprise attendue à {n}").format(n=have))
+        if cold.hosted_used() - (os.path.getsize(part) if offset == 0 and os.path.exists(part) else 0) + length > cold.hosted_quota():
+            raise HTTPError(507, i18n.tr("Plus de place réservée aux archives sur ce serveur"))
+        db.release()
+        os.makedirs(os.path.dirname(part), exist_ok=True)
+        with open(part, "r+b" if offset else "wb") as f:
+            f.seek(offset)
+            left = length
+            while left > 0:
+                b = req.handler.rfile.read(min(BLOCK, left))
+                if not b:
+                    req._body = b""
+                    raise HTTPError(400, "Morceau incomplet")
+                f.write(b)
+                left -= len(b)
+            f.truncate()
+        req._body = b""  # corps déjà lu ici : le serveur web ne doit pas le relire
+        return {"ok": True, "size": offset + length}
+
+    @app.route("POST", "/fed/cold/commit", auth="peer")
+    def fed_cold_commit(req):
+        p = hosted_path(req, req.arg("name"))
+        part = p + ".part"
+        size = int(req.arg("size") or -1)
+        if not os.path.exists(part) or os.path.getsize(part) != size:
+            raise HTTPError(409, "Archive incomplète")
+        os.replace(part, p)
+        return {"ok": True}
+
+    @app.route("GET", "/fed/cold/stat", auth="peer")
+    def fed_cold_stat(req):
+        p = hosted_path(req, req.arg("name"))
+        if not os.path.isfile(p):
             raise HTTPError(404, "Introuvable")
-        store = cold.store(t["store"])
-        if not store:
-            raise HTTPError(404, "Introuvable")
-        size = t["size"]
+        return {"size": os.path.getsize(p)}
+
+    def byte_range(req, size):
+        """En-tête Range -> (début, fin, statut) ; None si la plage est hors du fichier."""
         start, end, status = 0, size - 1, 200
         rng = (req.headers.get("Range") or "").strip()
         m = re.match(r"^bytes=(\d*)-(\d*)$", rng) if rng else None
@@ -1316,8 +1666,53 @@ def register(app, ctx, x):
             else:
                 start = max(0, size - int(m.group(2)))
             if start > end or start >= size:
-                return Response(b"", 416, "text/plain", {"Content-Range": f"bytes */{size}"})
+                return None
             status = 206
+        return start, end, status
+
+    def ranged(start, end, status, size, gen):
+        headers = {"Accept-Ranges": "bytes", "Cache-Control": "no-store"}
+        if status == 206:
+            headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+        return Response(stream=gen, status=status, content_type="application/octet-stream", length=end - start + 1,
+                        headers=headers)
+
+    @app.route("GET", "/fed/cold/blob", auth="peer")
+    def fed_cold_get(req):
+        p = hosted_path(req, req.arg("name"))
+        if not os.path.isfile(p):
+            raise HTTPError(404, "Introuvable")
+        size = os.path.getsize(p)
+        r = byte_range(req, size)
+        if r is None:
+            return Response(b"", 416, "text/plain", {"Content-Range": f"bytes */{size}"})
+        db.release()
+        return ranged(*r, size, _file_blocks(p, r[0], r[1]))
+
+    @app.route("DELETE", "/fed/cold/blob", auth="peer")
+    def fed_cold_delete(req):
+        p = hosted_path(req, req.arg("name"))
+        for f in (p, p + ".part"):
+            try:
+                os.remove(f)
+            except FileNotFoundError:
+                pass
+        return {"ok": True}
+
+    # lecture d'une copie froide par ffmpeg (adresse locale, jeton secret, jamais derrière un proxy)
+    @app.route("GET", r"/cold/(?P<tok>[A-Za-z0-9_-]{20,64})", auth=None)
+    def cold_stream(req):
+        t = cold.token(req.params["tok"])
+        if not t or req.client_ip not in ("127.0.0.1", "::1") or req.headers.get("X-Forwarded-For"):
+            raise HTTPError(404, "Introuvable")
+        store = cold.store(t["store"])
+        if not store:
+            raise HTTPError(404, "Introuvable")
+        size = t["size"]
+        r = byte_range(req, size)
+        if r is None:
+            return Response(b"", 416, "text/plain", {"Content-Range": f"bytes */{size}"})
+        start, end, status = r
         db.release()
         b = cold.backend(store)
 
@@ -1326,8 +1721,4 @@ def register(app, ctx, x):
                 yield from b.open(t["name"], start, end)
             except ColdError as e:
                 log.warning("Lecture froide de %s : %s", t["name"], e)
-        headers = {"Accept-Ranges": "bytes", "Cache-Control": "no-store"}
-        if status == 206:
-            headers["Content-Range"] = f"bytes {start}-{end}/{size}"
-        return Response(stream=gen(), status=status, content_type="application/octet-stream", length=end - start + 1,
-                        headers=headers)
+        return ranged(start, end, status, size, gen())

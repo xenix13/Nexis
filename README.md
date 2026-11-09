@@ -405,6 +405,18 @@ Une copie des films et épisodes sur un autre stockage, pour pouvoir libérer de
 - **Rien n'est supprimé de la bibliothèque** : les bibliothèques restent en lecture seule. Si un fichier en disparaît (supprimé à la main ou par Radarr / Sonarr), le scan garde le titre puisqu'il a une copie vérifiée.
 - **Essayer** : menu ⋯ → *Essayer la lecture depuis la copie froide* lit la copie même si le fichier est encore là ; *Copies sur le stockage froid…* liste les copies et permet d'en supprimer une (pas la dernière d'un titre absent de la bibliothèque).
 - **SFTP** : au premier essai, Nexis montre l'empreinte de la clé du serveur à confirmer ; il refuse ensuite tout serveur qui présente une autre clé. Les mots de passe ne sont jamais renvoyés à l'interface ni passés en ligne de commande.
+- **Serveur lié** : un serveur de la fédération peut garder vos archives. Son administrateur réserve de la place (*Stockage froid → Archives des serveurs liés*) ; les fichiers passent par le canal chiffré des serveurs liés, rangés dans son dossier de données, sans apparaître dans ses bibliothèques.
+- **Titres ramenés en local** : un titre lu depuis un stockage en ligne (SFTP, WebDAV, S3, rclone, serveur lié) est ramené sur ce serveur, avec les 2 épisodes suivants (réglable) : les lectures suivantes démarrent tout de suite. Place réservée de 20 Go par défaut, en gardant toujours 10 Go libres sur le disque ; les titres ramenés depuis le plus longtemps sans lecture repartent d'abord. La copie froide, elle, reste.
+
+### Libérer de la place
+
+*Stockage froid → Libérer de la place* : les films et les séries que personne n'a regardés depuis 30 jours (réglable ; un titre jamais regardé compte depuis son ajout) sont copiés sur le stockage froid, puis leur fichier quitte la bibliothèque après un délai de 7 jours (réglable). Un titre regardé pendant ce délai est gardé. La tâche « Libérer de la place » passe chaque jour à 5 h 10.
+
+- **À valider** (par défaut) : la liste des titres concernés arrive dans la page, avec une notification aux administrateurs ; *Valider*, *Garder sur le disque* ou *Pas cette fois*, titre par titre ou tout d'un coup. **D'office** : archivés et libérés sans demander.
+- **Gardés** : les titres d'une liste « À regarder », notés 4 ou 5 étoiles et commencés (réglable), et ceux marqués *Toujours garder sur le disque* (menu ⋯ d'un film ou d'une série). Option : n'agir que si la place libre de la bibliothèque passe sous un seuil.
+- **Suppression du fichier**, au choix par bibliothèque : par **Radarr** (films) ou **Sonarr** (séries) — adresse et clé d'API (*Settings → General → API Key*) ; le titre y est d'abord marqué « non surveillé », sinon ils le retéléchargeraient, et rien n'est supprimé si le fichier qu'ils connaissent n'est pas le même (nom, taille) ; par **Nexis** si la bibliothèque est montée en écriture ; ou **à la main** à partir de la liste des fichiers. Les sous-titres intégrés au fichier sont extraits avant.
+- Le titre reste dans Nexis (affiche, résumé, historique, notes) et se lit depuis la copie froide ; il n'est plus reproposé. Si le fichier revient dans la bibliothèque (retéléchargé), Nexis le lit de nouveau depuis le disque.
+
 - **Fichiers `.strm`** : un `.strm` posé dans une bibliothèque (une adresse http(s) vers une vidéo) se lit comme un fichier ; Nexis relaie le flux.
 
 ## Serveurs liés
@@ -816,7 +828,6 @@ L'interface (`static/`) est en JavaScript, sans étape de compilation.
 
 ### À faire
 - [ ] « Regarder ensemble » : seconde passe d'optimisation après les tests réels
-- [ ] Stockage froid : un serveur lié comme stockage, archivage automatique des titres non vus depuis 30 jours, suppression des originaux par Radarr / Sonarr, titres ramenés en local (budget de place)
 
 ### Réalisé
 - Interface multi-utilisateurs, profils, code PIN, contrôle parental, photos et galerie d'avatars, interface enfant

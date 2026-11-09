@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from tests.test_api import STATIC, Client, ffprobe_codec, hls_segment, media_root, wait_scan
 
 from seance import cold as cold_mod
+from seance import coldfree
 from seance import mountd
 from seance.api import Ctx, build_app
 from seance.web import Server, make_handler
@@ -177,6 +178,59 @@ class FakeS3(BaseHTTPRequestHandler):
         else:
             self.objects.pop(key, None)
         self.reply(204)
+
+
+class FakeArr(BaseHTTPRequestHandler):
+    """Radarr / Sonarr : juste ce dont Nexis se sert."""
+    calls = []
+    movies = []
+    series = []
+    episodes = []
+    files = {}
+    protocol_version = "HTTP/1.1"
+    reply = FakeDAV.reply
+    _body = FakeDAV._body
+
+    def log_message(self, *a):
+        pass
+
+    def _ok(self):
+        if self.headers.get("X-Api-Key") != "abcdef0123456789abcdef0123456789":
+            self.reply(401)
+            return False
+        return True
+
+    def _json(self, obj, status=200):
+        self.reply(status, json.dumps(obj).encode(), {"Content-Type": "application/json"})
+
+    def do_GET(self):
+        if not self._ok():
+            return
+        u = urllib.parse.urlsplit(self.path)
+        q = dict(urllib.parse.parse_qsl(u.query))
+        self.calls.append(("GET", u.path))
+        if u.path == "/api/v3/system/status":
+            return self._json({"appName": "Radarr", "version": "5.0"})
+        if u.path == "/api/v3/movie":
+            return self._json([m for m in self.movies if str(m["tmdbId"]) == q.get("tmdbId")])
+        if u.path == "/api/v3/series":
+            return self._json([x for x in self.series if "tvdbId" not in q or str(x["tvdbId"]) == q["tvdbId"]])
+        if u.path == "/api/v3/episode":
+            return self._json(self.episodes)
+        m = re.match(r"^/api/v3/episodefile/(\d+)$", u.path)
+        if m:
+            return self._json(self.files[int(m.group(1))])
+        self.reply(404)
+
+    def do_PUT(self):
+        if self._ok():
+            self.calls.append(("PUT", self.path, json.loads(self._body() or b"{}")))
+            self._json({}, 202)
+
+    def do_DELETE(self):
+        if self._ok():
+            self.calls.append(("DELETE", self.path))
+            self._json({})
 
 
 # faux rclone : « remote:chemin » -> dossier $FAKE_RCLONE_ROOT/remote/chemin
@@ -494,6 +548,143 @@ class ColdStorageTest(unittest.TestCase):
         st, c = self.admin.call("GET", f"/api/admin/cold/items/{brume['id']}")
         self.assertEqual([x["store"] for x in c["copies"]], ["B2"])
         self.assertIn("/nexis/archive/Films/Brume (2022)/Brume.2022.HEVC.mkv", FakeS3.objects)  # seau/préfixe/arborescence
+
+    # -------------------------------------------------------------------------- titres ramenés en local
+    def test_05b_cache_brings_titles_back(self):
+        mid = self.movie["id"]
+        if self.ctx.cold.local_missing(self.movie) is False:
+            self.skipTest("dépend de test_04 (fichier retiré de la bibliothèque)")
+        self.ctx.db.set_setting("cold_cache_gb", "1")
+        self.ctx.db.set_setting("cold_cache_free_gb", "0")
+        # la lecture en ligne du test 04 l'a peut-être déjà ramené : on repart d'un cache vide
+        for _ in range(100):
+            if not (self.ctx.cold.fetcher and self.ctx.cold.fetcher.is_alive()):
+                break
+            time.sleep(0.1)
+        self.admin.call("PUT", "/api/admin/cold/extra", {"clear_cache": True})
+        st, p = self.admin.call("POST", "/api/play", {"id": str(mid)})
+        self.assertEqual(st, 200, p)
+        self.assertTrue(self.ctx.transcoder.get(p["stream"]).path.startswith("cold:"))  # en ligne, cette fois
+        self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
+        for _ in range(100):
+            if self.ctx.db.scalar("SELECT 1 FROM cold_cache WHERE item_id=?", (mid,)):
+                break
+            time.sleep(0.1)
+        path = self.ctx.db.scalar("SELECT path FROM cold_cache WHERE item_id=?", (mid,))
+        self.assertTrue(path and os.path.getsize(path) == self.movie["file_size"], path)
+        st, p = self.admin.call("POST", "/api/play", {"id": str(mid)})
+        self.assertEqual(self.ctx.transcoder.get(p["stream"]).path, path)  # la suite : depuis le disque local
+        self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
+        st, r = self.admin.call("GET", "/api/admin/cold/extra")
+        self.assertEqual((r["cache"]["count"], r["cache"]["bytes"]), (1, self.movie["file_size"]))
+        # budget trop petit : rien n'est ramené ; vider le cache le retire
+        self.admin.call("PUT", "/api/admin/cold/extra", {"clear_cache": True, "cache_gb": 0.001})
+        self.assertFalse(os.path.exists(path))
+        self.assertFalse(self.ctx.cold._make_room(self.movie["file_size"]))
+        self.admin.call("PUT", "/api/admin/cold/extra", {"cache_gb": 20})
+
+    # -------------------------------------------------------------------------- libérer de la place
+    def free_state(self, root):
+        st, r = self.admin.call("GET", "/api/admin/cold/free")
+        return [g for g in r["groups"] if g["root"] == root]
+
+    def test_07_free_space_rule(self):
+        db = self.ctx.db
+        brume = db.one("SELECT * FROM items WHERE type='movie' AND title LIKE 'Brume%'")
+        lib = brume["library_id"]
+        old = int(time.time()) - 60 * 86400
+        db.run("UPDATE items SET added_at=?", (old,))
+        db.run("DELETE FROM progress")
+        db.run("DELETE FROM play_log")
+        db.run("DELETE FROM history")
+        db.run("DELETE FROM streams")
+        usb = os.path.join(self.work, "usb-free")
+        os.makedirs(usb)
+        st, r = self.admin.call("POST", "/api/admin/cold/stores", {"kind": "local", "name": "USB 2", "conf": {"path": usb}})
+        store = r["id"]
+        st, r = self.admin.call("PUT", "/api/admin/cold/free", {"enabled": True, "days": 30, "mode": "review", "store": store,
+                                                                 "delay_days": 7, "methods": {str(lib): "write"}})
+        self.assertEqual(st, 200, r)
+        st, prev = self.admin.call("GET", "/api/admin/cold/free/preview")
+        self.assertEqual([x["title"] for x in prev["items"]], [brume["title"]])  # Nuit polaire : déjà hors de la bibliothèque
+        # titre « gardé sur le disque » : jamais proposé
+        self.admin.call("POST", "/api/admin/cold/free/keep", {"root": brume["id"]})
+        st, prev = self.admin.call("GET", "/api/admin/cold/free/preview")
+        self.assertEqual(prev["count"], 0)
+        self.admin.call("POST", "/api/admin/cold/free/keep", {"root": brume["id"], "keep": False})
+        # à valider : proposé seulement
+        st, r = self.admin.call("POST", "/api/admin/cold/free/run")
+        self.assertEqual(r["new"], 1, r)
+        self.assertEqual(self.free_state(brume["id"])[0]["state"], "proposed")
+        self.assertTrue(os.path.isfile(brume["key"]))
+        # validé : copie (déjà faite sur S3 en test 05 : elle suffit), puis 7 jours de délai
+        st, r = self.admin.call("POST", "/api/admin/cold/free/approve", {"roots": [brume["id"]]})
+        self.assertEqual(r["approved"], 1)
+        g = self.free_state(brume["id"])[0]
+        self.assertEqual(g["state"], "pending", g)
+        self.assertGreater(g["delete_after"], time.time() + 6 * 86400)
+        # regardé pendant le délai : on garde
+        db.run("INSERT INTO progress(user_id, rating_key, position_ms, duration_ms, updated_at) VALUES(1, ?, 1000, 5000, ?)",
+               (str(brume["id"]), int(time.time())))
+        self.admin.call("POST", "/api/admin/cold/free/run")
+        self.assertEqual(self.free_state(brume["id"]), [])
+        self.assertTrue(os.path.isfile(brume["key"]))
+        # plus tard, toujours pas regardé, en automatique et sans délai : supprimé de la bibliothèque, lu depuis la copie
+        db.run("DELETE FROM progress")
+        self.admin.call("PUT", "/api/admin/cold/free", {"mode": "auto", "delay_days": 0})
+        st, r = self.admin.call("POST", "/api/admin/cold/free/run")
+        st, r = self.admin.call("POST", "/api/admin/cold/free/run")  # copie vérifiée -> suppression
+        self.assertFalse(os.path.exists(brume["key"]), r)
+        st, r = self.admin.call("GET", "/api/admin/cold/free")
+        self.assertEqual(r["freed"]["n"], 1)
+        self.assertEqual(r["freed"]["bytes"], brume["file_size"])
+        st, d = self.admin.call("GET", f"/api/items/{brume['id']}")
+        self.assertEqual((st, d["cold_only"]), (200, True))
+        self.admin.call("PUT", "/api/admin/cold/free", {"enabled": False})
+
+    def test_08_radarr_sonarr(self):
+        srv = serve(FakeArr)
+        try:
+            url = f"http://127.0.0.1:{srv.server_address[1]}"
+            key = "abcdef0123456789abcdef0123456789"
+            st, r = self.admin.call("POST", "/api/admin/cold/free/check", {"which": "radarr", "url": url, "key": key})
+            self.assertEqual((st, r.get("version")), (200, "5.0"), r)
+            st, r = self.admin.call("POST", "/api/admin/cold/free/check", {"which": "radarr", "url": url, "key": "x" * 32})
+            self.assertEqual(st, 400)
+            arr = coldfree.Arr(url, key, "Radarr")
+            row = {"tmdb_id": 42, "key": "/media/films/Film (2020)/Film.2020.mkv", "file_size": 1234}
+            FakeArr.movies = [{"id": 7, "tmdbId": 42, "movieFile": {"id": 70, "path": "/data/films/Film (2020)/Film.2020.mkv", "size": 1234}}]
+            FakeArr.calls = []
+            coldfree.radarr_delete(arr, row)
+            self.assertEqual([c[0] for c in FakeArr.calls], ["GET", "PUT", "DELETE"])
+            self.assertEqual(FakeArr.calls[1][2], {"movieIds": [7], "monitored": False})  # plus surveillé, d'abord
+            self.assertEqual(FakeArr.calls[2][1], "/api/v3/moviefile/70")
+            # pas le même fichier (autre version) : rien n'est supprimé
+            FakeArr.movies[0]["movieFile"]["size"] = 999
+            FakeArr.calls = []
+            with self.assertRaises(coldfree.FreeError):
+                coldfree.radarr_delete(arr, row)
+            self.assertFalse([c for c in FakeArr.calls if c[0] == "DELETE"])
+            # Sonarr : épisode retrouvé par saison / numéro, fichier à deux épisodes : les deux ne sont plus surveillés
+            FakeArr.series = [{"id": 3, "tvdbId": 555, "tmdbId": 99}]
+            FakeArr.episodes = [{"id": 31, "seasonNumber": 1, "episodeNumber": 1, "episodeFileId": 300},
+                                {"id": 32, "seasonNumber": 1, "episodeNumber": 2, "episodeFileId": 300},
+                                {"id": 33, "seasonNumber": 1, "episodeNumber": 3, "episodeFileId": 301}]
+            FakeArr.files = {300: {"id": 300, "path": "/tv/Show/S01/Show.S01E01E02.mkv", "size": 50}}
+            FakeArr.calls = []
+            coldfree.sonarr_delete(coldfree.Arr(url, key, "Sonarr"), {"idx": 1, "key": "/m/Show/S01/Show.S01E01E02.mkv", "file_size": 50},
+                                   {"tvdb_id": 555}, 1)
+            self.assertIn(("PUT", "/api/v3/episode/monitor", {"episodeIds": [31, 32], "monitored": False}), FakeArr.calls)
+            self.assertEqual(FakeArr.calls[-1], ("DELETE", "/api/v3/episodefile/300"))
+            # par l'API : méthode par défaut « Radarr / Sonarr » dès qu'ils sont configurés
+            st, r = self.admin.call("PUT", "/api/admin/cold/free", {"radarr_url": url, "radarr_key": key})
+            self.assertEqual(r["conf"]["secrets_set"], ["radarr_key"])
+            self.assertNotIn("radarr_key", r["conf"])
+            st, r = self.admin.call("GET", "/api/admin/cold/free")
+            self.assertEqual({l["kind"]: l["method"] for l in r["libraries"]}["movie"], "write")  # choisi en test 07
+            self.assertEqual(self.admin.call("PUT", "/api/admin/cold/free", {"radarr_key": "court"})[0], 400)
+        finally:
+            srv.shutdown()
 
     def test_06_mountd_writable_only_for_cold(self):
         m = mountd.Mounts.__new__(mountd.Mounts)

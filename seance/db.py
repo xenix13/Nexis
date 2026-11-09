@@ -722,6 +722,34 @@ MIGRATIONS = [
         UNIQUE(item_id, store_id)
     );
     """,
+    # 29 : libérer de la place (fichiers archivés puis supprimés de la bibliothèque), titres à garder, cache local
+    """
+    CREATE TABLE cold_free(
+        item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+        root_id INTEGER NOT NULL,
+        state TEXT NOT NULL,
+        size INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        approved_at INTEGER,
+        delete_after INTEGER,
+        freed_at INTEGER,
+        method TEXT,
+        error TEXT
+    );
+    CREATE INDEX cold_free_state ON cold_free(state, root_id);
+    CREATE TABLE cold_keep(
+        item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        user_id INTEGER
+    );
+    CREATE TABLE cold_cache(
+        item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        fetched_at INTEGER NOT NULL,
+        last_used INTEGER NOT NULL
+    );
+    """,
 ]
 
 

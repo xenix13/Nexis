@@ -11,7 +11,7 @@ import threading
 import time
 import types
 
-from . import __version__, apps, backup, books, catalog, cold, health, limits, opensubs, stats, themes, tracking, whisper, collections_api, discover, dlna, federation, i18n, push, remote, livetv, media, notify, photos, suggest, syncplay, tasks, update
+from . import __version__, apps, backup, books, catalog, cold, coldfree, health, limits, opensubs, stats, themes, tracking, whisper, collections_api, discover, dlna, federation, i18n, push, remote, livetv, media, notify, photos, suggest, syncplay, tasks, update
 from .auth import Throttle, load_user
 from .chapters import ChapterImages
 from .db import DB
@@ -68,6 +68,7 @@ class Ctx:
         self.themes = themes.Store(self, static_dir)
         self.apps = apps.Apps(self)
         self.cold = cold.Cold(self)
+        self.coldfree = coldfree.ColdFree(self)
         self.http_port = None  # port de l'interface (fixé par __main__) : adresse locale des copies froides
         for r in self.db.all("SELECT id, content_rating FROM items WHERE content_rating IS NOT NULL AND age IS NULL"):
             age = age_of(r["content_rating"])
@@ -239,7 +240,7 @@ def build_app(ctx):
 
     catalog.install(ctx, x)
     for module in (account, library, media_routes, admin, collections_api, discover, tasks, livetv, syncplay, suggest, notify, photos, dlna, remote, push,
-                   opensubs, health, whisper, tracking, books, backup, themes, stats, apps, cold, federation):
+                   opensubs, health, whisper, tracking, books, backup, themes, stats, apps, cold, coldfree, federation):
         module.register(app, ctx, x)
     return app
 

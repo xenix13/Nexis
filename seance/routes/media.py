@@ -354,6 +354,8 @@ def register(app, ctx, x):
         if src != r["key"]:
             p["cold"] = True  # lu depuis le stockage froid
             p["reasons"].append("lu depuis le stockage froid")
+            if media.is_remote(src):
+                ctx.cold.prefetch(r)  # ramené en local, avec les épisodes suivants : les prochaines lectures sont immédiates
             if p["mode"] == "direct" and b.get("cold"):
                 p["mode"] = "copy"  # essai de la copie froide : la lecture directe relirait le fichier de la bibliothèque
         sid = secrets.token_urlsafe(12)

@@ -424,6 +424,9 @@ def register(app, ctx, x):
                 d["audio"], d["subtitles"] = stream_lists(json.loads(trow["probe"] or "{}"))
         elif d["type"] == "season":
             d["show_id"] = str(r["show_id"])
+        if req.user["is_admin"] and not r["peer_id"] and d["type"] in ("movie", "show", "season", "episode"):
+            root = r["show_id"] if d["type"] in ("season", "episode") else r["id"]
+            d["kept"] = bool(db.scalar("SELECT 1 FROM cold_keep WHERE item_id=?", (root,)))  # « toujours garder sur le disque »
         return d
 
     @app.route("GET", f"/api/items/{RK}/children")
