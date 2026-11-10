@@ -1,4 +1,4 @@
-# Image Docker de Nexis : docker compose up -d (voir docker-compose.yml et le README).
+# Image Docker de Noxa : docker compose up -d (voir docker-compose.yml et le README).
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 \

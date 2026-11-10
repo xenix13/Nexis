@@ -324,7 +324,7 @@ class FeaturesTest(unittest.TestCase):
 
     # ------------------------------------------------------------ fichiers .strm
     def test_strm_remote_file(self):
-        """Un .strm (adresse http) : scanné comme un film, lu via Nexis (jamais en direct), pas d'analyse lourde."""
+        """Un .strm (adresse http) : scanné comme un film, lu via Noxa (jamais en direct), pas d'analyse lourde."""
         import functools
         import http.server
         src = os.path.join(self.media, "films", "Le Grand Voyage (2019)")
@@ -348,7 +348,7 @@ class FeaturesTest(unittest.TestCase):
             self.assertFalse(self.ctx.subtitles.needs_trick(row))  # pas de vignettes : relirait tout le flux
             st, p = self.admin.call("POST", "/api/play", {"id": row["id"], "quality": "original"})
             self.assertEqual(st, 200, p)
-            self.assertNotEqual(p["mode"], "direct")  # relayé par Nexis
+            self.assertNotEqual(p["mode"], "direct")  # relayé par Noxa
             for _ in range(60):
                 st, body, h = self.admin.call("GET", p["url"], raw=True)
                 if st == 200:
@@ -470,7 +470,7 @@ class FeaturesTest(unittest.TestCase):
         self.lea.call("POST", f"/api/together/{gid}/leave")
 
     def test_watch_together_live_list_and_lobby(self):
-        """Liste des groupes en direct, groupe créé à l'avance (salon), présence tant que Nexis est ouvert."""
+        """Liste des groupes en direct, groupe créé à l'avance (salon), présence tant que Noxa est ouvert."""
         from seance import syncplay
         got = []
 
@@ -498,7 +498,7 @@ class FeaturesTest(unittest.TestCase):
                          [("Vendredi soir", None, False, False)])  # créé : apparaît chez Léa sans recharger
         self.assertTrue(lists[2][0]["member"])  # Léa a rejoint
         self.assertEqual(lists[3][0]["item"]["title"], "Le Grand Voyage")  # le film est lancé
-        # présence : membre sans lecteur ouvert, mais Nexis ouvert -> on reste dans le groupe
+        # présence : membre sans lecteur ouvert, mais Noxa ouvert -> on reste dans le groupe
         old = syncplay.GONE_AFTER
         syncplay.GONE_AFTER = 0
         try:
@@ -508,7 +508,7 @@ class FeaturesTest(unittest.TestCase):
             self.ctx.together.reap()
             members = {m["name"] for m in self.lea.call("GET", f"/api/together/{gid}")[1]["members"]}
             self.assertEqual(members, {"colas", "Léa"})
-            self.ctx.together.unwatch(q)  # colas ferme Nexis
+            self.ctx.together.unwatch(q)  # colas ferme Noxa
             time.sleep(0.05)
             self.ctx.together.reap()
             members = {m["name"] for m in self.lea.call("GET", f"/api/together/{gid}")[1]["members"]}

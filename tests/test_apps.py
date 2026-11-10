@@ -18,8 +18,8 @@ from seance import __version__, apps
 from seance.api import Ctx, build_app
 from seance.web import Server, make_handler
 
-FILES = {"nexis-android.apk": b"PK" + b"a" * 5000, "Nexis-Setup.exe": b"MZ" + b"w" * 7000, "latest.yml": b"version: 1.0.0\npath: Nexis-Setup.exe\n",
-         "nexis-apps.json": json.dumps({"desktop": "1.0.0", "android": {"version": "1.0.0", "code": 1}}).encode()}
+FILES = {"noxa-android.apk": b"PK" + b"a" * 5000, "Noxa-Setup.exe": b"MZ" + b"w" * 7000, "latest.yml": b"version: 1.0.0\npath: Noxa-Setup.exe\n",
+         "noxa-apps.json": json.dumps({"desktop": "1.0.0", "android": {"version": "1.0.0", "code": 1}}).encode()}
 
 
 class FakeGitHub(BaseHTTPRequestHandler):
@@ -31,7 +31,7 @@ class FakeGitHub(BaseHTTPRequestHandler):
     def do_GET(self):
         FakeGitHub.hits.append(self.path)
         base = f"http://127.0.0.1:{self.server.server_address[1]}"
-        if self.path == f"/repos/xenix13/Nexis/releases/tags/v{__version__}":
+        if self.path == f"/repos/xenix13/Noxa/releases/tags/v{__version__}":
             body = json.dumps({"tag_name": f"v{__version__}", "assets": [
                 {"name": n, "size": len(d), "browser_download_url": f"{base}/dl/{n}"} for n, d in FILES.items()]}).encode()
             return self.send(200, body)
@@ -82,14 +82,14 @@ class AppsTest(unittest.TestCase):
         # premier téléchargement : GitHub le temps que le serveur fasse sa copie
         st, body, h = self.anon.call("GET", "/apps/android", raw=True)
         self.assertIn(st, (200,), h)  # urllib suit la redirection
-        self.assertEqual(body, FILES["nexis-android.apk"])
+        self.assertEqual(body, FILES["noxa-android.apk"])
         for _ in range(50):
-            if apps.os.path.isfile(os.path.join(self.ctx.data_dir, "apps", f"v{__version__}", "nexis-android.apk")):
+            if apps.os.path.isfile(os.path.join(self.ctx.data_dir, "apps", f"v{__version__}", "noxa-android.apk")):
                 break
             time.sleep(0.1)
         hits = len(FakeGitHub.hits)
         st, body, h = self.anon.call("GET", "/apps/android", raw=True)
-        self.assertEqual((st, body), (200, FILES["nexis-android.apk"]))
+        self.assertEqual((st, body), (200, FILES["noxa-android.apk"]))
         self.assertEqual(len(FakeGitHub.hits), hits)  # servi par le serveur lui-même
         self.assertEqual(h["Content-Type"], "application/vnd.android.package-archive")
         self.assertIn("attachment", h.get("Content-Disposition", ""))
@@ -100,7 +100,7 @@ class AppsTest(unittest.TestCase):
         self.anon.call("GET", "/api/apps")
         st, body, h = self.anon.call("GET", "/apps/desktop/latest.yml", raw=True)
         self.assertEqual((st, body), (200, FILES["latest.yml"]))
-        for bad in ("nexis-apps.json", "..%2Fseance.db", "autre.yml"):
+        for bad in ("noxa-apps.json", "..%2Fseance.db", "autre.yml"):
             self.assertEqual(self.anon.call("GET", f"/apps/desktop/{bad}")[0], 404, bad)
 
 

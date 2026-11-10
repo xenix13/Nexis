@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Documentation
-    url: https://github.com/xenix13/Nexis#documentation
+    url: https://github.com/xenix13/Noxa#documentation
     about: Installation, configuration and troubleshooting guides.
   - name: Report a security vulnerability
-    url: https://github.com/xenix13/Nexis/security/advisories/new
+    url: https://github.com/xenix13/Noxa/security/advisories/new
     about: Please report security issues privately.

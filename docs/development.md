@@ -2,7 +2,7 @@
 
 [← Back to the README](../README.md) · Previous: [Troubleshooting](troubleshooting.md)
 
-Nexis is deliberately simple to hack on: the server is **Python 3 standard library only**, the interface is **plain JavaScript modules with no build step**, and the tests generate their own media with ffmpeg.
+Noxa is deliberately simple to hack on: the server is **Python 3 standard library only**, the interface is **plain JavaScript modules with no build step**, and the tests generate their own media with ffmpeg.
 
 **Contents:** [Run from source](#run-from-source) · [Tests](#tests) · [Code layout](#code-layout) · [Translations](#translations) · [Apps](#apps) · [Releases](#releases-and-branches) · [Screenshots](#documentation-screenshots)
 
@@ -11,7 +11,7 @@ Nexis is deliberately simple to hack on: the server is **Python 3 standard libra
 Requirements: Python 3.9+, ffmpeg / ffprobe. Optional: Pillow (only used by some tests), Playwright (browser tests).
 
 ```bash
-git clone https://github.com/xenix13/Nexis.git && cd Nexis
+git clone https://github.com/xenix13/Noxa.git && cd Noxa
 python3 -m seance --data ./data --port 8420
 ```
 
@@ -82,14 +82,24 @@ French text in the code is the **translation key**:
 
 - **Desktop** (`apps/desktop`, Electron): `npm ci && npm start`; `npm run dist` builds the installers for the current platform.
 - **Android phone** (`android/mobile`) and **Android TV** (`android/app`): `gradle -p android assembleRelease` (JDK 17, Gradle 8.7). Icons are regenerated with `python3 android/make_icons.py`.
-- The apps have their own version numbers (`apps/desktop/package.json`, `android/mobile/build.gradle`); the server reads them from the `nexis-apps.json` file attached to each release.
+- The apps have their own version numbers (`apps/desktop/package.json`, `android/mobile/build.gradle`); the server reads them from the `noxa-apps.json` file attached to each release.
 
 ## Releases and branches
 
 - `test`: where new work lands first; the *Test* update channel and the `:test` Docker image follow it.
 - `main`: stable releases. Every push to `main` with a new version in `seance/__init__.py` makes CI publish the GitHub release `v<version>` with the `.deb`, the Docker images (`latest` and `<version>`), the Android TV APK and the desktop / Android apps. Hand-written notes are taken from `docs/releases/v<version>.md` when that file exists.
-- `docker-compose.yml` on `main` must use `ghcr.io/xenix13/nexis:latest` (CI checks it).
+- `docker-compose.yml` on `main` must use `ghcr.io/xenix13/noxa:latest` (CI checks it).
 - Versions follow [semantic versioning](https://semver.org).
+
+## Former name (Nexis)
+
+The project was called **Nexis** until 4.0. A few invisible identifiers keep that name on purpose, because changing them would break existing installs or links between servers:
+
+- Android application ids `fr.nexis.app` and `fr.nexis.tv` (Android only updates an app over one with the same id), and the bridges `window.NexisAndroid` / `window.nexisNative`;
+- HTTP headers `X-Nexis-Server` and `X-Nexis-Device`, the `NEXIS1-` linked-server invitations, the `nexis-` prefix of backup files, browser storage keys (`nexis.*`) and the desktop app's data folder;
+- the internal name `seance` (Python package, system user, service, folders).
+
+The Docker image is published as `ghcr.io/xenix13/noxa` and, for existing installs, `ghcr.io/xenix13/nexis`; the `.deb` package `noxa` replaces `nexis`; `nexis` is kept as an alias of the `noxa` command.
 
 ## Documentation screenshots
 

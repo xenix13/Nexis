@@ -7,7 +7,7 @@
 - **Settings → Overview → Server status:** memory, swap, load and, for each stream, the mode (direct, remux, transcode), its reason, the **conversion speed** (below ×1 the CPU cannot keep up) and the last ffmpeg messages.
 - **⋯ → File information** on a movie or episode lists the file's tracks (codecs, languages, HDR…).
 - **The ⚙ menu of the player** shows how the current video is played and why.
-- **Logs:** `journalctl -u seance -f` (Docker: `docker logs -f nexis`). Set `SEANCE_DEBUG=1` in `/etc/seance/seance.env` and restart to log the ffmpeg commands.
+- **Logs:** `journalctl -u seance -f` (Docker: `docker logs -f noxa`). Set `SEANCE_DEBUG=1` in `/etc/seance/seance.env` and restart to log the ffmpeg commands.
 - **Updates:** `/var/log/seance-update.log`.
 
 ## Common problems
@@ -27,16 +27,16 @@
 | Slow pages | Requests over 5 s are logged ("Requête lente : GET /api/…", the server log is in French): `journalctl -u seance \| grep 'Requête lente'`. On a distant server (high latency), the first load is the slowest; later loads come from the device cache |
 | Old interface after an update | Reload the page: the interface code changes address with every version |
 | Cannot install the web app / no downloads / no notifications | These need HTTPS (or the desktop / Android app on a local `http://` server) |
-| Lost admin 2FA | `sudo nexis reset-2fa <username>` on the server |
+| Lost admin 2FA | `sudo noxa reset-2fa <username>` on the server |
 | Lost setup code | `cat /var/lib/seance/setup-code.txt` (only until the first account exists) |
 | Linked server "unreachable" | Only one of the two needs to be reachable on port 8421; it must not go through an HTTP(S) proxy. See [Network](linked-servers.md#network) |
 | Cold storage copy failed | The error is shown with its reason on *Cold storage*; **Retry** once fixed. SFTP: confirm the key fingerprint again if the server was reinstalled |
 
 ## Asking for help
 
-Open an [issue](https://github.com/xenix13/Nexis/issues/new/choose) with:
+Open an [issue](https://github.com/xenix13/Noxa/issues/new/choose) with:
 
-- the Nexis version (*Settings → Overview*) and the install method (script, `.deb`, Docker, Proxmox LXC);
+- the Noxa version (*Settings → Overview*) and the install method (script, `.deb`, Docker, Proxmox LXC);
 - what you did, what you expected and what happened;
 - the relevant lines of `journalctl -u seance` (remove addresses, names and tokens);
 - for playback problems, the *File information* of the title and the device / browser used.

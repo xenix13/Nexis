@@ -1,12 +1,12 @@
 {
   "name": "nexis-desktop",
-  "productName": "Nexis",
-  "version": "1.1.1",
-  "description": "Nexis pour Windows, macOS et Linux : l'interface de votre serveur Nexis, dans une vraie application.",
-  "homepage": "https://github.com/xenix13/Nexis",
+  "productName": "Noxa",
+  "version": "1.2.0",
+  "description": "Noxa pour Windows, macOS et Linux : l'interface de votre serveur Noxa, dans une vraie application.",
+  "homepage": "https://github.com/xenix13/Noxa",
   "author": {
-    "name": "Nexis",
-    "email": "nexis@users.noreply.github.com"
+    "name": "Noxa",
+    "email": "noxa@users.noreply.github.com"
   },
   "license": "MIT",
   "private": true,
@@ -26,8 +26,8 @@
   },
   "build": {
     "appId": "fr.nexis.desktop",
-    "productName": "Nexis",
-    "copyright": "Nexis",
+    "productName": "Noxa",
+    "copyright": "Noxa",
     "directories": {
       "buildResources": "build",
       "output": "dist"
@@ -55,13 +55,13 @@
           ]
         }
       ],
-      "artifactName": "Nexis-Setup.${ext}"
+      "artifactName": "Noxa-Setup.${ext}"
     },
     "nsis": {
       "oneClick": true,
       "perMachine": false,
       "deleteAppDataOnUninstall": false,
-      "shortcutName": "Nexis"
+      "shortcutName": "Noxa"
     },
     "mac": {
       "target": [
@@ -74,11 +74,11 @@
       ],
       "category": "public.app-category.entertainment",
       "identity": "-",
-      "artifactName": "Nexis-mac.${ext}",
+      "artifactName": "Noxa-mac.${ext}",
       "icon": "assets/icon-mac.png"
     },
     "dmg": {
-      "artifactName": "Nexis.dmg"
+      "artifactName": "Noxa.dmg"
     },
     "linux": {
       "target": [
@@ -96,15 +96,15 @@
         }
       ],
       "category": "AudioVideo",
-      "maintainer": "Nexis <nexis@users.noreply.github.com>",
-      "synopsis": "Nexis : films, séries et TV de votre serveur",
+      "maintainer": "Noxa <noxa@users.noreply.github.com>",
+      "synopsis": "Noxa : films, séries et TV de votre serveur",
       "syncDesktopName": true
     },
     "appImage": {
-      "artifactName": "Nexis.AppImage"
+      "artifactName": "Noxa.AppImage"
     },
     "deb": {
-      "artifactName": "nexis-desktop.deb"
+      "artifactName": "noxa-desktop.deb"
     }
   }
 }

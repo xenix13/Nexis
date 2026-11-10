@@ -13,7 +13,7 @@ Security fixes are released for the latest stable version (the `main` branch, *S
 
 Please **do not open a public issue** for security problems.
 
-Use GitHub's private reporting instead: [**Report a vulnerability**](https://github.com/xenix13/Nexis/security/advisories/new) (repository *Security* tab → *Report a vulnerability*). Include:
+Use GitHub's private reporting instead: [**Report a vulnerability**](https://github.com/xenix13/Noxa/security/advisories/new) (repository *Security* tab → *Report a vulnerability*). Include:
 
 - the affected version and install method;
 - a description of the issue and its impact;
@@ -24,7 +24,7 @@ You should get a first answer within a week. Once a fix is released, the advisor
 ## Hardening tips
 
 - Mount media folders read-only.
-- Expose Nexis to the Internet only behind an HTTPS reverse proxy, with `SEANCE_COOKIE_SECURE=1` and `SEANCE_TRUST_PROXY=1`.
+- Expose Noxa to the Internet only behind an HTTPS reverse proxy, with `SEANCE_COOKIE_SECURE=1` and `SEANCE_TRUST_PROXY=1`.
 - Turn on two-factor authentication for administrator accounts.
 
 More in [docs/administration.md](docs/administration.md#security).

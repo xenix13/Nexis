@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOGO = os.path.join(ROOT, "static", "icons", "icon-512.png")
-BG = (11, 11, 14, 255)  # fond de Nexis
+BG = (11, 11, 14, 255)  # fond de Noxa
 DENSITIES = {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}
 
 

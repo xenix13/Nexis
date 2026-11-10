@@ -1,4 +1,4 @@
-// Web player: HLS stream proxied through Nexis, custom controls, resume,
+// Web player: HLS stream proxied through Noxa, custom controls, resume,
 // per-user track preferences, "skip intro" banner and next-episode countdown.
 import { applySubStyle } from './substyle.js';
 import { deviceId, deviceName, deviceOverrides } from './device.js';
@@ -141,7 +141,7 @@ export async function renderPlayer(root, rk, ctx) {
   }
   if (destroyed || !current()) return () => {};
   if (!['movie', 'episode', 'extra'].includes(item.type)) { location.replace(`#/item/${rk}`); return () => {}; }
-  document.title = `${item.type === 'episode' ? `${item.show} ${episodeCode(item)}` : item.title} · Nexis`;
+  document.title = `${item.type === 'episode' ? `${item.show} ${episodeCode(item)}` : item.title} · Noxa`;
   titleEl.append(h('strong', item.type === 'episode' ? item.show : item.title),
     item.type === 'episode' ? h('span', `${episodeCode(item)} · ${item.title}`) : (item.year ? h('span', String(item.year)) : null));
   const poster = item.type === 'episode' ? (item.show_art || item.art) : item.art;
@@ -319,7 +319,7 @@ export async function renderPlayer(root, rk, ctx) {
         autoplay();
       }, { once: true });
     } else {
-      showError(tr('Ce navigateur ne lit pas le HLS et le lecteur hls.js est absent du serveur. Réinstaller Nexis corrige le problème.'));
+      showError(tr('Ce navigateur ne lit pas le HLS et le lecteur hls.js est absent du serveur. Réinstaller Noxa corrige le problème.'));
       return;
     }
     startedAt = Date.now();

@@ -188,15 +188,15 @@ async function offlineMode(e, page, parts, token) {
     setCleanup: (fn) => { cleanup = fn; }, offline: true };
   if (page === 'offline' && parts[1]) {
     document.body.classList.add('playing');
-    document.title = 'Nexis';
+    document.title = 'Noxa';
     const stopPlayer = await renderPlayer(root, parts[1], ctx);
     if (token === renderToken) cleanup = stopPlayer; else stopPlayer();
     return true;
   }
   document.body.classList.remove('playing');
-  document.title = tr('Téléchargements · Nexis');
+  document.title = tr('Téléchargements · Noxa');
   const main = h('main.content');
-  clear(root, h('header.topbar.offline-bar', h('span.logo', h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis'),
+  clear(root, h('header.topbar.offline-bar', h('span.logo', h('span.logo-mark', { 'aria-hidden': 'true' }), 'Noxa'),
     h('div.grow'), h('button.btn.small', { onclick: () => location.reload() }, tr('Réessayer la connexion'))), main);
   await renderDownloads(main, ctx, { offline: true });
   return true;
@@ -214,9 +214,9 @@ window.addEventListener('online', () => {
   route();
 });
 
-// Le proxy (nginx…) répond « Bad Gateway » le temps que Nexis redémarre : on réessaie tout seul
+// Le proxy (nginx…) répond « Bad Gateway » le temps que Noxa redémarre : on réessaie tout seul
 function restarting(token) {
-  clear(root, h('div.center-page', h('div.restart-box', spinner(), h('h2', tr('Nexis redémarre…')),
+  clear(root, h('div.center-page', h('div.restart-box', spinner(), h('h2', tr('Noxa redémarre…')),
     h('p.muted', tr('La page se rechargera automatiquement dès que le serveur répond.')))));
   const retry = async () => {
     if (token !== renderToken) return;
@@ -327,12 +327,12 @@ function shell(active) {
     h('a', { href: '#/history' }, tr('Historique')),
     me.features && me.features.downloads && offlineSupported() ? h('a', { href: '#/downloads' }, tr('Téléchargements')) : null,
     h('a', { href: '#/settings' }, tr('Paramètres')),
-    // installer Nexis (application native ou web, et les autres appareils) ; dans l'application : la page Applications
+    // installer Noxa (application native ou web, et les autres appareils) ; dans l'application : la page Applications
     h('button.install-app', { hidden: !canInstall(), onclick: () => install() }, icon('install'), tr('Installer l’application')),
     h('a.apps-link', { href: '#/apps', hidden: canInstall() }, tr('Applications')),
     h('button', { onclick: () => aboutDialog(state.status && state.status.version) }, tr('À propos')),
     h('button', { onclick: logout }, tr('Se déconnecter')),
-    state.status ? h('div.menu-version', `Nexis ${state.status.version}`) : null);
+    state.status ? h('div.menu-version', `Noxa ${state.status.version}`) : null);
   const userBtn = h('button.user-btn', { 'aria-label': tr('Menu utilisateur'), 'aria-haspopup': 'true',
     onclick: (e) => {
       e.stopPropagation();
@@ -344,13 +344,13 @@ function shell(active) {
     // application installée : plus de bouton « précédent » du navigateur, on en met un
     h('button.icon-btn.topbar-back', { type: 'button', 'aria-label': tr('Retour'), title: tr('Retour'), hidden: active === 'home',
       onclick: () => { if (history.length > 1) history.back(); else location.hash = '#/'; } }, icon('back')),
-    h('a.logo', { href: '#/', 'aria-label': tr('Nexis — accueil') }, h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis'),
+    h('a.logo', { href: '#/', 'aria-label': tr('Noxa — accueil') }, h('span.logo-mark', { 'aria-hidden': 'true' }), 'Noxa'),
     h('nav.nav', navLinks(me, active)),
     h('div.topbar-right', h('span.together-slot', { dataset: { active } }),
       h('button.icon-btn.group-new', { type: 'button', title: tr('Créer un groupe « Regarder ensemble »'), 'aria-label': tr('Créer un groupe'),
         onclick: () => createGroupDialog(me) }, icon('group'), h('span.plus', '+')),
-      me.update ? h('a.icon-btn.update-btn', { href: '#/admin/update', title: tr('Nexis {update} est disponible', { update: me.update }),
-        'aria-label': tr('Mise à jour disponible : Nexis {update}', { update: me.update }) }, icon('upgrade')) : null,
+      me.update ? h('a.icon-btn.update-btn', { href: '#/admin/update', title: tr('Noxa {update} est disponible', { update: me.update }),
+        'aria-label': tr('Mise à jour disponible : Noxa {update}', { update: me.update }) }, icon('upgrade')) : null,
       h('label.search', icon('search'), search), notifBell(me), h('div.user-wrap', userBtn, menu)));
   paintTogetherSlot(header.querySelector('.together-slot'));
   const main = h('main.content');
@@ -431,7 +431,7 @@ async function route() {
     const { renderApps } = await import('./views/apps.js');
     if (state.me) { await renderApps(shell('apps')); return; }
     const main = h('main.main.share-page');
-    clear(root, h('header.share-head', h('a.logo', { href: '#/' }, h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis')), main);
+    clear(root, h('header.share-head', h('a.logo', { href: '#/' }, h('span.logo-mark', { 'aria-hidden': 'true' }), 'Noxa')), main);
     await renderApps(main);
     return;
   }
@@ -439,22 +439,22 @@ async function route() {
     // album photo partagé par lien : consultable sans compte
     document.body.classList.remove('playing');
     const main = h('main.main.share-page');
-    clear(root, h('header.share-head', h('span.logo', h('span.logo-mark', { 'aria-hidden': 'true' }), 'Nexis')), main);
+    clear(root, h('header.share-head', h('span.logo', h('span.logo-mark', { 'aria-hidden': 'true' }), 'Noxa')), main);
     const ctx = { query, parts, isCurrent: () => token === renderToken, setCleanup: (fn) => { cleanup = fn; } };
     try { await renderShared(main, parts[1], ctx); } catch (e) { clear(main, h('div.empty', e.message)); }
     return;
   }
   if (state.status.setup) {
-    document.title = tr('Installation · Nexis');
+    document.title = tr('Installation · Noxa');
     return renderSetup(root, () => { state.status = null; state.me = null; location.hash = '#/admin/libraries'; route(); });
   }
   if (page === 'login' || page === 'profiles') stopGroupsFeed(); // la liste suit la personne connectée
   if (page === 'login') {
-    document.title = tr('Connexion · Nexis');
+    document.title = tr('Connexion · Noxa');
     return renderLogin(root, async () => { await refreshMe(); location.hash = '#/profiles'; });
   }
   if (page === 'profiles') {
-    document.title = tr('Qui regarde ? · Nexis');
+    document.title = tr('Qui regarde ? · Noxa');
     if (!state.me) {
       try { await refreshMe(); } catch { location.hash = '#/login'; return; }
     }
@@ -503,7 +503,7 @@ async function route() {
   const main = shell(active);
   main.append(spinner());
   const titles = { '': tr('Accueil'), book: tr('Livre audio'), live: tr('TV en direct'), together: tr('Regarder ensemble'), watchlist: tr('À regarder'), discover: tr('Découvrir'), playlists: tr('Mes playlists'), search: tr('Recherche'), history: tr('Historique'), downloads: tr('Téléchargements'), settings: tr('Paramètres'), admin: tr('Paramètres') };
-  document.title = `${titles[page] || 'Nexis'} · Nexis`;
+  document.title = `${titles[page] || 'Noxa'} · Noxa`;
   try {
     switch (page) {
       case '': await renderHome(main, ctx); break;

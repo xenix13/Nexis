@@ -2,7 +2,7 @@
 
 - Clés du serveur (VAPID, courbe P-256) créées avec openssl au premier usage, dans <données>/push.
 - Les messages partent SANS contenu : rien à chiffrer, seul l'en-tête signé (JWT ES256) prouve qu'ils viennent
-  de ce serveur. Le service worker de l'appareil, réveillé, demande alors à Nexis ce qu'il doit afficher.
+  de ce serveur. Le service worker de l'appareil, réveillé, demande alors à Noxa ce qu'il doit afficher.
 - Seuls les services push des navigateurs sont contactés (Google, Mozilla, Apple, Microsoft) : une adresse
   d'abonnement quelconque ne peut pas servir à faire appeler une machine du réseau par le serveur.
 - Application Android : sa vue web ne connaît pas Web Push. L'appareil reçoit un jeton (inscription
@@ -26,7 +26,7 @@ log = logging.getLogger("seance.push")
 
 PUSH_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.com", "push.services.mozilla.com",
               "web.push.apple.com", "notify.windows.com")
-CONTACT = "https://github.com/xenix13/Nexis"
+CONTACT = "https://github.com/xenix13/Noxa"
 KEEP_MESSAGES = 20
 DEVICE = "device:"  # inscription d'une application Android (messages récupérés par l'appareil)
 DEVICE_IDLE = 60 * 86400  # appareil qui ne demande plus rien depuis 60 jours : désinscrit
@@ -252,7 +252,7 @@ def register(app, ctx, x):
     @app.route("POST", "/api/push/test")
     def push_test(req):
         from .i18n import tr
-        n = push.notify(req.user["id"], tr("Notifications activées"), tr("Nexis vous préviendra des nouveaux épisodes."), "#/", "test")
+        n = push.notify(req.user["id"], tr("Notifications activées"), tr("Noxa vous préviendra des nouveaux épisodes."), "#/", "test")
         if not n:
             raise HTTPError(409, "Aucun appareil inscrit aux notifications")
         return {"sent": n}

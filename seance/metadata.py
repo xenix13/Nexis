@@ -309,7 +309,7 @@ class Metadata:
             push = getattr(self.ctx, "push", None)
             if push:  # titre demandé (Découvrir) arrivé : prévenir la personne
                 from .i18n import tr
-                push.notify(w["user_id"], tr("Disponible sur Nexis"), item["title"], f"#/item/{item['id']}", f"item-{item['id']}")
+                push.notify(w["user_id"], tr("Disponible sur Noxa"), item["title"], f"#/item/{item['id']}", f"item-{item['id']}")
         db.run("DELETE FROM wishlist WHERE media_type=? AND tmdb_id=?", (media_type, tid))
 
     def _trailer(self, item, d, tmdb):

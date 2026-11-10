@@ -2,7 +2,7 @@
 
 python3 tools/screenshots/take.py <demo_media_folder> <output_folder>
 
-Starts a throwaway Nexis server on a temporary data folder, creates an English-speaking admin and a few
+Starts a throwaway Noxa server on a temporary data folder, creates an English-speaking admin and a few
 profiles, adds the demo libraries, seeds some viewing history, then drives Chromium (Playwright) through the
 pages shown in the docs. Images are written as JPEG (docs/images).
 """

@@ -86,6 +86,6 @@ export function shortcutsPanel() {
   };
   paint();
   return h('section.panel', h('h2', tr('Raccourcis clavier du lecteur')),
-    h('p.muted.small', tr('Propres à cet appareil. Échap annule le changement en cours ; la touche ? affiche l’aide partout dans Nexis.')),
+    h('p.muted.small', tr('Propres à cet appareil. Échap annule le changement en cours ; la touche ? affiche l’aide partout dans Noxa.')),
     list, h('div.actions-row', h('button.btn.small', { type: 'button', onclick: () => { resetBindings(); paint(); } }, tr('Tout remettre par défaut'))));
 }

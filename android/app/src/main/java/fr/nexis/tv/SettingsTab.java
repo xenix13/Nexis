@@ -66,7 +66,7 @@ final class SettingsTab extends BrowseScreen.Tab {
         TextView hint = Ui.text(act, Tr.t("Langues audio et sous-titres, qualité, épisode suivant : ces réglages suivent votre compte et se changent depuis le téléphone ou l'ordinateur."), 15, Ui.MUTED);
         hint.setPadding(dp(4), dp(28), 0, 0);
         list.addView(hint, new LinearLayout.LayoutParams(dp(820), ViewGroup.LayoutParams.WRAP_CONTENT));
-        TextView version = Ui.text(act, Tr.t("Nexis pour Android TV, version ") + BuildConfig.VERSION_NAME, 14, Ui.MUTED);
+        TextView version = Ui.text(act, Tr.t("Noxa pour Android TV, version ") + BuildConfig.VERSION_NAME, 14, Ui.MUTED);
         version.setPadding(dp(4), dp(12), 0, 0);
         list.addView(version);
     }

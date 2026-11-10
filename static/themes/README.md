@@ -1,10 +1,10 @@
-# Nexis theme store
+# Noxa theme store
 
-Every `.json` file in this folder is a theme offered in *Settings → Appearance → Theme store* on every Nexis server. Servers read `index.json`, which is regenerated automatically each time a change is merged into `main`.
+Every `.json` file in this folder is a theme offered in *Settings → Appearance → Theme store* on every Noxa server. Servers read `index.json`, which is regenerated automatically each time a change is merged into `main`.
 
 ## Proposing a theme
 
-**The easy way:** in Nexis, *Settings → Appearance → Theme store → Create a theme…*. Adjust the colours (the whole interface is the preview), then *Propose on GitHub*: GitHub opens this folder with your file already filled in. Confirm the creation of the file: GitHub makes your copy of the repository and opens a pull request.
+**The easy way:** in Noxa, *Settings → Appearance → Theme store → Create a theme…*. Adjust the colours (the whole interface is the preview), then *Propose on GitHub*: GitHub opens this folder with your file already filled in. Confirm the creation of the file: GitHub makes your copy of the repository and opens a pull request.
 
 **By hand:** add `static/themes/<id>.json` (the file name is the theme's `id`) in a pull request. Check it locally with `python3 -m seance.themes check-files static/themes`.
 

@@ -4,11 +4,11 @@
 
 **Contents:** [How a video is played](#how-a-video-is-played) · [Automatic quality](#automatic-quality) · [Conversions and the graphics card](#conversions-and-the-graphics-card) · [HDR](#hdr-movies) · [Audio](#audio) · [Subtitles](#subtitles) · [Chapters, intros and credits](#chapters-intros-and-credits) · [The player](#the-player) · [Casting](#casting-to-a-tv) · [Remote control](#remote-control) · [Watch together](#watch-together)
 
-<img src="images/player.jpg" alt="The Nexis player" width="100%">
+<img src="images/player.jpg" alt="The Noxa player" width="100%">
 
 ## How a video is played
 
-When a video starts, the player tells the server exactly which codecs the device can decode (H.264, HEVC 8/10-bit, AV1, VP9, AAC, AC3, E-AC3, FLAC, Opus…). Nexis then picks the cheapest way to play it:
+When a video starts, the player tells the server exactly which codecs the device can decode (H.264, HEVC 8/10-bit, AV1, VP9, AAC, AC3, E-AC3, FLAC, Opus…). Noxa then picks the cheapest way to play it:
 
 | Mode | When | CPU cost |
 |---|---|---|
@@ -52,13 +52,13 @@ When an HDR movie (HDR10, HDR10+, HLG, Dolby Vision with an HDR10 base layer) ha
 
 Text subtitles (SRT, ASS/SSA, WebVTT, mov_text), embedded or external, are displayed by the device **without converting the video**. ASS subtitles keep their positioning, karaoke and attached fonts (rendered by libass compiled to WebAssembly, via [JASSUB](https://github.com/ThaUnknown/jassub)); PGS (Blu-ray) subtitles are drawn by the browser; only VobSub (DVD) needs burning in.
 
-**Forced subtitles** ("Forced", "Signs & Songs"…) only translate signs and songs: Nexis offers them only when the audio is in their language, and then selects them automatically.
+**Forced subtitles** ("Forced", "Signs & Songs"…) only translate signs and songs: Noxa offers them only when the audio is in their language, and then selects them automatically.
 
 **Appearance:** size, font, colour, background, outline and position, with a preview, in *Settings → Playback* (not applied to styled ASS or PGS).
 
 ### Embedded subtitles are extracted once
 
-Subtitles inside an MKV can only be read by going through the whole file, minutes for a 30 GB movie on a NAS. Nexis **extracts them once** (every track and attached font in a single pass) and keeps them in its cache. The cache follows the **file** (size and date), not its title: a renamed or moved file finds its subtitles again. Extraction happens:
+Subtitles inside an MKV can only be read by going through the whole file, minutes for a 30 GB movie on a NAS. Noxa **extracts them once** (every track and attached font in a single pass) and keeps them in its cache. The cache follows the **file** (size and date), not its title: a renamed or moved file finds its subtitles again. Extraction happens:
 
 - **at scan time**, in the background for each new file (throttled during playback); *Settings → Conversion and audio → Subtitles and sound → Prepare everything now* processes the whole library;
 - **when a title page opens**, with priority;
@@ -68,19 +68,19 @@ If subtitles are not ready when you press play, playback starts as soon as they 
 
 ### Missing subtitles: OpenSubtitles
 
-Nexis downloads missing subtitles itself, no Bazarr needed. *Settings → Conversion and audio → Subtitles and sound → OpenSubtitles*: a free account on [opensubtitles.com](https://www.opensubtitles.com) (20 subtitles a day, more with VIP) and an API key created on the site (*API consumers*).
+Noxa downloads missing subtitles itself, no Bazarr needed. *Settings → Conversion and audio → Subtitles and sound → OpenSubtitles*: a free account on [opensubtitles.com](https://www.opensubtitles.com) (20 subtitles a day, more with VIP) and an API key created on the site (*API consumers*).
 
 - **Automatic:** every night and after each import, a movie or episode without a complete subtitle in one of your languages gets one, newest first. The task stops at the daily quota and resumes the next day; a title with no result is retried after a week.
 - **Best match first:** subtitles synced to the exact file (by its hash) come first, then the most downloaded. Machine translations and forced-only files are skipped; hearing-impaired (SDH) ones are only used if there is nothing else (configurable).
 - **By hand:** on a title page, **⋯ → Find subtitles…** lists the results; one click adds one. Admins can remove a downloaded subtitle (it is then not downloaded again).
-- Files go to Nexis's data folder (`data/subtitles/`), never next to your videos, and are included in backups.
+- Files go to Noxa's data folder (`data/subtitles/`), never next to your videos, and are included in backups.
 
 ### Subtitles generated from the audio: Whisper
 
 For a video with no subtitle in its spoken language, even after OpenSubtitles, Whisper can write them from the voice. They are **in the spoken language** and marked "generated" in the player. *Settings → Conversion and audio → Subtitles and sound → Whisper*, either:
 
-- **A transcription service** (recommended, especially with Docker): anything compatible with the OpenAI API (`/v1/audio/transcriptions`), for example [Speaches](https://speaches-ai.github.io/speaches/) (faster-whisper) in a container next to Nexis, ideally with a GPU, and the `Systran/faster-whisper-small` model. OpenAI itself works too (`whisper-1`, API key), but the audio then leaves your network. Nexis sends the audio in 10-minute chunks (mono MP3).
-- **On the server**: ffmpeg 8 built with whisper.cpp (the `whisper` filter) or the `whisper-cli` program. Nexis downloads the chosen model (tiny, base, small, medium) to `data/whisper`.
+- **A transcription service** (recommended, especially with Docker): anything compatible with the OpenAI API (`/v1/audio/transcriptions`), for example [Speaches](https://speaches-ai.github.io/speaches/) (faster-whisper) in a container next to Noxa, ideally with a GPU, and the `Systran/faster-whisper-small` model. OpenAI itself works too (`whisper-1`, API key), but the audio then leaves your network. Noxa sends the audio in 10-minute chunks (mono MP3).
+- **On the server**: ffmpeg 8 built with whisper.cpp (the `whisper` filter) or the `whisper-cli` program. Noxa downloads the chosen model (tiny, base, small, medium) to `data/whisper`.
 
 It is slow (minutes to over an hour per movie on a CPU), runs one video at a time and pauses during playback. By hand: **⋯ → Generate subtitles (Whisper)** (admins). Automatically: the *Generate missing subtitles (Whisper)* task, off by default, at most 3 titles per run.
 
@@ -97,7 +97,7 @@ It is slow (minutes to over an hour per movie on a CPU), runs one video at a tim
 - Audio, subtitles and quality during playback; speed (0.75× to 2×, keys `<` and `>`); sleep timer (end of episode, 15 to 90 min); shuffle for shows.
 - Skip back / forward durations (5 to 30 s and 10 to 90 s) and the starting speed are personal settings; the volume is remembered.
 - **Mini player:** the button at the top right (or `I`) shrinks the player into a corner while you keep browsing.
-- **Keyboard:** `?` shows every shortcut anywhere in Nexis; `/` jumps to search. Player keys can be remapped in *Settings → This device*.
+- **Keyboard:** `?` shows every shortcut anywhere in Noxa; `/` jumps to search. Player keys can be remapped in *Settings → This device*.
 - **Remote control and gamepad:** the whole interface works without a mouse (arrows, OK, Back; Xbox / PlayStation controllers: A to select, B to go back, Start to play / pause).
 
 ## Casting to a TV

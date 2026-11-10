@@ -11,7 +11,7 @@ function stage(title, text) {
   return h('section.auth-stage', { 'aria-hidden': 'false' },
     h('div.auth-wall', { 'aria-hidden': 'true' }, tiles),
     h('div.auth-stage-body',
-      h('div.logo', h('span.logo-mark', { role: 'img', 'aria-label': tr('Logo Nexis') }), 'Nexis'),
+      h('div.logo', h('span.logo-mark', { role: 'img', 'aria-label': tr('Logo Noxa') }), 'Noxa'),
       h('div.auth-pitch', h('h2', title), h('p', text))));
 }
 
@@ -27,7 +27,7 @@ function layout(root, card, pitch = [tr('Votre médiathèque, partout.'),
 }
 
 function brand(title, lead) {
-  return [h('div.auth-brand', h('span.logo-mark.big', { role: 'img', 'aria-label': tr('Logo Nexis') }), h('h1', title)),
+  return [h('div.auth-brand', h('span.logo-mark.big', { role: 'img', 'aria-label': tr('Logo Noxa') }), h('h1', title)),
     h('p.auth-lead', lead)];
 }
 
@@ -50,7 +50,7 @@ export function renderLogin(root, onDone) {
         pass.select();
       } finally { btn.disabled = false; }
     },
-  }, brand(tr('Connexion'), tr('Identifiez-vous avec votre compte Nexis.')),
+  }, brand(tr('Connexion'), tr('Identifiez-vous avec votre compte Noxa.')),
   field(tr('Identifiant'), user), field(tr('Mot de passe'), pass), err, btn,
   h('p.auth-foot', tr('Mot de passe oublié ? Contactez l’administrateur du serveur.')),
   h('p.auth-foot', h('a', { href: '#/apps' }, tr('Applications pour Windows, macOS, Linux, Android et TV'))));
@@ -117,5 +117,5 @@ export function renderSetup(root, onDone) {
   h('div.grid2', field(tr('Identifiant'), username), field(tr('Nom affiché'), display)),
   h('div.grid2', field(tr('Mot de passe (8 caractères min.)'), pass), field(tr('Confirmation'), pass2)),
   err, btn);
-  layout(root, form, [tr('Installation de Nexis'), tr('Création du compte administrateur, puis ajout des bibliothèques.')]);
+  layout(root, form, [tr('Installation de Noxa'), tr('Création du compte administrateur, puis ajout des bibliothèques.')]);
 }

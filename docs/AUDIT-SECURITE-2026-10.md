@@ -1,4 +1,4 @@
-# Audit de sécurité de Nexis — version 3.19.0
+# Audit de sécurité de Noxa — version 3.19.0
 
 *27 octobre 2026. Suite de l'audit de la version 3.1.0 (`docs/AUDIT-SECURITE.md`), qui reste valable pour ce qu'il couvre. Celui-ci porte sur ce qui a changé depuis (versions 3.2 à 3.18 : double authentification, appli Android TV, téléchargements hors ligne, Découvrir, canal de mise à jour…) et sur deux questions précises : **les bibliothèques sont-elles bien en lecture seule ?** et **les composants tiers sont-ils sûrs ?** Revue du code (serveur, interface web, appli TV, scripts d'installation, CI) ; les correctifs appliqués ont un test dans `tests/test_security.py`.*
 
@@ -19,7 +19,7 @@ Aucune faille critique (exécution de code à distance, contournement de l'authe
 
 ## 1. Mise à jour depuis l'interface
 
-**Constat.** `seance-mountd` (root) lance `curl https://raw.githubusercontent.com/<dépôt>/<branche>/deploy/install.sh | bash`, qui clone la **dernière révision** de la branche (`main`, ou `test` si ce canal est choisi). Aucune signature, aucune empreinte, aucune version figée : le code exécuté en root est celui qui se trouve sur GitHub au moment du clic. L'entrée de l'interface est bien filtrée (ni adresse ni commande ne viennent de Nexis), mais la **confiance repose entièrement sur le compte GitHub** du projet.
+**Constat.** `seance-mountd` (root) lance `curl https://raw.githubusercontent.com/<dépôt>/<branche>/deploy/install.sh | bash`, qui clone la **dernière révision** de la branche (`main`, ou `test` si ce canal est choisi). Aucune signature, aucune empreinte, aucune version figée : le code exécuté en root est celui qui se trouve sur GitHub au moment du clic. L'entrée de l'interface est bien filtrée (ni adresse ni commande ne viennent de Noxa), mais la **confiance repose entièrement sur le compte GitHub** du projet.
 
 **Risque.** Quiconque obtient le droit de pousser sur le dépôt (vol du mot de passe ou d'un jeton, application GitHub trop permissive, action CI compromise) obtient root sur toutes les installations dont l'administrateur clique sur « Mettre à jour ». Le canal *Test* exécute en plus du code non validé. Probabilité faible, impact maximal.
 
@@ -30,18 +30,18 @@ Aucune faille critique (exécution de code à distance, contournement de l'authe
 
 ## 2. Les bibliothèques sont-elles en lecture seule ?
 
-**Dans le code : oui.** Toutes les écritures de Nexis vont dans son dossier de données (`/var/lib/seance` : base, caches d'images, sous-titres extraits, vignettes, empreintes audio, transcodages, téléchargements préparés, avatars). Aucune fonction ne modifie, ne renomme ni ne supprime un fichier de bibliothèque : la tâche « Nettoyer les caches » ne parcourt que le dossier de données ; supprimer une bibliothèque ou un partage dans l'interface ne touche pas aux fichiers ; les `.nfo`, affiches et sous-titres externes ne sont que lus.
+**Dans le code : oui.** Toutes les écritures de Noxa vont dans son dossier de données (`/var/lib/seance` : base, caches d'images, sous-titres extraits, vignettes, empreintes audio, transcodages, téléchargements préparés, avatars). Aucune fonction ne modifie, ne renomme ni ne supprime un fichier de bibliothèque : la tâche « Nettoyer les caches » ne parcourt que le dossier de données ; supprimer une bibliothèque ou un partage dans l'interface ne touche pas aux fichiers ; les `.nfo`, affiches et sous-titres externes ne sont que lus.
 
 **Par le système : oui, sauf dans un cas.**
 
 | Installation | Garantie |
 |---|---|
-| Service systemd standard | `ProtectSystem=strict` + `ReadWritePaths=/var/lib/seance` : tout le reste du système, `/mnt` et `/media` compris, est **monté en lecture seule pour le service**. Même un Nexis compromis ne pourrait pas modifier les médias. |
-| Partages SMB montés par Nexis | Montés `ro,nosuid,nodev,noexec`. |
+| Service systemd standard | `ProtectSystem=strict` + `ReadWritePaths=/var/lib/seance` : tout le reste du système, `/mnt` et `/media` compris, est **monté en lecture seule pour le service**. Même un Noxa compromis ne pourrait pas modifier les médias. |
+| Partages SMB montés par Noxa | Montés `ro,nosuid,nodev,noexec`. |
 | Docker | Le `docker-compose.yml` d'exemple monte les médias en `:ro`. Si l'utilisateur oublie `:ro`, seuls les droits Unix protègent. |
-| **LXC sans « nesting »** (version allégée du service) | `ProtectSystem=false` : le bac à sable est retiré. Si les dossiers de médias appartiennent à `seance` ou lui sont ouverts en écriture (point de montage Proxmox sans `ro=1`, `chmod 777`…), un Nexis compromis pourrait modifier ou supprimer les médias. |
+| **LXC sans « nesting »** (version allégée du service) | `ProtectSystem=false` : le bac à sable est retiré. Si les dossiers de médias appartiennent à `seance` ou lui sont ouverts en écriture (point de montage Proxmox sans `ro=1`, `chmod 777`…), un Noxa compromis pourrait modifier ou supprimer les médias. |
 
-**Correctif.** La page *Paramètres → Bibliothèques* signale désormais tout dossier dans lequel le service peut écrire (« Nexis peut écrire dans ce dossier : par précaution, montez-le en lecture seule »). Test : `test_writable_library_is_flagged`.
+**Correctif.** La page *Paramètres → Bibliothèques* signale désormais tout dossier dans lequel le service peut écrire (« Noxa peut écrire dans ce dossier : par précaution, montez-le en lecture seule »). Test : `test_writable_library_is_flagged`.
 
 **Recommandations.** Points de montage Proxmox avec `ro=1` (`mp0: /tank/films,mp=/mnt/films,ro=1`), volumes Docker en `:ro`, ou fichiers appartenant à un autre utilisateur avec des droits `755/644`. Ne jamais placer une bibliothèque sous `/var/lib/seance`.
 
@@ -72,7 +72,7 @@ Les actions tierces (`docker/build-push-action@v6`, `gradle/actions/setup-gradle
 
 ## 5. Appli Android TV
 
-- **Cookie de session** : il était joint à toute image demandée, même à une adresse extérieure. **Corrigé** : seulement vers le serveur Nexis (`Images.java`). Le lecteur ExoPlayer l'envoie à toutes ses requêtes ; elles ne visent que le serveur aujourd'hui, mais `setAllowCrossProtocolRedirects(true)` permettrait une redirection HTTPS → HTTP : à désactiver si Nexis est exposé en HTTPS.
+- **Cookie de session** : il était joint à toute image demandée, même à une adresse extérieure. **Corrigé** : seulement vers le serveur Noxa (`Images.java`). Le lecteur ExoPlayer l'envoie à toutes ses requêtes ; elles ne visent que le serveur aujourd'hui, mais `setAllowCrossProtocolRedirects(true)` permettrait une redirection HTTPS → HTTP : à désactiver si Noxa est exposé en HTTPS.
 - **HTTP en clair** autorisé (`usesCleartextTraffic`) : nécessaire pour un serveur local en `http://192.168.x.x`. Hors du réseau local, passer par HTTPS.
 - Sauvegarde Android désactivée (`allowBackup=false`) : le cookie ne part pas dans les sauvegardes Google. Bien.
 - Langue : l'appli envoie `X-Lang` pour recevoir les messages du serveur dans sa langue.
@@ -101,7 +101,7 @@ Les actions tierces (`docker/build-push-action@v6`, `gradle/actions/setup-gradle
 - **DLNA sans comptes.** Le protocole ne prévoit aucune authentification : quand le service est activé, tout appareil du réseau local peut parcourir et lire les bibliothèques partagées, sans contrôle parental. Le service est donc **désactivé par défaut**, limité aux bibliothèques choisies par l'administrateur, et refuse toute adresse qui n'est pas locale (privée, boucle locale, lien local), y compris derrière un reverse proxy (403). Les routes `/dlna/` ne servent que les fichiers des bibliothèques partagées, désignés par leur numéro : aucun chemin n'est accepté du client.
 - **Événements UPnP.** L'état initial envoyé à l'abonnement ne part que vers l'adresse de l'appareil qui s'abonne (pas de requête vers une adresse tierce).
 - **SOAP.** Les corps de requête sont limités à 64 Ko et lus avec le parseur XML de la bibliothèque standard (expat protège des entités récursives).
-- **Photothèque.** Lecture seule : les miniatures et images redimensionnées vont dans le cache de Nexis. L'accès aux photos (vignettes, visionneuse, fichier d'origine) vérifie l'accès du compte à la bibliothèque. Les photothèques ne sont pas recopiées chez les serveurs liés.
+- **Photothèque.** Lecture seule : les miniatures et images redimensionnées vont dans le cache de Noxa. L'accès aux photos (vignettes, visionneuse, fichier d'origine) vérifie l'accès du compte à la bibliothèque. Les photothèques ne sont pas recopiées chez les serveurs liés.
 
 ## 9. Télécommande, notifications push, albums partagés (nouveau, 3.29.0)
 
@@ -117,7 +117,7 @@ Les actions tierces (`docker/build-push-action@v6`, `gradle/actions/setup-gradle
 ## 11. Sauvegardes, services externes, podcasts (nouveau, 3.32.0 à 3.37.0)
 
 - **Archives de sauvegarde.** Elles contiennent les empreintes des mots de passe, les secrets de double authentification, l'identité des serveurs liés et les jetons des services reliés : droits 600, téléchargement réservé aux administrateurs. À la restauration, l'archive est refusée si elle contient autre chose que la base et les dossiers attendus (pas de chemin absolu, pas de `..`, pas de lien), si sa base est plus récente que la version installée ou si l'intégrité de la base échoue. Elle n'est mise en place qu'au démarrage suivant ; l'état d'avant est gardé.
-- **Identifiants de services.** Le mot de passe OpenSubtitles, la clé du service Whisper et le secret de l'application Trakt sont dans la base (nécessaires pour appeler ces services) et jamais renvoyés à l'interface. Les comptes Trakt sont reliés par code d'appareil (OAuth) : Nexis ne voit pas le mot de passe Trakt, seulement un jeton révocable, retiré quand on délie le compte.
+- **Identifiants de services.** Le mot de passe OpenSubtitles, la clé du service Whisper et le secret de l'application Trakt sont dans la base (nécessaires pour appeler ces services) et jamais renvoyés à l'interface. Les comptes Trakt sont reliés par code d'appareil (OAuth) : Noxa ne voit pas le mot de passe Trakt, seulement un jeton révocable, retiré quand on délie le compte.
 - **Podcasts (SSRF).** Le serveur lit les flux RSS, l'audio et les images à la place des appareils. Une adresse donnée par un utilisateur ordinaire est refusée si elle désigne une adresse privée, de bouclage, locale au lien ou réservée, et chaque redirection est vérifiée de même. Seul un administrateur peut ajouter un flux du réseau local. Les images ne sont relayées que si elles appartiennent à un podcast connu ou à un résultat de recherche récent ; l'audio n'est relayé qu'aux abonnés du podcast, et seulement s'il s'annonce comme de l'audio.
 - **Fichiers envoyés.** Archive de sauvegarde (8 Go au plus) et export Letterboxd (20 Mo au plus) sont lus par morceaux, sans passer par la limite des requêtes ordinaires (1 Mo) ; un envoi incomplet ferme la connexion.
 - **Limites et temps d'écran.** Appliqués par le serveur au lancement de chaque lecture et à chaque compte rendu de lecture, pas seulement par l'interface.
@@ -131,8 +131,8 @@ Les actions tierces (`docker/build-push-action@v6`, `gradle/actions/setup-gradle
 ## 13. Copies des sauvegardes (nouveau, 3.39.0)
 
 - **Entre serveurs liés.** La copie passe par la liaison TLS signée. Le serveur qui la reçoit vérifie l'archive (contenu, base) et que son manifeste porte l'identité du serveur qui l'envoie : un serveur lié ne peut pas déposer une sauvegarde au nom d'un autre. Chaque serveur peut refuser d'en garder. Ces copies ne sont pas chiffrées : les serveurs liés partagent déjà comptes et clés.
-- **Stockages externes.** Les secrets (clé S3, secret OAuth, jetons de renouvellement) restent dans la base et ne sont jamais renvoyés à l'interface. Google Drive est relié avec la portée `drive.file` (seulement les fichiers créés par Nexis), OneDrive avec `Files.ReadWrite.AppFolder` (seulement le dossier de l'application). Avec une phrase secrète, les copies externes sont chiffrées : AES-256-CTR (openssl) puis HMAC-SHA256 sur l'ensemble, clés tirées de la phrase par PBKDF2-SHA256 (300 000 tours) ; une archive modifiée ou une mauvaise phrase est refusée avant tout déchiffrement. Sans phrase secrète, la copie externe contient en clair les empreintes des mots de passe et les clés : l'interface le signale.
-- **Restauration depuis un chemin du serveur.** Réservée aux administrateurs ; le fichier n'est lu que s'il est une archive de Nexis valide.
+- **Stockages externes.** Les secrets (clé S3, secret OAuth, jetons de renouvellement) restent dans la base et ne sont jamais renvoyés à l'interface. Google Drive est relié avec la portée `drive.file` (seulement les fichiers créés par Noxa), OneDrive avec `Files.ReadWrite.AppFolder` (seulement le dossier de l'application). Avec une phrase secrète, les copies externes sont chiffrées : AES-256-CTR (openssl) puis HMAC-SHA256 sur l'ensemble, clés tirées de la phrase par PBKDF2-SHA256 (300 000 tours) ; une archive modifiée ou une mauvaise phrase est refusée avant tout déchiffrement. Sans phrase secrète, la copie externe contient en clair les empreintes des mots de passe et les clés : l'interface le signale.
+- **Restauration depuis un chemin du serveur.** Réservée aux administrateurs ; le fichier n'est lu que s'il est une archive de Noxa valide.
 
 ## Recommandations par priorité
 

@@ -1,4 +1,4 @@
-// Magasin de thèmes (Paramètres → Magasin de thèmes) : thèmes fournis avec Nexis et proposés par la communauté sur
+// Magasin de thèmes (Paramètres → Magasin de thèmes) : thèmes fournis avec Noxa et proposés par la communauté sur
 // GitHub, thèmes installés, éditeur, import et export. Un thème n'est qu'une description vérifiée par le serveur
 // (couleurs, dégradé, effets d'une liste fixe, police, arrondi) : il ne peut contenir ni code ni image.
 import { get, post, put } from '../api.js';
@@ -98,7 +98,7 @@ export async function renderThemeStore(body, ctx) {
   const gridBox = h('div');
   const footBox = h('p.small.muted');
   const storePanel = h('section.panel', h('h2', tr('Magasin de thèmes')),
-    h('p.muted.small', tr('Thèmes fournis avec Nexis et proposés par la communauté sur GitHub. « Aperçu » les essaie sur toute l’interface sans rien changer ; « Installer » les ajoute à vos thèmes (ils vous suivent sur les serveurs liés).')),
+    h('p.muted.small', tr('Thèmes fournis avec Noxa et proposés par la communauté sur GitHub. « Aperçu » les essaie sur toute l’interface sans rien changer ; « Installer » les ajoute à vos thèmes (ils vous suivent sur les serveurs liés).')),
     h('div.grid2', search, styleBox), bar, gridBox, footBox);
 
   const card = (t, { mine = false } = {}) => {
@@ -109,7 +109,7 @@ export async function renderThemeStore(body, ctx) {
       themePreview(t),
       h('div.store-name', label(t.name)),
       h('div.store-meta', t.author ? [tr('par '), h('a', { href: `https://github.com/${encodeURIComponent(t.author)}`, target: '_blank', rel: 'noopener' }, t.author)] : tr('par vous'),
-        t.source === 'bundled' ? ` · ${tr('fourni avec Nexis')}` : t.source === 'store' ? ` · ${tr('communauté')}` : '',
+        t.source === 'bundled' ? ` · ${tr('fourni avec Noxa')}` : t.source === 'store' ? ` · ${tr('communauté')}` : '',
         t.style ? ` · ${tr('style conseillé : {s}', { s: STYLE_NAMES[t.style] || t.style })}` : ''),
       t.description ? h('div.store-desc', label(t.description)) : h('div.store-desc'),
       (t.effects || []).length ? h('div.store-tags', t.effects.map((e) => h('span', effectName(e)))) : null,
@@ -155,7 +155,7 @@ export async function renderThemeStore(body, ctx) {
       const r = await post('/api/themes/check', { theme: t });
       editor(r.theme);
     } catch (e) {
-      toast(e.data && e.data.problems ? `${tr('Thème invalide')} : ${e.data.problems.join(' ; ')}` : tr('Fichier illisible : un thème Nexis (.json) est attendu'), 'bad');
+      toast(e.data && e.data.problems ? `${tr('Thème invalide')} : ${e.data.problems.join(' ; ')}` : tr('Fichier illisible : un thème Noxa (.json) est attendu'), 'bad');
     }
   } });
 

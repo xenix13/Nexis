@@ -2,7 +2,7 @@
 
 [← Back to the README](../README.md) · Previous: [Photos, audiobooks, live TV and DLNA](more-libraries.md)
 
-Every person sets up their own Nexis in *Settings → My account*. These settings belong to the profile, follow it to [linked servers](linked-servers.md), and *Profile and security → Restore default settings* starts over.
+Every person sets up their own Noxa in *Settings → My account*. These settings belong to the profile, follow it to [linked servers](linked-servers.md), and *Profile and security → Restore default settings* starts over.
 
 **Contents:** [Layouts and themes](#interface-layouts-and-themes) · [Theme store](#theme-store) · [Home screen](#home-screen-and-menu) · [Playback preferences](#playback-preferences) · [Content and notifications](#content-and-notifications) · [Browsing](#browsing-the-libraries) · [Lists](#collections-watchlist-and-playlists) · [Discover and requests](#discover-and-requests) · [Trakt and Letterboxd](#trakt-and-letterboxd) · [Languages](#languages)
 
@@ -38,7 +38,7 @@ A device can keep its own style (*This device*), e.g. *Classic* on the TV and *S
 
 <img src="images/settings-themes.jpg" alt="Theme store" width="100%">
 
-- **Bundled with Nexis:** Neon city, Retro 80s, Vaporwave, Arcade, Terminal, Hero, Dark city, Galaxy, Northern lights, Desert, Western, Steampunk, Forest, Deep ocean, Horror, Halloween, Christmas, Film society, Film noir, Kawaii, Pastel and Frost.
+- **Bundled with Noxa:** Neon city, Retro 80s, Vaporwave, Arcade, Terminal, Hero, Dark city, Galaxy, Northern lights, Desert, Western, Steampunk, Forest, Deep ocean, Horror, Halloween, Christmas, Film society, Film noir, Kawaii, Pastel and Frost.
 - **From the community:** anyone can add a theme to this repository (folder [`static/themes`](../static/themes/README.md)). CI checks every proposal, a maintainer reviews and merges it, and every server then offers it (servers re-read the index every 6 hours; devices never contact GitHub).
 - **Preview** tries a theme on the whole interface without changing anything; **Install** adds it to *My themes* (20 at most). Installed themes follow the account and keep working if the store is unreachable.
 - **Create a theme:** an editor with a live preview on the whole interface, then *Save and use*, *Export* (`.json` file, to import elsewhere or share) or *Propose on GitHub* (GitHub opens with the file filled in; you only need to confirm the pull request).
@@ -96,15 +96,15 @@ The **Discover** tab shows the catalogues of the streaming platforms available i
 
 1. Install Seerr ([documentation](https://docs.seerr.dev)) and connect it to Radarr and Sonarr.
 2. In Seerr, *Settings → General*: copy the **API key**.
-3. In Nexis, *Settings → Metadata and requests → Requests (Seerr)*: enter Seerr's address (e.g. `http://192.168.1.20:5055`) and the key, then *Save and test*.
+3. In Noxa, *Settings → Metadata and requests → Requests (Seerr)*: enter Seerr's address (e.g. `http://192.168.1.20:5055`) and the key, then *Save and test*.
 
-When a Seerr account matches a Nexis account (username, display name or the start of the e-mail address), the request is made **in that person's name** and Seerr's rules apply (approval, quotas). Otherwise it is made in the name of the API key's owner. A server without Seerr can use the Seerr of a [linked server](linked-servers.md).
+When a Seerr account matches a Noxa account (username, display name or the start of the e-mail address), the request is made **in that person's name** and Seerr's rules apply (approval, quotas). Otherwise it is made in the name of the API key's owner. A server without Seerr can use the Seerr of a [linked server](linked-servers.md).
 
 ## Trakt and Letterboxd
 
 *Settings → Privacy and services → Trakt and Letterboxd*, for each person:
 
-- **Trakt:** an administrator registers an app once on trakt.tv (*Settings → Your API Apps → New Application*, Redirect URI `urn:ietf:wg:oauth:2.0:oob`) and pastes its Client ID and Client Secret on this page. Each person then links their account with a code typed on trakt.tv: Nexis never sees the Trakt password. Every 6 hours and on demand, movies and episodes watched on one side become watched on the other (with their date), ratings are added (1 to 5 stars here, 1 to 10 on Trakt) and so is the watchlist. Nothing is ever removed.
+- **Trakt:** an administrator registers an app once on trakt.tv (*Settings → Your API Apps → New Application*, Redirect URI `urn:ietf:wg:oauth:2.0:oob`) and pastes its Client ID and Client Secret on this page. Each person then links their account with a code typed on trakt.tv: Noxa never sees the Trakt password. Every 6 hours and on demand, movies and episodes watched on one side become watched on the other (with their date), ratings are added (1 to 5 stars here, 1 to 10 on Trakt) and so is the watchlist. Nothing is ever removed.
 - **Letterboxd** (no public API, so files): **Export for Letterboxd** produces a CSV of your watched movies with dates and ratings, to import on letterboxd.com. **Import the Letterboxd export…** reads the ZIP downloaded from Letterboxd (watched films, diary, ratings, watchlist) and matches films by title and year; those not on the server are listed.
 
 ## Languages

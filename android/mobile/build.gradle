@@ -1,4 +1,4 @@
-// Nexis pour téléphones et tablettes Android : l'interface du serveur Nexis (elle suit chaque mise à jour du
+// Noxa pour téléphones et tablettes Android : l'interface du serveur Noxa (elle suit chaque mise à jour du
 // serveur) dans une vraie application, avec ce qu'un navigateur ne fait pas bien : plein écran, envoi de fichiers,
 // mises à jour de l'application depuis le serveur. Version propre à l'application (indépendante du serveur) :
 // à augmenter ici quand le code Java change ; la CI la publie avec chaque version du serveur.
@@ -16,8 +16,8 @@ android {
         applicationId 'fr.nexis.app'
         minSdk 26
         targetSdk 34
-        versionCode 4
-        versionName '1.2.1'
+        versionCode 5
+        versionName '1.3.0'
     }
 
     signingConfigs {

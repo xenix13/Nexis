@@ -132,7 +132,7 @@ class TrackingTest(unittest.TestCase):
             "/sync/ratings/movies": [{"movie": {"ids": {"tmdb": voyage["tmdb"]}}, "rating": 8}],
             "/sync/watchlist/movies": [{"movie": {"ids": {"tmdb": polaire["tmdb"]}}}],
         }
-        # vu sur Nexis avant de relier : doit partir vers Trakt
+        # vu sur Noxa avant de relier : doit partir vers Trakt
         self.lea.call("POST", f"/api/items/{voyage['id']}/watched", {"watched": True})
         st, c = self.lea.call("POST", "/api/me/trakt/link")
         self.assertEqual((st, c["user_code"]), (200, "AB12CD34"))
@@ -153,8 +153,8 @@ class TrackingTest(unittest.TestCase):
         self.assertIn(polaire["id"], json.dumps(wl))
         sent = dict(FakeTrakt.posts)
         self.assertEqual([m["ids"]["tmdb"] for m in sent["/sync/history"]["movies"]], [voyage["tmdb"]])
-        self.assertNotIn("/sync/ratings", sent)  # Nexis n'avait aucune note à envoyer
-        # une note donnée sur Nexis part au passage suivant (tâche planifiée)
+        self.assertNotIn("/sync/ratings", sent)  # Noxa n'avait aucune note à envoyer
+        # une note donnée sur Noxa part au passage suivant (tâche planifiée)
         self.lea.call("PUT", f"/api/items/{polaire['id']}/stars", {"stars": 5})
         FakeTrakt.posts.clear()
         tm = self.ctx.tasks

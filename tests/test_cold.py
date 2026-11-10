@@ -181,7 +181,7 @@ class FakeS3(BaseHTTPRequestHandler):
 
 
 class FakeArr(BaseHTTPRequestHandler):
-    """Radarr / Sonarr : juste ce dont Nexis se sert."""
+    """Radarr / Sonarr : juste ce dont Noxa se sert."""
     calls = []
     movies = []
     series = []
@@ -386,7 +386,7 @@ class ColdStorageTest(unittest.TestCase):
         finally:
             cold_mod.PART = old
         self.assertEqual(FakeS3.uploads, {})  # parties assemblées
-        self.exercise(cold_mod.Rclone({"remote": "pcloud:Nexis"}, cold))
+        self.exercise(cold_mod.Rclone({"remote": "pcloud:Noxa"}, cold))
         # mauvais mot de passe WebDAV : message clair
         with self.assertRaises(cold_mod.ColdError) as e:
             cold_mod.WebDAV({**self.dav_conf(), "password": "faux"}, cold).check()
@@ -485,7 +485,7 @@ class ColdStorageTest(unittest.TestCase):
         self.assertEqual(ffprobe_codec(data), "h264")
         self.admin.call("POST", "/api/stop", {"stream": p["stream"]})
 
-        # plus de disque USB : la copie WebDAV prend le relais, relue par l'adresse locale de Nexis
+        # plus de disque USB : la copie WebDAV prend le relais, relue par l'adresse locale de Noxa
         st, r = self.admin.call("DELETE", f"/api/admin/cold/items/{mid}/{local_id}")
         self.assertEqual((st, r["ok"]), (200, True), r)
         self.assertFalse(os.path.exists(os.path.join(usb, "Films")))

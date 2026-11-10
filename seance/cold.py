@@ -1,8 +1,8 @@
 """Stockage froid : des copies des films et épisodes rangées ailleurs que sur les disques de la bibliothèque.
 
-Un titre archivé garde tout ce qui le décrit dans Nexis (affiches, résumé, historique, sous-titres téléchargés) ;
+Un titre archivé garde tout ce qui le décrit dans Noxa (affiches, résumé, historique, sous-titres téléchargés) ;
 seul son fichier vidéo existe aussi (ou seulement, plus tard) sur un stockage froid. Quand le fichier de la
-bibliothèque n'est plus là, Nexis lit la copie froide : directement si le stockage est un dossier de la machine
+bibliothèque n'est plus là, Noxa lit la copie froide : directement si le stockage est un dossier de la machine
 (disque USB, NAS monté, partage SMB), sinon par une adresse locale que seul ffmpeg connaît (/cold/<jeton>), qui
 relit le stockage morceau par morceau (WebDAV, S3, SFTP, rclone).
 
@@ -963,7 +963,7 @@ class Cold:
                 "sftp": None if curl_sftp() else i18n.tr("curl avec SFTP est nécessaire (apt install curl)."),
                 "webdav": None, "s3": None,
                 "rclone": None if rclone_exe() else i18n.tr("rclone n'est pas installé (apt install rclone, puis rclone config)."),
-                "peer": None if self.ctx.db.scalar("SELECT 1 FROM peers LIMIT 1") else i18n.tr("Aucun serveur lié : reliez d'abord un autre serveur Nexis.")}
+                "peer": None if self.ctx.db.scalar("SELECT 1 FROM peers LIMIT 1") else i18n.tr("Aucun serveur lié : reliez d'abord un autre serveur Noxa.")}
 
     # ---------------------------------------------------------------- copies
     def copies(self, item_id):
@@ -1378,7 +1378,7 @@ class Cold:
     # ---------------------------------------------------------------- noms sur le stockage
     def name_for(self, row, store_id):
         db = self.ctx.db
-        lib = db.one("SELECT name, paths FROM libraries WHERE id=?", (row["library_id"],)) or {"name": "Nexis", "paths": "[]"}
+        lib = db.one("SELECT name, paths FROM libraries WHERE id=?", (row["library_id"],)) or {"name": "Noxa", "paths": "[]"}
         key = row["key"]
         rel = os.path.basename(key)
         for root in json.loads(lib["paths"] or "[]"):
@@ -1450,7 +1450,7 @@ class Cold:
     def _loop(self):
         db = self.ctx.db
         try:
-            db.run("UPDATE cold_jobs SET state='queued' WHERE state='running'")  # arrêt de Nexis pendant une copie
+            db.run("UPDATE cold_jobs SET state='queued' WHERE state='running'")  # arrêt de Noxa pendant une copie
             while True:
                 job = db.one("SELECT * FROM cold_jobs WHERE state='queued' ORDER BY created_at, id LIMIT 1")
                 if not job:

@@ -42,7 +42,7 @@ def strm_url(path):
     return url
 
 
-COLD = "cold:"  # copie froide lue par l'adresse locale de Nexis (voir cold.py) : « cold:http://127.0.0.1:…/cold/<jeton> »
+COLD = "cold:"  # copie froide lue par l'adresse locale de Noxa (voir cold.py) : « cold:http://127.0.0.1:…/cold/<jeton> »
 
 
 def is_remote(path):

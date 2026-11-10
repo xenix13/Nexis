@@ -1,5 +1,5 @@
 """Libérer de la place : les titres que personne n'a regardés depuis N jours passent sur le stockage froid, puis leur
-fichier quitte la bibliothèque. Le titre reste dans Nexis (affiche, résumé, historique) et se lit depuis la copie.
+fichier quitte la bibliothèque. Le titre reste dans Noxa (affiche, résumé, historique) et se lit depuis la copie.
 
 Étapes d'un fichier (table cold_free, une ligne par film ou épisode) :
   proposed  -> proposé, en attente de la validation d'un administrateur (mode « à valider ») ;
@@ -11,10 +11,10 @@ Un titre regardé de nouveau pendant le délai n'est pas supprimé. « Garder su
 film ou une série pour de bon.
 
 Suppression de l'original, au choix par bibliothèque :
-  - arr    : par Radarr (films) ou Sonarr (séries) — Nexis garde ses droits de lecture seule ; le titre n'est plus
+  - arr    : par Radarr (films) ou Sonarr (séries) — Noxa garde ses droits de lecture seule ; le titre n'est plus
              surveillé, sinon ils le retéléchargeraient aussitôt ;
-  - write  : Nexis efface lui-même le fichier (bibliothèque montée en écriture) ;
-  - manual : Nexis donne la liste des fichiers à effacer.
+  - write  : Noxa efface lui-même le fichier (bibliothèque montée en écriture) ;
+  - manual : Noxa donne la liste des fichiers à effacer.
 """
 import json
 import logging
@@ -89,7 +89,7 @@ def radarr_delete(arr, row):
     if not mf.get("id"):
         raise FreeError(i18n.tr("Radarr ne connaît pas de fichier pour ce film"))
     if not _same_file(row["key"], mf.get("path") or mf.get("relativePath"), row.get("file_size"), mf.get("size")):
-        raise FreeError(i18n.tr("Le fichier connu de Radarr n'est pas celui de Nexis : rien n'est supprimé"))
+        raise FreeError(i18n.tr("Le fichier connu de Radarr n'est pas celui de Noxa : rien n'est supprimé"))
     # ne plus surveiller d'abord : sinon Radarr relancerait aussitôt un téléchargement
     arr.call("PUT", "/api/v3/movie/editor", {"movieIds": [movie["id"]], "monitored": False})
     arr.call("DELETE", f"/api/v3/moviefile/{int(mf['id'])}")
@@ -110,7 +110,7 @@ def sonarr_delete(arr, row, show, season):
         raise FreeError(i18n.tr("Sonarr ne connaît pas de fichier pour cet épisode"))
     ef = arr.call("GET", f"/api/v3/episodefile/{int(ep['episodeFileId'])}") or {}
     if not _same_file(row["key"], ef.get("path") or ef.get("relativePath"), row.get("file_size"), ef.get("size")):
-        raise FreeError(i18n.tr("Le fichier connu de Sonarr n'est pas celui de Nexis : rien n'est supprimé"))
+        raise FreeError(i18n.tr("Le fichier connu de Sonarr n'est pas celui de Noxa : rien n'est supprimé"))
     same = [e["id"] for e in eps if e.get("episodeFileId") == ep["episodeFileId"]]  # fichier à plusieurs épisodes
     arr.call("PUT", "/api/v3/episode/monitor", {"episodeIds": same, "monitored": False})
     arr.call("DELETE", f"/api/v3/episodefile/{int(ep['episodeFileId'])}")
@@ -409,7 +409,7 @@ class ColdFree:
             log.info("Sous-titres de %s : %s", row["key"], e)
         if subs.missing(row):
             raise FreeError(i18n.tr("Sous-titres intégrés pas encore extraits : nouvel essai au prochain passage"))
-        # sous-titres posés à côté du fichier (.srt, .ass…) : copiés dans les données de Nexis, la fiche pointe dessus
+        # sous-titres posés à côté du fichier (.srt, .ass…) : copiés dans les données de Noxa, la fiche pointe dessus
         probe = json.loads(row["probe"] or "{}")
         lib_roots = [os.path.realpath(p) for p in json.loads(row["lib_paths"] or "[]") if p]
         changed = False
@@ -430,7 +430,7 @@ class ColdFree:
     def delete_original(self, row, how, c=None):
         c = c or self.conf()
         if how == "write":
-            # Nexis efface lui-même : seulement dans un dossier de la bibliothèque
+            # Noxa efface lui-même : seulement dans un dossier de la bibliothèque
             roots = [os.path.realpath(p) for p in json.loads(row["lib_paths"] or "[]") if p]
             real = os.path.realpath(row["key"])
             if not any(real.startswith(r + os.sep) for r in roots):
@@ -439,7 +439,7 @@ class ColdFree:
                 os.remove(real)
             except OSError as e:
                 if e.errno in (30, 13, 1):  # EROFS, EACCES, EPERM
-                    raise FreeError(i18n.tr("La bibliothèque est en lecture seule pour Nexis : choisissez Radarr / Sonarr ou la suppression à la main"))
+                    raise FreeError(i18n.tr("La bibliothèque est en lecture seule pour Noxa : choisissez Radarr / Sonarr ou la suppression à la main"))
                 raise
             for sc in self.ctx.cold.sidecars(real):
                 try:

@@ -68,7 +68,7 @@ class BackupTest(unittest.TestCase):
         self.assertEqual(st, 200, r)
         uploaded = r["backup"]["name"]
         self.assertIn("-envoi", uploaded)
-        # une archive qui n'est pas de Nexis, ou qui sort de ses dossiers : refusée
+        # une archive qui n'est pas de Noxa, ou qui sort de ses dossiers : refusée
         bad = io.BytesIO()
         with tarfile.open(fileobj=bad, mode="w:gz") as tar:
             for n, content in (("manifest.json", json.dumps({"format": 1, "schema": 1}).encode()), ("seance.db", b"x"),

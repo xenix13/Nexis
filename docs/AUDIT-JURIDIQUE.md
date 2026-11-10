@@ -50,7 +50,10 @@ Choisir et ajouter un fichier `LICENSE` :
 
 Les deux options limitent la responsabilité de l'auteur (« fourni tel quel, sans garantie »). C'est une décision d'auteur : elle n'a pas été prise à votre place.
 
-## 4. Le nom « Nexis » — **à faire**
+## 4. Le nom « Nexis » — **fait : renommé Noxa (version 4.0.0)**
+
+> Le projet s'appelle **Noxa** depuis la version 4.0.0. Avant une diffusion large, vérifier aussi ce nom sur TMview, l'INPI et WIPO (classes 9, 38, 41, 42). Les identifiants techniques invisibles (`fr.nexis.app`, `fr.nexis.tv`, en-têtes `X-Nexis-*`) sont gardés pour ne pas casser les mises à jour.
+
 
 **NEXIS** est une marque de **LexisNexis** (RELX), exploitée depuis des décennies pour un service de bases de données et de veille en ligne, enregistrée notamment aux États-Unis et dans l'Union européenne pour des logiciels et services informatiques. Un logiciel nommé « Nexis » dans la même classe (logiciels, services en ligne) peut faire l'objet d'une mise en demeure, d'un retrait d'une boutique d'applications ou d'une action en contrefaçon de marque, même s'il est gratuit, si le projet devient visible.
 

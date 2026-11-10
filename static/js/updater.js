@@ -44,8 +44,8 @@ export function followUpdate(from) {
   const log = h('pre.log');
   const details = h('details.update-log', h('summary.small', tr('Journal de l’installation')), log);
   const actions = h('div.modal-actions');
-  overlay = h('div.update-overlay', { role: 'dialog', 'aria-modal': 'true', 'aria-label': tr('Mise à jour de Nexis') },
-    h('div.update-box', h('h2', tr('Mise à jour de Nexis')),
+  overlay = h('div.update-overlay', { role: 'dialog', 'aria-modal': 'true', 'aria-label': tr('Mise à jour de Noxa') },
+    h('div.update-box', h('h2', tr('Mise à jour de Noxa')),
       h('p.muted.small', tr('Cette page se rechargera automatiquement à la fin de l’installation.')),
       h('div.update-bar', bar), h('div.update-row', step, pct), details, actions));
   document.body.append(overlay);
@@ -76,7 +76,7 @@ export function followUpdate(from) {
   const tick = async () => {
     let up = null;
     try { up = await get('/api/status'); } catch { /* redémarrage en cours */ }
-    if (up && up.version !== st.from) { finish(tr('Nexis {version} est installé. Rechargement…', { version: up.version })); return; }
+    if (up && up.version !== st.from) { finish(tr('Noxa {version} est installé. Rechargement…', { version: up.version })); return; }
     if (up) {
       try {
         const u = await get('/api/admin/update');
@@ -92,7 +92,7 @@ export function followUpdate(from) {
       } catch { /* l'assistant système redémarre lui aussi */ }
     } else {
       seenRunning = true; // serveur coupé : c'est bien l'installation en cours qui le redémarre
-      show(85, tr('Redémarrage de Nexis…'));
+      show(85, tr('Redémarrage de Noxa…'));
     }
     if (Date.now() - st.at > LIMIT) {
       fail(tr('Mise à jour non terminée après 15 minutes. Le journal se trouve dans /var/log/seance-update.log sur le serveur.'));
@@ -109,7 +109,7 @@ export async function resumeUpdate(status) {
   if (!st) return false;
   if (status && status.version !== st.from) {
     save(null);
-    toast(tr('Nexis {version} est installé', { version: status.version }), 'ok');
+    toast(tr('Noxa {version} est installé', { version: status.version }), 'ok');
     return false;
   }
   followUpdate(st.from);

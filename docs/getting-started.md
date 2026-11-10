@@ -13,21 +13,21 @@ Open `http://<server-ip>:8420` in a browser. The first page asks for the **setup
 Lost the code? It stays readable until the first account exists:
 
 ```bash
-cat /var/lib/seance/setup-code.txt     # Docker: docker compose logs nexis
+cat /var/lib/seance/setup-code.txt     # Docker: docker compose logs noxa
 ```
 
 <img src="images/login.jpg" alt="Sign-in page" width="100%">
 
 ## 2. Metadata (TMDB)
 
-Nexis gets posters, backdrops, summaries, cast, collections and episode titles from **The Movie Database**. A free key takes two minutes:
+Noxa gets posters, backdrops, summaries, cast, collections and episode titles from **The Movie Database**. A free key takes two minutes:
 
 1. Create an account on [themoviedb.org](https://www.themoviedb.org/), then *Settings → API* and request a key (v3 API key or v4 read token).
-2. In Nexis: *Settings → Metadata and requests → Metadata*, paste the key and save.
+2. In Noxa: *Settings → Metadata and requests → Metadata*, paste the key and save.
 
 The metadata language follows the server setting on the same page, with English as the fallback.
 
-**Without a key**, Nexis still works: it uses the file names, Kodi-style `.nfo` files (`movie.nfo`, `tvshow.nfo`, `<episode>.nfo`) and local images (`poster.jpg`, `fanart.jpg`, `<name>-poster.jpg`…). Local `.nfo` files and images always take priority over TMDB, so a curated library keeps its look. (The demo library in these screenshots uses only `.nfo` files.)
+**Without a key**, Noxa still works: it uses the file names, Kodi-style `.nfo` files (`movie.nfo`, `tvshow.nfo`, `<episode>.nfo`) and local images (`poster.jpg`, `fanart.jpg`, `<name>-poster.jpg`…). Local `.nfo` files and images always take priority over TMDB, so a curated library keeps its look. (The demo library in these screenshots uses only `.nfo` files.)
 
 > Linked servers can share one TMDB key: a server without a key uses the key of a server it is [linked](linked-servers.md) to.
 
@@ -44,13 +44,13 @@ The metadata language follows the server setting on the same page, with English 
 
 Anime usually gets its own *Shows* library ("Anime") so that it has its own tab and its own language preferences.
 
-The first scan probes every file with ffprobe; it takes a few minutes for a few thousand files on a network share. Files Nexis could not recognize are listed so that you can rename them. A wrongly matched title is fixed from its page with **⋯ → Identify…**; your choice is kept on later scans.
+The first scan probes every file with ffprobe; it takes a few minutes for a few thousand files on a network share. Files Noxa could not recognize are listed so that you can rename them. A wrongly matched title is fixed from its page with **⋯ → Identify…**; your choice is kept on later scans.
 
 <img src="images/settings-libraries.jpg" alt="Libraries settings" width="100%">
 
 ### Naming your files
 
-Nexis understands the common layouts and most "scene" names:
+Noxa understands the common layouts and most "scene" names:
 
 ```
 Movies/Inception (2010)/Inception (2010).mkv
@@ -65,13 +65,13 @@ Shows/Doctor Who/Specials/Doctor Who - S00E01.mkv   (Season 00 / Specials)
 - A show is a folder at the root of a *Shows* library. The season comes from a `Season XX` folder or from the `SxxEyy` of the file name.
 - **Extras** sit next to the movie or in the show folder, in a `Trailers/`, `Featurettes/`, `Behind The Scenes/`, `Deleted Scenes/`, `Interviews/`, `Scenes/`, `Shorts/` or `Extras/` folder, or with a `-trailer`, `-featurette`, `-behindthescenes`, `-deleted`, `-interview`, `-scene`, `-short`, `-other` suffix. Without a local trailer, the TMDB trailer plays from YouTube (privacy-enhanced mode).
 - **External subtitles** next to the video are picked up: `Movie.en.srt`, `Movie.fr.forced.srt`, `Movie.en.sdh.ass`…
-- **`.strm` files**: a text file containing the `http(s)://` address of a video hosted elsewhere (IPTV VOD, another server, cloud storage), named like a video (`Inception (2010)/Inception (2010).strm`). It gets metadata like any other movie; Nexis relays the stream. Heavy analyses (previews, chapter images, intro detection) are skipped for these files to spare the provider.
+- **`.strm` files**: a text file containing the `http(s)://` address of a video hosted elsewhere (IPTV VOD, another server, cloud storage), named like a video (`Inception (2010)/Inception (2010).strm`). It gets metadata like any other movie; Noxa relays the stream. Heavy analyses (previews, chapter images, intro detection) are skipped for these files to spare the provider.
 
 ### How new files are detected
 
-Network shares do not tell the server when another machine adds a file, so Nexis watches the **modification dates of the folders** (every minute by default, *Settings → Libraries → New content detection*). After a change it waits for the copy to finish and rescans **only the folders that changed**: a new episode only causes its season folder to be read. A file modified less than 45 seconds ago is considered still copying.
+Network shares do not tell the server when another machine adds a file, so Noxa watches the **modification dates of the folders** (every minute by default, *Settings → Libraries → New content detection*). After a change it waits for the copy to finish and rescans **only the folders that changed**: a new episode only causes its season folder to be read. A file modified less than 45 seconds ago is considered still copying.
 
-**Instant import from Radarr / Sonarr:** copy the webhook address shown on the same page, then in Radarr and Sonarr: *Settings → Connect → + → Webhook*, paste it as the URL, method POST, and tick *On Import*, *On Upgrade*, *On Rename* and *On Delete*. **Test** should answer "Nexis received the test". Paths do not need to match: Nexis maps Radarr's `/movies/…` onto its own `/mnt/movies/…`.
+**Instant import from Radarr / Sonarr:** copy the webhook address shown on the same page, then in Radarr and Sonarr: *Settings → Connect → + → Webhook*, paste it as the URL, method POST, and tick *On Import*, *On Upgrade*, *On Rename* and *On Delete*. **Test** should answer "Noxa received the test". Paths do not need to match: Noxa maps Radarr's `/movies/…` onto its own `/mnt/movies/…`.
 
 A full check runs once a day (*Settings → Maintenance → Scheduled tasks*); it only compares file dates. A share that is not mounted never empties a library.
 

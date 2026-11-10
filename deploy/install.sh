@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Installe ou met à jour Nexis sur Ubuntu / Debian (conteneur LXC ou VM).
+# Installe ou met à jour Noxa sur Ubuntu / Debian (conteneur LXC ou VM).
 #
 # En une commande (installation ET mise à jour), en root :
-#   curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/xenix13/Noxa/main/deploy/install.sh | bash
 # Ou depuis un clone du dépôt :
 #   sudo ./deploy/install.sh
 set -euo pipefail
 
-REPO_URL="${SEANCE_REPO:-https://github.com/xenix13/Nexis.git}"
+REPO_URL="${SEANCE_REPO:-https://github.com/xenix13/Noxa.git}"
 BRANCH="${SEANCE_BRANCH:-main}"
 APP_DIR=/opt/seance
 DATA_DIR=/var/lib/seance

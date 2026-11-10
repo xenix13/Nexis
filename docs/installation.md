@@ -2,7 +2,7 @@
 
 [← Back to the README](../README.md)
 
-Nexis is a single Python program plus ffmpeg. Choose the method that matches your setup; they all give the same server, with the same features and the same update mechanism.
+Noxa is a single Python program plus ffmpeg. Choose the method that matches your setup; they all give the same server, with the same features and the same update mechanism.
 
 | Method | Best for | Updates |
 |---|---|---|
@@ -16,7 +16,7 @@ Nexis is a single Python program plus ffmpeg. Choose the method that matches you
 ## Requirements
 
 - **System:** Ubuntu 22.04 / 24.04 or Debian 12 / 13, amd64 or arm64 (the Docker image runs anywhere Docker does).
-- **Software:** Python 3.9 or later and ffmpeg. The installers add them for you. Nexis has **no Python dependencies**: no `pip install`, no virtualenv.
+- **Software:** Python 3.9 or later and ffmpeg. The installers add them for you. Noxa has **no Python dependencies**: no `pip install`, no virtualenv.
 - **CPU:** 2 to 4 cores. Playing files as they are (direct play) or remuxing costs almost nothing; only conversions are heavy, about 1 to 2 cores for a 1080p stream without a graphics card.
 - **Memory:** 1 GB is enough without conversions. Plan about 2 GB per simultaneous 4K conversion, and 1 to 2 GB of swap.
 - **Disk:** 8 GB for the system, the image cache and temporary video segments. Your media stays where it is.
@@ -27,22 +27,22 @@ Nexis is a single Python program plus ffmpeg. Choose the method that matches you
 On the **Proxmox host**, as root:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/proxmox-lxc.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/xenix13/Noxa/main/deploy/proxmox-lxc.sh)"
 ```
 
-The script downloads the Ubuntu 24.04 template, creates the container (4 cores, 4 GB RAM, 2 GB swap, 16 GB disk, DHCP on `vmbr0`, starts at boot), installs Nexis inside it and prints the address and the **setup code**.
+The script downloads the Ubuntu 24.04 template, creates the container (4 cores, 4 GB RAM, 2 GB swap, 16 GB disk, DHCP on `vmbr0`, starts at boot), installs Noxa inside it and prints the address and the **setup code**.
 
-The container is **privileged** by default with the `mount=cifs` feature, so that Nexis can mount your NAS shares itself (see [Access to your media](#access-to-your-media)). Every setting can be changed with variables, for example:
+The container is **privileged** by default with the `mount=cifs` feature, so that Noxa can mount your NAS shares itself (see [Access to your media](#access-to-your-media)). Every setting can be changed with variables, for example:
 
 ```bash
 CTID=120 MEMORY=6144 STORAGE=local-zfs PRIVILEGED=0 \
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/proxmox-lxc.sh)"
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/xenix13/Noxa/main/deploy/proxmox-lxc.sh)"
 ```
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `CTID` | next free id | Container id |
-| `CT_HOSTNAME` | `nexis` | Host name |
+| `CT_HOSTNAME` | `noxa` | Host name |
 | `STORAGE` / `TEMPLATE_STORAGE` | `local-lvm` / `local` | Where the disk and the template go |
 | `BRIDGE` | `vmbr0` | Network bridge |
 | `CORES`, `MEMORY`, `SWAP`, `DISK` | `4`, `4096` MB, `2048` MB, `16` GB | Resources |
@@ -56,10 +56,10 @@ CTID=120 MEMORY=6144 STORAGE=local-zfs PRIVILEGED=0 \
 pveam update && pveam available | grep ubuntu-24.04
 pveam download local ubuntu-24.04-standard_24.04-2_amd64.tar.zst
 pct create 120 local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst \
-  --hostname nexis --cores 4 --memory 1024 --rootfs local-lvm:8 \
+  --hostname noxa --cores 4 --memory 1024 --rootfs local-lvm:8 \
   --net0 name=eth0,bridge=vmbr0,ip=dhcp --unprivileged 1 --features nesting=1 --onboot 1
 pct start 120
-pct exec 120 -- bash -c "apt-get update && apt-get install -y curl && curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh | bash"
+pct exec 120 -- bash -c "apt-get update && apt-get install -y curl && curl -fsSL https://raw.githubusercontent.com/xenix13/Noxa/main/deploy/install.sh | bash"
 ```
 
 `nesting=1` lets the service keep its systemd sandbox; without it the installer sets up a lighter version of the service.
@@ -70,49 +70,49 @@ pct exec 120 -- bash -c "apt-get update && apt-get install -y curl && curl -fsSL
 In a VM, an LXC container or on a physical machine, as root:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/xenix13/Noxa/main/deploy/install.sh | bash
 ```
 
 The script:
 
 1. installs Python, git, ffmpeg, openssl and the SMB tools (`cifs-utils`, `smbclient`);
-2. installs Nexis in `/opt/seance` and creates the system user `seance` (Nexis never runs as root);
-3. creates the services `seance.service` (Nexis) and `seance-mountd.service` (a tiny root helper that can only mount network shares read-only under `/mnt/seance`);
+2. installs Noxa in `/opt/seance` and creates the system user `seance` (Noxa never runs as root);
+3. creates the services `seance.service` (Noxa) and `seance-mountd.service` (a tiny root helper that can only mount network shares read-only under `/mnt/seance`);
 4. detects an NVIDIA, Intel or AMD graphics card and gives the service access to it;
 5. prints the address and the **setup code**.
 
-Running the same command again updates Nexis and keeps your data (`/var/lib/seance`) and configuration (`/etc/seance/seance.env`).
+Running the same command again updates Noxa and keeps your data (`/var/lib/seance`) and configuration (`/etc/seance/seance.env`).
 
-> Internally the program is called `seance` (its Python package, user, service and folders). "Nexis" is the product name.
+> Internally the program is called `seance` (its Python package, user, service and folders). "Noxa" is the product name.
 
 ## .deb package
 
-Every [release](https://github.com/xenix13/Nexis/releases/latest) includes `nexis_<version>_all.deb`. On Debian 12 / 13 or Ubuntu 22.04 / 24.04:
+Every [release](https://github.com/xenix13/Noxa/releases/latest) includes `noxa_<version>_all.deb`. On Debian 12 / 13 or Ubuntu 22.04 / 24.04:
 
 ```bash
-apt install ./nexis_4.0.0_all.deb
+apt install ./noxa_4.0.0_all.deb
 ```
 
-apt pulls in ffmpeg, Python and the SMB tools. The package prepares the system exactly like the script (user, configuration file, services, graphics card access). `apt remove nexis` keeps your data and configuration; `apt purge nexis` deletes them. To build the package yourself: `deploy/build-deb.sh`.
+apt pulls in ffmpeg, Python and the SMB tools. The package prepares the system exactly like the script (user, configuration file, services, graphics card access). `apt remove noxa` keeps your data and configuration; `apt purge noxa` deletes them. To build the package yourself: `deploy/build-deb.sh`.
 
 ## Docker
 
-The image `ghcr.io/xenix13/nexis` is published for **amd64 and arm64** with every release. Tags: `latest` (latest stable release), `4.0.0` (a fixed version) and `test` (rebuilt from the test branch).
+The image `ghcr.io/xenix13/noxa` is published for **amd64 and arm64** with every release. Tags: `latest` (latest stable release), `4.0.0` (a fixed version) and `test` (rebuilt from the test branch).
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/xenix13/Nexis/main/docker-compose.yml
+curl -fsSLO https://raw.githubusercontent.com/xenix13/Noxa/main/docker-compose.yml
 # edit the volumes so that they point at your media
-mkdir -p data && chown 1000:1000 data     # Nexis runs as uid 1000 inside the container
+mkdir -p data && chown 1000:1000 data     # Noxa runs as uid 1000 inside the container
 docker compose up -d
-docker compose logs nexis                 # the setup code of the first start
+docker compose logs noxa                 # the setup code of the first start
 ```
 
 The [`docker-compose.yml`](../docker-compose.yml) file is commented. The important parts:
 
 ```yaml
 services:
-  nexis:
-    image: ghcr.io/xenix13/nexis:latest
+  noxa:
+    image: ghcr.io/xenix13/noxa:latest
     restart: unless-stopped
     ports:
       - "8420:8420"
@@ -126,19 +126,19 @@ services:
       - /mnt/shows:/media/shows:ro
 ```
 
-- **Media:** mount each folder **read-only** and create libraries on `/media/...`. Network shares are mounted on the Docker host; the *Network shares* page of Nexis is not available in Docker.
+- **Media:** mount each folder **read-only** and create libraries on `/media/...`. Network shares are mounted on the Docker host; the *Network shares* page of Noxa is not available in Docker.
 - **Update:** `docker compose pull && docker compose up -d`.
 - **Graphics card:** uncomment `devices: /dev/dri` and `group_add` (Intel / AMD), or the `nvidia` reservation (requires the NVIDIA Container Toolkit on the host).
 - **DLNA:** use `network_mode: host`, otherwise TVs cannot see the server.
-- **Backups on another disk:** add a volume such as `/mnt/nas/nexis:/backups` and choose `/backups` in *Settings → Maintenance → Backups*.
+- **Backups on another disk:** add a volume such as `/mnt/nas/noxa:/backups` and choose `/backups` in *Settings → Maintenance → Backups*.
 
 ## Access to your media
 
-Nexis only needs to **read** your media. It never writes to these folders, and the Libraries page warns you if a folder is writable.
+Noxa only needs to **read** your media. It never writes to these folders, and the Libraries page warns you if a folder is writable.
 
-### Method 1: let Nexis mount your NAS (VM or privileged LXC)
+### Method 1: let Noxa mount your NAS (VM or privileged LXC)
 
-*Settings → Libraries → Network shares* mounts SMB / CIFS shares without the command line: type the NAS address and credentials, pick a share, and Nexis mounts it **read-only** under `/mnt/seance/<name>`, remounts it at boot and every 5 minutes if it drops, and offers to create the library. Passwords are stored in `/etc/seance/smb/` (readable by root only), never in the Nexis database.
+*Settings → Libraries → Network shares* mounts SMB / CIFS shares without the command line: type the NAS address and credentials, pick a share, and Noxa mounts it **read-only** under `/mnt/seance/<name>`, remounts it at boot and every 5 minutes if it drops, and offers to create the library. Passwords are stored in `/etc/seance/smb/` (readable by root only), never in the Noxa database.
 
 > **Linux forbids SMB mounts inside an unprivileged LXC container.** Method 1 needs a **privileged** container with `mount=cifs`:
 > - new container: `pct create … --unprivileged 0 --features mount=cifs,nesting=1` (the default of the one-command installer);
@@ -186,7 +186,7 @@ Any folder the `seance` user can read works: a local disk, a USB drive, an NFS m
 
 ## Hardware transcoding (graphics card)
 
-A graphics card is **optional**. It only matters when a file has to be converted, and lets one server handle many more conversions at once. Choose it in *Settings → Conversion and audio → Transcoding → Graphics card*, then **Test and save**: Nexis runs a real encode and only saves the engine if it works. If the card refuses a file during playback, the CPU takes over without interrupting the video.
+A graphics card is **optional**. It only matters when a file has to be converted, and lets one server handle many more conversions at once. Choose it in *Settings → Conversion and audio → Transcoding → Graphics card*, then **Test and save**: Noxa runs a real encode and only saves the engine if it works. If the card refuses a file during playback, the CPU takes over without interrupting the video.
 
 | Engine | Cards | Notes |
 |---|---|---|
@@ -219,17 +219,17 @@ The card is only used for conversions: direct play and remux do not need it. Res
    ```
 
 4. In the container, install **exactly the same driver version** without the kernel module: `sh NVIDIA-Linux-x86_64-580.xx.run --no-kernel-module`. `nvidia-smi` must show the card.
-5. Run the Nexis installer again: it detects the card and gives the service access to it. Then pick **NVIDIA NVENC** and **Test and save**.
+5. Run the Noxa installer again: it detects the card and gives the service access to it. Then pick **NVIDIA NVENC** and **Test and save**.
 
 ### Intel or AMD in a Proxmox LXC container
 
-Same idea with `/dev/dri`: add `lxc.cgroup2.devices.allow: c 226:* rwm` and `lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir` to the container configuration, then install `intel-media-va-driver-non-free` (Intel) or `mesa-va-drivers` (AMD) inside the container and run the Nexis installer again.
+Same idea with `/dev/dri`: add `lxc.cgroup2.devices.allow: c 226:* rwm` and `lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir` to the container configuration, then install `intel-media-va-driver-non-free` (Intel) or `mesa-va-drivers` (AMD) inside the container and run the Noxa installer again.
 
 ## HTTPS and remote access
 
-On your home network, `http://<ip>:8420` is all you need. To watch from outside, put Nexis behind an **HTTPS reverse proxy** (Caddy, nginx, Nginx Proxy Manager, Traefik…). HTTPS is also what browsers require for installing the web app, offline downloads and push notifications.
+On your home network, `http://<ip>:8420` is all you need. To watch from outside, put Noxa behind an **HTTPS reverse proxy** (Caddy, nginx, Nginx Proxy Manager, Traefik…). HTTPS is also what browsers require for installing the web app, offline downloads and push notifications.
 
-Then tell Nexis it is behind a proxy, in `/etc/seance/seance.env` (Docker: the `environment` section):
+Then tell Noxa it is behind a proxy, in `/etc/seance/seance.env` (Docker: the `environment` section):
 
 ```
 SEANCE_COOKIE_SECURE=1
@@ -250,14 +250,14 @@ With nginx, add `proxy_read_timeout 120s;` and `proxy_buffering off;` (needed fo
 
 ## Updates
 
-**From the interface:** *Settings → Maintenance → Update*. Nexis checks for a new version every 6 hours (**Check for updates** forces it) and shows an icon in the top bar to administrators when one is available. The update runs the installer from the repository and branch Nexis was installed from (stored in `/etc/seance/source`), then restarts the service: one to two minutes, and playing videos are interrupted. A progress bar follows each step, and the page reloads by itself. The log is kept in `/var/log/seance-update.log`.
+**From the interface:** *Settings → Maintenance → Update*. Noxa checks for a new version every 6 hours (**Check for updates** forces it) and shows an icon in the top bar to administrators when one is available. The update runs the installer from the repository and branch Noxa was installed from (stored in `/etc/seance/source`), then restarts the service: one to two minutes, and playing videos are interrupted. A progress bar follows each step, and the page reloads by itself. The log is kept in `/var/log/seance-update.log`.
 
 **By hand:** run the install command again. Docker: `docker compose pull && docker compose up -d`.
 
 **Update channel:** *Stable* (the `main` branch, released versions) or *Test* (the `test` branch, new features being validated), on the same page. New features land on *Test* first, then on *Stable*. Switching back to *Stable* and updating returns the server to the latest stable version. To install the test channel directly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/test/deploy/install.sh | SEANCE_BRANCH=test bash
+curl -fsSL https://raw.githubusercontent.com/xenix13/Noxa/test/deploy/install.sh | SEANCE_BRANCH=test bash
 ```
 
 Apps (desktop, Android, Android TV) update themselves from your server; see [Apps](apps.md#updates).
@@ -271,17 +271,17 @@ Most settings live in the interface. A few server-level options are environment 
 | `SEANCE_PORT` | `8420` | Web port |
 | `SEANCE_HOST` | `0.0.0.0` | Listening address |
 | `SEANCE_DATA` | `/var/lib/seance` (Docker: `/data`) | Data folder (database, caches, subtitles, backups) |
-| `SEANCE_COOKIE_SECURE` | `0` | `1` when Nexis is reached over HTTPS |
+| `SEANCE_COOKIE_SECURE` | `0` | `1` when Noxa is reached over HTTPS |
 | `SEANCE_TRUST_PROXY` | `0` | `1` behind a reverse proxy (real client IP from `X-Forwarded-For`) |
 | `SEANCE_FED_PORT` | `8421` | Linked-servers port |
 | `SEANCE_DEBUG` | `0` | `1` logs the ffmpeg commands and more details |
 
-Logs: `journalctl -u seance -f` (Docker: `docker logs -f nexis`).
+Logs: `journalctl -u seance -f` (Docker: `docker logs -f noxa`).
 
 ## Uninstall
 
 - Script install: `systemctl disable --now seance seance-mountd`, then remove `/opt/seance`, `/etc/seance`, `/var/lib/seance` (your data) and the `seance` user.
-- `.deb`: `apt purge nexis`.
+- `.deb`: `apt purge noxa`.
 - Docker: `docker compose down` and delete the `data` folder.
 
 Your media folders are never touched.

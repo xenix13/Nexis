@@ -125,7 +125,7 @@ with sync_playwright() as pw:
     # --- Seerr : plus que la connexion à Seerr
     page.goto(base + "/#/admin/requests")
     page.wait_for_selector("text=Clé d’API de Seerr")
-    check(page.locator("text=Relier Seerr").count() == 0, "section « Relier Seerr à Nexis » retirée")
+    check(page.locator("text=Relier Seerr").count() == 0, "section « Relier Seerr à Noxa » retirée")
     page.screenshot(path=f"{out}/01-admin-seerr.png", full_page=True)
 
     # --- chapitres : fiche et lecteur
@@ -669,14 +669,14 @@ with sync_playwright() as pw:
     bctx_lea.close()
     plan = {"n": 0, "started": False}
     steps = [dict(running=True, done=False, percent=25, step="Téléchargement de la nouvelle version"),
-             dict(running=True, done=False, percent=80, step="Redémarrage de Nexis"), "down", "down"]
+             dict(running=True, done=False, percent=80, step="Redémarrage de Noxa"), "down", "down"]
 
     def fake_update(route):
         if route.request.method == "POST":
             plan["started"] = True
             return route.fulfill(status=200, content_type="application/json", body='{"started": true}')
         st = steps[min(max(plan["n"] - 1, 0), len(steps) - 1)] if plan["started"] else dict(running=False, done=True, ok=True)
-        body = dict(current=cur_version, latest="999.0", available=True, source="xenix13/Nexis (main)", changes=[],
+        body = dict(current=cur_version, latest="999.0", available=True, source="xenix13/Noxa (main)", changes=[],
                     can_update=True, log=["==> Paquets système"], **(st if isinstance(st, dict) else {}))
         route.fulfill(status=200, content_type="application/json", body=_json.dumps(body))
 
@@ -695,7 +695,7 @@ with sync_playwright() as pw:
     page6.click(".update-btn")
     page6.wait_for_selector("#update button.btn.primary")
     page6.click("#update button:has-text('Rechercher une mise à jour')")
-    page6.wait_for_selector(".toast:has-text('Nexis 999.0 est disponible')")
+    page6.wait_for_selector(".toast:has-text('Noxa 999.0 est disponible')")
     page6.click("#update button.btn.primary")
     page6.click(".modal button.btn.primary")
     page6.wait_for_selector(".update-overlay")
@@ -703,7 +703,7 @@ with sync_playwright() as pw:
     page6.screenshot(path=f"{out}/30-mise-a-jour.png")
     page6.wait_for_function("document.querySelector('.update-step').textContent.includes('Redémarrage')", timeout=10000)
     with page6.expect_navigation(timeout=20000):
-        pass  # Nexis « 999.0 » répond : la page se recharge seule
+        pass  # Noxa « 999.0 » répond : la page se recharge seule
     page6.wait_for_selector(".topbar")
     check(page6.locator(".update-overlay").count() == 0, "rechargement automatique après la mise à jour")
     ctx.note_latest(None)
@@ -721,7 +721,7 @@ with sync_playwright() as pw:
     page6.reload()
     page6.wait_for_selector(".restart-box")
     page6.wait_for_selector(".topbar", timeout=15000)
-    check(down["n"] == 0, "écran « Nexis redémarre » puis reconnexion automatique")
+    check(down["n"] == 0, "écran « Noxa redémarre » puis reconnexion automatique")
     bctx6.close()
 
     # --- mobile

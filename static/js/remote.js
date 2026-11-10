@@ -105,7 +105,7 @@ function onKey(e) {
 }
 document.addEventListener('keydown', onKey);
 
-// Appli Android TV : la touche Retour de la télécommande arrive ici. -> true si Nexis l'a prise en charge,
+// Appli Android TV : la touche Retour de la télécommande arrive ici. -> true si Noxa l'a prise en charge,
 // false si l'on est déjà à l'accueil (l'appli propose alors de quitter).
 window.nexisBack = () => {
   const menuOpen = [...document.querySelectorAll('.more-list, .user-menu')].some((m) => !m.hidden);

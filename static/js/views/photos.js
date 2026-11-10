@@ -90,7 +90,7 @@ async function browse(main, ctx, o) {
       if (start === 0) {
         if (o.shared) {
           heading.textContent = r.title;
-          document.title = `${r.title} · Nexis`;
+          document.title = `${r.title} · Noxa`;
         }
         // album partagé : on ne remonte pas au-dessus de l'album du lien
         const trail = o.shared ? r.path.slice(1) : r.path;
@@ -100,7 +100,7 @@ async function browse(main, ctx, o) {
           h('div.album-cover', a.thumb || a.thumb_url ? h('img', { src: thumbSrc(a, 320), alt: '', loading: 'lazy', decoding: 'async' }) : null),
           h('div.album-title', a.title), h('div.muted.small', plural(a.count, '{n} photo', '{n} photos')))));
         const here = r.path[r.path.length - 1];
-        if (here && !o.shared) document.title = `${here.title} · Nexis`;
+        if (here && !o.shared) document.title = `${here.title} · Noxa`;
         if (o.canShare && here) actions.replaceChildren(h('button.btn.small', { type: 'button', onclick: () => shareDialog(here) }, icon('share'), tr('Partager l’album')));
       }
       total = r.total;
@@ -123,7 +123,7 @@ async function browse(main, ctx, o) {
   const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) more(); }, { rootMargin: '800px' });
   io.observe(sentinel);
   ctx.setCleanup(() => { io.disconnect(); closeViewer(); });
-  if (o.title) document.title = `${o.title} · Nexis`;
+  if (o.title) document.title = `${o.title} · Noxa`;
   await more();
 }
 
@@ -150,7 +150,7 @@ async function renderMap(main, lib, tabs, ctx) {
   const placeHead = h('h2.map-place-head');
   const placeGrid = h('div.photo-grid');
   clear(main, h('div.page-head', h('h1', lib.title), count), tabs, map, placeHead, placeGrid);
-  document.title = `${lib.title} · Nexis`;
+  document.title = `${lib.title} · Noxa`;
   map.append(spinner());
   let pts;
   try {

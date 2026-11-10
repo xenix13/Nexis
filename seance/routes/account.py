@@ -43,9 +43,9 @@ def register(app, ctx, x):
         try:
             owner, repo, _ = update.read_source()
         except update.UpdateError:
-            owner, repo = "xenix13", "Nexis"
+            owner, repo = "xenix13", "Noxa"
         return Response(b"", 302, "text/plain",
-                        {"Location": f"https://github.com/{owner}/{repo}/releases/latest/download/nexis-tv.apk",
+                        {"Location": f"https://github.com/{owner}/{repo}/releases/latest/download/noxa-tv.apk",
                          "Cache-Control": "no-store"})
 
     @app.route("POST", "/api/setup", auth="setup")

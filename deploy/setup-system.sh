@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prépare le système pour Nexis : utilisateur, dossiers, configuration, services systemd, carte graphique.
+# Prépare le système pour Noxa : utilisateur, dossiers, configuration, services systemd, carte graphique.
 # Commun à install.sh (installation depuis GitHub) et au paquet .deb (postinst). En root.
 set -euo pipefail
 
@@ -21,31 +21,32 @@ chmod 700 "$DATA_DIR"
 
 if [ ! -f "$CONF_DIR/seance.env" ]; then
   cat > "$CONF_DIR/seance.env" <<'ENVFILE'
-# Port d'écoute de Nexis
+# Port d'écoute de Noxa
 SEANCE_PORT=8420
 SEANCE_HOST=0.0.0.0
-# 1 si Nexis est servi en HTTPS derrière un reverse proxy (Caddy, nginx, Nginx Proxy Manager…)
+# 1 si Noxa est servi en HTTPS derrière un reverse proxy (Caddy, nginx, Nginx Proxy Manager…)
 SEANCE_COOKIE_SECURE=0
 # 1 pour lire l'adresse réelle des visiteurs dans X-Forwarded-For
-# (uniquement si Nexis n'est joignable qu'à travers ce proxy)
+# (uniquement si Noxa n'est joignable qu'à travers ce proxy)
 SEANCE_TRUST_PROXY=0
 # Journaux détaillés
 SEANCE_DEBUG=0
-# Port des serveurs liés (liaison TLS entre vos serveurs Nexis, ouverte à la première invitation)
+# Port des serveurs liés (liaison TLS entre vos serveurs Noxa, ouverte à la première invitation)
 SEANCE_FED_PORT=8421
 ENVFILE
 fi
 
-echo "==> Commande d'administration « nexis »"
-cat > /usr/local/bin/nexis <<CMD
+echo "==> Commande d'administration « noxa »"
+cat > /usr/local/bin/noxa <<CMD
 #!/bin/sh
-# Commandes de secours de Nexis, en root :
-#   nexis list-users                 comptes et état de leur double authentification
-#   nexis reset-2fa <identifiant>    désactive la double authentification d'un compte
-if [ "\$(id -u)" -ne 0 ]; then echo "À lancer en root : sudo nexis …" >&2; exit 1; fi
+# Commandes de secours de Noxa, en root :
+#   noxa list-users                 comptes et état de leur double authentification
+#   noxa reset-2fa <identifiant>    désactive la double authentification d'un compte
+if [ "\$(id -u)" -ne 0 ]; then echo "À lancer en root : sudo noxa …" >&2; exit 1; fi
 cd "$APP_DIR" && exec runuser -u seance -- /usr/bin/python3 -m seance --data "$DATA_DIR" "\$@"
 CMD
-chmod 755 /usr/local/bin/nexis
+chmod 755 /usr/local/bin/noxa
+ln -sf noxa /usr/local/bin/nexis  # ancien nom de la commande (Nexis)
 
 echo "==> Service systemd"
 cp "$UNITS/seance.service" /etc/systemd/system/seance.service
@@ -112,7 +113,7 @@ if [ -r /proc/self/uid_map ] && [ "$(awk 'NR==1{print $2}' /proc/self/uid_map)" 
   echo "Solutions : conteneur privilégié avec « features: mount=cifs », ou montage depuis l'hôte (README)."
 fi
 echo
-echo "Nexis tourne sur http://${IP:-<ip>}:${PORT:-8420}"
+echo "Noxa tourne sur http://${IP:-<ip>}:${PORT:-8420}"
 for d in /mnt/*/ /mnt/seance/*/; do
   [ -d "$d" ] || continue
   if ! runuser -u seance -- ls "$d" >/dev/null 2>&1; then

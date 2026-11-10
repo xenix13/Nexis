@@ -9,7 +9,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: Nexis version
+      label: Noxa version
       description: Settings → Overview
       placeholder: "4.0.0"
     validations:
@@ -43,5 +43,5 @@ body:
     id: logs
     attributes:
       label: Logs
-      description: Relevant lines of `journalctl -u seance` (Docker `docker logs nexis`). Remove addresses, names and tokens. For playback problems, add the title's "File information".
+      description: Relevant lines of `journalctl -u seance` (Docker `docker logs noxa`). Remove addresses, names and tokens. For playback problems, add the title's "File information".
       render: text

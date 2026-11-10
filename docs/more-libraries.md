@@ -34,20 +34,20 @@
 
 - Channels are available to **every user** in the **Live TV** tab: a grid with what is on now and next, a **programme guide**, search, groups and personal **favourites**. In the player: ↑ / ↓ to change channel, `L` for the list.
 - **Groups…** hides whole groups for everyone. An option hides live TV for age-restricted profiles.
-- Browsers cannot play MPEG-TS, so Nexis receives the stream with ffmpeg and turns it into HLS. **H.264 video is copied** as is and the audio converted to stereo AAC; MPEG-2 or HEVC video is converted to H.264 (never / automatic / always). A channel watched by several people is **received only once**; ffmpeg stops 45 s after the last viewer leaves.
+- Browsers cannot play MPEG-TS, so Noxa receives the stream with ffmpeg and turns it into HLS. **H.264 video is copied** as is and the audio converted to stereo AAC; MPEG-2 or HEVC video is converted to H.264 (never / automatic / always). A channel watched by several people is **received only once**; ffmpeg stops 45 s after the last viewer leaves.
 - **Simultaneous channels (max.):** most providers limit the number of connections; beyond it, a message says so.
 - Channels that fail twice in a row are hidden, and shown again as soon as they answer.
 - The *Refresh channels and TV guide* task runs every 12 hours. Only add playlists from providers you trust.
 
 ## DLNA server
 
-Nexis can also appear as a **DLNA / UPnP media server** on your local network. TVs (Samsung, LG, Sony…), consoles, boxes and apps like VLC then find it in their sources and play its content without a Nexis app.
+Noxa can also appear as a **DLNA / UPnP media server** on your local network. TVs (Samsung, LG, Sony…), consoles, boxes and apps like VLC then find it in their sources and play its content without a Noxa app.
 
 - **Enable it** in *Settings → Casting and offline → DLNA*: turn it on, choose the displayed name and the shared libraries (all by default).
 - **Content:** movies; shows with their seasons and episodes; photos by album. Each photo is also offered as a 1920 px JPEG turned the right way up, which every TV can display (HEIC included).
-- **Files are played as they are:** no conversion, so a format the device cannot read will not play; use a Nexis app or the website instead.
+- **Files are played as they are:** no conversion, so a format the device cannot read will not play; use a Noxa app or the website instead.
 - **No accounts:** every device on the local network sees the shared libraries, without parental controls, so only share what suits everyone. Addresses outside the local network are refused, and the service is off by default.
-- **Ports:** discovery uses UDP 1900 (SSDP multicast), content goes through Nexis's web port (8420).
+- **Ports:** discovery uses UDP 1900 (SSDP multicast), content goes through Noxa's web port (8420).
 - **Docker:** the container must use the host network (`network_mode: host`), because discovery does not cross Docker's internal network. Nothing to do in LXC or with the `.deb`.
 - Titles of a linked server are not shared over DLNA: each server shares its own.
 

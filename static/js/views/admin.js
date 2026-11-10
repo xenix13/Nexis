@@ -14,11 +14,11 @@ const ADMIN_DEFS = [
       keys: tr('statistiques activité heures visionnage débit données comptes titres populaires jamais regardés place disque') },
     { id: 'users', label: tr('Utilisateurs'), icon: 'group', lead: tr('Comptes, profils du foyer, contrôle parental et accès aux bibliothèques.'),
       keys: tr('compte profil enfant pin âge restriction administrateur désactiver mot de passe foyer langue language') },
-    { id: 'update', label: tr('Mise à jour'), icon: 'upgrade', lead: tr('Version installée et mises à jour de Nexis.'),
+    { id: 'update', label: tr('Mise à jour'), icon: 'upgrade', lead: tr('Version installée et mises à jour de Noxa.'),
       keys: tr('version mettre à jour github nouveautés changements réinstaller') },
     { id: 'backups', label: tr('Sauvegardes'), icon: 'backup', lead: tr('Sauvegarde automatique de la base et des clés, et restauration.'),
       keys: tr('sauvegarde backup restaurer restauration archive base de données migration nouveau serveur') },
-    { id: 'federation', label: tr('Serveurs liés'), icon: 'link', lead: tr('Relier vos serveurs Nexis : comptes communs, bibliothèques de chacun visibles et lisibles depuis l’autre.'),
+    { id: 'federation', label: tr('Serveurs liés'), icon: 'link', lead: tr('Relier vos serveurs Noxa : comptes communs, bibliothèques de chacun visibles et lisibles depuis l’autre.'),
       keys: tr('fédération cluster lier jumeler invitation second serveur réplication tunnel') },
     { id: 'tasks', label: tr('Tâches planifiées'), icon: 'clock', lead: tr('Travaux de fond : scans, métadonnées, intros, sous-titres, nettoyage.'),
       keys: tr('planification scan automatique nettoyage cache intro générique chapitres horaire') },
@@ -42,7 +42,7 @@ const ADMIN_DEFS = [
       keys: tr('processeur cpu gpu carte graphique nvidia nvenc vaapi intel amd limites lectures simultanées matériel') },
     { id: 'subtitles', label: tr('Sous-titres et son'), icon: 'subs', lead: tr('Sous-titres manquants (OpenSubtitles), sous-titres intégrés et mixage du son 5.1 / 7.1.'),
       keys: tr('sous-titres opensubtitles bazarr télécharger manquants préparer audio son 5.1 7.1 stéréo mixage downmix volume dialogues') },
-    { id: 'dlna', label: tr('DLNA'), icon: 'tv', lead: tr('Téléviseurs, consoles et box du réseau local : Nexis apparaît comme serveur multimédia.'),
+    { id: 'dlna', label: tr('DLNA'), icon: 'tv', lead: tr('Téléviseurs, consoles et box du réseau local : Noxa apparaît comme serveur multimédia.'),
       keys: tr('dlna upnp téléviseur smart tv samsung lg sony console xbox ps5 box réseau local serveur multimédia') },
     { id: 'downloads', label: tr('Téléchargements'), icon: 'install', lead: tr('Visionnage hors ligne dans l’application.'),
       keys: tr('hors ligne télécharger offline téléphone') },
@@ -62,7 +62,7 @@ export const ADMIN_GROUPS = [
   { title: tr('Serveur'), items: [
     settingsPage(A, ['dashboard', 'stats'], { lead: tr('Version, état du serveur, lectures en cours et statistiques.'), names: { dashboard: tr('État du serveur') } }),
     settingsPage(A, ['users']),
-    settingsPage(A, ['update', 'backups', 'tasks'], { label: tr('Maintenance'), lead: tr('Mises à jour de Nexis, sauvegardes et travaux planifiés.') }),
+    settingsPage(A, ['update', 'backups', 'tasks'], { label: tr('Maintenance'), lead: tr('Mises à jour de Noxa, sauvegardes et travaux planifiés.') }),
     settingsPage(A, ['federation']),
   ] },
   { title: tr('Médiathèque'), items: [
@@ -298,7 +298,7 @@ async function libraryForm(lib) {
   const err = h('p.form-error');
   const body = h('div.form',
     h('div.grid2', field(tr('Nom'), name), field(tr('Type de contenu'), kind)),
-    field(tr('Dossiers'), paths, tr('Chemins sur le serveur Nexis (ex. /mnt/films). Chaque film ou série dans son propre sous-dossier ; pour des photos, chaque sous-dossier devient un album.')),
+    field(tr('Dossiers'), paths, tr('Chemins sur le serveur Noxa (ex. /mnt/films). Chaque film ou série dans son propre sous-dossier ; pour des photos, chaque sous-dossier devient un album.')),
     h('button.btn.small.ghost', { type: 'button', onclick: () => addPath() }, tr('+ Ajouter un dossier')),
     isNew ? null : h('p.muted.small', tr('Changer le type vide la bibliothèque avant de la rescanner.')), err);
   return modal(isNew ? tr('Nouvelle bibliothèque') : tr('Modifier « {name} »', { name: lib.name }), body, [
@@ -355,11 +355,11 @@ async function librariesTab(body, ctx) {
           l.unmatched ? h('span', tr(' · {unmatched} non identifié(s)', { unmatched: l.unmatched })) : null,
           tr(' · scanné {p1}', { p1: since(l.scanned_at) })),
         h('div.small', l.paths.map((p, i) => h('code', { class: l.paths_ok[i] ? '' : 'bad-path', title: l.paths_ok[i] ? '' : tr('Dossier inaccessible') }, p))),
-        (l.paths_writable || []).some(Boolean) ? h('div.small.warn-text', tr('Nexis peut écrire dans ce dossier : par précaution, montez-le en lecture seule (voir l’audit de sécurité).')) : null),
+        (l.paths_writable || []).some(Boolean) ? h('div.small.warn-text', tr('Noxa peut écrire dans ce dossier : par précaution, montez-le en lecture seule (voir l’audit de sécurité).')) : null),
       h('button.btn.small', { onclick: () => startScan({ library: l.id }) }, tr('Scanner')),
       h('button.btn.small', { onclick: async () => { if (await libraryForm(l)) { await refreshMe(); reload(); } } }, tr('Modifier')),
       h('button.icon-btn', { title: tr('Supprimer'), onclick: async () => {
-        if (!await confirmDialog(tr('Supprimer cette bibliothèque ?'), tr('« {name} » sera retirée de Nexis. Les fichiers ne sont pas modifiés.', { name: l.name }), tr('Supprimer'))) return;
+        if (!await confirmDialog(tr('Supprimer cette bibliothèque ?'), tr('« {name} » sera retirée de Noxa. Les fichiers ne sont pas modifiés.', { name: l.name }), tr('Supprimer'))) return;
         try { await del(`/api/admin/libraries/${l.id}`); await refreshMe(); reload(); } catch (e) { toast(e.message, 'bad'); }
       } }, icon('trash')))))
       : h('div.empty', h('p', tr('Aucune bibliothèque.')), h('p.muted.small', tr('Exemple : « Films » → /mnt/films, « Séries » → /mnt/series, « Animes » → /mnt/animes.'))));
@@ -419,7 +419,7 @@ async function shareForm(existing) {
     h('div.grid2', field(tr('Partage'), share), field(tr('Nom local'), name, tr('Monté dans /mnt/seance/<nom>'))),
     h('details.advanced', h('summary', tr('Options avancées')),
       h('div.grid2', field(tr('Sous-dossier du partage'), subdir), field(tr('Version SMB'), version)), field(tr('Domaine'), domain)),
-    h('p.muted.small', tr('Le partage est monté en lecture seule : Nexis ne peut ni modifier ni supprimer les fichiers. Le mot de passe est stocké par le système (lisible par root uniquement), jamais dans la base de Nexis.')),
+    h('p.muted.small', tr('Le partage est monté en lecture seule : Noxa ne peut ni modifier ni supprimer les fichiers. Le mot de passe est stocké par le système (lisible par root uniquement), jamais dans la base de Noxa.')),
     err);
   return modal(isNew ? tr('Ajouter un partage réseau (SMB)') : tr('Modifier « {name} »', { name: e.name }), body, [
     { label: tr('Annuler'), value: null },
@@ -454,12 +454,12 @@ async function sharesTab(body, ctx) {
     h('h2', tr('Ce conteneur ne peut pas monter de partages')),
     h('p', tr('Linux interdit le montage SMB dans un conteneur LXC non privilégié. Les partages du NAS peuvent être listés, mais leur montage échouera. Deux solutions :')),
     h('ol',
-      h('li', h('strong', tr('Conteneur privilégié')), tr(' (gestion des partages depuis Nexis) : sauvegarder le conteneur, le restaurer en mode privilégié (Proxmox : Sauvegarde → Restaurer, décocher « Non privilégié »), puis activer l’option '), h('code', 'pct set <ID> -features mount=cifs,nesting=1'), '.'),
+      h('li', h('strong', tr('Conteneur privilégié')), tr(' (gestion des partages depuis Noxa) : sauvegarder le conteneur, le restaurer en mode privilégié (Proxmox : Sauvegarde → Restaurer, décocher « Non privilégié »), puis activer l’option '), h('code', 'pct set <ID> -features mount=cifs,nesting=1'), '.'),
       h('li', h('strong', tr('Garder le conteneur non privilégié')), tr(' : monter les partages sur l’hôte Proxmox et les transmettre au conteneur (procédure dans le README). Ils apparaissent alors dans l’explorateur de dossiers des bibliothèques.')))) : null;
   const tools = env.tools && (!env.tools['mount.cifs'] || !env.tools.smbclient)
-    ? h('div.status-box.bad', tr('cifs-utils ou smbclient est manquant. Relancer l’installation de Nexis les installe.')) : null;
+    ? h('div.status-box.bad', tr('cifs-utils ou smbclient est manquant. Relancer l’installation de Noxa les installe.')) : null;
   clear(body,
-    h('div.toolbar', h('p.muted', tr('Dossiers partagés d’un NAS (SMB/CIFS), montés depuis Nexis pour y créer des bibliothèques.')),
+    h('div.toolbar', h('p.muted', tr('Dossiers partagés d’un NAS (SMB/CIFS), montés depuis Noxa pour y créer des bibliothèques.')),
       h('button.btn.primary', { onclick: async () => {
         const path = await shareForm(null);
         if (path) {
@@ -488,10 +488,10 @@ async function sharesTab(body, ctx) {
       h('button.btn.small', { onclick: async () => { if (await shareForm(sh)) { toast(tr('Partage mis à jour'), 'ok'); reload(); } } }, tr('Modifier')),
       h('button.icon-btn', { title: tr('Démonter et retirer'), onclick: async () => {
         const used = sh.libraries.length ? tr(' Les bibliothèques {p1} ne trouveront plus leurs fichiers (leur contenu est conservé tant qu’elles ne sont pas rescannées avec le partage monté).', { p1: sh.libraries.join(', ') }) : '';
-        if (!await confirmDialog(tr('Retirer ce partage ?'), tr('Le partage sera démonté et retiré de Nexis. Les fichiers du NAS ne sont pas modifiés.{used}', { used }), tr('Retirer'))) return;
+        if (!await confirmDialog(tr('Retirer ce partage ?'), tr('Le partage sera démonté et retiré de Noxa. Les fichiers du NAS ne sont pas modifiés.{used}', { used }), tr('Retirer'))) return;
         try { await del(`/api/admin/shares/${sh.name}`); toast(tr('Partage retiré'), 'ok'); reload(); } catch (e) { toast(e.message, 'bad'); }
       } }, icon('trash')))))
-      : h('div.empty', tr('Aucun partage réseau géré par Nexis.')));
+      : h('div.empty', tr('Aucun partage réseau géré par Noxa.')));
 }
 
 // --------------------------------------------------------------- réglages du serveur
@@ -512,7 +512,7 @@ const metadataPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
     ['es-ES', tr('Espagnol')], ['it-IT', tr('Italien')]], s.language);
   return [
     h('section.panel', h('h2', tr('Clé TMDB et langue')),
-      h('p.muted.small', tr('Affiches, résumés, distribution et titres d’épisodes proviennent de The Movie Database. Une clé gratuite s’obtient sur themoviedb.org (Paramètres → API). Sans clé, Nexis utilise les noms de fichiers, les fichiers .nfo et les images présentes dans les dossiers.')),
+      h('p.muted.small', tr('Affiches, résumés, distribution et titres d’épisodes proviennent de The Movie Database. Une clé gratuite s’obtient sur themoviedb.org (Paramètres → API). Sans clé, Noxa utilise les noms de fichiers, les fichiers .nfo et les images présentes dans les dossiers.')),
       h('div.status-box', { class: s.tmdb_set || s.tmdb_shared ? 'status-box ok' : 'status-box' }, s.tmdb_set ? tr('Clé TMDB configurée.')
         : s.tmdb_shared ? tr('Pas de clé ici : celle du serveur lié « {name} » est utilisée.', { name: s.tmdb_shared }) : tr('Aucune clé TMDB.')),
       h('div.grid2', field(tr('Clé TMDB'), key), field(tr('Langue des métadonnées'), lang)),
@@ -536,13 +536,13 @@ const detectionPage = (body, ctx) => withSettings(body, ctx, (s, save, reload) =
   const hookInput = h('input', { readonly: true, value: `${location.origin}${s.webhook_path}`, onfocus: (e) => e.target.select() });
   return [
     h('section.panel', h('h2', tr('Surveillance des dossiers')),
-      h('p.muted.small', tr('Sur un partage réseau, les ajouts faits depuis une autre machine ne sont pas signalés au système. Nexis vérifie donc régulièrement les dossiers et analyse la bibliothèque concernée une fois la copie terminée.')),
+      h('p.muted.small', tr('Sur un partage réseau, les ajouts faits depuis une autre machine ne sont pas signalés au système. Noxa vérifie donc régulièrement les dossiers et analyse la bibliothèque concernée une fois la copie terminée.')),
       h('div.grid2', field(tr('Surveiller les dossiers'), watch, tr('Le scan complet quotidien se règle dans « Tâches planifiées ».'))),
       h('button.btn.primary', { onclick: () => save({ watch_interval: Number(watch.value) }, tr('Enregistré')) }, tr('Enregistrer')),
       s.watch_events.length ? h('details', h('summary.small', tr('Derniers déclenchements')),
         h('ul.small', s.watch_events.map((e) => h('li', `${new Date(e.t * 1000).toLocaleString(locale())} — ${e.text}`)))) : null),
     h('section.panel', h('h2', tr('Webhook Radarr / Sonarr')),
-      h('p.muted.small', tr('Radarr et Sonarr signalent chaque import à Nexis : les nouveaux titres apparaissent immédiatement.')),
+      h('p.muted.small', tr('Radarr et Sonarr signalent chaque import à Noxa : les nouveaux titres apparaissent immédiatement.')),
       h('div.copy-row', hookInput,
         h('button.btn.small', { onclick: async () => {
           try { await navigator.clipboard.writeText(hookInput.value); toast(tr('Adresse copiée'), 'ok'); }
@@ -552,7 +552,7 @@ const detectionPage = (body, ctx) => withSettings(body, ctx, (s, save, reload) =
           if (!await confirmDialog(tr('Nouvelle adresse ?'), tr('L’ancienne adresse cessera de fonctionner : il faudra la remplacer dans Radarr et Sonarr.'), tr('Régénérer'))) return;
           await post('/api/admin/webhook/regenerate'); reload();
         } }, tr('Régénérer'))),
-      h('p.muted.small', tr('Dans Radarr et Sonarr : Settings → Connect → + → Webhook. Renseigner cette adresse dans « URL » (méthode POST) et cocher « On Import », « On Upgrade », « On Rename » et « On Delete ». Si Radarr tourne sur une autre machine, utiliser l’adresse du serveur Nexis telle qu’elle est vue depuis Radarr.'))),
+      h('p.muted.small', tr('Dans Radarr et Sonarr : Settings → Connect → + → Webhook. Renseigner cette adresse dans « URL » (méthode POST) et cocher « On Import », « On Upgrade », « On Rename » et « On Delete ». Si Radarr tourne sur une autre machine, utiliser l’adresse du serveur Noxa telle qu’elle est vue depuis Radarr.'))),
   ];
 });
 
@@ -569,7 +569,7 @@ const subtitlesPage = (body, ctx) => withSettings(body, ctx, (s, save) => {
   return [
     osPanel, wPanel,
     h('section.panel', h('h2', tr('Sous-titres intégrés')),
-      h('p.muted.small', tr('Les sous-titres intégrés aux fichiers (MKV) ne peuvent être extraits qu’en lisant le fichier en entier. Nexis les prépare à l’avance, en dehors des lectures, pour qu’ils soient disponibles dès le début de la vidéo.')),
+      h('p.muted.small', tr('Les sous-titres intégrés aux fichiers (MKV) ne peuvent être extraits qu’en lisant le fichier en entier. Noxa les prépare à l’avance, en dehors des lectures, pour qu’ils soient disponibles dès le début de la vidéo.')),
       prefetch,
       h('p.muted.small', s.subs_queue ? tr('{subs_queue} fichier(s) en attente de préparation.', { subs_queue: s.subs_queue }) : tr('Aucun fichier en attente.')),
       h('button.btn', { onclick: () => save({ subs_prefetch: true }, tr('Préparation lancée pour toute la médiathèque')) }, tr('Tout préparer maintenant'))),
@@ -612,7 +612,7 @@ async function openSubtitlesPanel(panel) {
     } catch (e) { toast(e.message, 'bad'); saveBtn.disabled = false; }
   } }, tr('Tester et enregistrer'));
   clear(panel, h('h2', 'OpenSubtitles'),
-    h('p.muted.small', tr('Nexis télécharge lui-même les sous-titres manquants, sans Bazarr. Il faut un compte gratuit sur opensubtitles.com (20 sous-titres par jour) et une clé d’API, créée sur le site dans « API consumers ». Les sous-titres sont rangés dans le dossier de données de Nexis, jamais à côté des vidéos.')),
+    h('p.muted.small', tr('Noxa télécharge lui-même les sous-titres manquants, sans Bazarr. Il faut un compte gratuit sur opensubtitles.com (20 sous-titres par jour) et une clé d’API, créée sur le site dans « API consumers ». Les sous-titres sont rangés dans le dossier de données de Noxa, jamais à côté des vidéos.')),
     status,
     h('div.grid2', field(tr('Clé d’API'), key), field(tr('Identifiant OpenSubtitles'), user)),
     h('div.grid2', field(tr('Mot de passe OpenSubtitles'), pass), h('div')),
@@ -653,7 +653,7 @@ async function whisperPanel(panel) {
     h('p.muted.small', tr('Pour les vidéos sans aucun sous-titre dans la langue parlée, Whisper écrit les sous-titres à partir de la voix (dans cette langue : il ne traduit pas). C’est un calcul long ; il se fait une vidéo à la fois, en pause pendant les lectures.')),
     status, job, dl,
     h('h4.form-sub', tr('Service de transcription (recommandé)')),
-    h('p.muted.small', tr('Un service compatible avec l’API d’OpenAI, par exemple Speaches (faster-whisper) lancé dans un conteneur à côté de Nexis, avec une carte graphique s’il y en a une. OpenAI convient aussi, mais l’audio des vidéos part alors sur Internet.')),
+    h('p.muted.small', tr('Un service compatible avec l’API d’OpenAI, par exemple Speaches (faster-whisper) lancé dans un conteneur à côté de Noxa, avec une carte graphique s’il y en a une. OpenAI convient aussi, mais l’audio des vidéos part alors sur Internet.')),
     h('div.grid2', field(tr('Adresse du service'), url), field(tr('Modèle'), modelHttp, tr('Ex. Systran/faster-whisper-small pour Speaches, whisper-1 pour OpenAI.'))),
     h('div.grid2', field(tr('Clé d’API'), key), h('div')),
     h('div.actions-row', h('button.btn.primary', { onclick: () => {
@@ -736,7 +736,7 @@ async function updatePage(body) {
   const box = h('div');
   const checkBtn = h('button.btn', { onclick: () => load(true) }, tr('Rechercher une mise à jour'));
   const checked = h('span.muted.small');
-  clear(body, h('section.panel#update', h('h2', `Nexis ${version}`), h('p.muted.small', tr('Version installée sur ce serveur.')), box,
+  clear(body, h('section.panel#update', h('h2', `Noxa ${version}`), h('p.muted.small', tr('Version installée sur ce serveur.')), box,
     h('div.actions-row.update-check', checkBtn, checked)));
   const load = async (refresh = false) => {
     checkBtn.disabled = true;
@@ -747,7 +747,7 @@ async function updatePage(body) {
       paint(u);
       checked.textContent = tr('Dernière vérification : {p1}', { p1: new Date().toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) });
       if (refresh) {
-        toast(u.available ? tr('Nexis {latest} est disponible', { latest: u.latest }) : (u.check_error ? u.check_error : tr('Aucune mise à jour disponible')),
+        toast(u.available ? tr('Noxa {latest} est disponible', { latest: u.latest }) : (u.check_error ? u.check_error : tr('Aucune mise à jour disponible')),
           u.check_error ? 'bad' : 'ok');
         await refreshMe().catch(() => {}); // indicateur de la barre du haut
       }
@@ -774,9 +774,9 @@ async function updatePage(body) {
       parts.push(field(tr('Canal de mise à jour'), channel, tr('Stable : versions validées. Test : nouveautés en cours de validation.')));
     }
     if (u.check_error) parts.push(h('div.status-box.bad', tr('Vérification impossible : {check_error}', { check_error: u.check_error })));
-    else if (u.available) parts.push(h('div.status-box.ok', tr('Nouvelle version disponible : Nexis {latest}', { latest: u.latest })));
-    else if (u.latest && u.latest !== version) parts.push(h('div.status-box', tr('Version publiée sur ce canal : Nexis {latest} (source : {source}).', { latest: u.latest, source: u.source })));
-    else parts.push(h('div.status-box.ok', tr('Nexis est à jour (source : {source}).', { source: u.source })));
+    else if (u.available) parts.push(h('div.status-box.ok', tr('Nouvelle version disponible : Noxa {latest}', { latest: u.latest })));
+    else if (u.latest && u.latest !== version) parts.push(h('div.status-box', tr('Version publiée sur ce canal : Noxa {latest} (source : {source}).', { latest: u.latest, source: u.source })));
+    else parts.push(h('div.status-box.ok', tr('Noxa est à jour (source : {source}).', { source: u.source })));
     if (u.available && u.changes && u.changes.length) {
       parts.push(h('details', h('summary.small', tr('Derniers changements')),
         h('ul.small', u.changes.map((c) => h('li', c.title)))));
@@ -790,7 +790,7 @@ async function updatePage(body) {
         h('p.muted.small', tr('Mise à jour manuelle : relancer la commande d’installation sur le serveur (voir le README).')));
     } else if (!u.running) {
       parts.push(h('button.btn', { class: u.available ? 'btn primary' : 'btn', onclick: () => runUpdate(version) },
-        u.latest && u.latest !== version ? tr('Installer Nexis {latest}', { latest: u.latest }) : tr('Réinstaller la version actuelle')));
+        u.latest && u.latest !== version ? tr('Installer Noxa {latest}', { latest: u.latest }) : tr('Réinstaller la version actuelle')));
     }
     box.replaceChildren(...parts);
   };
@@ -798,7 +798,7 @@ async function updatePage(body) {
 }
 
 async function runUpdate(version) {
-  if (!await confirmDialog(tr('Mettre à jour Nexis ?'), tr('Le serveur télécharge la nouvelle version puis redémarre (une à deux minutes). Les lectures en cours seront interrompues.'), tr('Mettre à jour'), false)) return;
+  if (!await confirmDialog(tr('Mettre à jour Noxa ?'), tr('Le serveur télécharge la nouvelle version puis redémarre (une à deux minutes). Les lectures en cours seront interrompues.'), tr('Mettre à jour'), false)) return;
   try { await post('/api/admin/update'); } catch (e) { toast(e.message, 'bad'); return; }
   const remote = adminTarget();
   if (remote) { toast(tr('Mise à jour lancée sur « {name} » : il redémarre dans une à deux minutes', { name: remote.name }), 'ok'); return; }
@@ -822,7 +822,7 @@ async function requestsTab(body, ctx) {
       : cfg.enabled ? tr('Seerr est configuré : les utilisateurs peuvent demander des films et des séries.') : tr('Seerr n’est pas encore configuré.'));
   clear(body,
     h('section.panel', h('h2', tr('Seerr')),
-      h('p.muted.small', tr('Seerr reçoit les demandes faites depuis l’onglet Découvrir et les transmet à Radarr / Sonarr. Une demande est faite au nom du compte Seerr portant le même nom que le compte Nexis, sinon au nom du propriétaire de la clé d’API.')),
+      h('p.muted.small', tr('Seerr reçoit les demandes faites depuis l’onglet Découvrir et les transmet à Radarr / Sonarr. Une demande est faite au nom du compte Seerr portant le même nom que le compte Noxa, sinon au nom du propriétaire de la clé d’API.')),
       status,
       h('div.grid2', field(tr('Adresse de Seerr'), url), field(tr('Clé d’API de Seerr'), key)),
       h('div.actions-row',
@@ -1056,7 +1056,7 @@ async function liveTab(body, ctx) {
       } }, icon('trash')))))
       : h('div.empty', tr('Aucune source configurée.'))),
     h('section.panel', h('h2', tr('Lecture')),
-      h('p.muted.small', tr('Les navigateurs ne lisent pas directement les flux TV (MPEG-TS) : Nexis les reçoit et les convertit. Une chaîne regardée par plusieurs personnes n’est reçue qu’une fois. La plupart des fournisseurs limitent le nombre de connexions simultanées.')),
+      h('p.muted.small', tr('Les navigateurs ne lisent pas directement les flux TV (MPEG-TS) : Noxa les reçoit et les convertit. Une chaîne regardée par plusieurs personnes n’est reçue qu’une fois. La plupart des fournisseurs limitent le nombre de connexions simultanées.')),
       h('div.grid2', field(tr('Chaînes regardées en même temps (max.)'), maxS), field(tr('Vidéo'), vmode)),
       hide,
       h('button.btn.primary', { onclick: async () => {
@@ -1076,8 +1076,8 @@ async function dashboardPage(body, ctx) {
   const remote = adminTarget();
   const version = remote ? (await get('/api/admin/settings')).version : state.status.version;
   const latest = remote ? null : state.me.update;
-  const versionCard = h('div.panel.scan', h('strong', `Nexis ${version}`), latest
-    ? h('div.small', h('span.tag.accent', tr('Mise à jour')), tr(' Nexis {latest} est disponible · ', { latest }), h('a', { href: '#/admin/update' }, tr('Mettre à jour')))
+  const versionCard = h('div.panel.scan', h('strong', `Noxa ${version}`), latest
+    ? h('div.small', h('span.tag.accent', tr('Mise à jour')), tr(' Noxa {latest} est disponible · ', { latest }), h('a', { href: '#/admin/update' }, tr('Mettre à jour')))
     : h('div.muted.small', tr('À jour (vérification automatique toutes les 6 heures) · '), h('a', { href: '#/admin/update' }, tr('Détails'))));
   const alertsBox = h('div');
   const paintAlerts = (v) => {
@@ -1098,7 +1098,7 @@ async function dashboardPage(body, ctx) {
         : h('div.status-box.ok', tr('Aucune alerte : tout va bien.')),
       h('details.alert-conf', h('summary.small', tr('Alertes envoyées aux administrateurs')),
         h('p.muted.small', tr('Chaque alerte part en notification push sur les appareils où vous l’avez activée (Paramètres → Profil → Notifications), une fois, puis une fois par jour tant que le problème dure.')),
-        sw('disk', tr('Disque presque plein (données de Nexis, sauvegardes)')),
+        sw('disk', tr('Disque presque plein (données de Noxa, sauvegardes)')),
         field(tr('Seuil d’espace libre (Go)'), gbInput),
         sw('folder', tr('Dossier de bibliothèque inaccessible (partage réseau démonté)')),
         sw('peer', tr('Serveur lié injoignable depuis 15 minutes')),
@@ -1125,7 +1125,7 @@ async function dashboardPage(body, ctx) {
     const secLine = (ok, label, hint) => h('li', { class: ok ? 'sec-ok' : 'sec-warn' }, h('strong', ok ? '✓ ' : '! '), label, hint ? h('span.muted', ` · ${hint}`) : null);
     const security = sec ? h('div.panel.scan', h('strong', tr('Sécurité de l’accès')), h('ul.sec-list.small',
       secLine(sec.cookie_secure, sec.cookie_secure ? tr('Cookies réservés au HTTPS') : tr('Cookies envoyés aussi en HTTP'),
-        sec.cookie_secure ? null : tr('SEANCE_COOKIE_SECURE=1 si Nexis est exposé sur Internet')),
+        sec.cookie_secure ? null : tr('SEANCE_COOKIE_SECURE=1 si Noxa est exposé sur Internet')),
       secLine(!sec.via_proxy || sec.trust_proxy, sec.trust_proxy ? tr('Adresse des visiteurs lue depuis le proxy') : (sec.via_proxy ? tr('Proxy détecté mais non déclaré') : tr('Accès direct (sans proxy)')),
         sec.via_proxy && !sec.trust_proxy ? tr('SEANCE_TRUST_PROXY=1 pour distinguer les visiteurs') : null),
       secLine(sec.https || !sec.via_proxy, sec.https ? tr('Connexion chiffrée (HTTPS)') : (sec.via_proxy ? tr('Proxy sans HTTPS') : tr('Connexion locale en HTTP'))),
@@ -1263,7 +1263,7 @@ async function federationPage(body, ctx) {
         h('div.muted.small',
           p.address ? tr('Adresse {address}', { address: p.address }) : tr('Sans adresse : joint par le tunnel qu’il ouvre'),
           p.latency != null && p.online ? tr(' · {ms} ms', { ms: p.latency }) : '',
-          p.version ? ` · Nexis ${p.version}` : '',
+          p.version ? ` · Noxa ${p.version}` : '',
           p.online && p.load != null ? plural(p.load, ' · {n} lecture en cours', ' · {n} lectures en cours') : '',
           tr(' · vu {when}', { when: since(p.last_seen) })),
         p.online && p.shares && p.shares.length ? h('div.muted.small', tr('Prête : {list}', {
@@ -1335,10 +1335,10 @@ async function dlnaPage(body, ctx) {
     const libs = v.libraries.map((l) => ({ l, box: h('input', { type: 'checkbox', checked: l.shared }) }));
     const status = !v.enabled ? h('div.status-box', tr('Le serveur DLNA est désactivé.'))
       : v.error ? h('div.status-box.bad', v.error)
-        : h('div.status-box.ok', tr('Nexis est visible sur le réseau local sous le nom « {name} ».', { name: v.name }));
+        : h('div.status-box.ok', tr('Noxa est visible sur le réseau local sous le nom « {name} ».', { name: v.name }));
     clear(body,
       h('section.panel', h('h2', tr('Serveur DLNA')),
-        h('p.muted.small', tr('Les téléviseurs, consoles et box du réseau local trouvent Nexis dans leur liste de sources (« Serveurs multimédia », « DLNA », « Partage »). Ils lisent les fichiers tels quels : sans conversion, un format que l’appareil ne connaît pas ne se lit pas (préférez alors l’application Nexis).')),
+        h('p.muted.small', tr('Les téléviseurs, consoles et box du réseau local trouvent Noxa dans leur liste de sources (« Serveurs multimédia », « DLNA », « Partage »). Ils lisent les fichiers tels quels : sans conversion, un format que l’appareil ne connaît pas ne se lit pas (préférez alors l’application Noxa).')),
         status, on,
         field(tr('Nom affiché sur les appareils'), name),
         field(tr('Bibliothèques partagées'), h('div.check-list', libs.map(({ l, box }) => h('label.check-row', box, h('span', l.name)))),
@@ -1366,10 +1366,10 @@ async function backupsPage(body, ctx) {
       : tr('{n} Ko', { n: Math.max(1, Math.round(b / 1e3)) }));
   const when = (ts) => new Date(ts * 1000).toLocaleString(locale(), { dateStyle: 'medium', timeStyle: 'short' });
   const reload = async () => render(await get('/api/admin/backups'));
-  // après une restauration : Nexis redémarre, la page se recharge une fois revenu
+  // après une restauration : Noxa redémarre, la page se recharge une fois revenu
   const restarted = (r) => {
-    if (!r.restarting) { toast(tr('Restauration prête : redémarrez Nexis pour l’appliquer'), 'ok'); return; }
-    clear(body, h('section.panel', h('h2', tr('Restauration en cours')), h('p.muted', tr('Nexis redémarre avec la sauvegarde. La page se rechargera toute seule.'))));
+    if (!r.restarting) { toast(tr('Restauration prête : redémarrez Noxa pour l’appliquer'), 'ok'); return; }
+    clear(body, h('section.panel', h('h2', tr('Restauration en cours')), h('p.muted', tr('Noxa redémarre avec la sauvegarde. La page se rechargera toute seule.'))));
     const started = Date.now();
     const wait = async () => {
       await new Promise((res) => setTimeout(res, 2500));
@@ -1385,7 +1385,7 @@ async function backupsPage(body, ctx) {
   };
   const confirmRestore = (b) => confirmDialog(tr('Restaurer cette sauvegarde ?'),
     `${b && b.server && !b.mine ? tr('Elle vient du serveur « {name} » : ce serveur prendra son identité (comptes, réglages, liaisons). À faire seulement pour remplacer « {name} », par exemple sur une nouvelle machine.', { name: b.server }) + ' ' : ''}${
-      tr('Comptes, historique, réglages et bibliothèques reviennent à leur état de la sauvegarde. Ce qui a changé depuis est perdu (l’état actuel reste gardé dans le dossier de données, sous « before-restore »). Nexis redémarre.')}`, tr('Restaurer'));
+      tr('Comptes, historique, réglages et bibliothèques reviennent à leur état de la sauvegarde. Ce qui a changé depuis est perdu (l’état actuel reste gardé dans le dossier de données, sous « before-restore »). Noxa redémarre.')}`, tr('Restaurer'));
 
   const render = (v) => {
     if (!ctx.isCurrent()) return;
@@ -1447,7 +1447,7 @@ async function backupsPage(body, ctx) {
     const last = v.last;
     const row = (b) => h('div.backup-row',
       h('div.backup-info', h('strong', when(b.created)),
-        h('div.muted.small', [b.version ? `Nexis ${b.version}` : null, size(b.size),
+        h('div.muted.small', [b.version ? `Noxa ${b.version}` : null, size(b.size),
           b.uploaded ? tr('envoyée') : b.name.includes('-restauree') ? tr('restaurée') : b.auto ? tr('automatique') : tr('manuelle')].filter(Boolean).join(' · '),
         b.broken ? h('span.bad', ` · ${tr('illisible')}`) : null), h('code.backup-name', b.name)),
       h('div.actions-row',
@@ -1466,7 +1466,7 @@ async function backupsPage(body, ctx) {
     for (const b of v.backups.filter((x) => !x.mine)) (others[b.server || b.slug || '?'] ||= []).push(b);
     const copyLine = (st) => (st ? h('span', { class: st.ok ? 'muted' : 'bad' }, st.ok ? tr('dernière copie {date}', { date: when(st.at) }) : tr('échec le {date} : {error}', { date: when(st.at), error: st.error || '?' })) : h('span.muted', tr('pas encore de copie')));
     clear(body,
-      v.restored ? h('div.status-box.ok', tr('Sauvegarde du {date} restaurée (Nexis {version}).', { date: when(v.restored.created), version: v.restored.version || '?' })) : null,
+      v.restored ? h('div.status-box.ok', tr('Sauvegarde du {date} restaurée (Noxa {version}).', { date: when(v.restored.created), version: v.restored.version || '?' })) : null,
       h('section.panel', h('h2', tr('Sauvegarde automatique')),
         h('p.muted.small', tr('L’archive contient la base (comptes, historique, notes, playlists, réglages, bibliothèques et métadonnées), les clés des serveurs liés et des notifications, les images de profil et les sous-titres téléchargés. Les vidéos et les photos n’y sont pas. Elle contient les mots de passe (chiffrés) : gardez-la en lieu sûr.')),
         h('div.grid2', field(tr('Fréquence'), mode), field(tr('Heure'), time)),
@@ -1499,7 +1499,7 @@ async function backupsPage(body, ctx) {
         h('div.actions-row', nowBtn, h('button.btn', { onclick: () => pick(true) }, tr('Restaurer depuis un fichier…')),
           h('button.btn', { onclick: restorePath }, tr('Restaurer depuis un fichier du serveur…')),
           h('button.btn', { onclick: () => pick(false) }, tr('Ajouter un fichier à la liste…'))),
-        h('p.muted.small', tr('Pour passer sur un nouveau serveur, ou remplacer un serveur en panne : installez Nexis, créez le compte administrateur, puis « Restaurer depuis un fichier… » avec sa sauvegarde (téléchargée depuis un autre serveur lié ou un stockage externe).')),
+        h('p.muted.small', tr('Pour passer sur un nouveau serveur, ou remplacer un serveur en panne : installez Noxa, créez le compte administrateur, puis « Restaurer depuis un fichier… » avec sa sauvegarde (téléchargée depuis un autre serveur lié ou un stockage externe).')),
         mine.length ? h('div.backup-list', mine.map(row)) : h('p.muted', tr('Aucune sauvegarde pour l’instant.'))),
       ...Object.entries(others).map(([server, list]) => h('section.panel', h('h2', tr('Copies de « {name} »', { name: server })),
         h('p.muted.small', tr('Sauvegardes reçues de ce serveur lié. Pour le reconstruire, téléchargez la plus récente et restaurez-la sur sa nouvelle installation.')),
@@ -1591,11 +1591,11 @@ async function backupsPage(body, ctx) {
       help = tr('Adresse du service (vide pour AWS), région, compartiment existant, et une clé d’accès qui peut y lire, écrire et supprimer. Exemples d’adresse : https://s3.eu-central-003.backblazeb2.com, https://s3.fr-par.scw.cloud, https://s3.gra.io.cloud.ovh.net.');
     } else if (kind === 'gdrive') {
       fields = { client_id: inp('client_id'), client_secret: inp('client_secret', { type: 'password', value: '', placeholder: has('client_secret') ? tr('Enregistré (laisser vide pour le garder)') : '' }),
-        folder: inp('folder', { value: existing ? '' : 'Nexis' }) };
-      help = tr('Une fois : console.cloud.google.com → nouveau projet → activer « Google Drive API » → Identifiants → ID client OAuth de type « TV et appareils à saisie limitée » (écran de consentement en mode test, avec votre adresse comme testeur). Copiez ici l’ID client et le code secret, puis reliez le compte avec le code affiché. Nexis ne voit que les fichiers qu’il a créés.');
+        folder: inp('folder', { value: existing ? '' : 'Noxa' }) };
+      help = tr('Une fois : console.cloud.google.com → nouveau projet → activer « Google Drive API » → Identifiants → ID client OAuth de type « TV et appareils à saisie limitée » (écran de consentement en mode test, avec votre adresse comme testeur). Copiez ici l’ID client et le code secret, puis reliez le compte avec le code affiché. Noxa ne voit que les fichiers qu’il a créés.');
     } else {
       fields = { client_id: inp('client_id', { placeholder: '00000000-0000-0000-0000-000000000000' }) };
-      help = tr('Une fois : portal.azure.com → Inscriptions d’applications → Nouvelle inscription (comptes personnels Microsoft et professionnels), puis dans « Authentification » : « Autoriser les flux clients publics » = Oui. Copiez ici l’ID d’application (client), puis reliez le compte avec le code affiché. Nexis n’écrit que dans son dossier d’application (Applications/Nexis).');
+      help = tr('Une fois : portal.azure.com → Inscriptions d’applications → Nouvelle inscription (comptes personnels Microsoft et professionnels), puis dans « Authentification » : « Autoriser les flux clients publics » = Oui. Copiez ici l’ID d’application (client), puis reliez le compte avec le code affiché. Noxa n’écrit que dans son dossier d’application (Applications/Noxa).');
     }
     const labels = { endpoint: tr('Adresse du service'), region: tr('Région'), bucket: tr('Compartiment (bucket)'), prefix: tr('Dossier dans le compartiment'),
       access_key: tr('Clé d’accès'), secret_key: tr('Clé secrète'), client_id: tr('ID client'), client_secret: tr('Code secret du client'), folder: tr('Dossier dans Google Drive') };
@@ -1649,7 +1649,7 @@ async function statsPage(body, ctx) {
         tile(tr('Comptes actifs'), String(t.users)),
         tile(tr('Conversions'), `${pct(t.transcodes)} %`, tr('des lectures demandent une conversion par le processeur ou la carte graphique'))),
       h('section.panel', h('h2', tr('Heures de visionnage par jour')),
-        t.plays ? chart : h('p.muted.small', tr('Aucune lecture sur cette période. Les statistiques commencent avec cette version de Nexis.')),
+        t.plays ? chart : h('p.muted.small', tr('Aucune lecture sur cette période. Les statistiques commencent avec cette version de Noxa.')),
         t.plays ? h('div.stat-axis.muted.small', h('span', when(Date.parse(r.per_day[0].day) / 1000)), h('span', when(Date.parse(r.per_day[r.per_day.length - 1].day) / 1000))) : null),
       h('section.panel', h('h2', tr('Par compte')),
         r.users.length ? table([tr('Compte'), tr('Temps'), tr('Lectures'), tr('Titres'), tr('Données'), tr('Conversions'), tr('Dernière lecture')],
@@ -1676,7 +1676,7 @@ async function statsPage(body, ctx) {
 // --------------------------------------------------------------- stockage froid
 const COLD_KINDS = [
   ['local', tr('Dossier de cette machine'), tr('Disque USB, NAS déjà monté par le système, volume Docker…')],
-  ['smb', tr('Partage SMB (NAS)'), tr('Monté en écriture par Nexis (installation par script ou paquet).')],
+  ['smb', tr('Partage SMB (NAS)'), tr('Monté en écriture par Noxa (installation par script ou paquet).')],
   ['sftp', tr('SFTP'), tr('Hetzner Storage Box, NAS, serveur SSH.')],
   ['webdav', tr('WebDAV'), tr('Nextcloud, Synology, Hetzner Storage Box…')],
   ['s3', tr('S3 et compatibles'), tr('Backblaze B2, Wasabi, Scaleway, OVH, AWS, MinIO.')],
@@ -1706,14 +1706,14 @@ async function coldForm(existing, available, peers = []) {
   const inp = (k, attrs = {}) => { inputs[k] = h('input', { value: c[k] ?? attrs.value ?? '', autocomplete: 'off', ...attrs }); return inputs[k]; };
   const name = h('input', { value: existing ? existing.name : '', placeholder: tr('ex. Disque USB, Storage Box') });
   const fieldsFor = (k) => {
-    if (k === 'local') return [field(tr('Dossier'), inp('path', { placeholder: '/mnt/archive' }), tr('Chemin sur cette machine (dans Docker : un volume du conteneur). Nexis doit pouvoir y écrire.'))];
+    if (k === 'local') return [field(tr('Dossier'), inp('path', { placeholder: '/mnt/archive' }), tr('Chemin sur cette machine (dans Docker : un volume du conteneur). Noxa doit pouvoir y écrire.'))];
     if (k === 'smb') return [h('div.grid2', field(tr('Adresse du NAS'), inp('host', { placeholder: '192.168.1.5' })), field(tr('Partage'), inp('share', { placeholder: 'archive' }))),
       h('div.grid2', field(tr('Sous-dossier'), inp('subdir', { placeholder: tr('facultatif') })), field(tr('Version SMB'), (inputs.version = select(SMB_VERSIONS, c.version || 'auto')))),
       h('div.grid2', field(tr('Identifiant'), inp('username')), field(tr('Mot de passe'), inp('password', { type: 'password', value: '', placeholder: keep })))];
     if (k === 'sftp') return [h('div.grid2', field(tr('Serveur'), inp('host', { placeholder: 'u123456.your-storagebox.de' })), field(tr('Port'), inp('port', { type: 'number', value: 22, min: 1, max: 65535 }))),
       h('div.grid2', field(tr('Identifiant'), inp('username')), field(tr('Mot de passe'), inp('password', { type: 'password', value: '', placeholder: keep }))),
       field(tr('Dossier'), inp('path', { placeholder: 'nexis' }), tr('Relatif au dossier personnel, ou absolu (/data/nexis). Créé au besoin.'))];
-    if (k === 'webdav') return [field(tr('Adresse WebDAV'), inp('url', { placeholder: 'https://cloud.exemple.fr/remote.php/dav/files/moi/Nexis' })),
+    if (k === 'webdav') return [field(tr('Adresse WebDAV'), inp('url', { placeholder: 'https://cloud.exemple.fr/remote.php/dav/files/moi/Noxa' })),
       h('div.grid2', field(tr('Identifiant'), inp('username')), field(tr('Mot de passe'), inp('password', { type: 'password', value: '', placeholder: keep })))];
     if (k === 's3') return [field(tr('Adresse (vide pour AWS)'), inp('endpoint', { placeholder: 'https://s3.eu-central-003.backblazeb2.com' })),
       h('div.grid2', field(tr('Région'), inp('region', { placeholder: 'eu-central-003' })), field(tr('Seau (bucket)'), inp('bucket'))),
@@ -1723,7 +1723,7 @@ async function coldForm(existing, available, peers = []) {
       inputs.peer = select((peers || []).map((p) => [p.id, p.name]), c.peer || (peers[0] || {}).id);
       return [field(tr('Serveur'), inputs.peer, tr('Son administrateur doit réserver de la place pour les archives (Paramètres → Stockage froid de son serveur).'))];
     }
-    return [field(tr('Remote rclone et dossier'), inp('remote', { placeholder: 'pcloud:Nexis' }), tr('Nom donné dans rclone config, suivi de « : » et du dossier.')),
+    return [field(tr('Remote rclone et dossier'), inp('remote', { placeholder: 'pcloud:Noxa' }), tr('Nom donné dans rclone config, suivi de « : » et du dossier.')),
       field(tr('Fichier de configuration'), inp('config', { placeholder: tr('facultatif, ex. /home/seance/.config/rclone/rclone.conf') }))];
   };
   const box = h('div.form');
@@ -1746,7 +1746,7 @@ async function coldForm(existing, available, peers = []) {
   // SFTP : la clé du serveur est montrée une fois, à confirmer (elle sera vérifiée ensuite à chaque connexion)
   const confirmKey = async (fp) => {
     const pretty = fp.match(/../g).join(':');
-    return confirmDialog(tr('Clé du serveur SFTP'), tr('Empreinte MD5 de la clé du serveur : {fp}. Vérifiez-la si vous le pouvez (chez votre hébergeur, ou avec ssh-keygen -l -E md5), puis confirmez : Nexis refusera ensuite tout serveur qui présente une autre clé.', { fp: pretty }), tr('Confirmer la clé'), false);
+    return confirmDialog(tr('Clé du serveur SFTP'), tr('Empreinte MD5 de la clé du serveur : {fp}. Vérifiez-la si vous le pouvez (chez votre hébergeur, ou avec ssh-keygen -l -E md5), puis confirmez : Noxa refusera ensuite tout serveur qui présente une autre clé.', { fp: pretty }), tr('Confirmer la clé'), false);
   };
   return modal(existing ? tr('Modifier le stockage') : tr('Ajouter un stockage froid'), h('div.form',
     existing ? null : field(tr('Type'), kind), note, field(tr('Nom'), name), box, err), [
@@ -1792,7 +1792,7 @@ async function coldPage(body, ctx) {
     } }),
     s.kind === 'smb' ? null : h('button.btn.small', { onclick: async () => { if (await coldForm(s, data.available, extra.peers)) { toast(tr('Stockage mis à jour'), 'ok'); reload(); } } }, tr('Modifier')),
     h('button.icon-btn', { title: tr('Retirer'), onclick: async () => {
-      if (!await confirmDialog(tr('Retirer ce stockage ?'), tr('Nexis oublie ce stockage et ses copies. Les fichiers déjà copiés restent sur le stockage.'), tr('Retirer'))) return;
+      if (!await confirmDialog(tr('Retirer ce stockage ?'), tr('Noxa oublie ce stockage et ses copies. Les fichiers déjà copiés restent sur le stockage.'), tr('Retirer'))) return;
       try { await del(`/api/admin/cold/stores/${s.id}`); toast(tr('Stockage retiré'), 'ok'); reload(); } catch (e) { toast(e.message, 'bad'); }
     } }, icon('trash')));
   const running = data.jobs.filter((j) => j.state === 'running');
@@ -1821,7 +1821,7 @@ async function coldPage(body, ctx) {
       h('div.user-list', data.jobs.filter((j) => j.state === 'queued').map(jobRow))) : null) : null;
   const sections = {
     stores: () => [
-      h('div.toolbar', h('p.muted', tr('Le titre garde son affiche, son résumé et son historique ; si son fichier quitte la bibliothèque, Nexis le lit depuis la copie (quelques secondes de plus au démarrage). Pour archiver : menu ⋯ d’un titre, ou sélection multiple d’une bibliothèque.')),
+      h('div.toolbar', h('p.muted', tr('Le titre garde son affiche, son résumé et son historique ; si son fichier quitte la bibliothèque, Noxa le lit depuis la copie (quelques secondes de plus au démarrage). Pour archiver : menu ⋯ d’un titre, ou sélection multiple d’une bibliothèque.')),
         h('button.btn.primary', { onclick: async () => { if (await coldForm(null, data.available, extra.peers)) { toast(tr('Stockage ajouté'), 'ok'); reload(); } } }, tr('+ Ajouter un stockage'))),
       stores.length ? h('div.user-list', stores.map(storeRow)) : h('div.empty', tr('Aucun stockage froid. Ajoutez un disque, un NAS ou un stockage en ligne.')),
       jobsPanel,
@@ -1859,7 +1859,7 @@ function freePanel(free, stores, reload) {
   const keepStarted = toggle(tr('Garder les titres commencés'), c.keep_started);
   const methods = {};
   const libRows = free.libraries.map((l) => {
-    const chosen = select([['arr', l.kind === 'movie' ? tr('par Radarr') : tr('par Sonarr')], ['write', tr('par Nexis (bibliothèque en écriture)')],
+    const chosen = select([['arr', l.kind === 'movie' ? tr('par Radarr') : tr('par Sonarr')], ['write', tr('par Noxa (bibliothèque en écriture)')],
       ['manual', tr('à la main (liste des fichiers)')]], l.method);
     methods[l.id] = chosen;
     const use = h('input', { type: 'checkbox', checked: !c.libraries.length || c.libraries.includes(l.id) });
@@ -1888,14 +1888,14 @@ function freePanel(free, stores, reload) {
     await put('/api/admin/cold/free', body);
   };
   return h('section.panel', h('h2', tr('Libérer de la place')),
-    h('p.muted.small', tr('Les films et les séries que personne n’a regardés depuis le nombre de jours choisi sont copiés sur le stockage froid, puis leur fichier quitte la bibliothèque après un délai. Ils restent dans Nexis et se lisent depuis la copie. Un titre regardé pendant le délai est gardé.')),
+    h('p.muted.small', tr('Les films et les séries que personne n’a regardés depuis le nombre de jours choisi sont copiés sur le stockage froid, puis leur fichier quitte la bibliothèque après un délai. Ils restent dans Noxa et se lisent depuis la copie. Un titre regardé pendant le délai est gardé.')),
     on,
     h('div.grid2', field(tr('Non regardés depuis (jours)'), days), field(tr('Fonctionnement'), mode)),
     h('div.grid2', field(tr('Stockage froid'), store), field(tr('Délai avant suppression (jours)'), delay)),
     field(tr('Seulement si la place libre de la bibliothèque passe sous (Go)'), minFree, tr('0 : sans condition de place')),
     keepList, keepRated, keepStarted,
     h('h3.install-sub', tr('Bibliothèques et suppression des fichiers')),
-    h('p.muted.small', tr('Les bibliothèques restent en lecture seule pour Nexis : le fichier est supprimé par Radarr ou Sonarr (le titre n’y est plus surveillé, sinon ils le retéléchargeraient), par Nexis si la bibliothèque est montée en écriture, ou par vous à partir d’une liste.')),
+    h('p.muted.small', tr('Les bibliothèques restent en lecture seule pour Noxa : le fichier est supprimé par Radarr ou Sonarr (le titre n’y est plus surveillé, sinon ils le retéléchargeraient), par Noxa si la bibliothèque est montée en écriture, ou par vous à partir d’une liste.')),
     h('div.cold-libs', libRows.map((x) => x.row)),
     radarr.el, sonarr.el,
     h('div.actions-row',
@@ -1944,7 +1944,7 @@ function freeLists(free, reload) {
   if (pending.length) panels.push(h('section.panel', h('h2', tr('Suppression prévue')), h('p.muted.small', tr('Copie vérifiée. Le fichier quittera la bibliothèque à la date indiquée, sauf si le titre est regardé d’ici là.')),
     h('div.user-list', pending.map((g) => row(g, (x) => [keepBtn(x), skipBtn(x)])))));
   const manual = by('manual');
-  if (manual.length) panels.push(h('section.panel', h('h2', tr('À supprimer à la main')), h('p.muted.small', tr('Copie vérifiée : vous pouvez effacer ces fichiers de la bibliothèque. Nexis s’en aperçoit au prochain scan.')),
+  if (manual.length) panels.push(h('section.panel', h('h2', tr('À supprimer à la main')), h('p.muted.small', tr('Copie vérifiée : vous pouvez effacer ces fichiers de la bibliothèque. Noxa s’en aperçoit au prochain scan.')),
     h('div.user-list', manual.map((g) => row(g, (x) => [keepBtn(x)])))));
   if (free.freed.n) panels.push(h('p.muted.small', tr('Déjà libéré : {n} fichier(s), {size}. Ces titres se lisent depuis le stockage froid.', { n: free.freed.n, size: coldSize(free.freed.bytes) })));
   if (free.kept.length) panels.push(h('details.panel', h('summary', tr('Toujours gardés sur le disque ({n})', { n: free.kept.length })),

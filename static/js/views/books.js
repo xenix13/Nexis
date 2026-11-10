@@ -27,7 +27,7 @@ export async function renderBooks(main, lib, ctx) {
     { onchange: () => { store(`booksort:${lib.id}`, sortSel.value); renderBooks(main, lib, ctx); } });
   const r = await get(`/api/libraries/${lib.id}/books?sort=${sort}`);
   if (!ctx.isCurrent()) return;
-  document.title = `${lib.title} · Nexis`;
+  document.title = `${lib.title} · Noxa`;
   clear(main, h('div.page-head', h('h1', lib.title), h('span.muted', plural(r.books.length, '{n} livre', '{n} livres')),
     h('div.filters', sortSel)),
   r.reading.length ? h('section.block', h('h2', tr('En cours')), h('div.book-grid', r.reading.map(bookTile))) : null,
@@ -38,7 +38,7 @@ export async function renderBooks(main, lib, ctx) {
 export async function renderBook(main, id, ctx) {
   const d = await get(`/api/books/${id}`);
   if (!ctx.isCurrent()) return;
-  document.title = `${d.title} · Nexis`;
+  document.title = `${d.title} · Noxa`;
   const long = d.duration >= 3600000;
   const resume = d.position && !d.finished;
   const play = (at = null) => playAudio(bookAudio(d), at);

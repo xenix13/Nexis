@@ -1,5 +1,5 @@
 import { lang, tr } from './i18n.js';
-// Thin wrapper around fetch for the Nexis API.
+// Thin wrapper around fetch for the Noxa API.
 export class ApiError extends Error {
   constructor(status, message, data) {
     super(message);

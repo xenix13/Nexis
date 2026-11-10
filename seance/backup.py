@@ -8,11 +8,11 @@ Une sauvegarde est une archive .tar.gz qui contient :
 - push/ : clé des notifications (sans elle, chaque appareil devrait se réabonner) ;
 - avatars/ : images de profil ;
 - subtitles/ : sous-titres téléchargés depuis OpenSubtitles (comptés sur un quota quotidien) ;
-- manifest.json : version de Nexis et de la base, date.
+- manifest.json : version de Noxa et de la base, date.
 Les vidéos et les photos n'y sont pas : elles restent dans leurs dossiers. Les caches (images redimensionnées,
 sous-titres extraits, aperçus) se refont tout seuls.
 
-Restaurer se fait en deux temps, parce que la base est ouverte tant que Nexis tourne : l'archive est vérifiée
+Restaurer se fait en deux temps, parce que la base est ouverte tant que Noxa tourne : l'archive est vérifiée
 puis dépliée dans data/restore-pending, et c'est au démarrage suivant, avant d'ouvrir la base, que les
 fichiers sont mis en place. Ceux d'avant sont gardés dans data/before-restore-<date>.
 """
@@ -63,7 +63,7 @@ def check_directory(path):
     if not os.path.isdir(path):
         raise BackupError("Dossier introuvable")
     if not os.access(path, os.W_OK):
-        raise BackupError("Nexis ne peut pas écrire dans ce dossier")
+        raise BackupError("Noxa ne peut pas écrire dans ce dossier")
     return path
 
 
@@ -77,9 +77,9 @@ def slug(name):
 def server_identity(ctx):
     fed = getattr(ctx, "fed", None)
     try:
-        return (fed.uid() if fed else ""), (fed.name() if fed else "Nexis")
+        return (fed.uid() if fed else ""), (fed.name() if fed else "Noxa")
     except Exception:
-        return "", "Nexis"
+        return "", "Noxa"
 
 
 def _schema(db_path):
@@ -115,7 +115,7 @@ def create(ctx, label="", keep=None, distribute=True):
         man = os.path.join(tmp_dir, "manifest.json")
         with open(man, "w", encoding="utf-8") as f:
             json.dump(manifest, f)
-        fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # mots de passe, clés : lisible par Nexis seul
+        fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # mots de passe, clés : lisible par Noxa seul
         with os.fdopen(fd, "wb") as raw, tarfile.open(fileobj=raw, mode="w:gz", compresslevel=6) as tar:
             tar.add(man, "manifest.json")  # en premier : la liste lit seulement le début de l'archive
             tar.add(db_copy, "seance.db")
@@ -290,14 +290,14 @@ def _allowed(name):
 
 
 def validate(path):
-    """Archive lisible, venue de Nexis, et d'une base que cette version sait ouvrir -> manifeste."""
+    """Archive lisible, venue de Noxa, et d'une base que cette version sait ouvrir -> manifeste."""
     from .db import MIGRATIONS
     try:
         with tarfile.open(path, "r:gz") as tar:
             members = tar.getmembers()
             names = {m.name for m in members}
             if "manifest.json" not in names or "seance.db" not in names:
-                raise BackupError("Ce fichier n'est pas une sauvegarde de Nexis")
+                raise BackupError("Ce fichier n'est pas une sauvegarde de Noxa")
             for m in members:
                 if m.name.startswith("/") or not _allowed(m.name) or not (m.isfile() or m.isdir()):
                     raise BackupError("Archive refusée : contenu inattendu")
@@ -307,7 +307,7 @@ def validate(path):
     if not isinstance(man, dict) or man.get("format") != FORMAT:
         raise BackupError("Format de sauvegarde inconnu")
     if not isinstance(man.get("schema"), int) or man["schema"] > len(MIGRATIONS):
-        raise BackupError("Sauvegarde faite par une version plus récente de Nexis : mettez Nexis à jour d'abord")
+        raise BackupError("Sauvegarde faite par une version plus récente de Noxa : mettez Noxa à jour d'abord")
     return man
 
 
@@ -415,7 +415,7 @@ def read_body(req, dest_path, limit=MAX_UPLOAD):
 def adopt(ctx, path, label="envoi", own=False):
     """Archive reçue (navigateur, stockage externe, chemin du serveur) : déchiffrée si besoin, vérifiée, et rangée
     dans le dossier des sauvegardes sous un nom qui dit de quel serveur elle vient -> description.
-    own : le fichier est un fichier temporaire de Nexis (déplacé plutôt que copié)."""
+    own : le fichier est un fichier temporaire de Noxa (déplacé plutôt que copié)."""
     dest = directory(ctx)
     os.makedirs(dest, mode=0o700, exist_ok=True)
     plain, decrypted = plain_copy(ctx, path, getattr(ctx, "_passphrase", None))

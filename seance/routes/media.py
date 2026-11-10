@@ -351,7 +351,7 @@ def register(app, ctx, x):
         if b.get("cast"):
             p["cast"] = True  # lu par une TV (Chromecast, AirPlay) : adresse du flux utilisable sans session
         if p["mode"] == "direct" and (b.get("no_direct") or media.is_remote(src)):
-            p["mode"] = "copy"  # le navigateur a refusé la lecture directe, ou flux distant (.strm, stockage froid) relayé par Nexis
+            p["mode"] = "copy"  # le navigateur a refusé la lecture directe, ou flux distant (.strm, stockage froid) relayé par Noxa
         if src != r["key"]:
             p["cold"] = True  # lu depuis le stockage froid
             p["reasons"].append("lu depuis le stockage froid")
@@ -547,7 +547,7 @@ def register(app, ctx, x):
                         on_close=f.close)
 
     def record_progress(user, r, pos, dur, state="playing", sid="", ended=False):
-        """Position de lecture d'un utilisateur (interface de Nexis et applications). -> vu à l'instant ?"""
+        """Position de lecture d'un utilisateur (interface de Noxa et applications). -> vu à l'instant ?"""
         uid = user["id"]
         rk = str(r["id"])
         if r["type"] == "extra":  # les bonus ne laissent ni reprise ni historique

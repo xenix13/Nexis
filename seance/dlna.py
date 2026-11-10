@@ -1,7 +1,7 @@
-"""Serveur DLNA / UPnP : les téléviseurs, consoles et box du réseau local voient Nexis et lisent ses fichiers.
+"""Serveur DLNA / UPnP : les téléviseurs, consoles et box du réseau local voient Noxa et lisent ses fichiers.
 
 - Annonce (SSDP) : multidiffusion sur 239.255.255.250:1900, réponse aux recherches des appareils.
-- Description et services (ContentDirectory, ConnectionManager) sur le port web de Nexis, sous /dlna/.
+- Description et services (ContentDirectory, ConnectionManager) sur le port web de Noxa, sous /dlna/.
 - Contenu : les bibliothèques choisies par l'administrateur (films, séries > saisons > épisodes, photos >
   albums), servies telles quelles (le téléviseur lit le fichier d'origine ; pas de conversion).
 
@@ -99,7 +99,7 @@ class DLNA:
 
     def name(self):
         db = self.ctx.db
-        return db.setting("dlna_name") or f"Nexis ({db.setting('server_name') or (socket.gethostname() or 'serveur')[:40]})"
+        return db.setting("dlna_name") or f"Noxa ({db.setting('server_name') or (socket.gethostname() or 'serveur')[:40]})"
 
     def library_ids(self):
         """Bibliothèques partagées (celles de ce serveur ; toutes si l'administrateur n'a rien choisi)."""
@@ -186,7 +186,7 @@ class DLNA:
         loc = self.location(local_ip())
         for nt, usn in self._types(uuid):
             msg = (f"NOTIFY * HTTP/1.1\r\nHOST: {GROUP}:{SSDP_PORT}\r\nCACHE-CONTROL: max-age={MAX_AGE}\r\n"
-                   f"LOCATION: {loc}\r\nNT: {nt}\r\nNTS: {nts}\r\nSERVER: Linux/1.0 UPnP/1.0 Nexis/{__version__}\r\n"
+                   f"LOCATION: {loc}\r\nNT: {nt}\r\nNTS: {nts}\r\nSERVER: Linux/1.0 UPnP/1.0 Noxa/{__version__}\r\n"
                    f"USN: {usn}\r\n\r\n")
             sock.sendto(msg.encode(), (GROUP, SSDP_PORT))
 
@@ -209,7 +209,7 @@ class DLNA:
                 continue
             msg = (f"HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age={MAX_AGE}\r\nDATE: "
                    f"{time.strftime('%a, %d %b %Y %H:%M:%S GMT', time.gmtime())}\r\nEXT:\r\nLOCATION: {loc}\r\n"
-                   f"SERVER: Linux/1.0 UPnP/1.0 Nexis/{__version__}\r\nST: {nt}\r\nUSN: {usn}\r\nContent-Length: 0\r\n\r\n")
+                   f"SERVER: Linux/1.0 UPnP/1.0 Noxa/{__version__}\r\nST: {nt}\r\nUSN: {usn}\r\nContent-Length: 0\r\n\r\n")
             sock.sendto(msg.encode(), addr)
 
     def _run(self):
@@ -390,10 +390,10 @@ def description(dlna, base):
 <device>
 <deviceType>{DEVICE}</deviceType>
 <friendlyName>{escape(dlna.name())}</friendlyName>
-<manufacturer>Nexis</manufacturer>
-<manufacturerURL>https://github.com/xenix13/Nexis</manufacturerURL>
-<modelName>Nexis</modelName>
-<modelDescription>Serveur multimédia Nexis</modelDescription>
+<manufacturer>Noxa</manufacturer>
+<manufacturerURL>https://github.com/xenix13/Noxa</manufacturerURL>
+<modelName>Noxa</modelName>
+<modelDescription>Serveur multimédia Noxa</modelDescription>
 <modelNumber>{__version__}</modelNumber>
 <UDN>uuid:{dlna.uuid()}</UDN>
 <dlna:X_DLNADOC>DMS-1.50</dlna:X_DLNADOC>
@@ -553,7 +553,7 @@ def register(app, ctx, x):
         callback = (req.headers.get("CALLBACK") or "").strip("<> ")
         if callback and not req.headers.get("SID"):
             threading.Thread(target=initial_event, args=(callback, sid, req.client_ip, req.params["svc"]), daemon=True).start()
-        return Response(b"", 200, "text/plain", {"SID": sid, "TIMEOUT": "Second-1800", "Server": f"Linux/1.0 UPnP/1.0 Nexis/{__version__}"})
+        return Response(b"", 200, "text/plain", {"SID": sid, "TIMEOUT": "Second-1800", "Server": f"Linux/1.0 UPnP/1.0 Noxa/{__version__}"})
 
     @app.route("UNSUBSCRIBE", r"/dlna/event/(?P<svc>cd|cm)", auth="dlna")
     def dlna_unsubscribe(req):

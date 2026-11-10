@@ -2,7 +2,7 @@
 
 [← Back to the README](../README.md) · Previous: [Apps](apps.md)
 
-Two (or more) Nexis servers that belong to you, say your home and a holiday house, or your place and your parents', can be **linked**. They then behave like one service: the same accounts everywhere, each server's libraries visible and playable from the others, and administration of every server from any of them.
+Two (or more) Noxa servers that belong to you, say your home and a holiday house, or your place and your parents', can be **linked**. They then behave like one service: the same accounts everywhere, each server's libraries visible and playable from the others, and administration of every server from any of them.
 
 > Keep this for your own servers. Sharing commercial movies with another household goes beyond private copying in most countries.
 
@@ -15,7 +15,7 @@ Two (or more) Nexis servers that belong to you, say your home and a holiday hous
 1. On the server the other one can reach, **Invite a server**. Check the proposed address (IP or name, followed by port **8421**), then copy the `NEXIS1-…` invitation.
 2. On the other server, **Join a server** and paste the invitation. It is valid for 15 minutes and works once.
 
-Before joining, Nexis lists the usernames that exist on both servers and asks, for each one, whether they are **different people** (the joining server's account is renamed, e.g. `lea-home2`, and both accounts then exist everywhere) or **the same person** (the accounts merge, keeping the password, 2FA and profile of the inviting server; each server keeps its own history and lists for that account).
+Before joining, Noxa lists the usernames that exist on both servers and asks, for each one, whether they are **different people** (the joining server's account is renamed, e.g. `lea-home2`, and both accounts then exist everywhere) or **the same person** (the accounts merge, keeping the password, 2FA and profile of the inviting server; each server keeps its own history and lists for that account).
 
 ## What is shared
 

@@ -26,7 +26,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
-/** Lecteur ExoPlayer configuré pour Nexis, et profil de décodage de l'appareil envoyé au serveur. */
+/** Lecteur ExoPlayer configuré pour Noxa, et profil de décodage de l'appareil envoyé au serveur. */
 @OptIn(markerClass = UnstableApi.class)
 final class Players {
     private static JSONObject caps;

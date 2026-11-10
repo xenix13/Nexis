@@ -194,7 +194,7 @@ def register(app, ctx, x):
         return {"id": str(l["id"]), "name": l["name"], "kind": l["kind"], "paths": json.loads(l["paths"]),
                 "scanned_at": l["scanned_at"], "counts": counts, "unmatched": unmatched,
                 "paths_ok": [os.path.isdir(p) for p in json.loads(l["paths"])],
-                # Nexis n'a besoin que de lire les médias : un dossier modifiable par le service est signalé (audit)
+                # Noxa n'a besoin que de lire les médias : un dossier modifiable par le service est signalé (audit)
                 "paths_writable": [os.path.isdir(p) and os.access(p, os.W_OK) for p in json.loads(l["paths"])]}
 
     def validate_library(b):
@@ -310,7 +310,7 @@ def register(app, ctx, x):
         return out[:50]
 
     def local_dirs(remote):
-        """Retrouve le dossier local correspondant (chemins différents entre Radarr et Nexis) en comparant
+        """Retrouve le dossier local correspondant (chemins différents entre Radarr et Noxa) en comparant
         la fin du chemin : /movies/Inception (2010) -> /mnt/films/Inception (2010)."""
         # « .. » refusé : le webhook ne doit pas pouvoir désigner un dossier hors des bibliothèques
         parts = [p for p in remote.replace("\\", "/").split("/") if p and p not in (".", "..")]
@@ -354,7 +354,7 @@ def register(app, ctx, x):
         payload = payload if isinstance(payload, dict) else {}
         event = payload.get("eventType", "")
         if event == "Test":
-            return {"ok": True, "message": "Nexis a bien reçu le test"}
+            return {"ok": True, "message": "Noxa a bien reçu le test"}
         scope = webhook_scope(payload)
         ctx.watcher.request_scan(f"webhook {event}".strip(), scope=scope or None)
         return {"ok": True, "partial": bool(scope)}
@@ -642,7 +642,7 @@ def register(app, ctx, x):
 
     @app.route("POST", f"/api/admin/backups/{BK}/restore", auth="admin")
     def admin_backup_restore(req):
-        """Prépare la restauration, puis redémarre Nexis (la base ne peut pas être remplacée en marche)."""
+        """Prépare la restauration, puis redémarre Noxa (la base ne peut pas être remplacée en marche)."""
         from .. import backup
         try:
             man = backup.stage(ctx.data_dir, backup.path_of(ctx, req.params["name"]))
@@ -654,7 +654,7 @@ def register(app, ctx, x):
             threading.Timer(1.5, ctx.restart).start()  # le temps d'envoyer la réponse
         return {"ok": True, "restarting": restarting, "version": man.get("version"), "created": man.get("created")}
 
-    # ---------------------------------------------------- mise à jour de Nexis
+    # ---------------------------------------------------- mise à jour de Noxa
     @app.route("GET", "/api/admin/update", auth="admin")
     def admin_update(req):
         db.release()  # appels réseau : pas de connexion à la base gardée pendant ce temps
@@ -698,7 +698,7 @@ def register(app, ctx, x):
 
     @app.route("POST", "/api/admin/update", auth="admin")
     def admin_update_start(req):
-        log.warning("Mise à jour de Nexis lancée par %s", req.user["username"])
+        log.warning("Mise à jour de Noxa lancée par %s", req.user["username"])
         return mounts("update")
 
     # ---------------------------------------------------- admin partages SMB

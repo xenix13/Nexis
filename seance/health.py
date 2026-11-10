@@ -1,7 +1,7 @@
 """Alertes pour les administrateurs : ce qui demande d'intervenir sur le serveur.
 
 Vérifié toutes les 5 minutes (en tâche de fond, sans gêner les requêtes) :
-- disque presque plein (données de Nexis, sauvegardes, dossiers des bibliothèques) ;
+- disque presque plein (données de Noxa, sauvegardes, dossiers des bibliothèques) ;
 - dossier d'une bibliothèque inaccessible ou vide alors qu'il contenait des titres (partage réseau démonté) ;
 - serveur lié injoignable depuis plus de 15 minutes ;
 et, au moment où cela arrive : tâche planifiée en échec.
@@ -136,7 +136,7 @@ class Health:
             seen[dev] = p
             key = f"disk:{dev}"
             free_gb = u.free / 1e9
-            # les bibliothèques sont en lecture seule : un disque de films plein ne gêne pas Nexis, sauf le sien
+            # les bibliothèques sont en lecture seule : un disque de films plein ne gêne pas Noxa, sauf le sien
             if label in ("data", "backups") and (free_gb < min_gb or u.free < u.total * 0.03):
                 self.raise_alert(key, "disk", "Disque presque plein",
                                  f"{p} : {free_gb:.1f} Go libres sur {u.total / 1e9:.0f} Go", "#/admin/backups")

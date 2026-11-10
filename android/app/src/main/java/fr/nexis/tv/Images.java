@@ -67,7 +67,7 @@ final class Images {
             c.setReadTimeout(30000);
             c.setRequestProperty("User-Agent", Api.VERSION_HEADER);
             String ck = Api.cookieHeader();
-            // cookie de session : uniquement vers le serveur Nexis, jamais vers une adresse d'image extérieure
+            // cookie de session : uniquement vers le serveur Noxa, jamais vers une adresse d'image extérieure
             if (!ck.isEmpty() && url.startsWith(Api.server() + "/")) c.setRequestProperty("Cookie", ck);
             if (c.getResponseCode() != 200) return null;
             byte[] data;

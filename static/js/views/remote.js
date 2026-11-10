@@ -6,7 +6,7 @@ import { tr } from '../i18n.js';
 // Télécommande : pilote, depuis cet appareil (typiquement le téléphone), la lecture en cours sur un autre
 // appareil du même compte (ordinateur, TV, tablette). La liste se met à jour en direct.
 export async function renderRemote(main, ctx) {
-  document.title = `${tr('Télécommande')} · Nexis`;
+  document.title = `${tr('Télécommande')} · Noxa`;
   const list = h('div.remote-list');
   const panel = h('div.remote-panel');
   clear(main, h('div.page-head', h('h1', tr('Télécommande'))),

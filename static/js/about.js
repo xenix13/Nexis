@@ -1,5 +1,5 @@
 // « À propos » : version, sources des données (attribution exigée par TMDB et JustWatch) et licences des
-// composants tiers fournis avec Nexis.
+// composants tiers fournis avec Noxa.
 import { h, modal } from './ui.js';
 import { tr } from './i18n.js';
 
@@ -21,16 +21,16 @@ const COMPONENTS = [
 ];
 
 export function aboutDialog(version) {
-  return modal(tr('À propos de Nexis'), h('div.about',
-    h('p', h('strong', `Nexis ${version || ''}`), ' — ', tr('serveur multimédia auto-hébergé.')),
-    h('p.small', tr('Logiciel libre sous licence MIT : '), link('https://github.com/xenix13/Nexis', 'github.com/xenix13/Nexis'), '.'),
+  return modal(tr('À propos de Noxa'), h('div.about',
+    h('p', h('strong', `Noxa ${version || ''}`), ' — ', tr('serveur multimédia auto-hébergé.')),
+    h('p.small', tr('Logiciel libre sous licence MIT : '), link('https://github.com/xenix13/Noxa', 'github.com/xenix13/Noxa'), '.'),
     h('h3.sub', tr('Sources des données')),
     dataCredit(),
     h('p.small', tr('Bandes-annonces : YouTube (lecteur intégré, chargé seulement à la demande).')),
     h('h3.sub', tr('Composants tiers')),
     h('ul.small', COMPONENTS.map(([name, licence, url]) => h('li', link(url, name), ` — ${licence}`))),
-    h('p.small.muted', tr('Les textes des licences sont fournis avec Nexis (dossiers static/vendor et static/fonts).')),
+    h('p.small.muted', tr('Les textes des licences sont fournis avec Noxa (dossiers static/vendor et static/fonts).')),
     h('h3.sub', tr('Usage')),
-    h('p.small', tr('Nexis lit uniquement les fichiers et les sources que vous lui indiquez. Utilisez-le avec des contenus dont vous détenez les droits, dans le cadre privé du foyer.'))),
+    h('p.small', tr('Noxa lit uniquement les fichiers et les sources que vous lui indiquez. Utilisez-le avec des contenus dont vous détenez les droits, dans le cadre privé du foyer.'))),
   [{ label: tr('Fermer'), value: null }]);
 }
