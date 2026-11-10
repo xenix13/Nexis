@@ -12,7 +12,8 @@ import java.net.URL;
  */
 final class Bandwidth {
     private static final long KEEP_MS = 10 * 60 * 1000;
-    private static final long MAX_MS = 2500;
+    private static final long MAX_MS = 3000;
+    private static final long WARMUP = 1 << 20;
     private static long kbps, at;
 
     private Bandwidth() {}
@@ -42,7 +43,7 @@ final class Bandwidth {
     }
 
     private static long measure() throws Exception {
-        HttpURLConnection c = (HttpURLConnection) new URL(Api.url("/api/bandwidth?size=" + (24 << 20))).openConnection();
+        HttpURLConnection c = (HttpURLConnection) new URL(Api.url("/api/bandwidth?size=" + (32 << 20))).openConnection();
         try {
             c.setConnectTimeout(5000);
             c.setReadTimeout(5000);
@@ -50,17 +51,23 @@ final class Bandwidth {
             String ck = Api.cookieHeader();
             if (!ck.isEmpty()) c.setRequestProperty("Cookie", ck);
             if (c.getResponseCode() != 200) return 0;
-            long got = 0, t1 = SystemClock.elapsedRealtime();
+            // le premier mégaoctet n'est pas compté : la connexion TCP monte encore en régime (sinon une
+            // connexion rapide paraît lente, et un fichier à fort débit est converti sans raison)
+            long got = 0, timed = 0, t1 = SystemClock.elapsedRealtime(), t0 = 0;
             byte[] buf = new byte[65536];
             try (InputStream in = c.getInputStream()) {
                 int n;
                 while ((n = in.read(buf)) > 0) {
                     got += n;
-                    if (SystemClock.elapsedRealtime() - t1 > MAX_MS) break;
+                    long now = SystemClock.elapsedRealtime();
+                    if (t0 == 0 && got >= WARMUP) t0 = now;
+                    else if (t0 > 0) timed += n;
+                    if (now - t1 > MAX_MS) break;
                 }
             }
-            long ms = Math.max(1, SystemClock.elapsedRealtime() - t1);
-            return got < 256 * 1024 ? 0 : got * 8 / ms;
+            long end = SystemClock.elapsedRealtime();
+            if (t0 > 0 && timed >= 512 * 1024) return timed * 8 / Math.max(1, end - t0);
+            return got < 256 * 1024 ? 0 : got * 8 / Math.max(1, end - t1);
         } finally {
             c.disconnect();
         }

@@ -1835,9 +1835,13 @@ html.has-audio .bulk-bar { bottom: 108px; }
 .settings-subtabs .tab, .cold-tabs .tab { flex: none; white-space: nowrap; text-decoration: none; }
 
 /* menu ⋯ : sur téléphone, en bas de l'écran (jamais coupé) ; ailleurs, recalé pour rester dans la fenêtre */
+.more-list.floating { position: fixed; z-index: 310; overscroll-behavior: contain; }
+.more-list.more-fade { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent); }
 .more-list.sheet { position: fixed; left: 10px; right: 10px; top: auto; bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-  min-width: 0; max-width: none; max-height: min(75dvh, 560px); overflow-y: auto; z-index: 310; border-radius: 16px;
+  min-width: 0; max-width: none; max-height: calc(100vh - 80px); max-height: calc(100dvh - 80px); overflow-y: auto; z-index: 310; border-radius: 16px;
+  overscroll-behavior: contain;
   animation: sheet-in 0.2s var(--ease-out, ease-out); }
-.more-list.sheet .more-item { padding: 13px 14px; font-size: 16px; }
+.more-list.sheet .more-item { padding: 11px 14px; font-size: 16px; }
 .more-backdrop { position: fixed; inset: 0; z-index: 309; background: rgba(0, 0, 0, 0.45); }
 @keyframes sheet-in { from { transform: translateY(16px); opacity: 0; } to { transform: none; opacity: 1; } }

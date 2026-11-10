@@ -1285,6 +1285,8 @@ export default {
   "{p1} photos · {p2} albums": "{p1} photos · {p2} albums",
   "Automatique (selon le débit)": "Automatic (based on bandwidth)",
   "Automatique ({q})": "Automatic ({q})",
+  "Conversion trop lente sur le serveur ({speed}) : qualité réduite pour ce titre": "Server conversion too slow ({speed}): quality reduced for this title",
+  "Le serveur ne convertit pas cette vidéo assez vite ({speed})": "The server cannot convert this video fast enough ({speed})",
   "Connexion trop lente : qualité réduite": "Connection too slow: quality lowered",
   "automatique": "automatic",
   "« Automatique » mesure le débit de l’appareil à chaque lecture : l’original quand la connexion suffit, sinon la meilleure qualité qui passe.": "“Automatic” measures the device’s bandwidth when playing: the original when the connection is fast enough, otherwise the best quality that fits.",

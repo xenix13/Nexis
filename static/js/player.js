@@ -111,6 +111,9 @@ export async function renderPlayer(root, rk, ctx) {
   let switching = true, finished = false; // no progress reports while a stream is (re)starting or after the end
   let rebuffering = false, stalls = [], lowerHinted = false, everPlayed = false;
   let bandwidth = null; // débit mesuré (kbit/s), pour la qualité automatique
+  let convSpeed = -1;   // vitesse de la conversion du serveur (x temps réel), -1 : inconnue
+  let titleKbps = 0;    // débit retenu pour ce titre seulement (conversion trop lente du serveur)
+  let slowHinted = false;
   let airplay = false; // la vidéo passe sur une Apple TV : flux natif, lisible sans la session du navigateur
 
   // téléchargement lu hors ligne (#/offline/…) : fichier gardé sur l'appareil, rien ne passe par le serveur
@@ -237,7 +240,9 @@ export async function renderPlayer(root, rk, ctx) {
     } else try {
       if (quality === 'auto' && bandwidth === null) bandwidth = await measureBandwidth();
       if (destroyed || seq !== startSeq) return;
-      s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality, bandwidth: bandwidth || undefined,
+      convSpeed = -1;
+      const kbps = titleKbps && (!bandwidth || titleKbps < bandwidth) ? titleKbps : bandwidth;
+      s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality, bandwidth: kbps || undefined,
         no_direct: forceHls || undefined,
         caps: airplay ? AIRPLAY_CAPS : browserCaps(), cast: airplay || undefined,
         playlist: ctx.query.get('playlist') || undefined, shuffle: ctx.query.get('shuffle') || undefined,
@@ -397,7 +402,23 @@ export async function renderPlayer(root, rk, ctx) {
   // Qualité automatique et lecture qui saccade malgré la mesure : un cran plus bas, et la mesure gardée pour les
   // prochaines lectures est revue à la baisse
   function stepDown() {
-    if (!session || session.auto_quality === '480p') return;
+    if (!session) return;
+    if (session.mode === 'transcode' && convSpeed > 0 && convSpeed < 1) {
+      // c'est le serveur qui ne convertit pas assez vite, pas la connexion : la mesure du débit reste valable
+      // pour les lectures suivantes ; ce titre seul descend en 720p, pas plus bas
+      stalls = [];
+      const speed = `×${convSpeed.toFixed(1).replace('.', ',')}`;
+      if (['original', '1080p'].includes(session.auto_quality)) {
+        titleKbps = Math.round((4000 + 192) * 1.35);
+        toast(tr('Conversion trop lente sur le serveur ({speed}) : qualité réduite pour ce titre', { speed }));
+        start(pos());
+      } else if (!slowHinted) {
+        slowHinted = true;
+        toast(tr('Le serveur ne convertit pas cette vidéo assez vite ({speed})', { speed }));
+      }
+      return;
+    }
+    if (session.auto_quality === '480p') return;
     stalls = [];
     // débit revu à la baisse, sous celui du fichier : le serveur choisit la qualité convertie qui y tient
     const rate = ({ '1080p': 8000, '720p': 4000 })[session.auto_quality] || session.source_kbps || 8000;
@@ -637,8 +658,12 @@ export async function renderPlayer(root, rk, ctx) {
     const p = pos();
     if (p < 1000 && st !== 'stopped' && !extra.ended) return;
     if (offline) { saveProgress(state.me.user.id, item, p, duration(), extra.ended); return; }
+    const sent = session.stream;
     post('/api/progress', { id: item.id, position: p, duration: duration(), stream: session.stream, state: st, ...extra },
-      { keepalive: st === 'stopped' }).then((r) => { if (r && r.screen) screenTime(r.screen); }).catch(() => {});
+      { keepalive: st === 'stopped' }).then((r) => {
+        if (r && r.screen) screenTime(r.screen);
+        if (r && typeof r.speed === 'number' && session && session.stream === sent) convSpeed = r.speed;
+      }).catch(() => {});
   }
 
   // temps d'écran (profil limité par un administrateur) : prévenu quelques minutes avant, arrêt à la limite

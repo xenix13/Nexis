@@ -100,6 +100,9 @@ final class Tr {
         en("flux préparé par le serveur (remux)", "stream prepared by the server (remux)");
         en("conversion de la vidéo par le serveur", "video converted by the server");
         en("Lecture directe trop lente : passage par le serveur", "Direct play too slow: switching to the server");
+        en("Conversion trop lente sur le serveur (", "Server conversion too slow (");
+        en(") : qualité réduite pour ce titre", "): quality reduced for this title");
+        en("Le serveur ne convertit pas cette vidéo assez vite (", "The server cannot convert this video fast enough (");
         en("Connexion trop lente : qualité réduite", "Connection too slow: quality lowered");
         en("La lecture ne démarre pas (", "Playback does not start (");
         en("Le serveur ou le partage réseau est peut-être lent. Réessayez, ou attendez encore un peu.",
