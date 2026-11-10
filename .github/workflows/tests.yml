@@ -17,12 +17,16 @@ jobs:
           python-version: "3.12"
       - name: ffmpeg
         timeout-minutes: 14
-        # le miroir apt des machines GitHub se fige parfois : délais courts, et jusqu'à trois essais de 4 minutes
+        # le miroir apt des machines GitHub se fige parfois : délais courts, trois essais de 4 minutes ; dès le
+        # deuxième, seules les sources d'Ubuntu (pas les dépôts tiers de l'image), puis un autre miroir
         run: |
           for i in 1 2 3; do
-            timeout 240 sh -c 'sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update -qq &&
+            timeout 240 sh -c 'sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update -q &&
               sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y -qq ffmpeg' && exit 0
             echo "apt bloqué (essai $i), nouvel essai"
+            sudo find /etc/apt/sources.list.d -type f ! -name 'ubuntu.sources' -exec mv {} /tmp/ \; || true
+            [ "$i" = 2 ] && sudo sed -i 's#http://azure.archive.ubuntu.com/ubuntu#http://archive.ubuntu.com/ubuntu#g' \
+              /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null || true
           done
           exit 1
       - run: pip install pillow
