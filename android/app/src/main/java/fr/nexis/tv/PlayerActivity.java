@@ -376,7 +376,8 @@ public class PlayerActivity extends Activity {
                     "audio", audioSel == null ? null : audioSel.optInt("id"),
                     "subtitle", burn && subSel != null ? subSel.optInt("id") : 0,
                     "replace", session == null ? null : session.optString("stream"),
-                    "no_direct", forceHls, "bandwidth", kbps > 0 ? kbps : null);
+                    "no_direct", forceHls, "bandwidth", kbps > 0 ? kbps : null,
+                    "capped", kbps > 0 && kbps == titleKbps && kbps != measured ? Boolean.TRUE : null);
             requestStream(seq, offset, burn, body);
         });
     }
