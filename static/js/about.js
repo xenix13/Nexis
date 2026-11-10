@@ -23,6 +23,7 @@ const COMPONENTS = [
 export function aboutDialog(version) {
   return modal(tr('À propos de Nexis'), h('div.about',
     h('p', h('strong', `Nexis ${version || ''}`), ' — ', tr('serveur multimédia auto-hébergé.')),
+    h('p.small', tr('Logiciel libre sous licence MIT : '), link('https://github.com/xenix13/Nexis', 'github.com/xenix13/Nexis'), '.'),
     h('h3.sub', tr('Sources des données')),
     dataCredit(),
     h('p.small', tr('Bandes-annonces : YouTube (lecteur intégré, chargé seulement à la demande).')),

@@ -1169,6 +1169,7 @@ export default {
   ". Ce produit utilise l’API TMDB mais n’est ni approuvé ni certifié par TMDB. Disponibilités sur les plateformes : ": ". This product uses the TMDB API but is not endorsed or certified by TMDB. Streaming availability: ",
   "MIT (libass : ISC ; FriBidi : LGPL 2.1 ; FreeType : FTL ; HarfBuzz : MIT)": "MIT (libass: ISC; FriBidi: LGPL 2.1; FreeType: FTL; HarfBuzz: MIT)",
   "LGPL / GPL (installé séparément sur le serveur)": "LGPL / GPL (installed separately on the server)",
+  "Logiciel libre sous licence MIT : ": "Free software under the MIT license: ",
   "À propos de Nexis": "About Nexis",
   "serveur multimédia auto-hébergé.": "self-hosted media server.",
   "Sources des données": "Data sources",

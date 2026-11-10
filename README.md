@@ -9,6 +9,7 @@
 [![Latest release](https://img.shields.io/github/v/release/xenix13/Nexis?label=release&color=ffa43a)](https://github.com/xenix13/Nexis/releases/latest)
 [![Tests](https://img.shields.io/github/actions/workflow/status/xenix13/Nexis/tests.yml?branch=main&label=tests)](https://github.com/xenix13/Nexis/actions/workflows/tests.yml)
 [![Docker image](https://img.shields.io/badge/docker-ghcr.io%2Fxenix13%2Fnexis-2496ed?logo=docker&logoColor=white)](https://github.com/xenix13/Nexis/pkgs/container/nexis)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![Python](https://img.shields.io/badge/python-3.9%2B%20·%20no%20dependencies-3776ab?logo=python&logoColor=white)
 ![Platforms](https://img.shields.io/badge/apps-web%20·%20Windows%20·%20macOS%20·%20Linux%20·%20Android%20·%20Android%20TV-555)
 
@@ -147,4 +148,4 @@ The demo titles in the screenshots are fictional; their posters and videos were 
 
 ## License
 
-See [LICENSE](LICENSE).
+Nexis is released under the [MIT License](LICENSE). Bundled third-party components keep their own licences (see [Credits](#credits)).
