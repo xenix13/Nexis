@@ -242,7 +242,7 @@ export async function renderPlayer(root, rk, ctx) {
       if (destroyed || seq !== startSeq) return;
       convSpeed = -1;
       const kbps = titleKbps && (!bandwidth || titleKbps < bandwidth) ? titleKbps : bandwidth;
-      s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality, bandwidth: kbps || undefined,
+      s = await post('/api/play', { id: item.id, offset: Math.round(offset), quality, bandwidth: kbps || undefined, capped: (kbps && kbps === titleKbps && kbps !== bandwidth) || undefined,
         no_direct: forceHls || undefined,
         caps: airplay ? AIRPLAY_CAPS : browserCaps(), cast: airplay || undefined,
         playlist: ctx.query.get('playlist') || undefined, shuffle: ctx.query.get('shuffle') || undefined,

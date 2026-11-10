@@ -414,6 +414,14 @@ class SeanceTest(unittest.TestCase):
         self.assertNotIn("speed", r)
         self.admin.call("POST", "/api/stop", {"stream": p2["stream"]})
         self.assertIsNone(self.ctx.transcoder.get(p2["stream"]))
+        # débit plafonné pour un titre (conversion trop lente) : pas retenu comme mesure de l'appareil
+        st, a = self.admin.call("POST", "/api/play", {"id": m["id"], "quality": "auto", "bandwidth": 900000})
+        st, b2 = self.admin.call("POST", "/api/play", {"id": m["id"], "quality": "auto", "bandwidth": 600, "capped": True,
+                                                       "replace": a["stream"]})
+        self.assertEqual(b2["auto_quality"], "480p", b2)
+        st, c = self.admin.call("POST", "/api/play", {"id": m["id"], "quality": "auto", "replace": b2["stream"]})
+        self.assertEqual(c["auto_quality"], "original", c)  # la dernière vraie mesure (900 Mbit/s) sert toujours
+        self.admin.call("POST", "/api/stop", {"stream": c["stream"]})
 
     def test_transcode_hevc_and_limit(self):
         m = self.movie("Brume")

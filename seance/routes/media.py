@@ -276,6 +276,8 @@ def register(app, ctx, x):
         v = b.get("bandwidth")
         now = time.time()
         if isinstance(v, (int, float)) and 50 <= v <= 10_000_000:
+            if b.get("capped"):
+                return int(v)  # plafond pour ce titre (conversion trop lente) : pas une mesure, rien à retenir
             bandwidths[key] = (int(v), now)
             if len(bandwidths) > 2000:
                 for k in [k for k, (_, t) in bandwidths.items() if now - t > BW_KEEP]:

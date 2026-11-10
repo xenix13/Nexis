@@ -1,7 +1,7 @@
 {
   "name": "nexis-desktop",
   "productName": "Noxa",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Noxa pour Windows, macOS et Linux : l'interface de votre serveur Noxa, dans une vraie application.",
   "homepage": "https://github.com/xenix13/Noxa",
   "author": {
@@ -18,11 +18,11 @@
     "dist": "npm run icon && electron-builder --publish never"
   },
   "dependencies": {
-    "electron-updater": "6.8.10"
+    "electron-updater": "6.8.11"
   },
   "devDependencies": {
-    "electron": "39.8.10",
-    "electron-builder": "26.16.0"
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0"
   },
   "build": {
     "appId": "fr.nexis.desktop",
