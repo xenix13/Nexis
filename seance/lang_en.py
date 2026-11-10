@@ -306,7 +306,7 @@ EN = {
         "The CIFS module is not available (cifs-utils missing, or kernel without CIFS)",
     "Échec du montage": "Mount failed",
     "Linux interdit le montage SMB dans un conteneur LXC non privilégié. Voir « Partages réseau » dans le README pour les solutions.":
-        "Linux forbids SMB mounts in an unprivileged LXC container. See “Network shares” in the README for solutions.",
+        "Linux forbids SMB mounts in an unprivileged LXC container. See “Access to your media” in the installation guide (docs/installation.md) for solutions.",
     "Le NAS accepte les identifiants mais le noyau refuse le montage. Dans un conteneur LXC, la cause est presque toujours AppArmor : vérifier que l'option « mount=cifs » est active sur ce conteneur (pct config <ID> | grep features), puis arrêter et démarrer le conteneur depuis Proxmox (un redémarrage interne ne suffit pas toujours). Profil AppArmor actuel : {}":
         "The NAS accepts the credentials but the kernel refuses the mount. In an LXC container, the cause is almost always AppArmor: check that the “mount=cifs” option is enabled on this container (pct config <ID> | grep features), then stop and start the container from Proxmox (an internal restart is not always enough). Current AppArmor profile: {}",
     "{} (détail : {})": "{} (details: {})",

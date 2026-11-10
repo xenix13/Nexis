@@ -68,7 +68,7 @@ def check_directory(path):
 
 
 def slug(name):
-    """Nom du serveur pour un nom de fichier : « Salon de Colas » -> « salon-de-colas »."""
+    """Nom du serveur pour un nom de fichier : « Salon de Léa » -> « salon-de-lea »."""
     from .names import fold
     s = re.sub(r"[^a-z0-9]+", "-", fold(name or "nexis")).strip("-")[:32].strip("-")
     return s or "nexis"

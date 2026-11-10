@@ -1,858 +1,150 @@
+<div align="center">
+
+<img src="docs/images/logo.png" alt="Nexis logo" width="112">
+
 # Nexis
 
-Serveur multimédia auto-hébergé pour films, séries et animes. Nexis analyse vos dossiers, récupère affiches et résumés, et diffuse dans le navigateur, sur la TV ou sur le téléphone, avec une interface multi-utilisateurs. Aucun compte externe ni abonnement.
+**Your own streaming service for the movies, shows, anime, photos and audiobooks you already have.**
 
-- **Aucune dépendance Python** : Python 3 (bibliothèque standard) et **ffmpeg**. Le lecteur [hls.js](https://github.com/video-dev/hls.js) (1.5.15) est fourni dans le dépôt ; son empreinte SHA-256 est vérifiée à l'installation.
-- Polices Outfit et Inter (licence SIL OFL, `static/fonts/`) servies par le serveur : aucune ressource externe.
-- Conçu pour un **conteneur LXC** ou une VM Ubuntu/Debian, **avec ou sans carte graphique** : Nexis évite le transcodage chaque fois que possible.
+[![Latest release](https://img.shields.io/github/v/release/xenix13/Nexis?label=release&color=ffa43a)](https://github.com/xenix13/Nexis/releases/latest)
+[![Tests](https://img.shields.io/github/actions/workflow/status/xenix13/Nexis/tests.yml?branch=main&label=tests)](https://github.com/xenix13/Nexis/actions/workflows/tests.yml)
+[![Docker image](https://img.shields.io/badge/docker-ghcr.io%2Fxenix13%2Fnexis-2496ed?logo=docker&logoColor=white)](https://github.com/xenix13/Nexis/pkgs/container/nexis)
+![Python](https://img.shields.io/badge/python-3.9%2B%20·%20no%20dependencies-3776ab?logo=python&logoColor=white)
+![Platforms](https://img.shields.io/badge/apps-web%20·%20Windows%20·%20macOS%20·%20Linux%20·%20Android%20·%20Android%20TV-555)
 
-## Fonctionnalités
+[Install](docs/installation.md) · [Getting started](docs/getting-started.md) · [Features](#features) · [Documentation](#documentation) · [Releases](https://github.com/xenix13/Nexis/releases)
+
+<img src="docs/images/home.jpg" alt="Nexis home screen" width="100%">
+
+</div>
+
+## What is Nexis?
+
+Nexis is a **self-hosted media server**. You point it at the folders where your videos live (a NAS, a USB disk, a share on your network), and it turns them into a polished streaming app: posters and summaries, "continue watching", one profile per person, subtitles in your language, and playback on the browser, your TV, your phone or your computer, at home or away.
+
+Everything runs on **your** machine. There is no Nexis account to create, no subscription, no telemetry and no cloud service in the middle: your library, your viewing history and your users stay on your server.
+
+### Why another media server?
+
+Nexis was built for a very ordinary home setup: a small Proxmox box or an old PC, **no graphics card**, the media on a NAS, a few people watching on very different devices. It focuses on what makes that setup pleasant:
+
+- **It avoids converting video whenever it can.** The player tells the server exactly which formats the device can decode, and Nexis picks the cheapest way to play: the original file as is, a light "remux" that only converts the audio track, or a full conversion only when there is no other choice. A small CPU can serve a whole family.
+- **It installs in one command and needs nothing else.** The server is written in Python with the standard library only, plus ffmpeg. There is no database server, no Node.js, no runtime to keep up to date. One-line installers exist for Proxmox LXC, Debian/Ubuntu, `.deb` and Docker.
+- **It treats your files as read-only.** Nexis never renames, moves or writes into your media folders. Subtitles it downloads, posters it fetches and everything it computes live in its own data folder.
+- **It grows with you.** Two homes, two servers? [Link them](docs/linked-servers.md) and they share accounts and libraries. Disks full? Move what nobody watches to [cold storage](docs/cold-storage.md) (a NAS, an S3 bucket, a friend's server) without it disappearing from the app.
+
+## Features
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/movie.jpg" alt="Movie page"></td>
+<td width="50%"><img src="docs/images/player.jpg" alt="Video player"></td>
+</tr>
+<tr>
+<td><b>A real catalogue.</b> Posters, backdrops, summaries, cast, collections and episode titles from TMDB or your own <code>.nfo</code> files. Watchlist, ratings, playlists, extras and trailers.</td>
+<td><b>A player that just works.</b> Audio and subtitle choice, chapters, "Skip intro" and "Skip recap", next episode, automatic quality based on the connection, ASS and PGS subtitles rendered in the browser.</td>
+</tr>
+<tr>
+<td><img src="docs/images/show.jpg" alt="Show page"></td>
+<td><img src="docs/images/mobile.jpg" alt="Nexis on a phone"></td>
+</tr>
+<tr>
+<td><b>Made for shows and anime.</b> Scene-style names, absolute numbering, specials, season packs. Intros and credits are found from chapter names or by comparing the audio of the episodes.</td>
+<td><b>On every screen.</b> Installable web app, native apps for Windows, macOS, Linux, Android and Android TV, offline downloads, push notifications, Chromecast and AirPlay.</td>
+</tr>
+</table>
 
 | | |
 |---|---|
-| **Bibliothèques** | Nombre illimité (Films, Séries, Animes…), chacune avec un ou plusieurs dossiers. Détection automatique des ajouts, webhook Radarr/Sonarr, scan incrémental. Un partage non monté ne vide jamais une bibliothèque |
-| **Reconnaissance** | `Titre (Année)/…`, noms de type « scène » (`Inception.2010.1080p.BluRay…`), `S01E02`, `1x02`, `Saison 1/…`, animes `[Groupe] Titre - 12 [1080p]`, numérotation absolue (`Episode 1071`), épisodes spéciaux (`Season 00`, `Specials`) |
-| **Métadonnées** | TMDB (affiches, fonds, résumés, genres, distribution, titres et images d'épisodes, classification), en français avec repli en anglais. Les fichiers `.nfo` et `poster.jpg` / `fanart.jpg` existants sont pris en compte. Correction manuelle avec « Identifier… » |
-| **Comptes** | Comptes propres à Nexis, administrateurs, accès par bibliothèque, désactivation, photo de profil |
-| **Espace personnel** | Reprise de lecture, « Reprendre et à suivre », suggestions affinées par « J'aime / Je n'aime pas / Ne plus suggérer », notifications de nouveaux épisodes, historique et bilan de visionnage, épisodes vus/non vus, langues préférées, apparence des sous-titres, anti-spoiler, thème, couleur d'accent, taille des affiches, fond d'écran, page d'ouverture, rangées épinglées, ordre de l'accueil et du menu, réglages par appareil |
-| **Collections et listes** | Sagas créées automatiquement depuis TMDB, collections manuelles, liste « À regarder » par utilisateur, playlists personnelles |
-| **Bonus** | Bandes-annonces (YouTube via TMDB ou fichiers locaux), coulisses, scènes coupées, interviews, rangés sous le film ou la série |
-| **Découvrir et demandes** | Catalogues des plateformes de streaming (via TMDB) croisés avec le contenu du serveur, bouton « Demander » relié à Seerr |
-| **Lecteur** | Choix de l'audio, des sous-titres et de la qualité pendant la lecture, raccourcis clavier, chapitres en vignettes, « Passer l'intro » et « Passer le récap », épisode suivant avec compte à rebours, lecteur réductible |
-| **Regarder ensemble** | Lecture synchronisée à plusieurs, chacun sur son appareil : pauses, sauts et épisode suivant partagés |
-| **TV en direct** | Listes M3U (IPTV, box opérateur) et guide XMLTV : grille des chaînes, guide des programmes, favoris, changement de chaîne |
-| **Tâches planifiées** | Scan, métadonnées, images de chapitres, détection des intros et génériques, sous-titres, guide TV, nettoyage |
-| **Sous-titres** | SRT, ASS/SSA, WebVTT, mov_text (internes ou externes : `Film.fr.srt`, `Film.forced.srt`…) affichés par le navigateur, **sans transcodage**. ASS rendus par libass (positionnement, karaoké, polices jointes), PGS rendus par le navigateur, VobSub incrustés |
-| **Applications** | Applications natives Windows, macOS, Linux et Android (installées depuis le serveur, mises à jour par lui), application Android TV, web app pour iPhone et iPad, téléchargements hors ligne |
-| **Paramètres** | Un seul espace, organisé en Mon compte, Serveur, Médiathèque et Lecture, avec recherche |
-| **Livres audio** | Bibliothèque de livres audio (chapitres, couvertures, reprise), lecteur audio en bas de l'écran (vitesse, minuterie, écran verrouillé) |
-| **Photothèque** | Bibliothèque de photos : albums (les sous-dossiers), toutes les photos par mois, carte des lieux (GPS), visionneuse plein écran avec diaporama, date et orientation lues dans les données EXIF |
-| **Serveur DLNA** | Téléviseurs, consoles et box du réseau local trouvent Nexis dans leurs sources et lisent films, séries et photos sans application |
-| **Serveurs liés** | Plusieurs serveurs Nexis reliés par une liaison chiffrée qui leur est propre : comptes communs, bibliothèques de chacun visibles et lisibles depuis l'autre (ajoutées ou fusionnées : un titre une seule fois, meilleure copie choisie automatiquement, serveur le moins occupé en priorité), progression partagée, clé TMDB et Seerr partagés, Regarder ensemble d'un serveur à l'autre. Un seul des deux doit être joignable |
-| **Langues** | Interface en **français** ou en **anglais**, au choix de chaque utilisateur ; langue par défaut des nouveaux comptes choisie par l'administrateur. Messages du serveur et appli TV dans la même langue |
+| **Libraries** | Movies, shows, anime, photos and audiobooks. Any number of libraries, each with several folders. New files are picked up within a minute (or instantly from Radarr / Sonarr). `.strm` files supported. |
+| **People** | Accounts and profiles ("Who's watching?"), PIN codes, two-factor authentication, age ratings, screen time and bedtime for kids, a simplified kids interface, per-account stream limits. |
+| **Playback** | Direct play, remux or transcode chosen per device, hardware transcoding (NVIDIA NVENC, Intel / AMD VAAPI), HDR to SDR tone mapping, 5.1 to stereo downmix with a "night" mode, automatic quality. |
+| **Subtitles** | Embedded and external SRT, ASS/SSA, WebVTT, PGS and VobSub. Missing subtitles downloaded from OpenSubtitles (no Bazarr needed) or generated from the audio with Whisper. |
+| **Together** | Watch together: synchronized playback for a group, each person on their own device and stream. Use your phone as a remote for another screen. |
+| **Discover** | Streaming catalogues and trends (via TMDB) cross-checked with your server, and a **Request** button wired to Seerr. Trakt sync and Letterboxd import / export. |
+| **More than video** | Photo library with albums, timeline, map and shared albums; audiobooks with a persistent audio player; live TV from M3U / XMLTV; a DLNA server for TVs and consoles. |
+| **Linked servers** | Pair several Nexis servers over their own encrypted link: shared accounts, merged libraries, the best copy of a title chosen automatically, administration of every server from one. |
+| **Cold storage** | Archive titles to a disk, NAS, SFTP, WebDAV, S3 or rclone storage, optionally re-encoded to HEVC, and free up the library disk automatically. Titles keep playing from the copy. |
+| **Make it yours** | Six interface layouts, themes, a community theme store, accent colours, home rows, wallpapers, per-device settings. Interface in English and French. |
+| **Admin** | One settings area with search, scheduled tasks, statistics, alerts pushed to admins, automatic backups (local, linked servers, S3, Google Drive, OneDrive, encrypted), updates from the interface. |
 
-### Choix du mode de lecture
+<div align="center">
+<img src="docs/images/home-neon-sidebar.jpg" alt="Nexis with the Neon city theme and the sidebar layout" width="49%">
+<img src="docs/images/settings-cold.jpg" alt="Cold storage settings" width="49%">
+</div>
 
-Au lancement, le lecteur indique au serveur les codecs que le navigateur sait décoder (H.264, HEVC 8/10 bits, AV1, VP9, AAC, AC3, E-AC3, FLAC, Opus…). Nexis choisit alors le mode le moins coûteux :
+## Quick start
 
-| Mode | Cas | Coût processeur |
-|---|---|---|
-| **Lecture directe** | MP4 dont la vidéo et le son sont lisibles par le navigateur | nul |
-| **Remux** | Vidéo lisible par le navigateur dans un MKV, ou piste audio à convertir (DTS, TrueHD, 5.1…) | très faible : seule la piste audio est convertie |
-| **Transcodage** | Vidéo non décodable par le navigateur (HEVC sur Firefox, H.264 10 bits…), sous-titres VobSub, qualité réduite ; le HDR est alors converti en SDR | 1 à 2 cœurs par lecture en 1080p sans carte graphique |
+Nexis runs on any 64-bit Linux machine, VM or container with **Ubuntu 22.04 / 24.04** or **Debian 12 / 13** (amd64 or arm64). 2 CPU cores and 1 GB of RAM are enough when nothing needs converting.
 
-Le lecteur reçoit une playlist couvrant toute la vidéo, découpée en segments de 6 s (calés sur les images clés en remux). Les segments sont produits à la demande au format fMP4, avec les horodatages d'origine : la position affichée est toujours exacte et un saut ne recrée pas le flux. Si le lecteur demande un segment éloigné, ffmpeg est relancé à cet endroit.
-
-**Qualité automatique** (réglage par défaut, *Paramètres → Lecture → Qualité par défaut*) : au lancement d'une vidéo, l'appareil mesure son débit depuis le serveur, en 2,5 s au plus, puis garde la mesure 10 minutes. Le serveur choisit alors :
-
-1. l'**original** si la connexion dépasse d'au moins 30 % le débit du fichier (lecture directe ou remux, rien n'est converti) ;
-2. sinon, la meilleure qualité convertie qui tient dans le débit : 1080p (8 Mbit/s), 720p (4 Mbit/s), puis 480p (1,5 Mbit/s) au plus bas, jamais au-dessus de la définition du fichier ;
-3. si la lecture s'arrête deux fois en trois minutes pour charger, elle descend d'un cran toute seule.
-
-Sur le réseau local, le débit suffit presque toujours pour l'original. Sans mesure (ancienne version de l'appli), le serveur reprend la dernière mesure du même appareil, sinon il lit l'original. Une qualité fixe (Originale, 1080p…) reste disponible par compte, par appareil et dans le lecteur.
-
-Le menu ⚙ du lecteur indique le mode utilisé et sa raison. ffmpeg est mis en pause après 3 minutes d'avance et tourne en priorité réduite. Le nombre de transcodages simultanés est limité (*Paramètres → Lecture → Transcodage*).
-
-### Transcodage matériel
-
-Avec une carte graphique, le décodage et l'encodage sont pris en charge par celle-ci, ce qui permet beaucoup plus de transcodages simultanés. Réglage : *Paramètres → Lecture → Transcodage → Carte graphique*.
-
-| Moteur | Cartes | Remarques |
-|---|---|---|
-| **NVIDIA NVENC** | GeForce GTX 10xx et suivantes | 8 encodages simultanés au maximum sur une carte grand public (limite NVIDIA). Les GTX 10xx (Pascal) nécessitent le pilote de la **branche 580** : les versions 590 et suivantes ne les prennent plus en charge. |
-| **Intel / AMD (VAAPI)** | Intel avec graphique intégré ou Arc, AMD Radeon | Périphérique `/dev/dri/renderD128` (sélectionnable s'il y en a plusieurs). |
-
-**Tester et enregistrer** effectue un véritable essai d'encodage ; le moteur n'est enregistré qu'en cas de réussite. Si la carte refuse un fichier pendant une lecture, le processeur prend le relais sans interrompre la lecture. La *Vue d'ensemble* indique les lectures prises en charge par la carte.
-
-La carte ne sert qu'au transcodage : remux et lecture directe ne l'utilisent pas. Le redimensionnement et l'incrustation des sous-titres image restent faits par le processeur.
-
-**Carte NVIDIA dans un conteneur LXC (Proxmox)**
-
-1. Sur l'hôte : installer les en-têtes du noyau (`apt install proxmox-default-headers build-essential`), puis le pilote NVIDIA (`NVIDIA-Linux-x86_64-580.xx.run`, branche 580 pour une GTX 10xx). Accepter la désactivation de `nouveau`, puis redémarrer. `nvidia-smi` doit afficher la carte.
-2. Toujours sur l'hôte, pour que `/dev/nvidia-uvm` existe dès le démarrage :
-   ```bash
-   echo -e "nvidia\nnvidia_uvm" > /etc/modules-load.d/nvidia.conf
-   echo 'KERNEL=="nvidia_uvm", RUN+="/usr/bin/nvidia-modprobe -c0 -u"' > /etc/udev/rules.d/70-nvidia.rules
-   ```
-   Redémarrer, puis relever les numéros majeurs avec `ls -l /dev/nvidia*` (195 pour `nvidia0`/`nvidiactl`, un autre pour `nvidia-uvm`).
-3. Dans `/etc/pve/lxc/<id>.conf` (conteneur arrêté), en remplaçant `5xx` par le numéro de `nvidia-uvm` :
-   ```
-   lxc.cgroup2.devices.allow: c 195:* rwm
-   lxc.cgroup2.devices.allow: c 5xx:* rwm
-   lxc.mount.entry: /dev/nvidia0 dev/nvidia0 none bind,optional,create=file
-   lxc.mount.entry: /dev/nvidiactl dev/nvidiactl none bind,optional,create=file
-   lxc.mount.entry: /dev/nvidia-uvm dev/nvidia-uvm none bind,optional,create=file
-   lxc.mount.entry: /dev/nvidia-uvm-tools dev/nvidia-uvm-tools none bind,optional,create=file
-   lxc.mount.entry: /dev/nvidia-modeset dev/nvidia-modeset none bind,optional,create=file
-   ```
-4. Dans le conteneur : installer **exactement la même version** du pilote, sans module noyau : `sh NVIDIA-Linux-x86_64-580.xx.run --no-kernel-module`. `nvidia-smi` doit afficher la carte.
-5. Relancer l'installation de Nexis : elle détecte la carte et donne au service l'accès aux périphériques. Choisir ensuite **NVIDIA NVENC** dans *Paramètres → Transcodage*, puis **Tester et enregistrer**.
-
-Pour Intel ou AMD, le principe est le même avec `/dev/dri` : `lxc.cgroup2.devices.allow: c 226:* rwm` et `lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir`, puis `apt install intel-media-va-driver-non-free` (Intel) ou `mesa-va-drivers` (AMD) dans le conteneur.
-
-## Installation
-
-Sur un conteneur LXC ou une VM **Ubuntu 22.04/24.04** ou **Debian 12/13**, en root :
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh | bash
-```
-
-Le script installe Python, git, ffmpeg et les outils SMB (cifs-utils, smbclient), installe Nexis dans `/opt/seance`, crée l'utilisateur système `seance` et le service `seance.service`, puis affiche l'adresse et le **code d'installation**.
-
-### Mises à jour
-
-Depuis l'interface : *Paramètres → Serveur → Mise à jour*. Nexis vérifie la présence d'une nouvelle version toutes les 6 heures ; le bouton **Rechercher une mise à jour** force la vérification. Lorsqu'une version est disponible, une icône apparaît dans la barre du haut pour les administrateurs.
-
-La mise à jour exécute la même installation que la commande manuelle, depuis le dépôt et la branche d'origine (enregistrés dans `/etc/seance/source`), puis redémarre le service (une à deux minutes ; les lectures en cours sont interrompues). Une barre de progression suit les étapes et la page se recharge automatiquement à la fin. Le journal est conservé dans `/var/log/seance-update.log`.
-
-Mise à jour manuelle : relancer la commande d'installation. Les données (`/var/lib/seance`) et la configuration (`/etc/seance/seance.env`) sont conservées.
-
-**Canal de mise à jour** : *Stable* (branche `main`, versions validées) ou *Test* (branche `test`, nouveautés en cours de validation), au choix sur la même page. Les nouveautés sont publiées d'abord sur *Test*, puis sur *Stable* une fois validées. Repasser sur *Stable* puis réinstaller ramène le serveur à la dernière version stable. À l'installation : `curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/test/deploy/install.sh | SEANCE_BRANCH=test bash`.
-
-### Conteneur LXC en une commande (Proxmox)
-
-Sur l'**hôte** Proxmox, en root :
+**Proxmox (creates a ready-to-use LXC container)**, on the Proxmox host:
 
 ```bash
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/proxmox-lxc.sh)"
 ```
 
-Le script télécharge le modèle Ubuntu 24.04 et crée le conteneur (4 cœurs, 4 Go de mémoire, 2 Go de swap, 16 Go de disque, DHCP sur `vmbr0`, démarrage automatique), installe Nexis, puis affiche l'adresse et le code d'installation. Le conteneur est **privilégié** par défaut (avec `mount=cifs`) afin que Nexis puisse monter les partages SMB. Les paramètres se règlent par variables, par exemple `CTID=120 MEMORY=6144 STORAGE=local-zfs PRIVILEGED=0 bash -c "$(curl …)"` ; la liste complète figure en tête du script.
-
-### Paquet .deb
-
-Chaque version est publiée avec son paquet sur la page **Releases**. Sur Debian 12/13 ou Ubuntu 22.04/24.04 :
+**Debian / Ubuntu (VM, LXC or bare metal)**, as root:
 
 ```bash
-apt install ./nexis_<version>_all.deb
+curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh | bash
 ```
 
-apt installe également ffmpeg, Python et les outils SMB. Le paquet prépare le système comme le script (utilisateur `seance`, `/etc/seance/seance.env`, services, accès à la carte graphique). `apt remove nexis` conserve les données et la configuration, `apt purge nexis` les supprime. Construction du paquet : `deploy/build-deb.sh`.
-
-### Docker
-
-L'image `ghcr.io/xenix13/nexis` (amd64 et arm64) est publiée à chaque version. Exemple complet : [`docker-compose.yml`](docker-compose.yml).
-
-- **Tags** : `latest` pour la dernière version publiée (branche `main`). `test` est reconstruit à chaque mise à jour de la branche `test` : c'est l'image du `docker-compose.yml` de cette branche.
+**Docker**:
 
 ```bash
-mkdir -p data && chown 1000:1000 data     # Nexis tourne sous l'uid 1000 dans le conteneur
-docker compose up -d
-docker compose logs nexis                 # code d'installation du premier lancement
+curl -fsSLO https://raw.githubusercontent.com/xenix13/Nexis/main/docker-compose.yml
+mkdir -p data && chown 1000:1000 data
+docker compose up -d && docker compose logs nexis   # shows the setup code
 ```
 
-- **Médias** : un volume par dossier, en lecture seule (`/mnt/films:/media/films:ro`), puis des bibliothèques sur `/media/...`. Les partages SMB se montent sur l'hôte ; la page *Partages réseau* n'est pas disponible avec Docker.
-- **Mise à jour** : `docker compose pull && docker compose up -d`.
-- **Transcodage matériel** : `devices: /dev/dri` (Intel/AMD) ou la réservation `nvidia` (avec le NVIDIA Container Toolkit sur l'hôte), en commentaire dans le fichier d'exemple.
-- **DLNA** : `network_mode: host` (en commentaire dans le fichier d'exemple), sinon les téléviseurs ne voient pas le serveur.
+Then open `http://<server-ip>:8420`, enter the **setup code** printed by the installer and create the administrator account. The [getting started guide](docs/getting-started.md) walks you through adding your first library. A `.deb` package is also attached to every [release](https://github.com/xenix13/Nexis/releases/latest); all the options are in the [installation guide](docs/installation.md).
 
-### Accès aux médias
+## Apps
 
-**Méthode 1 : montage depuis Nexis (VM ou LXC privilégié).** *Paramètres → Médiathèque → Partages réseau* monte les partages SMB/CIFS sans ligne de commande : saisie de l'adresse du NAS et des identifiants, choix du partage, montage en lecture seule dans `/mnt/seance/<nom>`, puis création de la bibliothèque. Les partages sont remontés au démarrage et toutes les 5 minutes en cas de coupure. Les mots de passe sont stockés dans `/etc/seance/smb/` (lisibles par root uniquement), jamais dans la base de Nexis.
-
-Le montage est assuré par un service root distinct, `seance-mountd`, limité au montage en lecture seule sous `/mnt/seance/` et n'acceptant que les demandes de l'utilisateur `seance`. Nexis lui-même tourne sans privilèges.
-
-> ⚠️ **Linux interdit le montage SMB dans un conteneur LXC non privilégié.** La méthode 1 nécessite un conteneur **privilégié** avec l'option `mount=cifs` :
-> - nouveau conteneur : `pct create … --unprivileged 0 --features mount=cifs,nesting=1` ;
-> - conteneur existant : *Sauvegarde* → *Restaurer* en décochant « Non privilégié », puis `pct set <ID> -features mount=cifs,nesting=1` et redémarrage.
->
-> Un conteneur privilégié est moins isolé de l'hôte : à réserver à un réseau de confiance. Sinon, utiliser la méthode 2.
-
-**Méthode 2 : montage sur l'hôte Proxmox (LXC non privilégié).** Les partages sont montés sur l'hôte, puis transmis au conteneur en lecture seule.
-
-1. Sur l'hôte, créer un fichier d'identifiants :
-
-   ```bash
-   cat > /root/.smb-nas <<'EOF'
-   username=media
-   password=MOT_DE_PASSE
-   EOF
-   chmod 600 /root/.smb-nas
-   mkdir -p /mnt/nas/films /mnt/nas/series /mnt/nas/animes
-   ```
-
-2. Ajouter dans `/etc/fstab` (le `file_mode` permet à l'utilisateur du conteneur de lire) :
-
-   ```
-   //192.168.1.5/Films  /mnt/nas/films  cifs credentials=/root/.smb-nas,ro,file_mode=0444,dir_mode=0555,vers=3.0,_netdev,nofail,x-systemd.automount 0 0
-   //192.168.1.5/Series /mnt/nas/series cifs credentials=/root/.smb-nas,ro,file_mode=0444,dir_mode=0555,vers=3.0,_netdev,nofail,x-systemd.automount 0 0
-   //192.168.1.5/Animes /mnt/nas/animes cifs credentials=/root/.smb-nas,ro,file_mode=0444,dir_mode=0555,vers=3.0,_netdev,nofail,x-systemd.automount 0 0
-   ```
-
-   ```bash
-   apt install -y cifs-utils && systemctl daemon-reload && mount -a && ls /mnt/nas/films
-   ```
-
-3. Transmettre les dossiers au conteneur (remplacer `120` par son identifiant), puis le redémarrer :
-
-   ```bash
-   pct set 120 -mp0 /mnt/nas/films,mp=/mnt/films,ro=1
-   pct set 120 -mp1 /mnt/nas/series,mp=/mnt/series,ro=1
-   pct set 120 -mp2 /mnt/nas/animes,mp=/mnt/animes,ro=1
-   pct reboot 120
-   ```
-
-Les médias sont alors accessibles dans `/mnt/films`, `/mnt/series` et `/mnt/animes`. Le script d'installation signale si l'utilisateur `seance` ne peut pas les lire. Sur une VM, la méthode 1 fonctionne directement.
-
-**Ressources conseillées** : 2 à 4 cœurs (seul le transcodage est gourmand), 1 Go de mémoire, 8 Go de disque (cache d'images et segments vidéo temporaires). Prévoir environ 2 Go de mémoire par transcodage 4K simultané.
-
-### Création manuelle du conteneur
-
-```bash
-pveam update && pveam available | grep ubuntu-24.04
-pveam download local ubuntu-24.04-standard_24.04-2_amd64.tar.zst
-pct create 120 local:vztmpl/ubuntu-24.04-standard_24.04-2_amd64.tar.zst \
-  --hostname nexis --cores 4 --memory 1024 --rootfs local-lvm:8 \
-  --net0 name=eth0,bridge=vmbr0,ip=dhcp --unprivileged 1 --features nesting=1 --onboot 1
-pct start 120
-pct exec 120 -- bash -c "apt-get update && apt-get install -y curl && curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh | bash"
-```
-
-`nesting=1` permet au service de conserver son bac à sable systemd ; sans cette option, le script installe une version allégée du service.
-
-## Paramètres
-
-Un seul endroit, *Paramètres* (menu du profil), en quinze pages : *Mon compte* (Profil et sécurité, Apparence, Lecture, Confidentialité et services, Cet appareil) puis, pour les administrateurs, *Serveur* (Vue d'ensemble, Utilisateurs, Maintenance, Serveurs liés), *Médiathèque* (Bibliothèques, Métadonnées et demandes, Stockage froid) et *Lecture et diffusion* (Conversion et son, Diffusion et hors ligne, TV en direct). Une page qui réunit plusieurs sujets les présente en sous-onglets (par exemple *Maintenance* : Mise à jour, Sauvegardes, Tâches planifiées). Dans ce document, « *Paramètres → Tâches planifiées* » désigne ce sous-onglet ; la recherche du menu (« Rechercher un réglage… ») ouvre directement le bon sous-onglet, et les anciennes adresses (`#/admin/tasks`…) y mènent aussi.
-
-## Premier lancement
-
-1. Ouvrir `http://IP:8420`, saisir le **code d'installation** (`cat /var/lib/seance/setup-code.txt`) et créer le compte administrateur.
-2. *Paramètres → Médiathèque → Métadonnées* : renseigner la **clé TMDB**, obtenue gratuitement sur [themoviedb.org](https://www.themoviedb.org/) (Paramètres → API ; clé v3 ou jeton de lecture v4). Sans clé, Nexis utilise les noms de fichiers, les `.nfo` et les images locales.
-3. *Paramètres → Médiathèque → Bibliothèques → + Ajouter*, par exemple :
-   - « Films », type *Films*, dossier `/mnt/films`
-   - « Séries », type *Séries*, dossier `/mnt/series`
-   - « Animes », type *Séries*, dossier `/mnt/animes`
-
-   Le premier scan analyse chaque fichier avec ffprobe : quelques minutes pour quelques milliers de fichiers sur un partage réseau. Les fichiers non reconnus sont listés.
-4. *Paramètres → Serveur → Utilisateurs* : créer les comptes et définir leurs bibliothèques.
-
-Un titre mal identifié se corrige depuis sa fiche avec **Identifier…** ; le choix est conservé aux scans suivants.
-
-### Nommage des fichiers
-
-```
-/mnt/films/Inception (2010)/Inception (2010).mkv
-/mnt/series/Breaking Bad/Season 01/Breaking Bad - S01E01.mkv
-/mnt/animes/Frieren/Saison 1/[SubsPlease] Sousou no Frieren - 01 (1080p).mkv
-```
-
-Une série correspond à un dossier à la racine de la bibliothèque. Le numéro de saison provient du dossier `Season XX` / `Saison XX` ou du `SxxEyy` du nom de fichier.
-
-**Fichiers `.strm`** (vidéo hébergée ailleurs : VOD IPTV, autre serveur, stockage en ligne) : fichier texte contenant l'adresse `http(s)://…` de la vidéo, nommé et rangé comme une vidéo (`Inception (2010)/Inception (2010).strm`). Il est identifié sur TMDB ; le `.nfo`, les images et les `.srt` placés à côté sont pris en compte. Nexis relaie toujours le flux (remux ou transcodage), avec reconnexion en cas de coupure. Pour limiter les connexions vers le fournisseur, les analyses qui liraient toute la vidéo (aperçus, images de chapitres, détection d'intro, sous-titres internes) ne sont pas effectuées sur ces fichiers. Seules les adresses http(s) sont acceptées.
-
-## Détection des nouveautés
-
-Sur un partage SMB, les ajouts faits depuis une autre machine ne sont pas signalés au système. Nexis compare donc régulièrement les dates de modification des **dossiers** de chaque bibliothèque. Après un changement, il attend la fin de la copie et n'analyse **que les dossiers modifiés** : un nouvel épisode ne déclenche que la lecture du dossier de sa saison. Les fichiers connus et inchangés ne sont pas réanalysés. Un fichier modifié depuis moins de 45 secondes est considéré comme en cours de copie et repris au passage suivant. Fréquence : *Paramètres → Médiathèque → Ajout des nouveautés* (par défaut, toutes les minutes).
-
-**Ajout immédiat depuis Radarr / Sonarr** : copier l'adresse du webhook affichée sur cette même page, puis dans Radarr et Sonarr, *Settings → Connect → + → Webhook* : coller l'adresse dans « URL », méthode POST, et cocher *On Import*, *On Upgrade*, *On Rename* et *On Delete*. Le bouton *Test* doit répondre « Nexis a bien reçu le test ». Nexis fait correspondre le dossier indiqué par Radarr avec le sien, même si les chemins diffèrent (`/movies/…` côté Radarr, `/mnt/films/…` côté Nexis), et n'analyse que celui-ci.
-
-Un scan complet de contrôle a lieu une fois par jour (*Paramètres → Serveur → Tâches planifiées*) ; il ne vérifie que les dates des fichiers.
-
-## Sous-titres
-
-Les sous-titres intégrés aux MKV (SRT, ASS, PGS…) ne peuvent être extraits qu'en lisant tout le fichier, soit plusieurs minutes pour un film de 30 Go sur un NAS. Nexis les **exporte une seule fois** (toutes les pistes et les polices jointes en une lecture) et les conserve dans `/var/lib/seance/cache/subs`. Ce cache suit le **fichier** (taille et date) et non sa fiche : un fichier renommé ou déplacé retrouve ses sous-titres sans nouvelle lecture. Seul un fichier remplacé est réexporté. L'export a lieu :
-
-- **au scan**, pour chaque nouveau fichier, en tâche de fond (à débit réduit pendant les lectures). *Paramètres → Lecture → Sous-titres et son → Tout préparer maintenant* traite toute la médiathèque ;
-- **à l'ouverture d'une fiche** (film, épisode, ou épisode à reprendre d'une série), en priorité ;
-- pour l'épisode suivant, pendant la lecture du précédent.
-
-Si les sous-titres ne sont pas encore prêts au lancement, la lecture démarre dès qu'ils couvrent les 4 premières minutes ; l'extraction, bien plus rapide que le temps réel, garde de l'avance. Le changement de langue est immédiat, toutes les pistes étant extraites ensemble.
-
-Les vignettes d'aperçu de la barre de lecture ne sont produites qu'en dehors des lectures.
-
-### Sous-titres manquants : OpenSubtitles
-
-Nexis télécharge lui-même les sous-titres qui manquent, sans Bazarr ni autre outil à installer. *Paramètres → Lecture → Sous-titres et son → OpenSubtitles* : un compte gratuit sur [opensubtitles.com](https://www.opensubtitles.com) (20 sous-titres par jour, davantage avec un compte VIP), et une clé d'API créée sur le site (*API consumers*).
-
-- **Automatique.** Chaque nuit et après chaque ajout, un film ou un épisode qui n'a aucun sous-titre complet (intégré, à côté du fichier ou déjà téléchargé) dans l'une des langues choisies en reçoit un, en commençant par les ajouts les plus récents. La tâche s'arrête au quota du jour et reprend le lendemain ; un titre sans résultat est recherché de nouveau au bout d'une semaine.
-- **Choix du sous-titre.** D'abord ceux calés sur le fichier exact (empreinte du fichier, qui reconnaît la sortie précise), puis les plus téléchargés. Les traductions automatiques et les sous-titres « forcés seuls » sont écartés ; ceux pour sourds et malentendants (SDH) ne sont pris que s'il n'y a qu'eux (réglable).
-- **À la main.** Sur la fiche d'un film ou d'un épisode, menu ⋯ → *Chercher des sous-titres…* liste les sous-titres trouvés (calés sur ce fichier, SDH, traduction automatique) ; un clic les ajoute. Un administrateur peut y retirer un sous-titre téléchargé : il n'est alors plus retéléchargé automatiquement.
-- **Stockage.** Les fichiers vont dans `data/subtitles/`, jamais à côté des vidéos (montées en lecture seule) ; ils font partie des sauvegardes et restent après un nouveau scan. Le mot de passe OpenSubtitles est enregistré dans la base de Nexis (nécessaire pour se connecter à l'API) et n'est jamais renvoyé à l'interface.
-
-### Sous-titres générés à partir de la voix : Whisper
-
-Pour une vidéo qui n'a aucun sous-titre dans la langue parlée, même après OpenSubtitles, Whisper écrit les sous-titres à partir de la voix. Ils sont **dans la langue parlée** (Whisper ne traduit que vers l'anglais) et marqués « généré » dans le lecteur. *Paramètres → Lecture → Sous-titres et son → Whisper*, au choix :
-
-- **Service de transcription** (recommandé, surtout avec l'image Docker) : tout service compatible avec l'API d'OpenAI (`/v1/audio/transcriptions`). Par exemple [Speaches](https://speaches-ai.github.io/speaches/) (faster-whisper) dans un conteneur à côté de Nexis, avec une carte graphique si possible, et le modèle `Systran/faster-whisper-small`. OpenAI fonctionne aussi (modèle `whisper-1`, clé d'API), mais l'audio des vidéos part alors sur Internet. Nexis envoie l'audio par morceaux de 10 minutes (MP3 mono).
-- **Sur le serveur** : avec ffmpeg 8 compilé avec whisper.cpp (filtre `whisper`) ou le programme `whisper-cli` de whisper.cpp. Nexis télécharge le modèle choisi (tiny, base, small, medium) dans `data/whisper`. L'image Docker ne contient ni l'un ni l'autre.
-
-C'est un calcul long (de quelques minutes à plus d'une heure par film sur un processeur). Il se fait une vidéo à la fois et se met en pause pendant les lectures. À la main : fiche d'un film ou d'un épisode, menu ⋯ → *Générer les sous-titres (Whisper)* (administrateurs). Automatique : tâche *Générer les sous-titres manquants (Whisper)*, désactivée par défaut, qui traite au plus 3 titres par passage.
-
-### Sous-titres ASS
-
-Les sous-titres ASS (fansubs, plateformes d'animes) contiennent des panneaux positionnés, des dessins, du karaoké et des polices jointes au MKV. Nexis les fait rendre dans le navigateur par **libass**, compilé en WebAssembly via [JASSUB](https://github.com/ThaUnknown/jassub) (fourni dans `static/vendor/jassub`, licences dans ce dossier). Seules les polices utilisées par la piste sont téléchargées. Sur un navigateur trop ancien, un affichage texte simplifié est utilisé.
-
-### Mise en mémoire tampon
-
-La lecture démarre avec une réserve de vidéo déjà chargée : 5 secondes en lecture directe, 12 en remux, 20 en transcodage (3 à 10 secondes après un saut). En cas de ralentissement du réseau ou du processeur, le lecteur se met en pause le temps de reconstituer une réserve de 15 à 25 secondes. Si cela se répète en transcodage, le passage en 720p est proposé.
-
-## Applications
-
-### Web app
-
-Nexis s'installe comme une application, sans magasin d'applications : icône, fenêtre dédiée sans barre d'adresse, raccourcis (Regarder ensemble, TV en direct, À regarder). Un accès en **HTTPS** est nécessaire (voir « Accès depuis l'extérieur »).
-
-- **Windows, macOS, Linux (Chrome ou Edge)** : menu du profil → **Installer l'application**, ou icône d'installation de la barre d'adresse.
-- **Android (Chrome)** : menu du profil → **Installer l'application**.
-- **iPhone et iPad (Safari, et Firefox ou Chrome depuis iOS 16.4)** : bouton **Partager** → **Sur l'écran d'accueil**.
-- **Firefox** : il ne permet pas à un site de lancer l'installation. Le bouton **Installer l'application** affiche donc le chemin propre à l'appareil :
-  - Android : menu **⋮** → **Ajouter à l'écran d'accueil** ;
-  - Windows (Firefox 143 ou plus récent) : icône **Ajouter à la barre des tâches** de la barre d'adresse ;
-  - macOS et Linux : Firefox n'installe pas encore d'application web, il faut passer par Chrome, Edge ou Chromium.
-
-L'application se met à jour avec le serveur : le code de l'interface est chargé depuis des adresses propres à chaque version, aucun cache (navigateur ou proxy) ne peut resservir une version précédente. Si le serveur est injoignable, l'application s'ouvre sur les téléchargements de l'appareil.
-
-### Téléchargements hors ligne
-
-Films, épisodes ou saisons entières peuvent être téléchargés pour être regardés sans connexion.
-
-- **Télécharger** : bouton ⤓ sur la fiche d'un film ou d'un épisode, ou **Télécharger la saison** (épisodes non vus en priorité). Pour chaque qualité, la fenêtre indique la taille et la nécessité d'une conversion. **Automatique** (par défaut) conserve le fichier tel quel lorsque l'appareil sait le lire : environ 2 s de processeur par minute de vidéo, contre 30 s pour une conversion. 720p et 480p réduisent la taille au prix d'une conversion. La langue et les sous-titres se choisissent au même endroit.
-- **Suivi** : menu du profil → **Téléchargements** (préparation, transfert, espace utilisé par les films et par les séries, tri par titre, taille ou date). Le transfert se fait par morceaux de 16 Mo, quatre à la fois, et reprend après une coupure ou à la réouverture de l'application. Hors Safari (iPhone, iPad, Mac), l'appareil récupère le fichier **pendant** sa préparation : le téléchargement dure à peu près le temps de la préparation, au lieu de la préparation puis du transfert. La préparation des deux téléchargements suivants est demandée d'avance.
-- **Supprimer vite** : *Sélectionner*, puis cocher, ou choisir *Tout*, *Déjà vus*, *Plus de 30 jours*, *En échec* ou toute une série, et *Supprimer* (la place libérée est annoncée).
-- **Téléchargements intelligents** (réglage de l'appareil, page Téléchargements) : un épisode téléchargé regardé jusqu'au bout fait télécharger l'épisode suivant, dans les mêmes langues et la même qualité (activé par défaut) ; l'épisode vu peut aussi être supprimé (désactivé par défaut). Regardé hors ligne : fait au retour de la connexion.
-- **Hors ligne** : lecture avec le lecteur habituel (sous-titres, « Passer l'intro », chapitres, épisode suivant téléchargé). La position de lecture est renvoyée au serveur au retour du réseau, sans écraser un visionnage plus récent fait ailleurs.
-- **Côté serveur** : Nexis prépare un MP4 (H.264 / AAC). Un MP4 compatible est envoyé tel quel, un MKV H.264 est recopié sans perte, le reste est converti.
-  - **Vitesse de préparation** (*Paramètres → Lecture → Téléchargements*) :
-    - *Normale* (par défaut) : pleine vitesse quand personne ne regarde ; pendant une lecture, priorité basse, et une conversion ne s'arrête que si un spectateur fait lui-même convertir. Deux préparations à la fois sur un serveur de 8 cœurs ou plus ;
-    - *Discrète* : une préparation à la fois, priorité la plus basse, lecture du NAS limitée, en pause pendant toutes les lectures ;
-    - *Rapide* : tout le processeur, deux à la fois, jamais en pause.
-  - Les conversions utilisent la carte graphique si elle est configurée.
-  - Copie supprimée dès sa récupération, ou au bout de 48 h.
-  - Activation : *Paramètres → Lecture → Téléchargements*.
-
-**Espace disponible** : il est fixé par le navigateur, pas par l'appareil. Firefox limite chaque site à 10 Go tant que le stockage persistant n'est pas autorisé (bouton **Autoriser plus d'espace** de la page Téléchargements) ; ensuite, jusqu'à la moitié du stockage. Chrome, Edge et Safari autorisent environ 60 % du stockage. Chrome annonçant aux sites un espace fictif, Nexis n'affiche pas d'espace restant.
-
-Les téléchargements sont rangés par profil et restent sur l'appareil ; ils nécessitent un accès HTTPS. Sur iPhone et iPad, l'installation sur l'écran d'accueil est recommandée : Safari efface au bout de quelques semaines les données d'un site simplement visité.
-
-### Télécommande, clavier et manette
-
-L'interface se parcourt entièrement sans souris.
-
-- **Flèches** : élément le plus proche dans la direction ; gauche et droite restent sur la même rangée.
-- **OK / Entrée** : ouvrir.
-- **Retour** (télécommande, Retour arrière, ou B à la manette) : fermer le menu ouvert ou revenir à la page précédente.
-- **Manettes** (Xbox, PlayStation…) : croix ou stick gauche pour se déplacer, A pour valider, B pour revenir, Start pour lecture/pause.
-- **Lecteur** : gauche/droite pour reculer ou avancer ; avec une télécommande ou une manette, haut/bas affichent les commandes, puis les flèches passent d'un bouton à l'autre ; Retour masque les commandes puis quitte le lecteur ; les touches multimédia sont prises en charge.
-
-### Applications Windows, macOS, Linux et Android
-
-**Installer l'application** (menu du profil) : *sur cet appareil*, l'application native, conseillée, ou l'application web, au choix (iPhone et iPad : l'application web seulement) ; puis *sur vos autres appareils*, chaque plateforme avec son logo, le fichier à télécharger, sa version et les étapes d'installation. La même liste est sur la page **Applications** (lien de la page de connexion, lisible sans compte ; dans le menu du profil quand Nexis est déjà installé). Firefox, qui ne sait pas installer d'application web sur ordinateur, a ainsi une vraie application.
-
-| Plateforme | Fichier | Premier lancement |
+| Device | App | How to install |
 |---|---|---|
-| Windows 10 et 11 | `Nexis-Setup.exe` | « Windows a protégé votre ordinateur » : *Informations complémentaires* → *Exécuter quand même* (application non signée par un certificat payant) |
-| macOS 12 et plus (Intel, Apple Silicon) | `Nexis.dmg` | *Réglages Système → Confidentialité et sécurité → Ouvrir quand même* (pas de compte développeur Apple) |
-| Linux | `Nexis.AppImage` ou `nexis-desktop.deb` | AppImage à rendre exécutable |
-| Android 8 et plus (téléphone, tablette) | `nexis-android.apk` | autoriser l'installation depuis le navigateur, une fois |
-| Android TV | `nexis-tv.apk` | appli *Downloader*, adresse `<serveur>/tv` |
-| iPhone, iPad | application web | Apple n'autorise pas d'installation en dehors de l'App Store |
-
-- **Comment elles marchent** : chaque application affiche l'interface du serveur choisi au premier lancement. Elle suit donc chaque mise à jour du serveur, sans réinstaller. Le moteur est celui de l'application (Chromium sur ordinateur, WebView sur Android) : même affichage et mêmes formats partout, quel que soit le navigateur habituel.
-- **Ce qu'elles apportent** : sur ordinateur, un serveur en `http://` du réseau local est traité comme sûr, ce qui permet les téléchargements hors ligne, refusés par les navigateurs ; pas de limite de place propre au navigateur. Sur Android : plein écran vidéo, envoi de fichiers (photo du profil, sauvegarde, thème), enregistrement des fichiers exportés dans Téléchargements, et notifications (voir *Notifications push*). **Réseau instable** (Wi-Fi d'aéroport, de train…) : à la moindre coupure, Nexis vérifie que le serveur répond et reprend le téléchargement là où il en était (« Connexion instable : nouvel essai… »). Sans réseau pendant plus de 30 s, le téléchargement attend (« En attente du réseau ») et repart tout seul : nouvel essai toutes les 10 s à 1 min, et aussitôt que la connexion revient ou que Nexis repasse au premier plan. L'application Android reste éveillée jusqu'à 30 min pour ces nouveaux essais. **Téléchargements en arrière-plan** : un téléchargement continue application quittée ou réduite. Sur Android, une notification « Nexis télécharge… » montre la progression tant que la file n'est pas vide (Android exige cette notification pour laisser travailler une application quittée) ; le téléphone reste éveillé pour le transfert, écran éteint compris. Fermer l'application depuis la liste des applications récentes arrête le téléchargement, qui reprend à la réouverture. Sur ordinateur, la mise en veille est retardée pendant un téléchargement et la progression s'affiche sur l'icône de la barre des tâches. Pas de bouton *Autoriser plus d'espace* dans les applications : les téléchargements sont dans les données de l'application, que le système n'efface pas, et la place disponible est celle de l'appareil.
-- **Icônes** : sur Android, icône adaptative (fond foncé, logo à part) que le lanceur découpe à sa forme, sans contour blanc, avec une version d'une couleur pour les icônes à thème ; sur macOS, carré arrondi à la taille des icônes d'Apple. Elles se refont avec `python3 android/make_icons.py`.
-- **Mises à jour** : l'application vérifie auprès du serveur toutes les 6 heures. Windows et Linux (AppImage) installent la nouvelle version au redémarrage ; Android télécharge l'APK et propose de l'installer ; macOS et le paquet `.deb` proposent de télécharger la nouvelle version. *Paramètres → Cet appareil → Cette application* : version, *Rechercher une mise à jour*, *Changer de serveur…*.
-- **Distribution** : l'intégration continue construit les applications et les joint à la publication de chaque version (pré-version `apps-test` pour la branche test). Le serveur lit cette publication et garde une copie des fichiers demandés (dans `<données>/apps`) : les appareils les téléchargent depuis le serveur, jamais depuis GitHub (le tout premier téléchargement d'un fichier est redirigé vers GitHub le temps de la copie). Sources : `apps/desktop` (Electron) et `android/mobile`.
-
-### Application Android TV
-
-Application native pour Android TV, Google TV et boîtiers (Shield, Chromecast avec Google TV). Au premier lancement, elle demande l'adresse du serveur (`https://nexis.mondomaine.fr` ou `192.168.1.20:8420`) et vérifie qu'il s'agit bien de Nexis. On se connecte ensuite (avec le code de double authentification si le compte en a une), puis on choisit son profil.
-
-- **Navigation** : une barre en haut avec **Accueil** (Reprendre, une rangée par bibliothèque, Ma liste si elle n'est pas vide), une entrée par **bibliothèque** (Films, Séries, Animes…), puis **Rechercher**, **TV en direct** (si elle est configurée) et **Paramètres**. Affiches et textes sont agrandis pour la lecture à distance ; la fiche d'un titre ne garde que **Lecture** / **Reprendre**, et pour une série le choix de la saison et de l'épisode.
-- **Déplacements à la télécommande** : par rangées, comme sur les applis de TV. Gauche et droite restent dans la rangée (au bout, le curseur ne saute plus dans la rangée voisine) ; haut et bas passent à la rangée voisine et retrouvent la carte qu'on y avait quittée. Sur la fiche d'une série, remonter des épisodes ramène sur la saison ouverte, sans en ouvrir une autre.
-- **Lecteur natif (ExoPlayer)** : les MKV, le HEVC et le 10 bits sont lus directement quand la TV sait les décoder ; le son multicanal (Dolby Digital, Dolby Digital+, DTS, TrueHD) est transmis tel quel à l'ampli ou à la barre de son quand la sortie HDMI l'accepte. Le serveur ne convertit que ce que l'appareil ne sait pas lire.
-- **Attente au lancement** : tant que l'image n'apparaît pas, le lecteur indique ce qui se passe (lecture directe, flux préparé par le serveur, conversion et sa raison) et depuis combien de secondes. Une lecture directe qui ne démarre pas au bout de 20 s bascule d'elle-même sur un flux préparé par le serveur ; après 60 s, un message propose de réessayer. En cas d'erreur, la cause technique est affichée.
-- **Paramètres** : réduits au nécessaire : changer de profil, langue de l'interface, se déconnecter, changer de serveur. Les réglages de lecture (langues audio et sous-titres, qualité, épisode suivant, génériques) suivent le compte : ils se changent depuis le téléphone ou l'ordinateur et valent aussi sur la TV.
-- **Télécommande** : flèches et OK pour naviguer, **Retour** pour revenir en arrière. Dans le lecteur : OK lecture/pause, gauche/droite pour reculer ou avancer (plus vite en restant appuyé), haut/bas pour les commandes (audio et sous-titres, épisode suivant). En TV en direct : haut/bas ou CH+/CH- pour changer de chaîne.
-- **Installation avec Downloader** :
-  1. Installer **Downloader** (AFTVnews) depuis le Play Store.
-  2. Autoriser Downloader dans *Paramètres → Applications → Accès spécifiques → Installer des applis inconnues*.
-  3. Dans Downloader, saisir l'adresse du serveur suivie de `/tv` (par exemple `nexis.mondomaine.fr/tv`), qui renvoie vers le dernier APK publié.
-  4. Installer, puis ouvrir Nexis depuis la liste des applications.
-- **Autres moyens** : l'APK `nexis-tv-<version>.apk` est joint à chaque version sur la page **Releases** (transfert par *Send Files to TV*, clé USB ou `adb install`).
-- **Mise à jour de l'application** : installer le nouvel APK par-dessus. Cela suppose que chaque version soit signée avec la même clé, fournie par les secrets GitHub `NEXIS_KEYSTORE` (clé en base64) et `NEXIS_KEYSTORE_PASSWORD` (*Settings → Secrets and variables → Actions*). Sans eux, l'APK est signé avec une clé de développement et chaque mise à jour impose une désinstallation.
-
-## Accès depuis l'extérieur (HTTPS)
-
-Placer Nexis derrière un reverse proxy HTTPS (Caddy, nginx, Nginx Proxy Manager…), puis dans `/etc/seance/seance.env` :
-
-```
-SEANCE_COOKIE_SECURE=1
-SEANCE_TRUST_PROXY=1
-```
-
-et `systemctl restart seance`. Exemple Caddy :
-
-```
-films.mondomaine.fr {
-    reverse_proxy 192.168.1.30:8420
-}
-```
-
-Avec nginx, ajouter `proxy_read_timeout 120s;` et `proxy_buffering off;` (nécessaire aux mises à jour en direct de « Regarder ensemble »).
-
-## Stockage froid
-
-Une copie des films et épisodes sur un autre stockage, pour pouvoir libérer de la place sur les disques de la bibliothèque. Le titre garde dans Nexis son affiche, son résumé, son historique et ses sous-titres téléchargés : il s'affiche partout comme avant. Quand son fichier n'est plus dans la bibliothèque, Nexis le lit depuis la copie, avec quelques secondes de plus au démarrage. *Paramètres → Stockage froid*.
-
-| Type | Pour | Lecture |
-|---|---|---|
-| Dossier de cette machine | disque USB, NAS déjà monté par le système, volume Docker | directe, comme un fichier de la bibliothèque |
-| Partage SMB (NAS) | NAS, Hetzner Storage Box (SMB) — monté en écriture par Nexis (installation par script ou paquet ; avec Docker, montez-le sur l'hôte et choisissez « Dossier ») | directe |
-| SFTP | Hetzner Storage Box, NAS, serveur SSH (par `curl`) | par morceaux, relayée par Nexis |
-| WebDAV | Nextcloud, Synology, Hetzner Storage Box | par morceaux |
-| S3 et compatibles | Backblaze B2, Wasabi, Scaleway, OVH, AWS, MinIO (envoi en plusieurs parties, fichiers de plusieurs dizaines de Go) | par morceaux |
-| rclone | tout autre service déjà configuré avec `rclone config` (pCloud, Mega, Google Drive…), si rclone est installé | par morceaux |
-
-- **Plusieurs stockages** à la fois, et une copie d'un même titre sur plusieurs d'entre eux. À la lecture, un dossier (disque, partage monté) passe avant un stockage en ligne.
-- **Archiver** : sur la fiche d'un titre, menu ⋯ → *Archiver sur un stockage froid…* (une série ou une saison : tous ses épisodes), ou par la sélection multiple d'une bibliothèque. Les copies se font en tâche de fond, une à la fois ; leur débit est réduit pendant qu'une vidéo est regardée (10 Mo/s par défaut, réglable). Les sous-titres posés à côté du fichier sont copiés avec lui. Sur le stockage, les fichiers gardent l'arborescence de la bibliothèque (`Films/Titre (2020)/Titre.mkv`) : ils restent utilisables sans Nexis.
-- **Vérification** : une copie ne compte qu'une fois vérifiée (taille, et morceaux relus au début, à la fin et au hasard). Un échec reste visible dans la page avec sa raison et un bouton *Réessayer*.
-- **Rien n'est supprimé de la bibliothèque** : les bibliothèques restent en lecture seule. Si un fichier en disparaît (supprimé à la main ou par Radarr / Sonarr), le scan garde le titre puisqu'il a une copie vérifiée.
-- **Essayer** : menu ⋯ → *Essayer la lecture depuis la copie froide* lit la copie même si le fichier est encore là ; *Copies sur le stockage froid…* liste les copies et permet d'en supprimer une (pas la dernière d'un titre absent de la bibliothèque).
-- **SFTP** : au premier essai, Nexis montre l'empreinte de la clé du serveur à confirmer ; il refuse ensuite tout serveur qui présente une autre clé. Les mots de passe ne sont jamais renvoyés à l'interface ni passés en ligne de commande.
-- **Serveur lié** : un serveur de la fédération peut garder vos archives. Son administrateur réserve de la place (*Stockage froid → Archives des serveurs liés*) ; les fichiers passent par le canal chiffré des serveurs liés, rangés dans son dossier de données, sans apparaître dans ses bibliothèques.
-- **Titres ramenés en local** : un titre lu depuis un stockage en ligne (SFTP, WebDAV, S3, rclone, serveur lié) est ramené sur ce serveur, avec les 2 épisodes suivants (réglable) : les lectures suivantes démarrent tout de suite. Place réservée de 20 Go par défaut, en gardant toujours 10 Go libres sur le disque ; les titres ramenés depuis le plus longtemps sans lecture repartent d'abord. La copie froide, elle, reste.
-
-- **Compression des archives** (facultative, *carte graphique recommandée*) : avant d'être copiée, la vidéo est réencodée en HEVC (NVENC ou VAAPI si une carte graphique est configurée dans *Transcodage*, sinon libx265 par le processeur), en général 30 à 60 % de place en moins sur le stockage froid ; son, sous-titres, chapitres et polices recopiés tels quels. Qualité (très bonne, équilibrée, petite taille) et définition maximale réglables. Les vidéos déjà en HEVC, AV1 ou VP9 et les vidéos HDR sont copiées sans changement, et l'original est gardé si le gain est inférieur à 10 %. Par le processeur, c'est très lent sur une petite machine (une à plusieurs heures par film) et la compression se met en pause pendant les lectures converties. *Compresser les archives déjà faites* relit, compresse puis remplace les copies existantes. La copie compressée a sa propre description : le lecteur choisit entre lecture directe et conversion d'après elle. Les fichiers de la bibliothèque ne sont jamais modifiés ; le travail se fait dans `<données>/cold-work` (place libre nécessaire : la taille du fichier + 2 Go).
-
-### Libérer de la place
-
-*Stockage froid → Libérer de la place* : les films et les séries que personne n'a regardés depuis 30 jours (réglable ; un titre jamais regardé compte depuis son ajout) sont copiés sur le stockage froid, puis leur fichier quitte la bibliothèque après un délai de 7 jours (réglable). Un titre regardé pendant ce délai est gardé. La tâche « Libérer de la place » passe chaque jour à 5 h 10.
-
-- **À valider** (par défaut) : la liste des titres concernés arrive dans la page, avec une notification aux administrateurs ; *Valider*, *Garder sur le disque* ou *Pas cette fois*, titre par titre ou tout d'un coup. **D'office** : archivés et libérés sans demander.
-- **Gardés** : les titres d'une liste « À regarder », notés 4 ou 5 étoiles et commencés (réglable), et ceux marqués *Toujours garder sur le disque* (menu ⋯ d'un film ou d'une série). Option : n'agir que si la place libre de la bibliothèque passe sous un seuil.
-- **Suppression du fichier**, au choix par bibliothèque : par **Radarr** (films) ou **Sonarr** (séries) — adresse et clé d'API (*Settings → General → API Key*) ; le titre y est d'abord marqué « non surveillé », sinon ils le retéléchargeraient, et rien n'est supprimé si le fichier qu'ils connaissent n'est pas le même (nom, taille) ; par **Nexis** si la bibliothèque est montée en écriture ; ou **à la main** à partir de la liste des fichiers. Les sous-titres intégrés au fichier sont extraits avant, et ceux posés à côté (`.srt`, `.ass`…) copiés dans les données de Nexis.
-- Le titre reste dans Nexis (affiche, résumé, historique, notes) et se lit depuis la copie froide ; il n'est plus reproposé. Si le fichier revient dans la bibliothèque (retéléchargé), Nexis le lit de nouveau depuis le disque.
-
-- **Fichiers `.strm`** : un `.strm` posé dans une bibliothèque (une adresse http(s) vers une vidéo) se lit comme un fichier ; Nexis relaie le flux.
-
-## Serveurs liés
-
-Deux serveurs Nexis (ou plus) qui vous appartiennent, par exemple la maison et une résidence secondaire, peuvent être reliés dans *Paramètres → Serveurs liés* :
-
-1. Sur le serveur que l'autre peut joindre, **Inviter un serveur**. Vérifier l'adresse proposée (IP ou nom, suivi du port **8421**), puis copier l'invitation `NEXIS1-…`.
-2. Sur l'autre serveur, **Rejoindre un serveur** et coller l'invitation, valable 15 minutes et une seule fois.
-
-**Ce qui est partagé**
-
-- **Comptes.** Ils sont communs : mots de passe, double authentification, profils, PIN, contrôle parental, langue, photo et accès aux bibliothèques. Les **préférences** de chacun suivent aussi le compte : apparence, langues, sous-titres, lecture, accueil et menu (bibliothèques masquées, page d'ouverture, rangées épinglées d'un genre ou de filtres, fond d'écran), traduits pour l'autre serveur ; les rangées épinglées d'une collection ou d'une playlist restent sur leur serveur, et les réglages de *Cet appareil* sur leur appareil. Une modification sur l'un arrive sur l'autre en moins d'une minute ; la plus récente l'emporte et une suppression est définitive. Un identifiant présent sur les deux serveurs au moment du jumelage devient un seul compte, avec les données du serveur qui a créé l'invitation. Les sessions ne sont pas partagées : il faut se connecter une fois sur chaque serveur.
-- **Bibliothèques.** Chaque bibliothèque reçue de l'autre serveur se règle dans *Serveurs liés* :
-  - **Nouvelle bibliothèque** (par défaut) : elle s'ajoute comme une bibliothèque de plus, sous son nom, avec un petit badge du serveur sur sa page ;
-  - **Fusionner avec « … »** : ses titres rejoignent l'une de vos bibliothèques du même type. Un film ou une série présent sur les deux serveurs n'apparaît qu'une fois (même identifiant TMDB, IMDb ou TVDB, sinon même titre et même année), et les saisons et épisodes de chacun sont réunis sous la même série.
-  - Fiches et affiches viennent du serveur d'origine, et c'est lui qui scanne ses dossiers et cherche ses métadonnées.
-- **Administration de tous les serveurs depuis un seul.** En haut des pages d'administration (*Paramètres → Serveur, Médiathèque, Lecture*), le sélecteur *Serveur administré* choisit le serveur réglé : ce serveur ou l'un des serveurs liés. Toutes les pages (bibliothèques, utilisateurs, tâches, transcodage, sauvegardes, mise à jour, alertes…) s'appliquent alors à celui-ci, relayées par la liaison chiffrée, au nom de votre compte (le même partout) ; il faut donc être administrateur sur les deux. Chaque action est notée dans le journal du serveur réglé. Un serveur peut refuser d'être administré ainsi (*Serveurs liés → Administration depuis les serveurs liés*), réglage qui ne se change que sur place. Les préférences de *Mon compte* restent celles du serveur où l'on est connecté.
-- **Lecture.** Un titre de l'autre serveur se lit depuis celui-ci : l'autre serveur lit le fichier, le convertit si besoin et le transmet par la liaison. Sous-titres, aperçus, chapitres et « Passer l'intro » fonctionnent comme pour un titre local. La position de lecture et « vu » sont renvoyés au serveur d'origine et reviennent dans l'autre sens. Les **téléchargements hors ligne** marchent aussi : le serveur qui a le fichier prépare le MP4, transmis par la liaison (un titre présent sur les deux serveurs se télécharge depuis celui auquel l'appareil est connecté).
-- **Titre présent sur les deux serveurs.** La copie est choisie automatiquement, sans rien demander :
-  1. celle qui a la langue audio voulue (choisie pour ce titre ou dans *Lecture*), ou les sous-titres demandés, si une seule l'a ;
-  2. puis celle d'un serveur qui n'est pas **occupé** : par défaut, 3 lectures en cours ou plus (réglable dans *Serveurs liés → Ce serveur*, 0 pour ne jamais en tenir compte) ;
-  3. puis la meilleure qualité (définition, puis débit) ;
-  4. à égalité, celle du serveur le moins occupé, puis celle de ce serveur.
-
-  Un saut ou un changement de piste garde la même copie. Si le serveur choisi ne répond pas, l'autre copie prend le relais. La répartition soulage le processeur (conversion) et les disques du serveur occupé ; le flux transite quand même par le serveur auquel l'appareil est connecté.
-- **Clé TMDB et Seerr.** Un serveur qui n'a pas de clé TMDB se sert de celle d'un serveur lié : métadonnées de ses propres titres (cherchées dès le jumelage), onglet *Découvrir*. De même, sans Seerr configuré, les demandes passent par le Seerr d'un serveur lié, au nom du compte Seerr de la personne. Le serveur qui prête n'accepte que ces usages (lecture TMDB ; statuts, comptes et nouvelles demandes Seerr).
-- **Regarder ensemble.** Les groupes créés sur un serveur apparaissent sur l'autre : chacun rejoint depuis le serveur auquel il est connecté, et regarde la copie que ce serveur choisit. Voir [Regarder ensemble](#regarder-ensemble).
-- **Même identifiant des deux côtés.** Avant de lier, *Rejoindre un serveur* affiche les identifiants présents sur les deux serveurs. Pour chacun :
-  - **Personnes différentes** (par défaut) : le compte du serveur qui rejoint est renommé, par exemple « lea-maison2 » (nom modifiable). Chacun garde son mot de passe et ses données, et les deux comptes existent ensuite sur les deux serveurs.
-  - **Même personne** : les comptes fusionnent avec le mot de passe, la double authentification et le profil du serveur qui a créé l'invitation. Chaque serveur garde l'historique, la progression et les listes du compte.
-
-  Un identifiant créé ensuite sur les deux serveurs avant leur synchronisation n'est jamais fusionné : l'un des comptes est renommé (« nina-2 ») sur les deux serveurs, et c'est signalé dans *Serveurs liés*. Lors d'un nouveau jumelage, les comptes déjà communs aux deux serveurs sont reconnus sans rien demander.
-- **Délier un serveur.**
-  - Les comptes restent sur les deux serveurs, mais ne sont plus synchronisés.
-  - Ses bibliothèques et ses titres disparaissent de ce serveur, y compris ceux fusionnés dans les vôtres ; vos propres titres et leur progression ne bougent pas. Aucun fichier n'est touché.
-  - L'autre serveur est prévenu s'il répond, et fait de même de son côté. S'il était éteint, il voit ce serveur comme injoignable : un nouveau jumelage, avec une nouvelle invitation, remplace alors l'ancien lien.
-- **Serveur éteint ou injoignable.** L'autre continue de fonctionner normalement : ses bibliothèques, la connexion et la lecture de ses titres. Après une trentaine de secondes sans réponse, les titres que seul le serveur éteint possède sont masqués, et ses bibliothèques non fusionnées aussi. Ils reviennent seuls dès qu'il répond.
-
-**Liaison et réseau**
-
-- **Chiffrement.** Chaque serveur a son propre certificat (clé EC P-256, créée au premier jumelage dans `/var/lib/seance/federation`). L'invitation contient l'empreinte de ce certificat : celui qui rejoint vérifie qu'il parle bien au bon serveur, puis les deux s'échangent un secret présenté à chaque requête. Tout passe en TLS sur le port 8421, sans VPN, nom de domaine ni autorité de certification, même si l'interface reste en HTTP sur le réseau local.
-- **Ports.** Un seul des deux serveurs doit être joignable par l'autre. En réseau local, rien à faire. Par Internet, il faut rediriger le port 8421 vers l'un des deux (redirection sur la box, ou reverse proxy en mode TCP/stream, car un proxy HTTPS classique casserait le certificat épinglé). L'autre serveur ouvre lui-même un tunnel chiffré vers lui : rien à ouvrir de son côté. Si aucun des deux n'est joignable, passer par un VPN de type Tailscale ou WireGuard.
-- **Restrictions.** Le port n'accepte que les serveurs jumelés et ne sert pas l'interface. Au nom d'un compte, un serveur lié ne peut que lire les titres, jamais administrer.
-- **Configuration.** Le port se change avec `SEANCE_FED_PORT` dans `/etc/seance/seance.env`. Avec Docker, publier aussi `8421:8421`. `openssl` est nécessaire, une seule fois, pour créer le certificat ; il est installé par le script, le paquet `.deb` et l'image Docker.
-- **Débit.** À distance, la qualité dépend du débit montant du serveur qui a le fichier : choisir une qualité réduite si la lecture saccade.
-- **Changement d'adresse IP.** Utiliser de préférence un nom (DNS dynamique) plutôt qu'une IP dans l'invitation. Si l'IP du serveur joignable change, les connexions coupées sont détectées en une minute environ et rouvertes vers la nouvelle adresse dès que le nom y pointe ; ses titres sont masqués entre-temps et reviennent seuls. Si l'adresse enregistrée est une IP, la corriger avec le bouton **Adresse** du serveur lié. Le serveur qui n'est pas joignable peut changer d'IP sans rien faire : il rouvre lui-même son tunnel.
-
-> À réserver à vos propres serveurs : partager des films du commerce avec un autre foyer sort du cadre de la copie privée (voir [docs/AUDIT-JURIDIQUE.md](docs/AUDIT-JURIDIQUE.md)).
-
-## Chapitres, aperçus, intro et générique
-
-- **Aperçus** : au survol ou au glissement de la barre de lecture, une vignette de la scène s'affiche avec le nom du chapitre. Les vignettes sont produites à partir des images clés, pendant la même lecture du fichier que les sous-titres.
-- **Chapitres** : repères sur la barre et sélection en vignettes dans le lecteur (bouton Chapitres ou touche `C`) et sur la fiche. Une image par chapitre, produite à la demande puis par la tâche « Extraire les images des chapitres ».
-- **Lecteur réduit** : le bouton en haut à droite du lecteur (ou la touche `I`) le réduit dans un coin de l'écran ; la lecture continue pendant la navigation.
-- **Passer l'intro / épisode suivant** : l'opening et le générique de fin sont repérés grâce aux chapitres nommés (`Opening`, `OP`, `Intro`, `Générique`, `Ending`, `ED`, `Credits`…). Un chapitre `OP` / `Opening` est prioritaire sur un « Intro » qui désigne souvent la scène d'avant-générique. Pour les chapitres sans nom, Nexis cherche les blocs de 70 à 115 secondes en début et en fin d'épisode. Un administrateur peut corriger ces repères pendant la lecture (menu ⚙) ; ses corrections sont prioritaires.
-- **Passer le récap** : un chapitre « Previously », « Recap », « Récapitulatif », « Précédemment »… dans le premier tiers de l'épisode affiche un bouton *Passer le récap*, distinct de *Passer l'intro*. Il peut être passé automatiquement (*Paramètres → Lecture*), et un administrateur peut le poser à la main depuis le menu ⚙ du lecteur.
-
-**Fichiers sans chapitres** : la tâche « Détecter les intros et génériques » compare l'empreinte audio (Chromaprint, via ffmpeg) du début et de la fin des épisodes d'une même saison ; l'opening et le générique sont les passages communs. Elle s'exécute après chaque ajout d'épisodes et chaque nuit ; la zone analysée (10 premières et 6 dernières minutes par défaut) et les durées minimale et maximale sont réglables. Ordre de priorité : repères manuels, chapitres nommés, empreinte audio, puis chapitres de la durée d'une chanson.
-
-## Tâches planifiées
-
-*Paramètres → Serveur → Tâches planifiées* liste les travaux de fond avec leur dernière exécution et la suivante. Chaque tâche peut être lancée, arrêtée et planifiée : **désactivée**, **toutes les N heures**, **chaque jour** ou **chaque semaine** à heure fixe, avec ses options propres.
-
-| Tâche | Par défaut | Options |
-|---|---|---|
-| Analyser les bibliothèques | toutes les 24 h | bibliothèques concernées |
-| Synchroniser avec Trakt | toutes les 6 h (application Trakt enregistrée) | |
-| Actualiser les métadonnées | le dimanche à 4 h | fiches incomplètes / non actualisées depuis N jours / toutes ; bibliothèques |
-| Extraire les images des chapitres | chaque nuit et après chaque ajout | pause pendant les lectures, bibliothèques |
-| Détecter les intros et génériques | chaque nuit et après chaque ajout | zones analysées, durées min. et max., générique de fin, épisodes à chapitres nommés |
-| Préparer les sous-titres et les aperçus | chaque nuit | |
-| Télécharger les sous-titres manquants | chaque nuit à 6 h 10 et après chaque ajout (OpenSubtitles configuré) | bibliothèques |
-| Générer les sous-titres manquants (Whisper) | désactivée | titres par passage, pause pendant les lectures, bibliothèques |
-| Actualiser les chaînes et le guide TV | toutes les 12 h | vérification des chaînes |
-| Nettoyer les caches | chaque nuit | ancienneté des images conservées |
-| Sauvegarder le serveur | chaque nuit à 4 h 30 | nombre de sauvegardes automatiques gardées |
-
-Une seule tâche s'exécute à la fois. Celles qui lisent les fichiers du partage réseau se mettent **en pause pendant les lectures**.
-
-## TV en direct (IPTV)
-
-*Paramètres → Lecture → TV en direct* : ajouter une ou plusieurs **sources**, chacune composée d'une liste **M3U / M3U8** (adresse fournie par le fournisseur IPTV ou la box, ou chemin d'un fichier `.m3u` sur le serveur) et, si nécessaire, d'un **guide XMLTV** (`.xml` ou `.xml.gz` ; facultatif si la liste l'indique dans son en-tête `url-tvg`). Les attributs `tvg-id`, `tvg-name`, `tvg-logo`, `tvg-chno`, `group-title` et `#EXTVLCOPT:http-user-agent` sont pris en charge.
-
-- Les chaînes sont proposées **à tous les utilisateurs** dans l'onglet **TV en direct** : grille avec programme en cours et suivant, **guide des programmes**, recherche, groupes, **favoris** par utilisateur. Dans le lecteur : ↑ / ↓ pour changer de chaîne, `L` pour la liste.
-- *Groupes…* masque des groupes entiers pour tous les utilisateurs. Une option masque la TV pour les profils avec restriction d'âge.
-- Les navigateurs ne lisent pas le MPEG-TS : Nexis reçoit le flux avec ffmpeg et le convertit en HLS. La vidéo **H.264 est recopiée** telle quelle, le son converti en AAC stéréo ; une vidéo MPEG-2 ou HEVC est convertie en H.264 (réglable : jamais / automatique / toujours). Une chaîne regardée par plusieurs personnes **n'est reçue qu'une fois** ; ffmpeg s'arrête 45 s après le départ du dernier spectateur.
-- **Chaînes simultanées (max.)** : la plupart des fournisseurs limitent le nombre de connexions ; au-delà, un message l'indique.
-- Les chaînes qui ne répondent pas deux fois de suite sont masquées, puis réaffichées dès qu'elles répondent à nouveau.
-
-## Photothèque
-
-Dans *Paramètres → Bibliothèques*, **+ Ajouter** avec le type **Photos**, puis le dossier des photos.
-
-- **Albums.** Chaque sous-dossier devient un album, et les sous-dossiers d'un album des sous-albums. Les photos placées directement dans le dossier de la bibliothèque s'affichent sans album.
-- **Toutes les photos.** Cet onglet les range de la plus récente à la plus ancienne, groupées par mois.
-- **Date et orientation.** Elles viennent des données EXIF (JPEG, TIFF) ; sans EXIF, la date du fichier est utilisée. Une photo prise en portrait s'affiche à l'endroit.
-- **Visionneuse.** Elle s'ouvre en plein écran : flèches du clavier ou balayage pour passer d'une photo à l'autre, Espace pour le diaporama, Échap pour fermer. Le bouton d'informations affiche la date, les dimensions et l'appareil ; le fichier d'origine se télécharge d'un clic.
-- **Formats.** JPEG, PNG, WebP, GIF (animés tels quels), HEIC/HEIF (selon la version d'ffmpeg du serveur), TIFF et BMP.
-- **Détection.** Les nouvelles photos sont repérées comme les films, et rien n'est écrit dans les dossiers de photos.
-- **Vidéos.** Les vidéos du téléphone (MP4, MOV, 3GP, WebM, MKV…) placées dans les albums y apparaissent, à leur date de tournage, et se lisent dans la visionneuse (telles quelles : le navigateur doit connaître le format, sinon on les télécharge).
-- **Favoris.** L'étoile de la visionneuse ajoute la photo à l'onglet *Favoris*, propre à chaque compte.
-- **Carte.** L'onglet *Carte* place les photos et vidéos d'après leur position GPS (enregistrée par la plupart des téléphones) ; les photos proches sont regroupées en une pastille qui donne leur nombre. Un clic sur une pastille affiche ses photos sous la carte. Le fond de carte vient d'OpenStreetMap : le navigateur télécharge les tuiles de la zone affichée chez OpenStreetMap, sans que les positions des photos ne quittent le serveur. Les photos ajoutées avant cette version sont relues une fois au scan suivant.
-- **Partager un album.** Dans un album, *Partager l'album* crée un lien valable de 1 jour à 3 mois. Il donne accès à cet album et à ses sous-albums, sans compte, et rien d'autre de la photothèque. La page du lien n'affiche pas les positions GPS (le fichier d'origine téléchargé garde ses données EXIF). Les liens se copient et se révoquent depuis la même fenêtre.
-- **Accès et partage.** L'accès se règle par compte comme pour les autres bibliothèques. Les photothèques ne sont pas partagées avec les serveurs liés, et pas encore affichées dans l'appli Android TV : sur un téléviseur, passer par le DLNA.
-
-## Livres audio
-
-Dans *Paramètres → Bibliothèques*, **+ Ajouter** avec le type **Livres audio**, puis le dossier des livres.
-
-- **Rangement.** Un dossier par livre (`Auteur/Titre/01.mp3, 02.mp3…`, ou `Titre/`), lus à la suite ; ou un fichier `.m4b` seul, avec ses chapitres. Formats : MP3, M4B, M4A, AAC, FLAC, OGG, Opus.
-- **Fiche.** Titre, auteur, narrateur, année et résumé viennent des étiquettes des fichiers (album, artiste, compositeur…), à défaut des noms de dossiers. Couverture : `cover.jpg` ou `folder.jpg` à côté, sinon l'image intégrée au fichier. Chapitres : ceux du fichier, ou un par fichier.
-- **Écoute.** Dans le lecteur audio de l'application (voir plus bas) ; la position est gardée pour chacun, et *En cours* regroupe les livres commencés. *Recommencer* et *Marquer comme terminé* depuis la fiche.
-- Les livres audio ne sont pas partagés avec les serveurs liés ni en DLNA, et ne s'affichent pas dans l'appli Android TV.
-
-## Lecteur audio
-
-Les livres audio se lisent dans une barre en bas de l'écran, qui reste pendant qu'on navigue dans l'application : lecture/pause, −30 / +30 s, barre de progression, **vitesse** (×0,8 à ×2, gardée d'un livre à l'autre), **minuterie** (15 à 60 min, ou fin du chapitre), **chapitres**. Sur téléphone, les commandes de l'écran verrouillé et du casque fonctionnent (précédent / suivant = chapitre). La position est enregistrée toutes les 15 secondes et à la pause.
-
-## Serveur DLNA
-
-Nexis peut aussi apparaître comme **serveur multimédia DLNA / UPnP** sur le réseau local. Téléviseurs (Samsung, LG, Sony…), consoles, box et applications comme VLC le trouvent alors dans leurs sources et lisent son contenu sans application Nexis.
-
-- **Activation.** Dans *Paramètres → DLNA* : activer, choisir le nom affiché et les bibliothèques partagées (toutes par défaut).
-- **Contenu.** Les films ; les séries, avec leurs saisons puis leurs épisodes ; les photos, rangées par album. Chaque photo est aussi proposée en JPEG 1920 px remis à l'endroit, que tous les téléviseurs savent afficher (HEIC compris).
-- **Fichiers lus tels quels.** Pas de conversion : un format que l'appareil ne connaît pas ne se lit pas. Dans ce cas, utiliser l'appli Nexis ou le site.
-- **Pas de comptes.** Tout appareil du réseau local voit les bibliothèques partagées, sans contrôle parental : ne partagez que ce qui convient à tous. Les adresses extérieures au réseau local sont refusées, et le service est désactivé par défaut.
-- **Ports.** L'annonce passe par le port UDP 1900 (multidiffusion SSDP), et le contenu par le port web de Nexis (8420).
-- **Docker.** Le conteneur doit utiliser le réseau de l'hôte (`network_mode: host`, voir le `docker-compose.yml`), car l'annonce ne traverse pas le réseau interne de Docker. En LXC ou avec le paquet `.deb`, rien à faire.
-- **Serveurs liés.** Les titres d'un serveur lié ne sont pas partagés en DLNA : chaque serveur partage les siens.
-
-## Regarder ensemble
-
-Plusieurs personnes regardent la même vidéo en même temps, chacune sur son appareil, sur place ou à distance.
-
-- Sur la fiche d'un film ou d'un épisode, **Regarder ensemble** crée un groupe (nom, et option « seul l'hôte contrôle la lecture »). Dans le lecteur, le même bouton affiche les membres et leur état, et copie le **lien d'invitation**. Les groupes en cours apparaissent sur l'accueil et dans la barre du haut.
-- **Groupe créé à l'avance** : le bouton ＋ de la barre du haut ouvre un **salon** où arrivent les membres. Depuis une fiche, *Regarder ensemble* propose alors de lancer le titre dans ce groupe, et la lecture démarre pour tous.
-- Lecture, pause, sauts, chapitres, « Passer l'intro » et **épisode suivant** sont synchronisés. Un membre qui rejoint arrive au même endroit.
-- Chacun conserve son propre flux (qualité, langue, sous-titres). Un faible décalage est corrigé en ajustant légèrement la vitesse de lecture, un décalage important par un saut. Si la connexion d'un membre faiblit, le groupe l'attend (12 s au plus).
-- Reprise de lecture et historique restent individuels. L'accès au contenu (bibliothèques, restriction d'âge) est vérifié pour chaque membre.
-- **Serveurs liés** : un groupe vit sur le serveur où il a été créé et apparaît aussi sur les serveurs liés. Une personne connectée à l'autre serveur le rejoint de la même façon ; son serveur relaie les commandes et les événements, en traduisant le titre, les comptes et l'heure.
-
-## Profils, code PIN et contrôle parental
-
-- **« Qui regarde ? »** : après la connexion, chacun choisit son profil ; *Changer de profil* (menu du profil) le rouvre à tout moment.
-- **Profils gérés** (enfants, invités) : sans mot de passe, accessibles depuis « Qui regarde ? », avec un **code PIN** éventuel.
-- **Code PIN** : protège un profil (*Paramètres → Profil*). Sans code, l'accès à un compte complet ou administrateur demande son mot de passe.
-- **Photo de profil** : image au choix (JPEG, PNG ou WebP), recadrée en carré, ou avatar de la galerie (Cinéma, Séries et TV, Musique, Personnages, Motifs) avec le fond de son choix. Les métadonnées des photos (EXIF, position) sont supprimées par le serveur.
-- **Restriction d'âge** par profil (7, 10, 12 ou 16 ans), d'après la classification TMDB ou `.nfo`. Les contenus au-delà de la limite sont masqués partout : bibliothèques, accueil, recherche, fiches et lecture. Les contenus sans classification peuvent être autorisés ou non.
-- **Temps d'écran** par profil : minutes par jour (30 min à 6 h), et **heure du coucher** (ex. 21 h – 7 h) pendant laquelle rien ne se lance. Le temps est compté pendant la lecture, sur tous les appareils du compte ; le lecteur prévient 5 minutes avant la fin, puis s'arrête avec un message. Le compteur repart chaque jour à minuit. Les profils limités ne peuvent pas lancer de lecture une fois la limite atteinte (l'appli Android TV le respecte au lancement, sans l'arrêt en cours de lecture).
-- **Lectures simultanées** par compte : au-delà de la limite, une nouvelle lecture est refusée, avec un message qui invite à en arrêter une autre.
-- **Débit maximum hors de la maison** par compte : depuis l'extérieur, la qualité est réduite (720p, 480p…) pour tenir dans ce débit, par exemple pour ménager l'envoi de la box ou pour un compte prêté. Sur le réseau local, rien ne change.
-
-Configuration : *Paramètres → Serveur → Utilisateurs*. Les limites suivent le compte sur les serveurs liés.
-
-## Trakt et Letterboxd
-
-*Paramètres → Mon compte → Trakt et Letterboxd*, pour chaque personne :
-
-- **Trakt.** L'administrateur enregistre une fois une application sur trakt.tv (*Settings → Your API Apps → New Application*, Redirect URI `urn:ietf:wg:oauth:2.0:oob`) et colle son Client ID et son Client Secret sur cette page. Chacun relie ensuite son compte avec un code à saisir sur trakt.tv : Nexis ne connaît jamais le mot de passe Trakt. Toutes les 6 heures (tâche *Synchroniser avec Trakt*) et à la demande : les films et épisodes vus d'un côté deviennent vus de l'autre (avec leur date), les notes s'ajoutent (1 à 5 étoiles ici, 1 à 10 sur Trakt) ainsi que la liste « À regarder ». Rien n'est jamais retiré : un « non vu » ou une note effacée ne se propage pas. Les titres sont reconnus par leur identifiant TMDB.
-- **Letterboxd** (pas d'API publique, donc des fichiers). *Exporter pour Letterboxd* produit un CSV de vos films vus, avec la date et la note, à importer sur letterboxd.com (*Settings → Import & Export*). *Importer l'export Letterboxd…* lit le ZIP téléchargé depuis Letterboxd (films vus, journal, notes, liste « À regarder ») et reconnaît les films par titre et année (à un an près) ; ceux qui ne sont pas sur le serveur sont listés.
-
-## Statistiques
-
-*Paramètres → Serveur → Statistiques* (sur 7 jours, 30 jours, 3 ou 12 mois) :
-
-- temps de visionnage, nombre de lectures, comptes actifs, part des lectures converties, données envoyées (estimées d'après le débit de la vidéo et du son) ;
-- heures de visionnage par jour ;
-- par compte : temps, lectures, titres, données, conversions, dernière lecture ;
-- les titres les plus regardés (un épisode compte pour sa série) ;
-- les **titres jamais regardés** : films et séries que personne n'a commencés, ajoutés il y a plus de 90 jours, les plus gros d'abord, avec la place qu'ils occupent.
-
-Chaque lecture de plus de 30 secondes est notée à sa fin. En **mode privé**, la durée compte mais le titre n'est pas gardé. Les statistiques commencent avec la version 3.49 ; avec le sélecteur de serveur, celles d'un serveur lié.
-
-## Alertes pour les administrateurs
-
-*Paramètres → Serveur → Vue d'ensemble → Alertes* : Nexis vérifie toutes les 5 minutes que tout va bien, et prévient les administrateurs par **notification push** (sur les appareils où elles sont activées, *Paramètres → Profil*) :
-
-- **disque presque plein** pour les données de Nexis ou les sauvegardes (moins de 10 Go libres par défaut, ou moins de 3 %) ;
-- **dossier de bibliothèque inaccessible**, ou vide alors qu'il contenait des titres (partage réseau démonté) ;
-- **serveur lié injoignable** depuis plus de 15 minutes ;
-- **tâche planifiée en échec** (scan, sauvegarde, sous-titres…).
-
-Une alerte est envoyée une fois, rappelée une fois par jour si le problème dure, et disparaît d'elle-même une fois réglé. Chaque type d'alerte se coupe séparément ; *Envoyer une alerte de test* vérifie la réception.
-
-## Personnalisation
-
-Chaque utilisateur règle son interface dans *Paramètres → Mon compte* ; ces réglages sont propres à son profil, le suivent sur les serveurs liés, et *Profil → Revenir aux réglages par défaut* les remet à zéro. Un administrateur peut copier les réglages d'un compte vers un autre (fiche de l'utilisateur → *Copier les réglages de…*), par exemple pour les profils des enfants :
-
-- **Profil** : nom, photo (image envoyée ou avatar prédéfini), **langue de l'interface** (français ou anglais), code PIN, mot de passe.
-- **Lecture** : qualité, langues, enchaînement des épisodes, **apparence des sous-titres** (taille, police, couleur, fond, bordure, position, avec aperçu ; ne s'applique pas aux sous-titres ASS stylés ni aux PGS) et **anti-spoiler** (vignettes floutées et résumés masqués pour les épisodes non vus ; un clic affiche le résumé). **Langues par bibliothèque** : d'autres langues pour une bibliothèque (les animes en japonais sous-titré, les films en français…). **Lecteur** : durée des boutons reculer (5 à 30 s) et avancer (10 à 90 s), vitesse de départ, volume gardé d'une lecture à l'autre (par défaut), son « nuit » (dialogues renforcés, effets atténués, pour le son 5.1 / 7.1 converti).
-- **Apparence** :
-  - **style de l'interface**, qui change la disposition et pas seulement les couleurs (aperçu en maquette, se combine avec tous les thèmes) :
-    - *Classique* : barre en haut sur la grande image (par défaut) ;
-    - *Verre dépoli* : barre flottante et panneaux translucides, bannière en carte arrondie ;
-    - *Barre latérale* : navigation à gauche avec icônes, recherche et profil en bas (sur grand écran ; en haut sur téléphone) ;
-    - *Épuré* : plat, angles droits, pas d'ombres, titres discrets ;
-    - *Cinéma plein écran* : bannière sur tout l'écran, titre des affiches au survol, fiche en grand ;
-    - *Arrondi* : formes très arrondies, menu en pastilles, boutons en dégradé.
-    Un appareil peut garder son propre style (*Cet appareil*), par exemple *Classique* sur la TV et *Barre latérale* sur l'ordinateur. Ces styles sont écrits pour Nexis, dans l'esprit des thèmes connus des serveurs multimédia ; les thèmes CSS faits pour Jellyfin ne s'appliquent pas tels quels, car l'interface est différente ;
-  - **thème** : sombre, noir profond (OLED), bleu nuit, clair, sépia, contraste élevé, ou automatique (clair ou sombre comme l'appareil, et suit son changement) ;
-  - **magasin de thèmes** (*Paramètres → Magasin de thèmes*, voir plus bas) : des thèmes complets, avec leurs effets, en plus des thèmes de base ;
-  - **couleur d'accent** : 9 proposées ou n'importe quelle autre ;
-  - **taille du texte** (petite à très grande), **densité** (compacte, normale, aérée), taille des affiches ;
-  - **cartes** : titre et année, barre de progression, coche « vu », badges 4K / HDR et « Nouveau » (affichés par défaut), note TMDB (en option) ;
-  - **fond d'écran**, estompé derrière les pages : l'image d'un titre (menu ⋯ de sa fiche → *Utiliser comme fond d'écran*), un de vos titres différent chaque jour (liste « À regarder », notés 4 ou 5 étoiles, regardés récemment), un dégradé, une couleur, ou une image envoyée (gardée sur ce serveur).
-- **Cet appareil** : qualité et taille des sous-titres propres à ce navigateur ou à cette TV, animations réduites, **effets visuels** (complets, ou allégés : sans flou, transparence ni ombres, pour une TV ou un appareil modeste ; choisis tout seuls sur un appareil qui a peu de mémoire ou de cœurs), navigation à la télécommande forcée ou désactivée. Ces réglages restent sur l'appareil et priment sur ceux du profil.
-- **Contenu et notifications** :
-  - **genres masqués** : les films et séries d'un genre (horreur, par exemple) n'apparaissent plus pour soi, dans les bibliothèques, l'accueil, la recherche et les suggestions ; leur fiche reste accessible par un lien direct ;
-  - **mode privé** (désactivé par défaut) : la progression reste enregistrée pour reprendre, mais rien ne s'ajoute à l'historique, rien ne part vers Trakt, et les administrateurs voient « Lecture privée » au lieu du titre dans les lectures en cours ;
-  - **notifications** : nouveaux épisodes des séries suivies (actives par défaut, à couper), **séries en sourdine** (menu ⋯ d'une série → *Ne plus être prévenu des nouveaux épisodes*), **heures calmes** (ex. 22 h à 8 h, heure du serveur) pendant lesquelles les notifications restent dans la cloche sans faire sonner les appareils. Les alertes d'administration et l'arrivée d'un titre demandé passent toujours.
-- **Accueil et menu** : **page d'ouverture** (accueil, « À regarder », Découvrir, TV en direct ou une bibliothèque), ordre et affichage des rangées et des liens. Une collection, une playlist ou un genre d'une bibliothèque s'**épingle sur l'accueil** avec le bouton *Épingler à l'accueil* de sa page (20 rangées au plus). **Mes rangées** : des rangées à soi (nom, bibliothèque, genre, vus ou non, années, tri, nombre de titres), créées et modifiées dans *Accueil et menu*. **Grande bannière** : la reprise en cours (sinon un ajout récent, par défaut), un ajout récent, un titre au hasard, un titre de « À regarder », ou aucune.
-
-### Magasin de thèmes
-
-*Paramètres → Magasin de thèmes* propose des thèmes complets : couleurs, fond en dégradé, police, arrondi des angles et effets (néon, lignes d'écran, grain de pellicule, ciel étoilé, vignettage, halo des affiches), avec un style d'interface conseillé.
-
-- **Fournis avec Nexis** : Ville néon (cyberpunk), Rétro 80 (synthwave), Vaporwave, Arcade, Terminal, Héros, Ville sombre, Galaxie, Aurore boréale, Désert, Western, Steampunk, Forêt, Océan profond, Épouvante, Halloween, Noël, Ciné-club, Film noir, Kawaii, Pastel et Givre.
-- **Proposés par la communauté** : chacun peut ajouter son thème au dépôt GitHub (dossier [`static/themes`](static/themes/README.md)). L'intégration continue vérifie chaque proposition, un responsable relit puis fusionne, et tous les serveurs le proposent ensuite (index relu toutes les 6 heures par le serveur ; les appareils ne contactent pas GitHub).
-- **Aperçu** essaie un thème sur toute l'interface sans rien changer ; **Installer** l'ajoute à *Mes thèmes* (20 au plus). Les thèmes installés suivent le compte sur les serveurs liés, et restent utilisables si le magasin est injoignable.
-- **Créer un thème** : éditeur avec aperçu en direct sur toute l'interface, puis *Enregistrer et utiliser*, *Exporter* (fichier `.json`, à réimporter ou partager) ou *Proposer sur GitHub* (GitHub s'ouvre avec le fichier déjà rempli : il reste à valider la demande de fusion).
-- **Sécurité** : un thème n'est qu'une description vérifiée par le serveur, jamais du code ni une image (ni CSS libre, ni adresse) : un thème venu d'ailleurs ne peut ni imiter un écran de connexion, ni envoyer quoi que ce soit hors du serveur. Le contraste du texte est contrôlé pour qu'il reste lisible.
-- **Noms** : pas de nom de film, de personnage ou de marque dans le magasin ; on s'en inspire librement sous un nom à soi (« Héros », « Terminal »…).
-- **Administrateur** : en bas de la page, désactiver le magasin en ligne ou le faire pointer vers son propre dépôt de thèmes.
-
-**Sélection multiple** : bouton **Sélectionner** d'une bibliothèque ; un clic coche les titres au lieu de les ouvrir (*Tout* pour ceux affichés). Ensuite : marquer vus ou non vus, télécharger (films et épisodes), ajouter à une playlist (existante ou nouvelle), masquer pour soi ; pour un administrateur, actualiser les métadonnées ou ajouter à une collection.
-
-**Bibliothèques** : bouton **Filtres** pour trier par visionnage (non vus, en cours, vus), décennie, durée, définition (4K, 1080p…), HDR, langue audio, sous-titres et note ; une combinaison de filtres s'épingle sur l'accueil. Affichage en affiches, vignettes larges ou liste détaillée (retenu par bibliothèque). **Au hasard** lance un film (ou ouvre une série) pas encore vu, selon le genre choisi.
-
-**Recherche** : titres, épisodes, mais aussi personnes (distribution, réalisation), genres et année (« 1994 ») ; sans résultat exact, les titres les plus proches sont proposés (faute de frappe). Les noms de la distribution sont cliquables : la fiche d'une personne liste ses films et séries du serveur.
-
-**Lecteur** : vitesse (0,75× à 2×, touches `<` et `>`), minuterie de mise en veille (fin de l'épisode ou du film, 15 à 90 min), lecture **aléatoire** des épisodes d'une série.
-
-**Accueil** : rangées « Pour une soirée courte » (films de moins de 1 h 30 pas encore vus) et « Séries à reprendre » (commencées puis laissées de côté depuis 2 mois), à afficher ou masquer comme les autres.
-
-**Ma note** : sur la fiche d'un film ou d'une série, une note de 1 à 5 étoiles, à soi. Elle oriente aussi les suggestions (4 ou 5 = j'aime, 1 ou 2 = je n'aime pas) et sert de tri dans les bibliothèques (« Ma note »).
-
-**Masquer pour moi** (menu ⋯ d'une fiche) : le titre disparaît de ses propres bibliothèques, de l'accueil, de la recherche et des suggestions. Les autres comptes le voient toujours, et la liste des titres masqués se trouve dans *Paramètres → Accueil et menu*.
-
-**Playlists partagées** : sur sa playlist, *Partager avec le foyer* la rend visible par tous les comptes du serveur, qui peuvent la compléter et la réordonner. Seule la personne qui l'a créée peut la renommer, arrêter le partage ou la supprimer, et chacun n'y voit que les titres auxquels il a accès.
-
-**Raccourcis clavier** : la touche `?` affiche l'aide partout dans Nexis, et `/` place le curseur dans la recherche. Les touches du lecteur se changent dans *Paramètres → Cet appareil*.
-
-**Diffuser sur une TV** : dans le lecteur, le bouton **AirPlay** (Safari sur Mac, iPhone, iPad) envoie la vidéo vers une Apple TV, et le bouton **Chromecast** (Chrome ou Edge) vers un Chromecast ou une Google TV. Ils n'apparaissent que si un appareil est trouvé sur le réseau.
-- C'est la TV qui lit la vidéo : le serveur lui prépare un flux qu'elle sait lire (Chromecast : H.264 et AAC, converti si besoin ; Apple TV : H.264 ou HEVC, son Dolby transmis).
-- La progression du compte suit la lecture sur la TV, et arrêter la diffusion reprend la vidéo sur l'appareil.
-- Ce flux se lit sans la session du navigateur, par son adresse secrète (aléatoire, valable le temps de la lecture). La TV doit pouvoir joindre le serveur à la même adresse que le navigateur.
-- Le bouton Chromecast charge le SDK Cast de Google (www.gstatic.com) à l'ouverture du lecteur, dans Chrome et Edge seulement.
-- Pas encore de sous-titres sur la TV.
-
-**Télécommande** (menu du profil → *Télécommande*) : depuis le téléphone, on pilote la vidéo qui passe sur un autre appareil du même compte (ordinateur, TV, tablette) : lecture et pause, position, ±10/30 s, épisode suivant, volume, langue audio, sous-titres, vitesse, arrêt. L'appareil s'y affiche dès qu'il lit quelque chose, sous le nom choisi dans *Paramètres → Cet appareil*.
-
-**Notifications push** (*Paramètres → Cet appareil → Notifications*) : un nouvel épisode d'une série suivie, ou un titre demandé dans *Découvrir* qui arrive, déclenche une notification sur l'appareil, même Nexis fermé. Elles demandent HTTPS ; sur iPhone et iPad, Nexis doit être installé sur l'écran d'accueil (iOS 16.4 ou plus récent). Le serveur ne contacte que les services push des navigateurs (Google, Mozilla, Apple, Microsoft), avec des messages vides : le contenu est demandé à Nexis par l'appareil. **Application Android** (version 1.1 et plus) : sa vue web ne gère pas les notifications des sites, c'est donc l'application qui les affiche. Au premier réglage, Android demande l'autorisation ; l'appareil reçoit un jeton propre (révocable en désactivant le réglage) et vient lui-même chercher ses messages sur le serveur toutes les 15 minutes environ, même application fermée et après un redémarrage du téléphone. Aucun service tiers (ni Google, ni compte développeur) ; en contrepartie, une notification peut arriver avec quelques minutes de retard, davantage quand le téléphone est en veille prolongée. Un appareil qui ne s'est plus manifesté depuis 60 jours est désinscrit.
-
-**Avis** : sur la fiche d'un film ou d'une série, *J'aime* et *Je n'aime pas* orientent les suggestions (les titres proches d'un titre non aimé reculent) ; *Ne plus suggérer* (menu ⋯) l'exclut des suggestions et des titres similaires.
-
-**Notifications** : la cloche de la barre du haut signale les épisodes ajoutés depuis moins de 30 jours, et pas encore vus, des séries suivies (dont un épisode a été regardé, ou présentes dans « À regarder »).
-
-**Bilan** : la page *Historique* présente, par année ou par mois, le temps de visionnage, le nombre de films et d'épisodes, les jours actifs, la plus longue série de jours consécutifs, le jour préféré, la répartition par mois, les genres et les titres les plus regardés.
-
-**Langue** : chaque utilisateur choisit sa langue dans *Paramètres → Profil* ; elle le suit sur tous ses appareils, appli Android TV comprise. L'administrateur choisit la langue des nouveaux comptes et de la page de connexion dans *Paramètres → Utilisateurs* (à l'installation, c'est la langue choisie sur la page d'installation), et peut régler la langue de chaque compte. La langue des résumés et titres venant de TMDB reste un réglage du serveur (*Paramètres → Métadonnées*).
-
-**Interface enfant** : option du compte (*Paramètres → Utilisateurs*), à combiner avec une restriction d'âge. Grandes vignettes, textes plus gros, menu limité à l'accueil, « À regarder » et aux bibliothèques ; Découvrir, la TV en direct et la création de groupes sont masqués.
-
-## Double authentification
-
-Chaque utilisateur qui se connecte avec un mot de passe peut l'activer dans *Paramètres → Profil* : un code à 6 chiffres, généré par une application d'authentification (Google Authenticator, Microsoft Authenticator, Aegis, 2FAS, Bitwarden…), est alors demandé à chaque connexion. Les profils gérés (sans mot de passe) ne sont pas concernés.
-
-- **Activation** : mot de passe, QR code à scanner (ou clé à saisir), puis un premier code pour confirmer. Les autres appareils connectés à ce compte sont déconnectés.
-- **Codes de secours** : 10 codes à usage unique, affichés une seule fois à l'activation (à copier, télécharger ou imprimer). Ils remplacent le téléphone en cas de perte ; de nouveaux codes se génèrent depuis la même page.
-- **Changement de profil** : passer sur un compte protégé demande aussi son code.
-- **Téléphone perdu** : un administrateur la réinitialise depuis la fiche de l'utilisateur (*Paramètres → Utilisateurs → Modifier → Réinitialiser*). L'utilisateur se connecte alors avec son mot de passe et peut la réactiver.
-- **Administrateur sans accès** : en dernier recours, sur le serveur, en root :
-  ```bash
-  nexis list-users              # comptes et état de leur double authentification
-  nexis reset-2fa <identifiant> # désactive la double authentification de ce compte
-  ```
-  Avec Docker : `docker compose exec nexis python3 -m seance reset-2fa <identifiant>`.
-- La *Vue d'ensemble* indique combien d'administrateurs l'ont activée.
-
-Les codes suivent la norme TOTP (RFC 6238) ; un code déjà utilisé est refusé, et les tentatives erronées sont limitées comme pour le mot de passe.
-
-## Collections, « À regarder » et playlists
-
-- **Collections** : lorsqu'un film appartient à une saga selon TMDB, la collection est créée automatiquement (affiche, fond et résumé compris). Elle apparaît dans l'onglet **Collections** de la bibliothèque et sur la fiche des films concernés. Un administrateur peut créer, renommer ou supprimer ses propres collections (menu ⋯ → *Collections…*).
-- **À regarder** : le bouton signet ajoute un film ou une série à la liste personnelle (onglet *À regarder* et rangée de l'accueil). Un film marqué comme vu en est retiré.
-- **Playlists** : menu ⋯ → *Ajouter à une playlist…* sur un film, un épisode, une saison ou une série. *Tout lire* enchaîne les éléments dans l'ordre défini. Chaque utilisateur a ses propres playlists.
-
-### Bonus et bandes-annonces
-
-Les bonus sont reconnus à côté du film ou dans le dossier de la série :
-
-| Dossier | Ou suffixe du fichier | Type |
-|---|---|---|
-| `Trailers/`, `Bandes-annonces/` | `-trailer`, `-bande-annonce` | Bande-annonce |
-| `Featurettes/` | `-featurette` | Featurette |
-| `Behind The Scenes/`, `Making of/` | `-behindthescenes` | Coulisses |
-| `Deleted Scenes/`, `Scènes coupées/` | `-deleted` | Scène coupée |
-| `Interviews/` | `-interview` | Interview |
-| `Scenes/` | `-scene` | Scène |
-| `Shorts/` | `-short` | Court métrage |
-| `Extras/`, `Bonus/`, `Other/` | `-other` | Bonus |
-
-Exemple : `Films/Inception (2010)/Trailers/Bande-annonce VF.mkv` ou `Films/Inception (2010)/Inception (2010)-trailer.mp4`. Les bonus ne sont jamais comptés comme des films ou des épisodes. Sans bande-annonce locale, celle de TMDB est lue depuis YouTube (mode sans cookies).
-
-## Découvrir et demander
-
-L'onglet **Découvrir** présente les catalogues des plateformes de streaming disponibles en France (Netflix, Prime Video, Disney+, Canal+, Max, Apple TV+, Paramount+, Crunchyroll, ADN), les tendances de la semaine et une recherche. Chaque titre indique s'il est **déjà sur le serveur**, **demandé** ou **en cours de téléchargement**. Une clé TMDB est nécessaire.
-
-Le bouton **Demander** transmet la demande à [Seerr](https://docs.seerr.dev), qui la relaie à Radarr / Sonarr ; pour une série, les saisons se choisissent. Un titre absent ajouté à **À regarder** est demandé automatiquement (désactivable) et rejoint la liste dès son arrivée sur le serveur.
-
-### Configuration de Seerr
-
-1. Installer Seerr ([documentation](https://docs.seerr.dev)) et le relier à Radarr et Sonarr.
-2. Dans Seerr, *Settings → General* : copier la **clé d'API**.
-3. Dans Nexis, *Paramètres → Médiathèque → Demandes* : saisir l'adresse de Seerr (ex. `http://192.168.1.20:5055`) et la clé, puis *Enregistrer et tester*.
-
-Lorsqu'un compte Seerr correspond à un compte Nexis (identifiant, nom affiché ou début de l'adresse e-mail), la demande est faite **à son nom** et les règles de Seerr s'appliquent (validation, quotas). Sinon, elle est faite au nom du propriétaire de la clé d'API.
-
-## Langue audio et sous-titres
-
-Sur la fiche d'un film, d'un épisode ou d'une série, l'audio et les sous-titres peuvent être choisis avant la lecture. Le choix est **mémorisé pour toute la série** (ou le film) et pour chaque utilisateur ; un changement fait dans le lecteur est mémorisé de la même façon.
-
-**Sous-titres « forcés »** (« FR Forced », « Signs & Songs »…) : ils ne traduisent que les panneaux, inscriptions et chansons. Nexis ne les propose que si l'audio est dans leur langue, et les sélectionne alors automatiquement ; avec un autre audio, la piste complète est utilisée.
-
-**Films HDR.** Quand un film HDR (HDR10, HDR10+, HLG, Dolby Vision avec base HDR10) doit être transcodé, ses couleurs sont converties en SDR (BT.709) pour un écran ordinaire ; sans cela, l'image paraît délavée et grise. La lecture directe et le remux d'un fichier HDR ne sont pas touchés. Méthode réglable dans *Paramètres → Lecture → Transcodage* : Hable (par défaut), Mobius, Reinhard ou désactivée. La conversion passe par le processeur (filtre `zscale` d'ffmpeg, présent dans l'image Docker) et coûte environ un cœur de plus en 1080p, même avec une carte graphique.
-
-Les pistes 5.1 / 7.1 (AC3, E-AC3, DTS, TrueHD, AAC 5.1…) sont mixées en stéréo selon le réglage de *Paramètres → Lecture → Sous-titres et son* (ffmpeg, Dave750, Dialogues (nuit), RFC 7845 ou AC-4), suivi d'un gain réglable. Un limiteur empêche toute saturation.
-
-## Sauvegarde et restauration
-
-*Paramètres → Serveur → Sauvegardes* :
-
-- **Contenu.** L'archive (`.tar.gz`) contient la base (comptes et mots de passe chiffrés, double authentification, historique, notes, playlists, réglages, bibliothèques et métadonnées), l'identité des serveurs liés, la clé des notifications, les images de profil et les sous-titres téléchargés. Les vidéos et les photos n'y sont pas ; les caches se refont tout seuls.
-- **Noms.** `nexis-<serveur>_<date>-<heure>-auto.tar.gz` (par exemple `nexis-salon_20261107-043000-auto.tar.gz`) : le nom du serveur d'origine en tête, pour s'y retrouver quand plusieurs serveurs se gardent leurs sauvegardes. `-auto` : automatique ; sans suffixe : faite à la main ; `-envoi` / `-restauree` : reçue d'un fichier ou d'un stockage externe.
-- **Automatique.** Chaque nuit à 4 h 30 par défaut (réglable, ou chaque semaine), en gardant les 7 dernières de chaque serveur. Les sauvegardes faites à la main ne sont jamais supprimées.
-- **Dossier.** `data/backups` par défaut ; mieux vaut un autre disque ou un NAS : avec Docker, monter le dossier (`- /mnt/nas/nexis:/backups`) et l'indiquer comme *Dossier des sauvegardes*. Les archives ne sont lisibles que par Nexis (droits 600).
-- **Recopie entre serveurs liés.** Chaque sauvegarde est aussi envoyée aux serveurs liés, qui gardent celles de chaque serveur à part (section *Copies de « … »*). Si un serveur tombe en panne, sa dernière sauvegarde est chez un autre. Chaque serveur peut couper l'envoi ou la réception. Un serveur lié ne peut déposer que ses propres sauvegardes.
-- **Stockages externes.** Chaque sauvegarde peut aussi partir sur un ou plusieurs stockages, chacun gardant le nombre de copies choisi :
-  - **S3** : AWS, Backblaze B2, Wasabi, Scaleway, OVH, MinIO… (adresse, région, compartiment, clé d'accès) ;
-  - **Google Drive** : une application OAuth à créer une fois sur console.cloud.google.com (type « TV et appareils à saisie limitée », API Google Drive activée), puis le compte relié par un code ; Nexis ne voit que les fichiers qu'il a créés (dossier *Nexis*) ;
-  - **OneDrive** : une application à inscrire une fois sur portal.azure.com (flux clients publics autorisés), puis le compte relié par un code ; Nexis n'écrit que dans son dossier d'application.
-  Les étapes détaillées sont affichées dans la fenêtre d'ajout.
-- **Chiffrement.** Avec une phrase secrète (*Chiffrement des copies hors du serveur*), les copies envoyées sur S3, Google Drive et OneDrive sont chiffrées (AES-256, fichier `.tar.gz.enc`) : le service ne peut pas les lire. Gardez la phrase ailleurs : sans elle, ces copies ne se restaurent pas.
-- **Restaurer.** Au choix : *Restaurer* sur une sauvegarde de la liste (y compris une copie d'un serveur lié) ; *Restaurer depuis un fichier…* (un fichier de l'appareil, `.tar.gz` ou `.enc`) ; *Restaurer depuis un fichier du serveur…* (un chemin, par exemple sur un disque monté) ; ou *Voir les sauvegardes* d'un stockage externe puis *Restaurer*. Nexis vérifie l'archive, redémarre et la met en place avant d'ouvrir la base ; l'état d'avant est gardé dans `data/before-restore-<date>`. Une sauvegarde d'une version plus récente de Nexis est refusée ; une plus ancienne est mise à niveau au démarrage.
-- **Remplacer un serveur en panne.** Installer Nexis sur la nouvelle machine, créer le compte administrateur, puis *Restaurer depuis un fichier…* avec la sauvegarde téléchargée depuis un serveur lié (*Copies de « … »*) ou un stockage externe. Le serveur reprend l'identité de l'ancien : les serveurs liés le reconnaissent. En console, Nexis arrêté : `python3 -m seance --data /var/lib/seance restore archive.tar.gz` (ajouter `--passphrase "…"` pour une archive `.enc`).
-
-## Sécurité
-
-L'audit, les correctifs et les risques acceptés sont décrits dans [docs/AUDIT-SECURITE.md](docs/AUDIT-SECURITE.md) (version 3.1.0) et [docs/AUDIT-SECURITE-2026-10.md](docs/AUDIT-SECURITE-2026-10.md) (version 3.19.0 : mise à jour, bibliothèques en lecture seule, composants tiers). Les questions juridiques (licences, marque, TMDB, droit d'auteur, RGPD) sont traitées dans [docs/AUDIT-JURIDIQUE.md](docs/AUDIT-JURIDIQUE.md). Monter les dossiers de médias **en lecture seule** : Nexis n'a besoin que de les lire, et signale dans *Paramètres → Bibliothèques* un dossier où il pourrait écrire. Recommandations principales : n'exposer Nexis sur Internet que derrière un reverse proxy HTTPS (`SEANCE_COOKIE_SECURE=1`, `SEANCE_TRUST_PROXY=1`), et n'ajouter que des listes IPTV de fournisseurs de confiance.
-
-## Dépannage
-
-*Paramètres → Serveur → Vue d'ensemble* affiche l'état du serveur (mémoire, swap, charge) et, pour chaque lecture, le mode (direct, remux, transcodage), sa raison, la **vitesse de conversion** (en dessous de ×1, le processeur ne suit pas) et les derniers messages de ffmpeg. *Informations sur le fichier* (menu ⋯ d'un film ou d'un épisode) liste les pistes du fichier.
-
-| Symptôme | Piste |
+| Any browser | Web app | Open the server address; **Install app** from the profile menu (HTTPS required) |
+| Windows 10 / 11 | `Nexis-Setup.exe` | Profile menu → **Install app**, or the **Apps** page of your server |
+| macOS 12+ (Intel and Apple silicon) | `Nexis.dmg` | Same |
+| Linux | `Nexis.AppImage` or `.deb` | Same |
+| Android phones and tablets | `nexis-android.apk` | Same |
+| Android TV, Google TV, Shield | `nexis-tv.apk` | With the *Downloader* app, type `<your-server>/tv` |
+| iPhone and iPad | Web app | Safari → Share → **Add to Home Screen** |
+
+Apps are served by your own server and keep themselves up to date. Details in [Apps and offline viewing](docs/apps.md).
+
+## Documentation
+
+| Guide | What's inside |
 |---|---|
-| « Linux interdit le montage SMB… » | Conteneur LXC non privilégié : voir « Accès aux médias » |
-| « Montage refusé (identifiants valides) » | Conteneur privilégié sans l'option : `pct set <ID> -features mount=cifs,nesting=1`, puis redémarrer |
-| Partage « Non monté » | Bouton *Remonter* ; journal : `journalctl -u seance-mountd -n 50` |
-| « Dossier inaccessible » au scan | Montage non visible dans le conteneur : `ls /mnt/films` puis `runuser -u seance -- ls /mnt/films` |
-| Film mal reconnu | Fiche → Identifier…, ou renommer en `Titre (Année)` |
-| Épisodes « non reconnus » | Ajouter `S01E02` ou ` - 02` au nom |
-| « Trop de transcodages simultanés » | Augmenter la limite si le processeur le permet, ou utiliser une source H.264 |
-| Lecture qui ne démarre pas | `journalctl -u seance -f` pendant l'essai ; `SEANCE_DEBUG=1` dans `/etc/seance/seance.env` affiche les commandes ffmpeg |
-| Pages lentes | Le journal note toute requête de plus de 5 s (« Requête lente : GET /api/… ») : `journalctl -u seance | grep 'Requête lente'` (Docker : `docker logs nexis 2>&1 \| grep 'Requête lente'`). Une affiche absente n'est plus cherchée qu'une fois toutes les 30 min, et une image d'un serveur lié hors ligne n'est pas attendue. Serveur éloigné (latence élevée) : à l'ouverture, l'état du serveur, le compte et l'accueil sont demandés en même temps que le code se charge, le code d'une version déjà vue vient du cache de l'appareil sans rien redemander, et chaque page (bibliothèque, fiche) n'attend qu'un aller-retour |
-| Saccades, swap saturé (LXC) | Un transcodage 4K occupe 0,5 à 0,7 Go : prévoir 2 Go de mémoire par transcodage simultané et 1 à 2 Go de swap |
-| Ancienne interface après une mise à jour | Recharger la page ; depuis la 3.14.1, le code de l'interface change d'adresse à chaque version |
-| Double authentification perdue (administrateur) | `sudo nexis reset-2fa <identifiant>` sur le serveur |
-| Code d'installation perdu | `cat /var/lib/seance/setup-code.txt` (tant qu'aucun compte n'existe) |
+| [Installation](docs/installation.md) | Proxmox LXC, install script, `.deb`, Docker, NAS shares, graphics cards, HTTPS, updates |
+| [Getting started](docs/getting-started.md) | First launch, metadata, libraries, file naming, users and profiles |
+| [Playback, transcoding and subtitles](docs/playback.md) | How Nexis chooses how to play, quality, HDR, audio, subtitles, intros, casting, watch together |
+| [Apps and offline viewing](docs/apps.md) | Web app, desktop and Android apps, Android TV, downloads, notifications, remote control |
+| [Linked servers](docs/linked-servers.md) | Pairing servers, shared accounts and libraries, network setup |
+| [Cold storage](docs/cold-storage.md) | Archiving, compression, freeing up space with Radarr / Sonarr |
+| [Photos, audiobooks, live TV and DLNA](docs/more-libraries.md) | The libraries that are not movies or shows |
+| [Personalization and discovery](docs/personalization.md) | Layouts, themes and the theme store, home screen, lists, Discover, Seerr, Trakt |
+| [Administration](docs/administration.md) | Settings, scheduled tasks, statistics, alerts, backups, 2FA, security |
+| [Troubleshooting](docs/troubleshooting.md) | Common problems and where to look |
+| [Development](docs/development.md) | Running from source, tests, code layout, translations, contributing |
 
-Réinitialisation d'un mot de passe en ligne de commande :
+## Project status
 
-```bash
-cd /opt/seance && sudo -u seance python3 -c "
-from seance.db import DB; from seance.auth import hash_password
-db = DB('/var/lib/seance/seance.db')
-db.run('UPDATE users SET password_hash=? WHERE username=?', (hash_password('NouveauMotDePasse'), 'admin'))
-db.run('DELETE FROM sessions')"
-```
+Nexis **4.0** is the first stable release. Releases follow [semantic versioning](https://semver.org): servers update themselves from the interface, and a *Test* update channel lets you try new features before they reach *Stable*. See the [changelog](https://github.com/xenix13/Nexis/releases).
 
-## Développement
+## Contributing
 
-```bash
-python3 -m seance --data ./data --port 8420        # serveur local
-python3 -m unittest discover -s tests -t .          # tests : fichiers générés par ffmpeg et TMDB simulé
-python3 tests/ui_smoke.py ./captures video.webm     # parcours navigateur (Playwright) avec captures
-python3 tests/ui_features.py ./captures video.webm  # chapitres, tâches, TV en direct, regarder ensemble, paramètres
-python3 tests/hls_real.py chemin/vers/hls.min.js     # lecture réelle hls.js (VP9/Opus) : reprise, sauts, PGS
-```
+Bug reports, ideas, translations and themes are very welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) first; security issues go through [SECURITY.md](SECURITY.md), not public issues.
 
-Organisation de `seance/` :
-- `scanner.py`, `names.py` : scan et reconnaissance des noms de fichiers
-- `metadata.py` : TMDB et `.nfo` ; `images.py` : images
-- `transcoder.py` : décision de lecture, ffmpeg et HLS
-- `mountd.py` : service root de montage des partages SMB
-- `watcher.py` : détection des nouveautés ; `subcache.py` : préparation des sous-titres
-- `tasks.py` : tâches planifiées ; `chapters.py` : images de chapitres ; `introdetect.py` : intros par empreinte audio
-- `livetv.py` : TV en direct ; `syncplay.py` : « Regarder ensemble »
-- `update.py` : mise à jour depuis l'interface ; `downloads.py` : téléchargements hors ligne ; `stats.py` : statistiques ; `themes.py` : magasin de thèmes ; `suggest.py` : suggestions et avis ; `notify.py` : notifications et bilan
-- `api.py` : assemblage du serveur ; `catalog.py` : outils partagés par les routes ; `routes/` : routes HTTP par thème
-- `twofa.py` : double authentification ; `auth.py`, `db.py`, `web.py` : socle
-- `i18n.py`, `lang_en.py` : langue des messages du serveur
+## Credits
 
-L'interface (`static/`) est en JavaScript, sans étape de compilation.
+Nexis builds on [ffmpeg](https://ffmpeg.org), [hls.js](https://github.com/video-dev/hls.js), [JASSUB](https://github.com/ThaUnknown/jassub) / libass, [libpgs](https://github.com/Arcus92/libpgs-js), the Inter, Outfit and Liberation Sans fonts, AndroidX Media3 and Electron. Their licences are in [`static/vendor`](static/vendor) and [`static/fonts`](static/fonts).
 
-**Traductions.** Le texte français du code sert de clé : `tr('Paramètres')` dans l'interface (`static/js/i18n.js`, traductions dans `static/js/i18n/en.js`), `tr("Introuvable")` côté serveur (`seance/i18n.py`, traductions dans `seance/lang_en.py`, où `{}` remplace une partie variable), `Tr.t("…")` dans l'appli TV (`Tr.java`). `plural(n, '{n} film', '{n} films')` choisit la forme selon la langue ; un même mot à traduire de deux façons prend un contexte : `tr('bouton|Lecture')`. `tests/test_i18n.py` vérifie que chaque texte de l'interface et chaque message d'erreur du serveur a sa traduction. Ajouter une langue : un fichier `static/js/i18n/<code>.js`, un `seance/lang_<code>.py`, et le code dans `LANGUAGES` (`i18n.js`, `i18n.py`).
+This product uses the TMDB API but is not endorsed or certified by [TMDB](https://www.themoviedb.org). Map tiles © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
 
-## Feuille de route
+The demo titles in the screenshots are fictional; their posters and videos were generated for this documentation ([`tools/screenshots`](tools/screenshots)).
 
-### À faire
-- [ ] « Regarder ensemble » : seconde passe d'optimisation après les tests réels
+## License
 
-### Réalisé
-- Interface multi-utilisateurs, profils, code PIN, contrôle parental, photos et galerie d'avatars, interface enfant
-- Double authentification (TOTP) avec codes de secours, réinitialisation par l'administrateur et en console
-- Personnalisation : apparence des sous-titres, anti-spoiler, page d'ouverture, rangées épinglées, réglages par appareil, avis sur les titres, notifications de nouveaux épisodes, bilan de visionnage
-- Scan, TMDB, lecture directe / remux / transcodage, transcodage matériel (NVENC, VAAPI)
-- Détection des intros et génériques par empreinte audio
-- Collections, « À regarder », playlists, bonus et bandes-annonces, suggestions
-- Découvrir et demandes via Seerr, TV en direct, Regarder ensemble
-- Fichiers `.strm`
-- Paquet `.deb`, image Docker, conteneur Proxmox en une commande, mise à jour depuis l'interface
-- Paramètres regroupés en un seul espace avec recherche
-- Interface en français et en anglais (langue par utilisateur, langue par défaut choisie par l'administrateur)
-- Photothèque (albums, chronologie, visionneuse, EXIF) et serveur DLNA / UPnP
-- Serveurs liés : jumelage par invitation, liaison TLS à certificats épinglés, tunnel inverse, comptes répliqués, bibliothèques partagées ou fusionnées (un titre une seule fois, meilleure copie choisie automatiquement), lecture relayée, répartition des lectures selon la charge, clé TMDB et Seerr partagés, Regarder ensemble entre serveurs
-- Web app installable, téléchargements hors ligne, navigation à la télécommande et à la manette, application Android TV native (lecture directe des MKV, son multicanal transmis à l'ampli)
-- Sauvegarde automatique et restauration (y compris sur un nouveau serveur), conversion HDR → SDR au transcodage
-- Sous-titres manquants : OpenSubtitles intégré (sans Bazarr), et transcription Whisper
-- Alertes pour les administrateurs, limites par compte, temps d'écran des profils
-- Trakt (synchronisation dans les deux sens) et Letterboxd (export et import)
-- Livres audio et lecteur audio persistant
+See [LICENSE](LICENSE).

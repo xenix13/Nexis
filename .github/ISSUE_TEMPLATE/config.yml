@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/xenix13/Nexis#documentation
+    about: Installation, configuration and troubleshooting guides.
+  - name: Report a security vulnerability
+    url: https://github.com/xenix13/Nexis/security/advisories/new
+    about: Please report security issues privately.

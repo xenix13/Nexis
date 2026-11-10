@@ -2,6 +2,9 @@ name: Tests
 on:
   push:
   pull_request:
+# droits du jeton par défaut : lecture seule ; les tâches qui publient demandent les leurs
+permissions:
+  contents: read
 jobs:
   api:
     # même système que l'image Docker (ubuntu:24.04, ffmpeg 6.1) : on teste ce qui est livré
@@ -84,7 +87,10 @@ jobs:
           V=${{ steps.v.outputs.version }}
           if gh release view "v$V" >/dev/null 2>&1; then echo "v$V déjà publiée"; exit 0; fi
           deploy/build-deb.sh dist
-          gh release create "v$V" dist/nexis_${V}_all.deb --target "$GITHUB_SHA" --title "Nexis $V" --generate-notes
+          # notes écrites à la main si docs/releases/v<version>.md existe, suivies de la liste des changements
+          NOTES=()
+          [ -f "docs/releases/v$V.md" ] && NOTES=(--notes-file "docs/releases/v$V.md")
+          gh release create "v$V" dist/nexis_${V}_all.deb --target "$GITHUB_SHA" --title "Nexis $V" "${NOTES[@]}" --generate-notes
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
