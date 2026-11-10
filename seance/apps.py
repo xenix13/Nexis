@@ -38,6 +38,7 @@ MANIFEST = "noxa-apps.json"  # versions des applications (écrit par l'intégrat
 # mises à jour de l'application de bureau : fichiers lus par electron-updater
 DESKTOP = re.compile(r"^(latest(-mac|-linux)?\.yml|Noxa-Setup\.exe(\.blockmap)?|Noxa\.AppImage|Noxa-mac\.zip(\.blockmap)?)$")
 REFRESH = 6 * 3600
+RETRY = 600  # publication sans applications (pas encore jointes) ou GitHub injoignable
 API = "https://api.github.com"
 
 
@@ -65,24 +66,28 @@ class Apps:
             return
         if not self.lock.acquire(blocking=False):
             return
+        complete = False
         try:
             try:
                 owner, repo, _ = update.read_source()
             except update.UpdateError:
                 owner, repo = "xenix13", "Noxa"
             data = None
-            for tag in (self.tag(), None):  # cette version, sinon la dernière publiée
-                url = (f"{API}/repos/{owner}/{repo}/releases/tags/{tag}" if tag
-                       else f"{API}/repos/{owner}/{repo}/releases/latest")
+            test = self.tag() == "apps-test"
+            try:
+                data = self._get(f"{API}/repos/{owner}/{repo}/releases/tags/{self.tag()}")
+            except (OSError, ValueError) as e:  # pas encore publiée (404), ou GitHub injoignable
+                self.error = str(e)[:200]
+            if not self._has_apps(data):
+                # publication de cette version pas encore complète (les applications y sont jointes un quart d'heure
+                # après le paquet) : en attendant, la plus récente qui les a
                 try:
-                    req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "Noxa"})
-                    with urllib.request.urlopen(req, timeout=10) as r:
-                        data = json.loads(r.read(2 * 1024 * 1024))
-                    if any(a.get("name") in APPS.values() for a in data.get("assets") or []):
-                        break
-                except (OSError, ValueError, urllib.error.HTTPError) as e:
+                    data = next((r for r in self._get(f"{API}/repos/{owner}/{repo}/releases?per_page=15") or []
+                                 if (test or not r.get("prerelease")) and self._has_apps(r)), None)
+                except (OSError, ValueError, AttributeError) as e:
                     self.error = str(e)[:200]
-                data = None
+                    data = None
+            complete = bool(data) and data.get("tag_name") == self.tag()
             if data:
                 assets = {a["name"]: {"url": a["browser_download_url"], "size": a.get("size") or 0, "updated": a.get("updated_at")}
                           for a in data.get("assets") or [] if isinstance(a, dict) and a.get("name")}
@@ -93,10 +98,21 @@ class Apps:
                         with urllib.request.urlopen(assets[MANIFEST]["url"], timeout=10) as r:
                             self.manifest = json.loads(r.read(65536))
                     except (OSError, ValueError):
-                        pass
+                        complete = False
         finally:
-            self.checked = time.time()
+            # publication incomplète ou GitHub injoignable : nouvel essai dans 10 minutes plutôt que 6 heures
+            self.checked = time.time() if complete else time.time() - REFRESH + RETRY
             self.lock.release()
+
+    @staticmethod
+    def _get(url):
+        req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "Noxa"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read(4 * 1024 * 1024))
+
+    @staticmethod
+    def _has_apps(release):
+        return isinstance(release, dict) and any(a.get("name") in APPS.values() for a in release.get("assets") or [])
 
     def refresh_later(self):
         if time.time() - self.checked >= REFRESH and not self.lock.locked():

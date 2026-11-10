@@ -24,6 +24,8 @@ FILES = {"noxa-android.apk": b"PK" + b"a" * 5000, "Noxa-Setup.exe": b"MZ" + b"w"
 
 class FakeGitHub(BaseHTTPRequestHandler):
     hits = []
+    complete = True  # False : publication de cette version sans les applications (jointes plus tard par la CI)
+    missing = False  # True : cette version pas encore publiée du tout
 
     def log_message(self, *a):
         pass
@@ -31,10 +33,16 @@ class FakeGitHub(BaseHTTPRequestHandler):
     def do_GET(self):
         FakeGitHub.hits.append(self.path)
         base = f"http://127.0.0.1:{self.server.server_address[1]}"
-        if self.path == f"/repos/xenix13/Noxa/releases/tags/v{__version__}":
-            body = json.dumps({"tag_name": f"v{__version__}", "assets": [
-                {"name": n, "size": len(d), "browser_download_url": f"{base}/dl/{n}"} for n, d in FILES.items()]}).encode()
-            return self.send(200, body)
+        assets = [{"name": n, "size": len(d), "browser_download_url": f"{base}/dl/{n}"} for n, d in FILES.items()]
+        deb = [{"name": f"noxa_{__version__}_all.deb", "size": 10, "browser_download_url": f"{base}/dl/deb"}]
+        if self.path == f"/repos/xenix13/Noxa/releases/tags/v{__version__}" and not FakeGitHub.missing:
+            return self.send(200, json.dumps({"tag_name": f"v{__version__}", "assets": assets if FakeGitHub.complete else deb}).encode())
+        if self.path.startswith("/repos/xenix13/Noxa/releases?"):
+            return self.send(200, json.dumps([
+                {"tag_name": f"v{__version__}", "assets": assets if FakeGitHub.complete else deb},
+                {"tag_name": "apps-test", "prerelease": True, "assets": assets},
+                {"tag_name": "v3.99.0", "assets": assets},
+                {"tag_name": "v3.57.1", "assets": [{"name": "nexis-android.apk", "size": 1, "browser_download_url": "x"}]}]).encode())
         if self.path.startswith("/dl/") and self.path[4:] in FILES:
             return self.send(200, FILES[self.path[4:]])
         self.send(404, b"{}")
@@ -102,6 +110,28 @@ class AppsTest(unittest.TestCase):
         self.assertEqual((st, body), (200, FILES["latest.yml"]))
         for bad in ("noxa-apps.json", "..%2Fseance.db", "autre.yml"):
             self.assertEqual(self.anon.call("GET", f"/apps/desktop/{bad}")[0], 404, bad)
+
+
+    def test_04_release_without_apps_yet(self):
+        """Serveur mis à jour avant que la CI ait joint les applications à la publication : il propose celles de
+        la version précédente, et regarde de nouveau dans 10 minutes (pas 6 heures)."""
+        for missing in (False, True):
+            FakeGitHub.complete, FakeGitHub.missing = False, missing
+            try:
+                a = apps.Apps(self.ctx)
+                a.refresh()
+                self.assertEqual(a.release["tag"], "v3.99.0", missing)  # ni la pré-version de test, ni l'ancien nom
+                self.assertEqual(a.manifest["android"]["code"], 1)
+                self.assertLessEqual(time.time() - a.checked, apps.REFRESH - apps.RETRY + 5)
+                a.refresh()  # avant les 10 minutes : rien de nouveau demandé
+                self.assertEqual(a.release["tag"], "v3.99.0")
+                FakeGitHub.complete, FakeGitHub.missing = True, False
+                a.checked -= apps.RETRY + 1
+                a.refresh()
+                self.assertEqual(a.release["tag"], f"v{__version__}")
+                self.assertGreater(a.checked, time.time() - 5)  # complète : prochain passage dans 6 h
+            finally:
+                FakeGitHub.complete, FakeGitHub.missing = True, False
 
 
 if __name__ == "__main__":
