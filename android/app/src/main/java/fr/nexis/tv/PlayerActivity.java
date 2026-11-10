@@ -80,6 +80,9 @@ public class PlayerActivity extends Activity {
     private long seekedAt;
     private int startSeq, retries, countdown;
     private long lastReport, lastPosition;
+    private double convSpeed = -1;   // vitesse de la conversion du serveur (x temps réel), -1 : inconnue
+    private long titleKbps;          // débit retenu pour ce titre seulement (conversion trop lente du serveur)
+    private boolean slowHinted;
     private long waitSince = SystemClock.elapsedRealtime(), preparedAt;
 
     private final Runnable hidePanel = this::hidePanel;
@@ -364,8 +367,10 @@ public class PlayerActivity extends Activity {
         preparedAt = 0;
         waitSince = SystemClock.elapsedRealtime();
         lastPosition = offset;
+        convSpeed = -1;
         // qualité automatique (réglage du compte) : le serveur choisit selon le débit mesuré de la TV
-        Bandwidth.get(kbps -> {
+        Bandwidth.get(measured -> {
+            long kbps = titleKbps > 0 && (measured <= 0 || titleKbps < measured) ? titleKbps : measured;
             if (seq != startSeq || leaving) return;
             JSONObject body = Api.json("id", itemId, "offset", offset, "caps", Players.caps(this),
                     "audio", audioSel == null ? null : audioSel.optInt("id"),
@@ -389,6 +394,21 @@ public class PlayerActivity extends Activity {
         stalls.add(now);
         if (stalls.size() < 2 || session == null || !"auto".equals(session.optString("quality"))) return;
         String q = session.optString("auto_quality", "original");
+        if ("transcode".equals(session.optString("mode")) && convSpeed > 0 && convSpeed < 1.0) {
+            // c'est le serveur qui ne convertit pas assez vite, pas la connexion : le débit mesuré reste valable
+            // (les titres suivants n'en pâtissent pas) ; ce titre seul descend en 720p, pas plus bas
+            stalls.clear();
+            String speed = String.format(java.util.Locale.FRANCE, "×%.1f", convSpeed);
+            if ("original".equals(q) || "1080p".equals(q)) {
+                titleKbps = (long) ((4000 + 192) * 1.35);
+                Ui.toast(this, Tr.t("Conversion trop lente sur le serveur (") + speed + Tr.t(") : qualité réduite pour ce titre"));
+                startStream(player.getCurrentPosition(), burning);
+            } else if (!slowHinted) {
+                slowHinted = true;
+                Ui.toast(this, Tr.t("Le serveur ne convertit pas cette vidéo assez vite (") + speed + ")");
+            }
+            return;
+        }
         if ("480p".equals(q)) return;
         stalls.clear();
         long rate = "1080p".equals(q) ? 8000 : "720p".equals(q) ? 4000 : Math.max(1500, session.optLong("source_kbps", 8000));
@@ -633,7 +653,11 @@ public class PlayerActivity extends Activity {
                 // clé littérale
             }
         }
-        Api.fire("POST", "/api/progress", b);
+        Api.send("POST", "/api/progress", b, r -> {
+            if (r.has("speed") && session != null && b.optString("stream").equals(session.optString("stream"))) {
+                convSpeed = r.optDouble("speed", -1);
+            }
+        }, e -> { });
     }
 
     private void togglePlay() {
@@ -683,6 +707,8 @@ public class PlayerActivity extends Activity {
         countdown = 0;
         if (!ended) report("playing", true, false);
         itemId = next.optString("id");
+        titleKbps = 0;
+        slowHinted = false;
         introSkipped = false;
         upNextDismissed = false;
         tracksApplied = false;

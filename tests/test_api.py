@@ -403,6 +403,15 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(st, 200, p2)
         self.assertIsNone(self.ctx.transcoder.get(p["stream"]))
         self.assertEqual(self.admin.call("GET", p["url"], raw=True)[0], 404)
+        # vitesse de la conversion renvoyée avec la position : le lecteur distingue un serveur trop lent d'une
+        # connexion trop lente (et ne baisse pas la qualité des lectures suivantes pour rien)
+        self.ctx.transcoder.get(p2["stream"]).speed = 0.8
+        st, r = self.admin.call("POST", "/api/progress", {"id": m["id"], "position": 72000, "duration": 600000,
+                                                          "stream": p2["stream"], "state": "playing"})
+        self.assertEqual((st, r.get("speed")), (200, 0.8), r)
+        st, r = self.admin.call("POST", "/api/progress", {"id": m["id"], "position": 72000, "duration": 600000,
+                                                          "stream": "inconnu", "state": "playing"})
+        self.assertNotIn("speed", r)
         self.admin.call("POST", "/api/stop", {"stream": p2["stream"]})
         self.assertIsNone(self.ctx.transcoder.get(p2["stream"]))
 

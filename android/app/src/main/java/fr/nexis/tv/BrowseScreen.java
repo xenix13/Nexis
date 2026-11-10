@@ -9,6 +9,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -100,10 +101,18 @@ final class BrowseScreen extends Screen {
         }
         View spacer = new View(act);
         bar.addView(spacer, new LinearLayout.LayoutParams(0, 1, 1f));
+        spacer.setMinimumWidth(dp(24));
         addTab(Tr.t("Rechercher"), new SearchTab(this));
         if (Session.live()) addTab(Tr.t("TV en direct"), new LiveTab(this));
         addTab(Tr.t("Paramètres"), new SettingsTab(this));
-        page.addView(bar, new LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT));
+        // beaucoup de bibliothèques (compte administrateur) : la barre défile, l'entrée sélectionnée reste visible ;
+        // assez de place : elle remplit la largeur comme avant (Rechercher, TV et Paramètres à droite)
+        HorizontalScrollView scroller = new HorizontalScrollView(act);
+        scroller.setFillViewport(true);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setClipToPadding(false);
+        scroller.addView(bar, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        page.addView(scroller, new LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         content = new FrameLayout(act);
         content.setClipChildren(false);
@@ -116,7 +125,7 @@ final class BrowseScreen extends Screen {
 
     private void addTab(String label, Tab tab) {
         TextView t = Ui.oneLine(Ui.text(act, label, 23, Ui.MUTED));
-        t.setPadding(dp(22), dp(10), dp(22), dp(10));
+        t.setPadding(dp(18), dp(10), dp(18), dp(10));
         t.setGravity(Gravity.CENTER);
         t.setMaxWidth(dp(300));
         register(t, tab);

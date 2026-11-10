@@ -597,6 +597,10 @@ def register(app, ctx, x):
         r = require_item(req.user, rk)
         watched = record_progress(req.user, r, pos, dur, state, str(b.get("stream") or ""), b.get("ended"))
         out = {"ok": True, "watched": watched}
+        conv = ctx.transcoder.get(str(b.get("stream") or "")) if b.get("stream") else None
+        if conv is not None and conv.speed is not None:
+            # vitesse de la conversion (x temps réel) : sous ×1, une saccade vient du serveur et pas de la connexion
+            out["speed"] = conv.speed
         screen = ctx.account_limits.count(req.user, str(b.get("stream") or ""), state)
         if screen:
             # temps d'écran : le lecteur prévient quelques minutes avant, puis s'arrête

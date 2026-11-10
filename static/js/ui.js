@@ -349,26 +349,43 @@ export function moreMenu(items, label = tr('Plus d’actions')) {
   const close = () => {
     if (list.contains(document.activeElement)) btn.focus({ preventScroll: true }); // télécommande : on revient au bouton
     list.hidden = true; document.removeEventListener('click', onDoc, true); document.removeEventListener('keydown', onKey);
+    window.removeEventListener('scroll', onMove); window.removeEventListener('resize', onMove);
     backdrop.remove();
-    if (list.classList.contains('sheet')) { list.classList.remove('sheet'); wrap.append(list); }
-    list.style.left = ''; list.style.maxHeight = ''; list.style.overflowY = '';
+    if (list.parentNode !== wrap) { list.classList.remove('sheet', 'floating'); wrap.append(list); }
+    for (const k of ['left', 'top', 'maxHeight', 'overflowY']) list.style[k] = '';
+    list.classList.remove('more-fade');
   };
   const onDoc = (e) => { if (!wrap.contains(e.target) && !list.contains(e.target)) close(); };
-  // à l'ouverture : sur téléphone, feuille en bas de l'écran (posée sur la page, hors de tout conteneur qui la
-  // couperait) ; sinon, décalée à gauche ou raccourcie pour ne jamais sortir de la fenêtre
+  // à l'ouverture, le menu est posé sur la page (hors de tout conteneur qui le couperait) : sur téléphone, en
+  // feuille en bas de l'écran ; ailleurs, sous le bouton (ou au-dessus s'il y a plus de place), recalé dans la
+  // fenêtre, et qui défile s'il est plus haut que la place disponible
   const place = () => {
     if (window.innerWidth <= 600) {
       list.classList.add('sheet');
       document.body.append(backdrop, list);
+      fade();
       return;
     }
-    const r = list.getBoundingClientRect();
-    if (r.right > window.innerWidth - 8) list.style.left = `${Math.round(window.innerWidth - 8 - r.right)}px`;
-    else if (r.left < 8) list.style.left = `${Math.round(8 - r.left)}px`;
-    const room = window.innerHeight - r.top - 8;
-    if (r.height > room) { list.style.maxHeight = `${Math.max(160, room)}px`; list.style.overflowY = 'auto'; }
+    const b = btn.getBoundingClientRect();
+    list.classList.add('floating');
+    document.body.append(list);
+    const w = list.offsetWidth, ht = list.scrollHeight, m = 8, H = window.innerHeight;
+    list.style.left = `${Math.round(Math.min(Math.max(m, b.left), window.innerWidth - m - w))}px`;
+    let top;
+    if (ht > H - 2 * m) { // plus haut que la fenêtre : toute la hauteur, et il défile
+      top = m;
+      list.style.maxHeight = `${H - 2 * m}px`; list.style.overflowY = 'auto';
+    } else if (b.bottom + 6 + ht <= H - m) top = b.bottom + 6;     // sous le bouton
+    else if (b.top - 6 - ht >= m) top = b.top - 6 - ht;             // au-dessus
+    else top = H - m - ht;                                          // décalé pour tenir entier
+    list.style.top = `${Math.round(top)}px`;
+    fade();
   };
+  // menu qui défile : le bas s'estompe tant qu'il reste des options plus bas (sinon elles semblent manquer)
+  const fade = () => list.classList.toggle('more-fade', list.scrollHeight - list.scrollTop - list.clientHeight > 4);
+  list.addEventListener('scroll', fade, { passive: true });
   const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const onMove = () => { if (list.classList.contains('floating')) close(); }; // la page bouge : le menu ne suit pas
   for (const it of items.filter(Boolean)) {
     if (it.divider) { list.append(h('div.more-divider')); continue; }
     if (it.heading) { list.append(h('div.more-heading', it.heading)); continue; }
@@ -382,6 +399,7 @@ export function moreMenu(items, label = tr('Plus d’actions')) {
       place();
       document.addEventListener('click', onDoc, true);
       document.addEventListener('keydown', onKey);
+      window.addEventListener('scroll', onMove, { passive: true }); window.addEventListener('resize', onMove);
       const first = list.querySelector('.more-item');
       if (first) first.focus({ preventScroll: true }); // au clavier / à la télécommande : on est dans le menu
     } else close();
