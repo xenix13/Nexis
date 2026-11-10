@@ -61,6 +61,13 @@ for name, display in (("sam", "Sam"), ("kids", "Kids")):
     assert st == 200, r
 
 db = ctx.db
+# the scan and the .nfo metadata finish in the background: wait until every demo title is there
+for _ in range(300):
+    if (db.scalar("SELECT COUNT(*) FROM items WHERE type='movie'") >= 12
+            and db.scalar("SELECT COUNT(*) FROM items WHERE type='show' AND title IN "
+                          "('Harbor Lights', 'Signal Lost', 'Kitchen Atlas')") == 3):
+        break
+    time.sleep(1)
 movies = db.all("SELECT id, title, duration_ms FROM items WHERE type='movie' ORDER BY title")
 by_title = {m["title"]: m for m in movies}
 episodes = db.all("SELECT id, title, duration_ms, parent_id FROM items WHERE type='episode' ORDER BY id")
