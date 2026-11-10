@@ -2,11 +2,11 @@
 
 Trois façons de faire, choisies d'elles-mêmes dans cet ordre :
 - un service de transcription compatible avec l'API d'OpenAI (/v1/audio/transcriptions), indiqué par
-  l'administrateur : par exemple Speaches (faster-whisper) dans un conteneur à côté de Nexis, ou OpenAI
+  l'administrateur : par exemple Speaches (faster-whisper) dans un conteneur à côté de Noxa, ou OpenAI
   lui-même (l'audio quitte alors la maison) ;
 - le filtre « whisper » d'ffmpeg 8 (compilé avec whisper.cpp) ;
 - le programme whisper-cli de whisper.cpp.
-Pour les deux derniers, Nexis télécharge le modèle choisi (fichier ggml de whisper.cpp) dans data/whisper.
+Pour les deux derniers, Noxa télécharge le modèle choisi (fichier ggml de whisper.cpp) dans data/whisper.
 
 La transcription est dans la langue parlée (celle de la piste audio) : Whisper ne traduit que vers l'anglais.
 C'est long : de quelques minutes à plus d'une heure de calcul pour un film selon le modèle et le processeur ;
@@ -35,7 +35,7 @@ log = logging.getLogger("seance.whisper")
 MODELS = {"tiny": 75, "base": 142, "small": 466, "medium": 1500}  # Mo
 MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-{}.bin"
 CHUNK = 600            # service distant : morceaux de 10 min (taille de fichier limitée par les API)
-USER_AGENT = "Nexis"
+USER_AGENT = "Noxa"
 
 
 class WhisperError(Exception):

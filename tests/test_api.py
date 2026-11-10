@@ -293,7 +293,7 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(plan(hevc, caps=caps)["mode"], "transcode")
         caps["video"].add("hevc10")
         r = plan(hevc, caps=caps, algo="dave750", boost=1.5)
-        self.assertEqual((r["mode"], r["acopy"]), ("copy", False))  # 5.1 : mixé en stéréo par Nexis
+        self.assertEqual((r["mode"], r["acopy"]), ("copy", False))  # 5.1 : mixé en stéréo par Noxa
         self.assertTrue(r["audio_filter"].startswith("pan=stereo|c0=0.5*c2+0.707*c0"), r["audio_filter"])
         self.assertIn("volume=1.5", r["audio_filter"])
         self.assertIn("hvc1", build_command("/x.mkv", r, 0, "/tmp/out"))
@@ -1027,7 +1027,7 @@ class SeanceTest(unittest.TestCase):
         self.assertIsNotNone(self.ctx.watcher.force_at)
         self.assertIsNone(self.ctx.watcher.force_scope)  # dossier inconnu : scan complet
         self.ctx.watcher.force_at = None
-        # Sonarr cite ses propres chemins (/tv/…) : Nexis retrouve le dossier local et ne revoit que lui
+        # Sonarr cite ses propres chemins (/tv/…) : Noxa retrouve le dossier local et ne revoit que lui
         st, r = c.call("POST", path, {"eventType": "Download", "series": {"title": "Les Veilleurs", "path": "/tv/Les Veilleurs"},
                                       "episodeFile": {"path": "/tv/Les Veilleurs/Season 01/Les.Veilleurs.S01E01.mkv"}},
                        csrf=False)
@@ -1868,7 +1868,7 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(c.call("POST", "/api/me/2fa/setup", {"password": "faux"})[0], 400)
         st, setup = c.call("POST", "/api/me/2fa/setup", {"password": "motdepasse9"})
         self.assertEqual(st, 200)
-        self.assertTrue(setup["uri"].startswith("otpauth://totp/Nexis:secu?secret=" + setup["secret"]))
+        self.assertTrue(setup["uri"].startswith("otpauth://totp/Noxa:secu?secret=" + setup["secret"]))
         self.assertEqual(c.call("POST", "/api/me/2fa/enable", {"code": "000000"})[0], 400)
         now_step = int(_t.time() // 30)
         st, en = c.call("POST", "/api/me/2fa/enable", {"code": twofa.code_at(setup["secret"], now_step)})
@@ -1917,7 +1917,7 @@ class SeanceTest(unittest.TestCase):
         self.assertEqual(c.call("POST", "/api/me/2fa/disable", {"password": "motdepasse9", "code": "000000"})[0], 400)
         st, r = c.call("POST", "/api/me/2fa/disable", {"password": "motdepasse9", "code": twofa.code_at(sec2, int(_t.time() // 30) + 1)})
         self.assertEqual((st, r["enabled"]), (200, False))
-        # porte de sortie en console : nexis reset-2fa <identifiant>
+        # porte de sortie en console : noxa reset-2fa <identifiant>
         sec3 = c.call("POST", "/api/me/2fa/setup", {"password": "motdepasse9"})[1]["secret"]
         c.call("POST", "/api/me/2fa/enable", {"code": twofa.code_at(sec3, int(_t.time() // 30))})
         self.assertTrue(c.call("GET", "/api/me")[1]["user"]["two_factor"])
@@ -1938,7 +1938,7 @@ class SeanceTest(unittest.TestCase):
         except urllib.error.HTTPError as e:
             code, loc = e.code, e.headers["Location"]
         self.assertEqual(code, 302)
-        self.assertTrue(loc.endswith("/releases/latest/download/nexis-tv.apk"), loc)
+        self.assertTrue(loc.endswith("/releases/latest/download/noxa-tv.apk"), loc)
 
     def test_static(self):
         st, body, h = self.admin.call("GET", "/", raw=True)
@@ -2029,16 +2029,16 @@ class UnitTests(unittest.TestCase):
             proc.wait()
 
     def test_update_source_and_command(self):
-        """Mise à jour depuis l'interface : source validée, commande lancée sans rien venant de Nexis."""
+        """Mise à jour depuis l'interface : source validée, commande lancée sans rien venant de Noxa."""
         from unittest import mock
         from seance import update
         work = tempfile.mkdtemp()
         src = os.path.join(work, "source")
         with mock.patch.object(update, "SOURCE", src):
-            self.assertEqual(update.read_source(), ("xenix13", "Nexis", "main"))  # installation ancienne : défaut
+            self.assertEqual(update.read_source(), ("xenix13", "Noxa", "main"))  # installation ancienne : défaut
             with open(src, "w") as f:
-                f.write("SEANCE_REPO=https://github.com/xenix13/Nexis.git\nSEANCE_BRANCH=test\n")
-            self.assertEqual(update.read_source(), ("xenix13", "Nexis", "test"))
+                f.write("SEANCE_REPO=https://github.com/xenix13/Noxa.git\nSEANCE_BRANCH=test\n")
+            self.assertEqual(update.read_source(), ("xenix13", "Noxa", "test"))
             for repo, branch in (("https://evil.example/x/y.git", "main"), ("https://github.com/a/b", "main; rm -rf /"),
                                  ("https://github.com/a/b", "../../etc")):
                 with open(src, "w") as f:
@@ -2046,7 +2046,7 @@ class UnitTests(unittest.TestCase):
                 with self.assertRaises(update.UpdateError):
                     update.read_source()
             with open(src, "w") as f:
-                f.write("SEANCE_REPO=https://github.com/xenix13/Nexis\nSEANCE_BRANCH=main\n")
+                f.write("SEANCE_REPO=https://github.com/xenix13/Noxa\nSEANCE_BRANCH=main\n")
             calls = []
 
             def fake_run(cmd, **kw):
@@ -2056,13 +2056,13 @@ class UnitTests(unittest.TestCase):
                 self.assertEqual(update.start(), {"started": True})
             run = calls[-1]
             self.assertEqual(run[:2], ["systemd-run", "--unit=seance-update"])
-            self.assertIn("https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/install.sh", run[-1])
+            self.assertIn("https://raw.githubusercontent.com/xenix13/Noxa/main/deploy/install.sh", run[-1])
             self.assertIn("SEANCE_BRANCH=main", run[-1])
             self.assertIn("--no-block", run)  # sinon la requête attend la fin de l'installation et expire
         # canal de mise à jour : seules les branches connues, même dépôt
         with mock.patch.object(update, "SOURCE", src):
             self.assertEqual(update.set_channel("test"), {"branch": "test"})
-            self.assertEqual(update.read_source(), ("xenix13", "Nexis", "test"))
+            self.assertEqual(update.read_source(), ("xenix13", "Noxa", "test"))
             with self.assertRaises(update.UpdateError):
                 update.set_channel("main; rm -rf /")
             update.set_channel("main")
@@ -2071,7 +2071,7 @@ class UnitTests(unittest.TestCase):
         self.assertEqual(update.progress(["lun.", "==> Paquets système"])[:3], (10, "Mise à jour des paquets système", False))
         log = ["==> Paquets système", "==> Récupération du code (x)", "==> Copie de l'application dans /opt/seance",
                "==> Utilisateur système 'seance'", "==> Service systemd"]
-        self.assertEqual(update.progress(log)[:2], (80, "Redémarrage de Nexis"))
+        self.assertEqual(update.progress(log)[:2], (80, "Redémarrage de Noxa"))
         self.assertEqual(update.progress(log + ["[terminé, code 0]"]), (100, "Terminé", True, True))
         self.assertEqual(update.progress(log[:2] + ["[terminé, code 1]"]), (25, "Échec", True, False))
         self.assertTrue(update.newer("3.10.0", "3.9.2"))

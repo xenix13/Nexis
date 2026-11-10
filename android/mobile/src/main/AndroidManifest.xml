@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- mise à jour de l'application : l'APK vient du serveur Nexis -->
+    <!-- mise à jour de l'application : l'APK vient du serveur Noxa -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- notifications (nouveaux épisodes, alertes), relevées même après un redémarrage du téléphone -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -14,7 +14,7 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <application
-        android:label="Nexis"
+        android:label="Noxa"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:usesCleartextTraffic="true"

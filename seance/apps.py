@@ -27,16 +27,16 @@ log = logging.getLogger("seance.apps")
 
 # plateforme -> fichier joint à la publication (noms fixes, voir .github/workflows/tests.yml)
 APPS = {
-    "windows": "Nexis-Setup.exe",
-    "macos": "Nexis.dmg",
-    "linux-appimage": "Nexis.AppImage",
-    "linux-deb": "nexis-desktop.deb",
-    "android": "nexis-android.apk",
-    "tv": "nexis-tv.apk",
+    "windows": "Noxa-Setup.exe",
+    "macos": "Noxa.dmg",
+    "linux-appimage": "Noxa.AppImage",
+    "linux-deb": "noxa-desktop.deb",
+    "android": "noxa-android.apk",
+    "tv": "noxa-tv.apk",
 }
-MANIFEST = "nexis-apps.json"  # versions des applications (écrit par l'intégration continue)
+MANIFEST = "noxa-apps.json"  # versions des applications (écrit par l'intégration continue)
 # mises à jour de l'application de bureau : fichiers lus par electron-updater
-DESKTOP = re.compile(r"^(latest(-mac|-linux)?\.yml|Nexis-Setup\.exe(\.blockmap)?|Nexis\.AppImage|Nexis-mac\.zip(\.blockmap)?)$")
+DESKTOP = re.compile(r"^(latest(-mac|-linux)?\.yml|Noxa-Setup\.exe(\.blockmap)?|Noxa\.AppImage|Noxa-mac\.zip(\.blockmap)?)$")
 REFRESH = 6 * 3600
 API = "https://api.github.com"
 
@@ -69,13 +69,13 @@ class Apps:
             try:
                 owner, repo, _ = update.read_source()
             except update.UpdateError:
-                owner, repo = "xenix13", "Nexis"
+                owner, repo = "xenix13", "Noxa"
             data = None
             for tag in (self.tag(), None):  # cette version, sinon la dernière publiée
                 url = (f"{API}/repos/{owner}/{repo}/releases/tags/{tag}" if tag
                        else f"{API}/repos/{owner}/{repo}/releases/latest")
                 try:
-                    req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "Nexis"})
+                    req = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "Noxa"})
                     with urllib.request.urlopen(req, timeout=10) as r:
                         data = json.loads(r.read(2 * 1024 * 1024))
                     if any(a.get("name") in APPS.values() for a in data.get("assets") or []):
@@ -129,7 +129,7 @@ class Apps:
         tmp = path + ".part"
         try:
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            req = urllib.request.Request(url, headers={"User-Agent": "Nexis"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Noxa"})
             with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as f:
                 while True:
                     block = r.read(1 << 20)

@@ -1,2 +1,2 @@
-"""Nexis — serveur multimédia auto-hébergé."""
-__version__ = "3.57.1"
+"""Noxa — serveur multimédia auto-hébergé."""
+__version__ = "4.0.0"

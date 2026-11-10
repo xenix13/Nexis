@@ -1,14 +1,14 @@
-# Nexis avec Docker : docker compose up -d, puis http://<serveur>:8420
-# Le code d'installation du premier lancement s'affiche avec : docker compose logs nexis
+# Noxa avec Docker : docker compose up -d, puis http://<serveur>:8420
+# Le code d'installation du premier lancement s'affiche avec : docker compose logs noxa
 services:
-  nexis:
-    # version publiée (la branche test utilise nexis:test)
-    image: ghcr.io/xenix13/nexis:latest
-    container_name: nexis
+  noxa:
+    # version publiée (la branche test utilise noxa:test)
+    image: ghcr.io/xenix13/noxa:latest
+    container_name: noxa
     restart: unless-stopped
     ports:
       - "8420:8420"
-      - "8421:8421"                  # serveurs liés (TLS) : utile seulement si un autre serveur Nexis doit joindre celui-ci
+      - "8421:8421"                  # serveurs liés (TLS) : utile seulement si un autre serveur Noxa doit joindre celui-ci
     environment:
       # derrière un reverse proxy HTTPS (nginx, Caddy…) : cookies sécurisés et vraie IP des clients
       SEANCE_COOKIE_SECURE: "0"
@@ -19,7 +19,7 @@ services:
       - /mnt/series:/media/series:ro
       # - /mnt/photos:/media/photos:ro  # photothèque (bibliothèque de type « Photos »)
       # - /mnt/livres-audio:/media/livres-audio:ro  # livres audio (bibliothèque de type « Livres audio »)
-      # - /mnt/nas/nexis:/backups      # sauvegardes sur un autre disque (Paramètres → Sauvegardes : /backups)
+      # - /mnt/nas/noxa:/backups      # sauvegardes sur un autre disque (Paramètres → Sauvegardes : /backups)
     # Serveur DLNA (Paramètres → DLNA) : l'annonce aux téléviseurs ne traverse pas le réseau interne de Docker.
     # Décommente network_mode et retire la section ports (les ports de l'hôte sont alors utilisés directement).
     # network_mode: host

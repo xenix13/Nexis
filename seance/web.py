@@ -239,8 +239,8 @@ class App:
         # langue par défaut du serveur : celle de l'interface tant que personne n'est connecté sur cet appareil
         html = html.replace('<html lang="fr"', f'<html lang="{lang}" data-default-lang="{lang}"', 1)
         if lang == "en":
-            html = html.replace("Nexis : tes films, séries et animes, partout.", "Nexis: your movies, shows and anime, everywhere.")
-            html = html.replace("Nexis a besoin de JavaScript.", "Nexis needs JavaScript.")
+            html = html.replace("Noxa : tes films, séries et animes, partout.", "Noxa: your movies, shows and anime, everywhere.")
+            html = html.replace("Noxa a besoin de JavaScript.", "Noxa needs JavaScript.")
         data = html.encode()
         if req and "gzip" in (req.headers.get("Accept-Encoding") or ""):
             data = gzip.compress(data, 6)

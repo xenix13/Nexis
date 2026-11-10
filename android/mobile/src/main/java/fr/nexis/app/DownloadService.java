@@ -16,7 +16,7 @@ import android.os.PowerManager;
 /**
  * Téléchargements en arrière-plan. Le transfert lui-même est mené par la page (comme dans le navigateur) ; sans ce
  * service, Android gèle l'application dès qu'on la quitte et le téléchargement s'arrête. Tant qu'un téléchargement est
- * en cours, l'application est donc déclarée « au travail » : notification « Nexis télécharge… » avec la progression,
+ * en cours, l'application est donc déclarée « au travail » : notification « Noxa télécharge… » avec la progression,
  * processeur et Wi-Fi gardés éveillés, y compris écran éteint. Le service s'arrête dès que la file est vide.
  */
 public class DownloadService extends Service {

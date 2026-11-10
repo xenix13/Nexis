@@ -50,7 +50,7 @@ import java.net.URL;
 import java.util.Locale;
 
 /**
- * Nexis pour téléphones et tablettes : affiche l'interface du serveur Nexis choisi (elle suit donc chaque mise à jour
+ * Noxa pour téléphones et tablettes : affiche l'interface du serveur Noxa choisi (elle suit donc chaque mise à jour
  * du serveur), avec le plein écran vidéo, l'envoi de fichiers, les téléchargements de fichiers et la mise à jour de
  * l'application depuis le serveur (/api/apps, /apps/android).
  */
@@ -291,7 +291,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        // sans la page, plus rien ne télécharge : la notification « Nexis télécharge » disparaît
+        // sans la page, plus rien ne télécharge : la notification « Noxa télécharge » disparaît
         if (downloading) stopService(new Intent(this, DownloadService.class));
         downloading = false;
         super.onDestroy();
@@ -419,7 +419,7 @@ public class MainActivity extends Activity {
             try {
                 File dir = new File(getCacheDir(), "updates");
                 dir.mkdirs();
-                File apk = new File(dir, "nexis-android.apk");
+                File apk = new File(dir, "noxa-android.apk");
                 HttpURLConnection c = (HttpURLConnection) new URL(srv + "/apps/android").openConnection();
                 c.setInstanceFollowRedirects(true);
                 c.setConnectTimeout(15000);
@@ -471,13 +471,13 @@ public class MainActivity extends Activity {
             JSONObject j = new JSONObject();
             j.put("connect", fr ? "Se connecter" : "Connect");
             j.put("checking", fr ? "Vérification…" : "Checking…");
-            j.put("setupTitle", fr ? "Votre serveur Nexis" : "Your Nexis server");
+            j.put("setupTitle", fr ? "Votre serveur Noxa" : "Your Noxa server");
             j.put("setupLead", fr ? "Adresse du serveur, telle que vous l’ouvrez dans un navigateur." : "The server address, as you open it in a browser.");
-            j.put("setupPlaceholder", fr ? "https://nexis.mondomaine.fr ou 192.168.1.20:8420" : "https://nexis.example.com or 192.168.1.20:8420");
-            j.put("notNexis", fr ? "Aucun serveur Nexis ne répond à cette adresse." : "No Nexis server answers at this address.");
+            j.put("setupPlaceholder", fr ? "https://noxa.mondomaine.fr ou 192.168.1.20:8420" : "https://noxa.example.com or 192.168.1.20:8420");
+            j.put("notNexis", fr ? "Aucun serveur Noxa ne répond à cette adresse." : "No Noxa server answers at this address.");
             j.put("unreachable", fr ? "Serveur injoignable : {error}" : "Server unreachable: {error}");
             j.put("offlineTitle", fr ? "Serveur injoignable" : "Server unreachable");
-            j.put("offlineLead", fr ? "Nexis n’a pas pu joindre {server}. Vérifiez la connexion, ou changez de serveur." : "Nexis could not reach {server}. Check the connection, or change server.");
+            j.put("offlineLead", fr ? "Noxa n’a pas pu joindre {server}. Vérifiez la connexion, ou changez de serveur." : "Noxa could not reach {server}. Check the connection, or change server.");
             j.put("retry", fr ? "Réessayer" : "Retry");
             return j.toString();
         } catch (Exception e) {

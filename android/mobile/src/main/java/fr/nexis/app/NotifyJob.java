@@ -22,7 +22,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 
 /**
- * Notifications de Nexis (nouvel épisode, titre demandé arrivé, alerte du serveur).
+ * Notifications de Noxa (nouvel épisode, titre demandé arrivé, alerte du serveur).
  * La vue web d'Android ne gère pas les notifications push des sites : l'application vient donc chercher ses messages
  * sur le serveur (/api/push/device, jeton propre à cet appareil) environ toutes les 15 minutes, quand le réseau est là,
  * même application fermée. Ni Google ni compte développeur : rien ne passe par un service tiers.
@@ -83,7 +83,7 @@ public class NotifyJob extends JobService {
             channel(ctx);
             for (int i = 0; i < msgs.length(); i++) {
                 JSONObject m = msgs.getJSONObject(i);
-                show(ctx, m.optString("title", "Nexis"), m.optString("body", ""), m.optString("url", "#/"), m.optString("tag", "nexis"));
+                show(ctx, m.optString("title", "Noxa"), m.optString("body", ""), m.optString("url", "#/"), m.optString("tag", "nexis"));
             }
         } catch (Exception ignored) {
             // hors ligne, serveur en cours de mise à jour : on réessaiera au prochain passage

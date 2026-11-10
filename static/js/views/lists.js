@@ -9,7 +9,7 @@ import { tr } from '../i18n.js';
 export async function renderCollection(main, cid, ctx) {
   const c = await get(`/api/collections/${cid}`);
   if (!ctx.isCurrent()) return;
-  document.title = `${c.title} · Nexis`;
+  document.title = `${c.title} · Noxa`;
   const adminTools = state.me.user.is_admin ? h('div.actions-row',
     h('button.btn.ghost.small', { onclick: async () => {
       const t = h('input', { value: c.title, maxlength: 100 });
@@ -67,7 +67,7 @@ export async function renderPlaylists(main, ctx) {
 export async function renderPlaylist(main, pid, ctx) {
   const p = await get(`/api/playlists/${pid}`);
   if (!ctx.isCurrent()) return;
-  document.title = `${p.title} · Nexis`;
+  document.title = `${p.title} · Noxa`;
   const reload = () => renderPlaylist(main, pid, ctx);
   const move = async (i, dir) => {
     const order = p.items.map((x) => x.entry_id);

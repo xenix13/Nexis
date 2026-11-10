@@ -107,7 +107,7 @@ def register(app, ctx, x):
         """Le lecteur s'annonce et reçoit ici les commandes de la télécommande."""
         uid = req.user["id"]
         dev = device_arg(req, req.arg("device"))
-        name = str(req.arg("name") or "")[:60] or "Nexis"
+        name = str(req.arg("name") or "")[:60] or "Noxa"
         q = remote.attach(uid, dev, name)
         db.release()
         closed = threading.Event()

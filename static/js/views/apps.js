@@ -1,4 +1,4 @@
-// Page « Applications » : Nexis à installer sur chaque appareil, avec le logo de la plateforme et les étapes
+// Page « Applications » : Noxa à installer sur chaque appareil, avec le logo de la plateforme et les étapes
 // d'installation. Les fichiers viennent de ce serveur (/apps/<plateforme>). Lisible sans être connecté.
 import { get } from '../api.js';
 import { platformLogo } from '../platforms.js';
@@ -26,15 +26,15 @@ export const PLATFORMS = [
   { id: 'windows', logo: 'windows', name: 'Windows', devices: () => tr('Windows 10 et 11, 64 bits'), files: [['windows', tr('Installateur (.exe)')]],
     steps: () => [tr('Ouvrir le fichier téléchargé.'),
       tr('Windows peut afficher « Windows a protégé votre ordinateur » (l’application n’est pas signée par un certificat payant) : cliquer sur « Informations complémentaires », puis « Exécuter quand même ».'),
-      tr('Nexis s’installe et s’ouvre. Indiquez l’adresse de ce serveur au premier lancement.')] },
+      tr('Noxa s’installe et s’ouvre. Indiquez l’adresse de ce serveur au premier lancement.')] },
   { id: 'macos', logo: 'apple', name: 'macOS', devices: () => tr('macOS 12 ou plus récent, Mac Intel et Apple Silicon'), files: [['macos', tr('Image disque (.dmg)')]],
-    steps: () => [tr('Ouvrir le fichier téléchargé et glisser Nexis dans le dossier Applications.'),
+    steps: () => [tr('Ouvrir le fichier téléchargé et glisser Noxa dans le dossier Applications.'),
       tr('Au premier lancement, macOS bloque une application qui ne vient pas de l’App Store : ouvrir Réglages Système → Confidentialité et sécurité, puis « Ouvrir quand même » en bas de la page (une seule fois).'),
       tr('Indiquez l’adresse de ce serveur au premier lancement.')] },
   { id: 'linux', logo: 'linux', name: 'Linux', devices: () => tr('Toutes distributions (AppImage) ou Debian, Ubuntu, Mint (.deb), 64 bits'),
     files: [['linux-appimage', 'AppImage'], ['linux-deb', tr('Paquet .deb')]],
-    steps: () => [tr('AppImage : rendre le fichier exécutable (clic droit → Propriétés → Autoriser l’exécution, ou chmod +x Nexis.AppImage), puis l’ouvrir. Il se met à jour tout seul.'),
-      tr('.deb : l’ouvrir avec l’installateur de logiciels, ou sudo apt install ./nexis-desktop.deb.')] },
+    steps: () => [tr('AppImage : rendre le fichier exécutable (clic droit → Propriétés → Autoriser l’exécution, ou chmod +x Noxa.AppImage), puis l’ouvrir. Il se met à jour tout seul.'),
+      tr('.deb : l’ouvrir avec l’installateur de logiciels, ou sudo apt install ./noxa-desktop.deb.')] },
   { id: 'android', logo: 'android', name: 'Android', devices: () => tr('Téléphones et tablettes, Android 8 ou plus récent'), files: [['android', tr('Application (.apk)')]],
     steps: () => [tr('Ouvrir le fichier téléchargé (notification ou dossier Téléchargements).'),
       tr('Android demande une fois d’autoriser l’installation depuis ce navigateur : « Paramètres » → « Autoriser cette source », puis revenir et « Installer ».'),
@@ -43,8 +43,8 @@ export const PLATFORMS = [
     steps: () => [tr('Sur la TV, installer l’application « Downloader » depuis le Play Store.'),
       tr('Y taper l’adresse de ce serveur suivie de /tv (par exemple {url}), puis installer.', { url: `${location.origin}/tv` })] },
   { id: 'ios', logo: 'apple', name: 'iPhone, iPad', devices: () => tr('Application web, depuis Safari'), web: true,
-    steps: () => [tr('Ouvrir Nexis dans Safari, appuyer sur Partager, puis « Sur l’écran d’accueil ».'),
-      tr('Apple ne permet pas d’installer une application en dehors de l’App Store : sur iPhone et iPad, Nexis s’installe comme application web. Une fois sur l’écran d’accueil, ses téléchargements sont gardés.')] },
+    steps: () => [tr('Ouvrir Noxa dans Safari, appuyer sur Partager, puis « Sur l’écran d’accueil ».'),
+      tr('Apple ne permet pas d’installer une application en dehors de l’App Store : sur iPhone et iPad, Noxa s’installe comme application web. Une fois sur l’écran d’accueil, ses téléchargements sont gardés.')] },
 ];
 
 export function card(p, data, here) {
@@ -66,13 +66,13 @@ export function card(p, data, here) {
 }
 
 export async function renderApps(main) {
-  document.title = tr('Applications · Nexis');
+  document.title = tr('Applications · Noxa');
   const here = detectPlatform();
   const box = h('div.app-grid', spinner());
   const n = nativeApp();
   clear(main, h('div.page-head', h('h1', tr('Applications'))),
-    h('p.muted.app-lead', tr('Nexis s’installe comme un vrai programme sur votre ordinateur, téléphone, tablette ou TV. Les fichiers viennent de ce serveur ; l’interface des applications est celle du serveur et suit donc chacune de ses mises à jour.')),
-    n ? h('div.status-box.ok', tr('Vous utilisez l’application Nexis {v}.', { v: n.version || '' })) : null,
+    h('p.muted.app-lead', tr('Noxa s’installe comme un vrai programme sur votre ordinateur, téléphone, tablette ou TV. Les fichiers viennent de ce serveur ; l’interface des applications est celle du serveur et suit donc chacune de ses mises à jour.')),
+    n ? h('div.status-box.ok', tr('Vous utilisez l’application Noxa {v}.', { v: n.version || '' })) : null,
     box);
   let data = null;
   try { data = await get('/api/apps'); } catch { /* serveur ancien ou GitHub injoignable : étapes seulement */ }

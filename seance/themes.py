@@ -1,4 +1,4 @@
-"""Thèmes de couleurs partagés : ceux fournis avec Nexis et le magasin de thèmes (dossier static/themes du dépôt
+"""Thèmes de couleurs partagés : ceux fournis avec Noxa et le magasin de thèmes (dossier static/themes du dépôt
 GitHub, enrichi par les contributions de chacun).
 
 Un thème n'est jamais du code : c'est une description vérifiée — des couleurs, un fond en dégradé, des effets choisis
@@ -35,8 +35,8 @@ UI_STYLES = ("classic", "glass", "sidebar", "minimal", "cinema", "rounded")
 LANGS = ("fr", "en")
 MAX_THEMES = 500
 MAX_INDEX = 2 * 1024 * 1024
-DEFAULT_INDEX = "https://raw.githubusercontent.com/xenix13/Nexis/main/static/themes/index.json"
-DEFAULT_SUBMIT = "https://github.com/xenix13/Nexis/new/main/static/themes"
+DEFAULT_INDEX = "https://raw.githubusercontent.com/xenix13/Noxa/main/static/themes/index.json"
+DEFAULT_SUBMIT = "https://github.com/xenix13/Noxa/new/main/static/themes"
 REFRESH = 6 * 3600
 
 
@@ -259,7 +259,7 @@ class Store:
             return  # déjà en cours
         try:
             self.ctx.db.release()
-            req = urllib.request.Request(conf["index_url"], headers={"User-Agent": "Nexis-themes/1", "Accept": "application/json"})
+            req = urllib.request.Request(conf["index_url"], headers={"User-Agent": "Noxa-themes/1", "Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=10) as r:
                 raw = r.read(MAX_INDEX + 1)
             if len(raw) > MAX_INDEX:

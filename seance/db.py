@@ -323,7 +323,7 @@ MIGRATIONS = [
         PRIMARY KEY(user_id, client, pref_id)
     );
     """,
-    # 10 : ancienne compatibilité avec des clients externes retirée (remplacée par les applications Nexis)
+    # 10 : ancienne compatibilité avec des clients externes retirée (remplacée par les applications Noxa)
     """
     DROP TABLE IF EXISTS jf_prefs;
     DROP TABLE IF EXISTS jf_tokens;

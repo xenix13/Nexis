@@ -1,10 +1,10 @@
-# Audit de sécurité de Nexis — version 3.1.0
+# Audit de sécurité de Noxa — version 3.1.0
 
 *23 octobre 2026. Revue complète du code (serveur Python, interface web, service de montage, scripts de déploiement), à la lecture et par des essais sur un serveur de test. Chaque correctif est couvert par un test de non-régression dans `tests/test_security.py`.*
 
 ## Périmètre et menace considérée
 
-Nexis est fait pour un **réseau domestique**, éventuellement ouvert sur Internet derrière un reverse proxy HTTPS. Les menaces étudiées :
+Noxa est fait pour un **réseau domestique**, éventuellement ouvert sur Internet derrière un reverse proxy HTTPS. Les menaces étudiées :
 
 - un **visiteur non connecté** (Internet ou réseau local) ;
 - un **membre du foyer** qui veut sortir de ses droits (profil enfant, bibliothèques non autorisées) ;
@@ -30,7 +30,7 @@ L'administrateur est considéré comme de confiance : il peut, par conception, p
 | 10 | Faible | Installation | hls.js téléchargé depuis un CDN sans vérification, avec repli sur « la dernière 1.x » | Corrigé |
 | 11 | Faible | Installation | Code d'installation sans limite d'essais | Corrigé |
 | 12 | Faible | Contrôle parental | Images d'une collection visibles par un profil pour qui elle est entièrement masquée | Corrigé |
-| 13 | Faible | Images TMDB | Logos SVG servis par Nexis sans bac à sable | Corrigé |
+| 13 | Faible | Images TMDB | Logos SVG servis par Noxa sans bac à sable | Corrigé |
 | 14 | Faible | Partages SMB | Partages montés sans `nosuid,nodev,noexec` | Corrigé (partages existants mis à jour) |
 | 15 | Info | Durcissement | En-têtes HTTP et bac à sable systemd complétables | Corrigé |
 
@@ -39,7 +39,7 @@ Aucune faille critique (exécution de code à distance, contournement de l'authe
 ## Détail des problèmes et correctifs
 
 ### 1. Liste IPTV : lecture de fichiers du serveur
-**Constat.** Le contenu d'une liste M3U vient du fournisseur. Une ligne `/etc/passwd`, `concat:…`, `subfile:…` ou `file://…` était transmise telle quelle à ffmpeg. Le flux produit, lisible par tout le foyer, pouvait contenir un fichier du serveur, la base de Nexis par exemple. De même, un logo ou un guide (`url-tvg`) indiqué comme chemin local était lu sur le disque.
+**Constat.** Le contenu d'une liste M3U vient du fournisseur. Une ligne `/etc/passwd`, `concat:…`, `subfile:…` ou `file://…` était transmise telle quelle à ffmpeg. Le flux produit, lisible par tout le foyer, pouvait contenir un fichier du serveur, la base de Noxa par exemple. De même, un logo ou un guide (`url-tvg`) indiqué comme chemin local était lu sur le disque.
 **Correctif** (`livetv.py`).
 - Seules les adresses `http(s)`, `rtsp(s)`, `rtmp(s)`, `rtp` et `udp` sont gardées. Un chemin local n'est accepté que si la liste elle-même est un fichier du serveur, choisi par l'administrateur.
 - ffmpeg et ffprobe reçoivent `-protocol_whitelist` limité aux protocoles de l'adresse.
@@ -102,10 +102,10 @@ Le lecteur hls.js 1.5.15 est désormais **fourni dans le dépôt** (`static/vend
 
 ## Risques acceptés et recommandations
 
-- **Exposition sur Internet :** passer impérativement par un reverse proxy HTTPS avec `SEANCE_COOKIE_SECURE=1` et `SEANCE_TRUST_PROXY=1` (voir le README). Ne pas activer `SEANCE_TRUST_PROXY` si Nexis est joignable directement : l'en-tête serait alors inventable.
+- **Exposition sur Internet :** passer impérativement par un reverse proxy HTTPS avec `SEANCE_COOKIE_SECURE=1` et `SEANCE_TRUST_PROXY=1` (voir le README). Ne pas activer `SEANCE_TRUST_PROXY` si Noxa est joignable directement : l'en-tête serait alors inventable.
 - **Blocage après échecs :** quelqu'un peut bloquer pendant 10 minutes la connexion d'un identifiant connu. C'est le compromis habituel face aux essais de mots de passe.
 - **IPTV et réseau local :** une liste en http(s) peut désigner une adresse du réseau local. C'est voulu (box opérateur, tuner TNT réseau). N'ajoute que des listes de fournisseurs de confiance.
-- **`seance-mountd` tourne en root**, sans bac à sable : monter un partage l'exige, et un bac à sable rendrait les montages invisibles à Nexis. Sa surface est réduite au strict nécessaire.
+- **`seance-mountd` tourne en root**, sans bac à sable : monter un partage l'exige, et un bac à sable rendrait les montages invisibles à Noxa. Sa surface est réduite au strict nécessaire.
 - **Liens symboliques** dans les bibliothèques : suivis par le scanner. Un lien vers un dossier système rendrait ses vidéos visibles, si l'utilisateur `seance` peut les lire.
 - **Clés TMDB et Seerr** stockées en clair dans la base (dossier lisible par `seance` seulement), puisqu'il faut les renvoyer aux services.
 - **Messages d'erreur de ffmpeg :** montrés lors d'un échec de lecture, ils peuvent révéler un chemin de fichier à un membre du foyer.
@@ -120,6 +120,6 @@ Le lecteur hls.js 1.5.15 est désormais **fourni dans le dépôt** (`static/vend
 - **Codes de secours** : 10 codes de 40 bits aléatoires, stockés hachés (SHA-256), à usage unique.
 - **Secret** : stocké dans la base (dossier `/var/lib/seance`, lisible par l'utilisateur `seance` uniquement), jamais renvoyé par l'API après l'activation ni conservé dans l'objet de requête.
 - **Contournements fermés** : le changement de profil vers un compte protégé exige aussi le code ; la désactivation exige mot de passe et code ; un profil géré ne peut pas l'activer, et passer un compte en profil géré la retire.
-- **Récupération** : réinitialisation par un autre administrateur (journalisée), ou par la commande `nexis reset-2fa`, qui suppose un accès root au serveur.
+- **Récupération** : réinitialisation par un autre administrateur (journalisée), ou par la commande `noxa reset-2fa`, qui suppose un accès root au serveur.
 - **Bibliothèque tierce** : génération du QR code par qrcode-generator 2.0.4 (MIT), fournie dans le dépôt et vérifiée par empreinte SHA-256 à l'installation, chargée uniquement sur la page d'activation.
 

@@ -18,7 +18,7 @@ export async function renderLibrary(main, sid, ctx) {
   if (!lib) { clear(main, h('div.empty', tr('Bibliothèque introuvable.'))); return; }
   if (lib.type === 'photo') { await renderPhotos(main, lib, ctx); return; }
   if (lib.type === 'audiobook') { await renderBooks(main, lib, ctx); return; }
-  document.title = `${lib.title} · Nexis`;
+  document.title = `${lib.title} · Noxa`;
   const sort = ctx.query.get('sort') || 'title';
   const genre = ctx.query.get('genre') || '';
   const view = ctx.query.get('view') || '';

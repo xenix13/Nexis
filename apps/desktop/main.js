@@ -1,5 +1,5 @@
-// Nexis pour Windows, macOS et Linux.
-// La fenêtre affiche l'interface du serveur Nexis choisi au premier lancement : elle suit donc chaque mise à jour du
+// Noxa pour Windows, macOS et Linux.
+// La fenêtre affiche l'interface du serveur Noxa choisi au premier lancement : elle suit donc chaque mise à jour du
 // serveur. Le moteur est celui de l'application (Chromium), le même partout : pas de différence entre navigateurs.
 // Le programme lui-même se met à jour depuis le serveur (/apps/desktop, fichiers publiés avec chaque version).
 const { app, BrowserWindow, Menu, dialog, ipcMain, net, powerSaveBlocker, shell } = require('electron');
@@ -7,6 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const { strings, fill } = require('./strings');
 
+// dossier des données de l'ancien nom (Nexis) : serveur choisi et téléchargements hors ligne gardés après le renommage
+app.setPath('userData', path.join(app.getPath('appData'), 'Nexis'));
 const CONFIG = path.join(app.getPath('userData'), 'nexis.json');
 const readConfig = () => { try { return JSON.parse(fs.readFileSync(CONFIG, 'utf8')); } catch { return {}; } };
 const writeConfig = (c) => { fs.mkdirSync(path.dirname(CONFIG), { recursive: true }); fs.writeFileSync(CONFIG, JSON.stringify(c, null, 1)); };
@@ -32,7 +34,7 @@ function createWindow() {
   const b = config.bounds || {};
   win = new BrowserWindow({
     width: b.width || 1280, height: b.height || 800, x: b.x, y: b.y, minWidth: 720, minHeight: 480,
-    backgroundColor: '#0b0b0e', title: 'Nexis', autoHideMenuBar: true, show: false,
+    backgroundColor: '#0b0b0e', title: 'Noxa', autoHideMenuBar: true, show: false,
     icon: path.join(__dirname, 'build', 'icon.png'),
     // backgroundThrottling : fenêtre réduite ou cachée, la page continue au même rythme (téléchargements)
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, sandbox: true, spellcheck: false,

@@ -119,10 +119,10 @@ final class SetupScreen extends Screen {
         FrameLayout[] root = new FrameLayout[1];
         LinearLayout box = StartScreens.centered(this, root);
         StartScreens.logo(this, box);
-        TextView title = Ui.title(act, Tr.t("Adresse du serveur Nexis"), 26);
+        TextView title = Ui.title(act, Tr.t("Adresse du serveur Noxa"), 26);
         title.setPadding(0, dp(16), 0, dp(6));
         box.addView(title);
-        TextView hint = Ui.text(act, Tr.t("Exemple : https://nexis.mondomaine.fr ou 192.168.1.20:8420"), 15, Ui.MUTED);
+        TextView hint = Ui.text(act, Tr.t("Exemple : https://noxa.mondomaine.fr ou 192.168.1.20:8420"), 15, Ui.MUTED);
         hint.setPadding(0, 0, 0, dp(18));
         box.addView(hint);
 

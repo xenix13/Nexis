@@ -7,12 +7,12 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <application
-        android:label="Nexis"
+        android:label="Noxa"
         android:icon="@mipmap/ic_launcher"
         android:banner="@drawable/banner"
         android:allowBackup="false"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Nexis">
+        android:theme="@style/Noxa">
         <activity
             android:name=".MainActivity"
             android:exported="true"

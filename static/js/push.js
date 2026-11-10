@@ -1,4 +1,4 @@
-// Notifications push sur cet appareil : inscription auprès du service du navigateur, puis du serveur Nexis.
+// Notifications push sur cet appareil : inscription auprès du service du navigateur, puis du serveur Noxa.
 import { get, post } from './api.js';
 import { tr } from './i18n.js';
 
@@ -38,7 +38,7 @@ export async function enablePush() {
     // l'application demande l'autorisation d'Android (version 13 et plus) puis répond
     const ok = await new Promise((resolve) => { window.onNexisPush = resolve; window.NexisAndroid.pushEnable(token); });
     // refusées : l'inscription reste, les messages arriveront dès qu'elles seront autorisées dans les réglages
-    if (!ok) throw new Error(tr('Notifications refusées pour l’application Nexis : autorisez-les dans les réglages d’Android.'));
+    if (!ok) throw new Error(tr('Notifications refusées pour l’application Noxa : autorisez-les dans les réglages d’Android.'));
     return;
   }
   if (await Notification.requestPermission() !== 'granted') throw new Error(tr('Notifications refusées dans le navigateur'));

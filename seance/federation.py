@@ -1,4 +1,4 @@
-"""Fédération : plusieurs serveurs Nexis d'un même propriétaire, liés entre eux.
+"""Fédération : plusieurs serveurs Noxa d'un même propriétaire, liés entre eux.
 
 - Jumelage : un serveur crée une invitation (son adresse, l'empreinte de son certificat, un jeton à usage unique
   valable 15 minutes). L'autre la colle, vérifie l'empreinte du serveur qu'il contacte et reçoit un secret partagé.
@@ -300,7 +300,7 @@ class Federation:
         return v
 
     def name(self):
-        return self.ctx.db.setting("server_name") or (socket.gethostname() or "Nexis")[:40]
+        return self.ctx.db.setting("server_name") or (socket.gethostname() or "Noxa")[:40]
 
     def ready(self):
         return os.path.isfile(self.cert) and os.path.isfile(self.key)
@@ -312,7 +312,7 @@ class Federation:
         os.makedirs(self.dir, mode=0o700, exist_ok=True)
         key_tmp, cert_tmp = self.key + ".tmp", self.cert + ".tmp"
         cmd = ["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes",
-               "-keyout", key_tmp, "-out", cert_tmp, "-days", "36500", "-subj", f"/CN=Nexis {self.uid()[:12]}"]
+               "-keyout", key_tmp, "-out", cert_tmp, "-days", "36500", "-subj", f"/CN=Noxa {self.uid()[:12]}"]
         old = os.umask(0o077)
         try:
             subprocess.run(cmd, check=True, capture_output=True, timeout=60)
@@ -716,7 +716,7 @@ class Federation:
                                   "remote_display_name": str(other.get("display_name") or "")[:50],
                                   "suggested": base if not (find_user(self.ctx.db, base) or base.casefold() in remote)
                                   else free_username(self.ctx.db, u["username"], remote)})
-        return {"server": str(r.get("name") or "Nexis")[:40], "conflicts": conflicts, "remote": list(remote)}
+        return {"server": str(r.get("name") or "Noxa")[:40], "conflicts": conflicts, "remote": list(remote)}
 
     def join(self, text, address=None, accounts=None):
         """Ce serveur rejoint celui qui a créé l'invitation. accounts : {identifiant: {"merge": bool, "rename": nom}}
@@ -772,7 +772,7 @@ class Federation:
         """Nouveau serveur lié, ou nouveau jumelage d'un serveur déjà connu (délié de son côté seulement, ou
         réinstallé) : son ancien secret et son ancien certificat sont remplacés."""
         db = self.ctx.db
-        name, version = str(name or "Nexis")[:40], str(version or "")[:20]
+        name, version = str(name or "Noxa")[:40], str(version or "")[:20]
         pid = db.scalar("SELECT id FROM peers WHERE uid=?", (uid,))
         if pid:
             db.run("UPDATE peers SET name=?, address=?, fingerprint=?, secret=?, version=?, online=1, error=NULL WHERE id=?",
@@ -1928,7 +1928,7 @@ class Federation:
                 self.send_later(p["id"], "POST", "/fed/together/changed", {}, None)
 
     def present_uids(self):
-        """Comptes qui ont Nexis ouvert ici : ils restent membres des groupes d'un serveur lié pendant qu'ils cherchent."""
+        """Comptes qui ont Noxa ouvert ici : ils restent membres des groupes d'un serveur lié pendant qu'ils cherchent."""
         ids = sorted(self.ctx.together.present())
         if not ids:
             return []

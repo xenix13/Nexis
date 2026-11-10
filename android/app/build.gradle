@@ -1,4 +1,4 @@
-// Appli Android TV de Nexis : interface native et lecteur Media3 (ExoPlayer), données lues sur l'API du serveur.
+// Appli Android TV de Noxa : interface native et lecteur Media3 (ExoPlayer), données lues sur l'API du serveur.
 // Version et signature viennent de la CI (voir .github/workflows/tests.yml).
 plugins {
     id 'com.android.application'

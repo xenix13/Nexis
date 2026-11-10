@@ -3,7 +3,7 @@
 Trakt (api.trakt.tv) :
 - l'administrateur enregistre une fois une application Trakt (identifiant et secret) ;
 - chaque personne relie son compte depuis Paramètres → Mon compte → Trakt et Letterboxd, avec un code à saisir
-  sur trakt.tv (pas de mot de passe à donner à Nexis) ;
+  sur trakt.tv (pas de mot de passe à donner à Noxa) ;
 - toutes les 6 heures (et à la demande) : ce qui est vu d'un côté devient vu de l'autre, les notes (1 à 5 étoiles
   ici, 1 à 10 sur Trakt) et la liste « À regarder » s'ajoutent des deux côtés. Rien n'est jamais retiré : un
   « non vu » ou une note retirée ne se propage pas.
@@ -115,7 +115,7 @@ class Tracking:
     def _req(self, method, path, body=None, token=None):
         c = self.conf()
         headers = {"Content-Type": "application/json", "trakt-api-version": "2", "trakt-api-key": c["client_id"],
-                   "User-Agent": f"Nexis/{VERSION}"}
+                   "User-Agent": f"Noxa/{VERSION}"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         data = json.dumps(body).encode() if body is not None else None
@@ -526,7 +526,7 @@ def register(app, ctx, x):
     def lb_export(req):
         data = tk.letterboxd_csv(req.user)
         return Response(data, 200, "text/csv; charset=utf-8",
-                        {"Content-Disposition": 'attachment; filename="nexis-letterboxd.csv"', "Cache-Control": "no-store"})
+                        {"Content-Disposition": 'attachment; filename="noxa-letterboxd.csv"', "Cache-Control": "no-store"})
 
     @app.route("POST", "/api/me/letterboxd")
     def lb_import(req):

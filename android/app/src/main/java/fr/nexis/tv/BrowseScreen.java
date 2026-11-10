@@ -192,7 +192,7 @@ final class BrowseScreen extends Screen {
             tabViews.get(0).requestFocus();
             return true;
         }
-        Ui.dialog(act).setTitle(Tr.t("Quitter Nexis ?"))
+        Ui.dialog(act).setTitle(Tr.t("Quitter Noxa ?"))
                 .setPositiveButton(Tr.t("Quitter"), (d, w) -> act.finish())
                 .setNegativeButton(Tr.t("Rester"), null)
                 .show();

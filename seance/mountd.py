@@ -1,8 +1,8 @@
-"""seance-mountd : petit service root qui monte les partages SMB demandés par Nexis.
+"""seance-mountd : petit service root qui monte les partages SMB demandés par Noxa.
 
-Nexis tourne sans privilèges ; ce service ne sait faire que deux choses : monter des partages
-SMB/CIFS en lecture seule sous /mnt/seance/<nom>, et lancer la mise à jour de Nexis (depuis la source
-notée à l'installation, sans paramètre venant de Nexis). Il écoute sur un socket Unix accessible
+Noxa tourne sans privilèges ; ce service ne sait faire que deux choses : monter des partages
+SMB/CIFS en lecture seule sous /mnt/seance/<nom>, et lancer la mise à jour de Noxa (depuis la source
+notée à l'installation, sans paramètre venant de Noxa). Il écoute sur un socket Unix accessible
 uniquement à l'utilisateur « seance » (vérifié par SO_PEERCRED) et revalide chaque demande.
 
 Lancement : python3 -m seance.mountd   (en root, via seance-mountd.service)
@@ -53,7 +53,7 @@ def run(cmd, timeout=40, env=None):
     try:
         p = subprocess.run(cmd, capture_output=True, timeout=timeout, env=env, stdin=subprocess.DEVNULL)
     except FileNotFoundError:
-        raise MountError(f"Commande introuvable : {cmd[0]} (relancer l'installation de Nexis)")
+        raise MountError(f"Commande introuvable : {cmd[0]} (relancer l'installation de Noxa)")
     except subprocess.TimeoutExpired:
         raise MountError("Le NAS ne répond pas (délai dépassé)")
     return p.returncode, p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace")
@@ -128,7 +128,7 @@ def write_fstab(lines):
 
 
 def entries():
-    """Partages gérés par Nexis (paires « # seance-smb:nom » + ligne fstab)."""
+    """Partages gérés par Noxa (paires « # seance-smb:nom » + ligne fstab)."""
     lines = read_fstab()
     out = []
     for i, line in enumerate(lines):
@@ -313,7 +313,7 @@ class Mounts:
             raise MountError("Version SMB inconnue")
         if need_password and not password:
             raise MountError("Mot de passe requis")
-        # écriture : seulement pour un stockage froid de Nexis (« cold-… ») ; les bibliothèques restent en lecture seule
+        # écriture : seulement pour un stockage froid de Noxa (« cold-… ») ; les bibliothèques restent en lecture seule
         writable = bool(a.get("writable"))
         if writable and not name.startswith(COLD):
             raise MountError("Seul un stockage froid peut être monté en écriture")
@@ -606,7 +606,7 @@ def main():
         stop.set()
 
 
-# ------------------------------------------------------------------ client (côté Nexis)
+# ------------------------------------------------------------------ client (côté Noxa)
 def call(cmd, args=None, timeout=90, sock_path=None):
     path = sock_path or SOCK
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -614,7 +614,7 @@ def call(cmd, args=None, timeout=90, sock_path=None):
     try:
         s.connect(path)
     except (FileNotFoundError, ConnectionRefusedError):
-        raise MountError("Le service de montage (seance-mountd) n'est pas démarré : relancer l'installation de Nexis")
+        raise MountError("Le service de montage (seance-mountd) n'est pas démarré : relancer l'installation de Noxa")
     except PermissionError:
         raise MountError("Accès refusé au service de montage")
     data = b""

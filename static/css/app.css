@@ -1,4 +1,4 @@
-/* Nexis — feuille de style unique (direction « Grand écran ») */
+/* Noxa — feuille de style unique (direction « Grand écran ») */
 @font-face { font-family: "Outfit"; src: url("/fonts/outfit.woff") format("woff"); font-weight: 100 900; font-display: swap; }
 @font-face { font-family: "Inter"; src: url("/fonts/inter.woff") format("woff"); font-weight: 100 900; font-display: swap; }
 :root {
@@ -1446,7 +1446,7 @@ html.has-audio body { padding-bottom: 96px; }
 /* =====================================================================================================
    Styles d'interface (Paramètres → Apparence → Style de l'interface) : ils changent la mise en page —
    barre de navigation, cartes, panneaux, grande bannière, fiche — et se combinent avec tous les thèmes.
-   Écrits pour Nexis, d'après les familles de thèmes connues des serveurs multimédia (verre dépoli, barre
+   Écrits pour Noxa, d'après les familles de thèmes connues des serveurs multimédia (verre dépoli, barre
    latérale, épuré, plein écran, arrondi).
    ===================================================================================================== */
 .nav-link { display: inline-flex; align-items: center; gap: 8px; }

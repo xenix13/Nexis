@@ -24,8 +24,8 @@ from . import __version__ as VERSION
 log = logging.getLogger("seance.opensubs")
 
 API = os.environ.get("SEANCE_OPENSUBTITLES_API", "https://api.opensubtitles.com/api/v1")
-USER_AGENT = f"Nexis v{VERSION}"
-# Nexis (ISO 639-2) -> OpenSubtitles (ISO 639-1, avec variantes pour le portugais et le chinois)
+USER_AGENT = f"Noxa v{VERSION}"
+# Noxa (ISO 639-2) -> OpenSubtitles (ISO 639-1, avec variantes pour le portugais et le chinois)
 TO_OS = {"fra": "fr", "eng": "en", "spa": "es", "deu": "de", "ita": "it", "por": "pt-PT", "jpn": "ja", "kor": "ko",
          "zho": "zh-CN", "rus": "ru", "ara": "ar", "nld": "nl", "pol": "pl", "tur": "tr", "swe": "sv", "dan": "da",
          "nor": "no", "fin": "fi", "hin": "hi", "tha": "th", "ces": "cs", "ell": "el", "heb": "he", "hun": "hu",
@@ -312,7 +312,7 @@ class OpenSubtitles:
 
 
 def attach(ctx, row, name, data, lang, extra):
-    """Sous-titre obtenu par Nexis (OpenSubtitles, Whisper) : écrit dans data/subtitles/<titre>/ et ajouté aux
+    """Sous-titre obtenu par Noxa (OpenSubtitles, Whisper) : écrit dans data/subtitles/<titre>/ et ajouté aux
     sous-titres externes du titre -> entrée ajoutée."""
     db = ctx.db
     folder = os.path.join(ctx.data_dir, "subtitles", str(int(row["id"])))

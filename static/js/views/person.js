@@ -6,7 +6,7 @@ import { plural, tr } from '../i18n.js';
 export async function renderPerson(main, name, ctx) {
   const r = await get(`/api/person?name=${encodeURIComponent(name)}`);
   if (!ctx.isCurrent()) return;
-  document.title = `${r.name} · Nexis`;
+  document.title = `${r.name} · Noxa`;
   const acted = r.items.filter((c) => c.role !== undefined);
   const directed = r.items.filter((c) => c.director);
   const grid = (list, sub) => h('div.grid', list.map((c) => posterCard({ ...c, year: sub(c) })));

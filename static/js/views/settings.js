@@ -12,12 +12,12 @@ import { renderThemeStore, themePreview } from './themes.js';
 import { disablePush, enablePush, openPushSettings, pushCheckNow, pushState } from '../push.js';
 import { nativeApp } from '../install.js';
 
-// application Nexis installée (bureau, Android) : sa version, le serveur, la recherche de mise à jour
+// application Noxa installée (bureau, Android) : sa version, le serveur, la recherche de mise à jour
 function nativePanel() {
   const n = nativeApp();
   if (!n) return null;
   return h('section.panel', h('h2', tr('Cette application')),
-    h('p.small', tr('Application Nexis {v} · serveur {s}', { v: n.version || '?', s: n.server || location.origin })),
+    h('p.small', tr('Application Noxa {v} · serveur {s}', { v: n.version || '?', s: n.server || location.origin })),
     h('p.muted.small', tr('L’interface vient du serveur et suit ses mises à jour ; l’application elle-même se met à jour depuis le serveur.')),
     h('div.actions-row',
       h('button.btn', { onclick: () => n.checkUpdate() }, tr('Rechercher une mise à jour')),
@@ -28,21 +28,21 @@ function nativePanel() {
 function pushPanel() {
   const box = h('div');
   const panel = h('section.panel', h('h2', tr('Notifications')),
-    h('p.muted.small', tr('Un nouvel épisode d’une série que vous suivez, ou un titre demandé qui arrive : une notification sur cet appareil, même Nexis fermé.')), box);
+    h('p.muted.small', tr('Un nouvel épisode d’une série que vous suivez, ou un titre demandé qui arrive : une notification sur cet appareil, même Noxa fermé.')), box);
   const paint = async () => {
     const st = await pushState().catch(() => 'off');
     if (st === 'unsupported') {
-      clear(box, h('p.small', /iphone|ipad/i.test(navigator.userAgent) ? tr('Sur iPhone et iPad : installez d’abord Nexis sur l’écran d’accueil (iOS 16.4 ou plus récent), puis ouvrez ce réglage depuis l’application.')
-        : tr('Ce navigateur ne gère pas les notifications push, ou Nexis n’est pas ouvert en HTTPS.')));
+      clear(box, h('p.small', /iphone|ipad/i.test(navigator.userAgent) ? tr('Sur iPhone et iPad : installez d’abord Noxa sur l’écran d’accueil (iOS 16.4 ou plus récent), puis ouvrez ce réglage depuis l’application.')
+        : tr('Ce navigateur ne gère pas les notifications push, ou Noxa n’est pas ouvert en HTTPS.')));
       return;
     }
     if (st === 'update') {
-      clear(box, h('p.small', tr('Mettez à jour l’application Nexis pour recevoir les notifications sur ce téléphone.')),
+      clear(box, h('p.small', tr('Mettez à jour l’application Noxa pour recevoir les notifications sur ce téléphone.')),
         h('div.actions-row', h('button.btn.small', { type: 'button', onclick: () => nativeApp()?.checkUpdate() }, tr('Rechercher une mise à jour'))));
       return;
     }
     if (st === 'denied' && window.NexisAndroid) {
-      clear(box, h('p.small', tr('Notifications bloquées pour l’application Nexis : autorisez-les dans les réglages d’Android.')),
+      clear(box, h('p.small', tr('Notifications bloquées pour l’application Noxa : autorisez-les dans les réglages d’Android.')),
         h('div.actions-row', h('button.btn.small', { type: 'button', onclick: () => openPushSettings() }, tr('Ouvrir les réglages')),
           h('button.btn.small.ghost', { type: 'button', onclick: async () => { await disablePush(); paint(); } }, tr('Désactiver'))));
       return;
@@ -150,7 +150,7 @@ function squareImage(fileObj, size) {
 // ---------------------------------------------------------------- double authentification
 function showRecoveryCodes(codes) {
   const text = codes.join('\n');
-  const file = tr('Nexis : codes de secours ({p1})\nChaque code ne fonctionne qu\'une fois.\n\n{text}\n', { p1: new Date().toLocaleDateString(locale()), text });
+  const file = tr('Noxa : codes de secours ({p1})\nChaque code ne fonctionne qu\'une fois.\n\n{text}\n', { p1: new Date().toLocaleDateString(locale()), text });
   return modal(tr('Codes de secours'), h('div.form',
     h('p.small', tr('Ces codes remplacent le téléphone s’il est perdu ou indisponible. Chacun ne fonctionne qu’une fois. Rangez-les en lieu sûr (gestionnaire de mots de passe, impression) : ils ne seront plus affichés.')),
     h('ol.recovery-codes', codes.map((c) => h('li', h('code', c)))),
@@ -158,7 +158,7 @@ function showRecoveryCodes(codes) {
       h('button.btn.small', { type: 'button', onclick: async () => {
         try { await navigator.clipboard.writeText(text); toast(tr('Codes copiés'), 'ok'); } catch { toast(tr('Copie impossible : sélectionnez les codes'), 'bad'); }
       } }, tr('Copier')),
-      h('a.btn.small', { href: URL.createObjectURL(new Blob([file], { type: 'text/plain' })), download: tr('nexis-codes-de-secours.txt') }, tr('Télécharger')))),
+      h('a.btn.small', { href: URL.createObjectURL(new Blob([file], { type: 'text/plain' })), download: tr('noxa-codes-de-secours.txt') }, tr('Télécharger')))),
   [{ label: tr('J’ai enregistré mes codes'), primary: true, value: true }]);
 }
 
@@ -246,7 +246,7 @@ const ACCOUNT_DEFS = [
     keys: tr('qualité langue audio sous-titres taille police couleur style épisode suivant générique intro automatique spoiler anti-spoiler résumé') },
   { id: 'appearance', label: tr('Apparence'), icon: 'palette', lead: tr('Style de l’interface, thème, couleur d’accent, affiches et fond d’écran.'),
     keys: tr('style mise en page disposition barre latérale verre épuré cinéma arrondi thème sombre clair oled couleur accent affiches taille fond d’écran') },
-  { id: 'themes', label: tr('Magasin de thèmes'), icon: 'palette', lead: tr('Thèmes fournis avec Nexis et proposés par la communauté, création de vos propres thèmes.'),
+  { id: 'themes', label: tr('Magasin de thèmes'), icon: 'palette', lead: tr('Thèmes fournis avec Noxa et proposés par la communauté, création de vos propres thèmes.'),
     keys: tr('thèmes magasin boutique cyberpunk néon rétro terminal galaxie films couleurs créer importer exporter github communauté') },
   { id: 'device', label: tr('Cet appareil'), icon: 'tv', lead: tr('Réglages propres à ce navigateur ou à cette TV, prioritaires sur ceux du profil.'),
     keys: tr('appareil tv téléphone qualité sous-titres taille animations mouvement télécommande manette navigateur') },
@@ -286,8 +286,8 @@ async function servicesPage(body) {
     lbFile.value = '';
   } });
   clear(body, traktBox, h('section.panel', h('h2', 'Letterboxd'),
-    h('p.muted.small', tr('Letterboxd n’a pas d’API publique : on passe par des fichiers. L’export contient vos films vus sur Nexis, avec la date et votre note, au format d’import de Letterboxd (letterboxd.com → Settings → Import & Export → Import). Pour l’import, téléchargez votre export Letterboxd (fichier ZIP) et envoyez-le ici : les films vus, les notes et la liste « À regarder » sont reconnus par titre et année.')),
-    h('div.actions-row', h('a.btn', { href: '/api/me/letterboxd.csv', download: 'nexis-letterboxd.csv' }, icon('download'), tr('Exporter pour Letterboxd')),
+    h('p.muted.small', tr('Letterboxd n’a pas d’API publique : on passe par des fichiers. L’export contient vos films vus sur Noxa, avec la date et votre note, au format d’import de Letterboxd (letterboxd.com → Settings → Import & Export → Import). Pour l’import, téléchargez votre export Letterboxd (fichier ZIP) et envoyez-le ici : les films vus, les notes et la liste « À regarder » sont reconnus par titre et année.')),
+    h('div.actions-row', h('a.btn', { href: '/api/me/letterboxd.csv', download: 'noxa-letterboxd.csv' }, icon('download'), tr('Exporter pour Letterboxd')),
       h('button.btn', { onclick: () => lbFile.click() }, tr('Importer l’export Letterboxd…')), lbFile),
     lbResult));
 
@@ -299,7 +299,7 @@ async function servicesPage(body) {
       const secret = h('input', { type: 'password', autocomplete: 'off', placeholder: v.secret_set ? tr('Enregistré (laisser vide pour le garder)') : '' });
       return h('details.alert-conf', { open: !v.configured },
         h('summary.small', tr('Application Trakt du serveur (administrateur)')),
-        h('p.muted.small', tr('Une fois pour tout le serveur : sur trakt.tv → Settings → Your API Apps → New Application, nom « Nexis », Redirect URI : urn:ietf:wg:oauth:2.0:oob. Copiez ici le Client ID et le Client Secret.')),
+        h('p.muted.small', tr('Une fois pour tout le serveur : sur trakt.tv → Settings → Your API Apps → New Application, nom « Noxa », Redirect URI : urn:ietf:wg:oauth:2.0:oob. Copiez ici le Client ID et le Client Secret.')),
         h('div.grid2', field('Client ID', id), field('Client Secret', secret)),
         h('button.btn', { onclick: async () => {
           const b = { client_id: id.value.trim() };
@@ -307,7 +307,7 @@ async function servicesPage(body) {
           try { paint(await put('/api/admin/trakt', b)); toast(tr('Enregistré'), 'ok'); } catch (e) { toast(e.message, 'bad'); }
         } }, tr('Enregistrer')));
     })() : null;
-    const intro = h('p.muted.small', tr('Relié à Trakt, Nexis y envoie ce que vous regardez et récupère ce que vous avez vu ailleurs (toutes les 6 heures) ; les notes et la liste « À regarder » s’ajoutent dans les deux sens. Rien n’est jamais retiré.'));
+    const intro = h('p.muted.small', tr('Relié à Trakt, Noxa y envoie ce que vous regardez et récupère ce que vous avez vu ailleurs (toutes les 6 heures) ; les notes et la liste « À regarder » s’ajoutent dans les deux sens. Rien n’est jamais retiré.'));
     if (!v.configured) {
       clear(traktBox, h('h2', 'Trakt'), intro, state.me.user.is_admin ? null : h('div.status-box', tr('L’administrateur du serveur doit d’abord enregistrer une application Trakt.')), admin);
       return;
@@ -497,7 +497,7 @@ function accountPage(id, body, rerender) {
         } catch (err) { toast(err.message, 'bad'); }
       } });
     const languagePanel = h('section.panel', h('h2', tr('Langue')), field('Langue / Language', language,
-      tr('Langue des menus et des messages de Nexis, pour ce compte sur tous les appareils.')));
+      tr('Langue des menus et des messages de Noxa, pour ce compte sur tous les appareils.')));
     // tous les réglages du profil : les mêmes sur chaque serveur lié ; retour aux valeurs par défaut
     const resetPanel = h('section.panel', h('h2', tr('Mes réglages')),
       h('p.muted.small', tr('Vos réglages (apparence, langues, lecture, accueil et menu) sont propres à votre profil et vous suivent sur tous les serveurs liés. Ceux de « Cet appareil » restent propres à ce navigateur.')),
@@ -658,10 +658,10 @@ function accountPage(id, body, rerender) {
         h('p.muted.small', tr('Votre progression reste enregistrée (pour reprendre où vous en étiez), mais rien n’est ajouté à votre historique, rien n’est envoyé à Trakt, et les administrateurs voient « Lecture privée » au lieu du titre.')),
         bindToggle('private_mode', tr('Activer le mode privé'))),
       h('section.panel', h('h2', tr('Notifications')),
-        h('p.muted.small', tr('Ce que Nexis peut vous signaler. Les notifications s’activent appareil par appareil dans « Cet appareil » ; un titre demandé qui arrive est toujours signalé.')),
+        h('p.muted.small', tr('Ce que Noxa peut vous signaler. Les notifications s’activent appareil par appareil dans « Cet appareil » ; un titre demandé qui arrive est toujours signalé.')),
         bindToggle('notify_episodes', tr('Nouveaux épisodes des séries que je suis')),
         quiet, h('div.grid2', field(tr('De'), from), field(tr('À'), to)),
-        h('p.muted.small', tr('Pendant les heures calmes, les notifications restent dans la cloche de Nexis mais ne font pas sonner vos appareils. Heure du serveur.'))),
+        h('p.muted.small', tr('Pendant les heures calmes, les notifications restent dans la cloche de Noxa mais ne font pas sonner vos appareils. Heure du serveur.'))),
       h('section.panel', h('h2', tr('Séries en sourdine')),
         h('p.muted.small', tr('Pas de notification pour ces séries (menu ⋯ d’une série → Ne plus être prévenu des nouveaux épisodes).')),
         mutedList));
@@ -768,7 +768,7 @@ function accountPage(id, body, rerender) {
     const devStyle = device().ui_style;
     clear(body,
       h('section.panel', h('h2', tr('Style de l’interface')),
-        h('p.muted.small', tr('Change la disposition de Nexis (navigation, cartes, panneaux, grande bannière), et pas seulement les couleurs. Se combine avec n’importe quel thème.')),
+        h('p.muted.small', tr('Change la disposition de Noxa (navigation, cartes, panneaux, grande bannière), et pas seulement les couleurs. Se combine avec n’importe quel thème.')),
         styleTiles,
         devStyle ? h('p.small.warn-text', tr('Cet appareil utilise son propre style ({s}) : voir « Cet appareil ».', { s: (UI_STYLES.find((x) => x[0] === devStyle) || [0, devStyle])[1] })) : null),
       h('section.panel', h('h2', tr('Thème')), themeTiles,
@@ -840,7 +840,7 @@ function accountPage(id, body, rerender) {
   const startSel = select(navItems(me).map((i) => [i.key, i.label]), p.start_page || 'home',
     { onchange: (e) => save({ start_page: e.target.value }, tr('Page d’ouverture enregistrée')) });
   const startPanel = h('section.panel', h('h2', tr('Page d’ouverture')),
-    field(tr('Page affichée à l’ouverture de Nexis'), startSel, tr('Les liens directs (fiche, lecture) s’ouvrent toujours à leur adresse.')));
+    field(tr('Page affichée à l’ouverture de Noxa'), startSel, tr('Les liens directs (fiche, lecture) s’ouvrent toujours à leur adresse.')));
   // titres masqués pour soi (menu ⋯ d'une fiche) : la liste, pour les rendre de nouveau visibles
   const hiddenList = h('div.user-list');
   const hiddenPanel = h('section.panel', h('h2', tr('Titres masqués')),
@@ -933,7 +933,7 @@ export async function renderSettingsArea(main, area, section, ctx) {
       g.items.map((it) => {
         const on = it.id === current.id && g.area === current.area;
         const badge = g.area === 'admin' && it.tabs.some((t) => t.id === 'update') && me.update
-          ? h('span.settings-badge', { title: tr('Nexis {update} est disponible', { update: me.update }) }, tr('Nouveau')) : null;
+          ? h('span.settings-badge', { title: tr('Noxa {update} est disponible', { update: me.update }) }, tr('Nouveau')) : null;
         const a = h('a.settings-link', { href: `#/${g.area}/${it.id}`, class: on ? 'settings-link active' : 'settings-link', 'aria-current': on ? 'page' : null },
           icon(it.icon), h('span', it.label), badge);
         links.push({ a, it, area: g.area, all: fold(`${it.label} ${it.lead} ${it.keys}`), tabs: it.tabs.map((t) => ({ id: t.id, text: fold(`${t.label} ${t.keys}`) })) });
@@ -994,7 +994,7 @@ export async function renderSettingsArea(main, area, section, ctx) {
   }
   clear(main, h('div.settings-page', { class: section ? 'settings-page' : 'settings-page no-section' },
     h('div.page-head', h('h1', tr('Paramètres'))), h('div.settings-layout', nav, content)));
-  document.title = tr('{label} · Paramètres · Nexis', { label: current.tabs.length > 1 ? tab.label : current.label });
+  document.title = tr('{label} · Paramètres · Noxa', { label: current.tabs.length > 1 ? tab.label : current.label });
   if (current.area === 'admin') await renderAdminSection(tab.id, body, ctx);
   else if (tab.id === 'themes') await renderThemeStore(body, ctx);
   else accountPage(tab.id, body, () => renderSettingsArea(main, area, section, ctx));

@@ -31,8 +31,8 @@ WAIT_TIMEOUT = 12        # s : on repart sans le membre trop lent
 RELOAD_TIMEOUT = 60      # s : un membre qui change de langue ou de qualité (extraction, relance de ffmpeg)
 GONE_AFTER = 40          # s sans connexion : le membre a quitté
 EMPTY_AFTER = 120        # s : groupe vide supprimé
-REMOTE_PRESENT_FOR = 45  # s : « Nexis ouvert » annoncé par un serveur lié (renouvelé toutes les 15 s)
-PRESENT_FOR = 1800       # s : Nexis ouvert ailleurs garde membre d'un groupe, pas plus (salon oublié sur une TV)
+REMOTE_PRESENT_FOR = 45  # s : « Noxa ouvert » annoncé par un serveur lié (renouvelé toutes les 15 s)
+PRESENT_FOR = 1800       # s : Noxa ouvert ailleurs garde membre d'un groupe, pas plus (salon oublié sur une TV)
 MAX_STREAMS_PER_USER = 6  # connexions d'événements ouvertes en même temps par une personne (onglets, appareils)
 FEED_PING = 10           # s : ping de la liste en direct (détecte aussi un onglet fermé ou une session finie)
 MAX_FEEDS_PER_USER = 8    # listes de groupes en direct ouvertes en même temps par une personne (onglets, appareils)
@@ -89,7 +89,7 @@ class Group:
         self.subscribers = []
         self.seq = 0
         self.empty_since = None
-        self.present = present  # personnes qui ont Nexis ouvert (liste des groupes en direct)
+        self.present = present  # personnes qui ont Noxa ouvert (liste des groupes en direct)
 
     def position_now(self):
         if self.playing and not self.waiting:
@@ -116,7 +116,7 @@ class Groups:
         self.lock = threading.RLock()
         self.groups = {}
         self.watchers = {}  # file d'attente -> id de la personne (liste des groupes en direct)
-        self.remote_present = {}  # id de la personne -> échéance (Nexis ouvert sur un serveur lié)
+        self.remote_present = {}  # id de la personne -> échéance (Noxa ouvert sur un serveur lié)
 
     # ------------------------------------------------------------ liste en direct
     def present(self):
@@ -136,7 +136,7 @@ class Groups:
         q = queue.Queue(maxsize=1)
         with self.lock:
             if sum(1 for uid in self.watchers.values() if uid == user["id"]) >= MAX_FEEDS_PER_USER:
-                raise OverflowError("Trop de connexions ouvertes : fermez d'autres onglets de Nexis")
+                raise OverflowError("Trop de connexions ouvertes : fermez d'autres onglets de Noxa")
             self.watchers[q] = user["id"]
         return q
 
@@ -396,7 +396,7 @@ class Groups:
             present = self.present()
             for g in list(self.groups.values()):
                 for uid, m in list(g.members.items()):
-                    # on reste membre tant que Nexis est ouvert (on cherche un film pendant que les autres attendent)
+                    # on reste membre tant que Noxa est ouvert (on cherche un film pendant que les autres attendent)
                     away = now - m.seen
                     if not m.connections and away > GONE_AFTER and (uid not in present or away > PRESENT_FOR):
                         self._remove(g, uid, f"{m.name} a quitté le groupe")

@@ -22,13 +22,13 @@ def admin_command(argv):
     restore <archive>        prépare la restauration d'une sauvegarde (appliquée au prochain démarrage)"""
     from .db import DB
     from . import twofa
-    ap = argparse.ArgumentParser(prog="nexis", description="Commandes d'administration de Nexis (en console)")
+    ap = argparse.ArgumentParser(prog="noxa", description="Commandes d'administration de Noxa (en console)")
     ap.add_argument("--data", default=os.environ.get("SEANCE_DATA", "/var/lib/seance"))
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("reset-2fa", help="désactiver la double authentification d'un compte")
     r.add_argument("username")
     sub.add_parser("list-users", help="lister les comptes")
-    rs = sub.add_parser("restore", help="restaurer une sauvegarde (Nexis arrêté, ou redémarré ensuite)")
+    rs = sub.add_parser("restore", help="restaurer une sauvegarde (Noxa arrêté, ou redémarré ensuite)")
     rs.add_argument("archive")
     rs.add_argument("--passphrase", help="phrase secrète d'une archive chiffrée (.enc)")
     args = ap.parse_args(argv)
@@ -53,7 +53,7 @@ def admin_command(argv):
             print(str(e), file=sys.stderr)
             return 1
         print(f"Sauvegarde de la version {man.get('version')} prête : elle sera mise en place au prochain démarrage "
-              "de Nexis (l'état actuel est gardé dans before-restore-…).")
+              "de Noxa (l'état actuel est gardé dans before-restore-…).")
         return 0
     path = os.path.join(args.data, "seance.db")
     if not os.path.isfile(path):
@@ -69,7 +69,7 @@ def admin_command(argv):
     from .auth import find_user
     u = find_user(db, args.username)
     if not u:
-        print(f"Compte introuvable : {args.username} (voir : nexis list-users)", file=sys.stderr)
+        print(f"Compte introuvable : {args.username} (voir : noxa list-users)", file=sys.stderr)
         return 1
     if not u["totp_enabled"]:
         print(f"La double authentification n'est pas activée pour {u['username']}.")
@@ -86,7 +86,7 @@ def main(argv=None):
     if any(a in ("reset-2fa", "list-users", "restore") for a in argv):
         return admin_command(argv)
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ap = argparse.ArgumentParser(prog="seance", description="Nexis — serveur multimédia auto-hébergé")
+    ap = argparse.ArgumentParser(prog="seance", description="Noxa — serveur multimédia auto-hébergé")
     ap.add_argument("--host", default=os.environ.get("SEANCE_HOST", "0.0.0.0"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("SEANCE_PORT", "8420")))
     ap.add_argument("--data", default=os.environ.get("SEANCE_DATA", os.path.join(here, "data")))
@@ -111,7 +111,7 @@ def main(argv=None):
     ctx.dlna.start(args.port)
     ctx.http_port = args.port
     if ctx.db.scalar("SELECT 1 FROM cold_jobs WHERE state IN ('queued','running') LIMIT 1"):
-        ctx.cold.start()  # archivages interrompus par l'arrêt de Nexis
+        ctx.cold.start()  # archivages interrompus par l'arrêt de Noxa
     threading.Timer(60, ctx.prefetch_missing_subtitles).start()
 
     exit_code = [0]
@@ -127,14 +127,14 @@ def main(argv=None):
         ctx.live.stop_all()
         threading.Thread(target=server.shutdown, daemon=True).start()
     def restart():
-        # code non nul : systemd (Restart=on-failure) et Docker (restart: unless-stopped) relancent Nexis
-        logging.getLogger("seance").warning("Redémarrage de Nexis (restauration d'une sauvegarde)")
+        # code non nul : systemd (Restart=on-failure) et Docker (restart: unless-stopped) relancent Noxa
+        logging.getLogger("seance").warning("Redémarrage de Noxa (restauration d'une sauvegarde)")
         exit_code[0] = 75
         shutdown()
     ctx.restart = restart
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
-    logging.getLogger("seance").info("Nexis écoute sur http://%s:%d", args.host, args.port)
+    logging.getLogger("seance").info("Noxa écoute sur http://%s:%d", args.host, args.port)
     server.serve_forever()
     server.server_close()
     return exit_code[0]

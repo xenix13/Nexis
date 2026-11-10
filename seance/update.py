@@ -1,6 +1,6 @@
-"""Mise à jour de Nexis depuis l'interface d'administration.
+"""Mise à jour de Noxa depuis l'interface d'administration.
 
-- Nexis (sans privilèges) regarde sur GitHub s'il existe une version plus récente : check_latest().
+- Noxa (sans privilèges) regarde sur GitHub s'il existe une version plus récente : check_latest().
 - Le service root seance-mountd lance la mise à jour : la même commande que l'installation à la main
   (`curl …/deploy/install.sh | bash`), depuis le dépôt et la branche notés par install.sh dans
   /etc/seance/source. Aucune adresse ni commande ne vient de l'interface.
@@ -16,7 +16,7 @@ import urllib.request
 SOURCE = os.environ.get("SEANCE_SOURCE_FILE", "/etc/seance/source")
 LOG = os.environ.get("SEANCE_UPDATE_LOG", "/var/log/seance-update.log")
 UNIT = "seance-update"
-DEFAULT_REPO, DEFAULT_BRANCH = "https://github.com/xenix13/Nexis.git", "main"
+DEFAULT_REPO, DEFAULT_BRANCH = "https://github.com/xenix13/Noxa.git", "main"
 REPO = re.compile(r"^https://github\.com/([A-Za-z0-9_.-]{1,100})/([A-Za-z0-9_.-]{1,100}?)(?:\.git)?$")
 BRANCH = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$")
 VERSION = re.compile(r'__version__\s*=\s*"([0-9][0-9A-Za-z.+-]{0,30})"')
@@ -83,7 +83,7 @@ def check_latest(timeout=8):
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CHECK_EVERY:
         return hit[1]
-    headers = {"User-Agent": "Nexis"}
+    headers = {"User-Agent": "Noxa"}
     url = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/seance/__init__.py"
     try:
         with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=timeout) as r:
@@ -117,7 +117,7 @@ def running():
 
 def start():
     """Lance l'installation à jour dans une unité systemd à part : elle survit au redémarrage de
-    seance-mountd et de Nexis qu'elle provoque."""
+    seance-mountd et de Noxa qu'elle provoque."""
     if running():
         raise UpdateError("Une mise à jour est déjà en cours")
     owner, repo, branch = read_source()
@@ -141,7 +141,7 @@ STEPS = [("Paquets système", 10, "Mise à jour des paquets système"),
          ("Copie de l'application", 45, "Installation des fichiers"),
          ("Vérification des bibliothèques", 55, "Vérification des fichiers"),
          ("Utilisateur système", 65, "Configuration du système"),
-         ("Service systemd", 80, "Redémarrage de Nexis")]
+         ("Service systemd", 80, "Redémarrage de Noxa")]
 END = re.compile(r"^\[terminé, code (\d+)\]")
 
 

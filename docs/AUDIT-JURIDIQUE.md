@@ -11,7 +11,7 @@ Les risques réels sont ailleurs, et la plupart se corrigent facilement :
 | # | Risque | Pour qui | Niveau | État |
 |---|---|---|---|---|
 | 1 | Nom **« Nexis »** : marque de LexisNexis | auteur | **Élevé si le projet grandit** | À faire : recherche d'antériorité, sans doute renommer |
-| 2 | **Aucune licence** dans le dépôt | auteur et utilisateurs | **Élevé** | À faire : choisir une licence |
+| 2 | **Aucune licence** dans le dépôt | auteur et utilisateurs | **Élevé** | **Corrigé** : licence MIT (`LICENSE`) |
 | 3 | Attribution exigée par **TMDB** (et **JustWatch**) absente | auteur / administrateurs | Moyen | **Corrigé** (« À propos », pied de page de Découvrir) |
 | 4 | Mentions de licences des composants tiers incomplètes (APK, image Docker, police) | auteur | Faible à moyen | Police **corrigée** ; reste APK et Docker |
 | 5 | **Usages illicites** possibles (IPTV pirate, partage hors du foyer, Radarr/Sonarr avec des torrents, copie de disques protégés) | utilisateurs (et image de l'auteur) | Moyen | Avertissement **ajouté** ; documentation à garder neutre |
@@ -40,7 +40,7 @@ Nexis est un outil ; c'est l'usage qui peut être illicite. L'interface rappelle
 - **IPTV** : un abonnement IPTV pirate expose son utilisateur (contrefaçon, recel), et l'Arcom bloque ces services. Rediffuser le flux de sa box opérateur à d'autres foyers viole en plus les conditions de l'opérateur.
 - **Radarr/Sonarr + torrents** : le téléchargement en pair-à-pair d'œuvres protégées relève de la procédure de réponse graduée de l'Arcom (ex-Hadopi), indépendamment de Nexis.
 
-## 3. Licence du projet — **à faire**
+## 3. Licence du projet — **fait (MIT, version 4.0.0)**
 
 **Le dépôt ne contient aucun fichier de licence.** Par défaut, tous les droits sont réservés à l'auteur : en toute rigueur, personne n'a le droit de copier, modifier ou redistribuer Nexis — ni même de l'installer en dehors de ce que l'auteur autorise implicitement. Cela pose aussi problème pour les contributions extérieures (à qui appartient le code proposé ?) et pour la garantie (aucune clause n'exclut la responsabilité de l'auteur).
 
@@ -50,7 +50,10 @@ Choisir et ajouter un fichier `LICENSE` :
 
 Les deux options limitent la responsabilité de l'auteur (« fourni tel quel, sans garantie »). C'est une décision d'auteur : elle n'a pas été prise à votre place.
 
-## 4. Le nom « Nexis » — **à faire**
+## 4. Le nom « Nexis » — **fait : renommé Noxa (version 4.0.0)**
+
+> Le projet s'appelle **Noxa** depuis la version 4.0.0. Avant une diffusion large, vérifier aussi ce nom sur TMview, l'INPI et WIPO (classes 9, 38, 41, 42). Les identifiants techniques invisibles (`fr.nexis.app`, `fr.nexis.tv`, en-têtes `X-Nexis-*`) sont gardés pour ne pas casser les mises à jour.
+
 
 **NEXIS** est une marque de **LexisNexis** (RELX), exploitée depuis des décennies pour un service de bases de données et de veille en ligne, enregistrée notamment aux États-Unis et dans l'Union européenne pour des logiciels et services informatiques. Un logiciel nommé « Nexis » dans la même classe (logiciels, services en ligne) peut faire l'objet d'une mise en demeure, d'un retrait d'une boutique d'applications ou d'une action en contrefaçon de marque, même s'il est gratuit, si le projet devient visible.
 
@@ -111,7 +114,7 @@ La version anglaise ajoutée en 3.19.0 ne change rien à cette analyse. Les ment
 
 ## À faire, par priorité
 
-1. **Ajouter une licence** au dépôt (§ 3).
+1. ~~Ajouter une licence au dépôt (§ 3)~~ : fait, licence MIT.
 2. **Vérifier la marque « Nexis »** et, selon le résultat, choisir un autre nom avant toute diffusion large (§ 4).
 3. Ajouter le logo TMDB à la mention « À propos » (§ 5).
 4. Notices de licences dans l'APK ; sources de ffmpeg pour l'image Docker ; version de JASSUB (§ 6).

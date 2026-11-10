@@ -1,4 +1,4 @@
-// Nexis : service worker. Rend l'application installable et lui permet de s'ouvrir même quand le serveur
+// Noxa : service worker. Rend l'application installable et lui permet de s'ouvrir même quand le serveur
 // est injoignable (message « Réessayer » au lieu d'une page d'erreur du navigateur).
 // Le réseau d'abord : après une mise à jour du serveur, on n'utilise jamais une ancienne version (le code, servi à
 // une adresse qui change avec chaque version, vient directement du cache).
@@ -42,7 +42,7 @@ async function networkFirst(req) {
     const res = await fetch(req);
     if (res.ok && res.type === 'basic') cache.put(key, res.clone());
     // serveur en train de redémarrer (mise à jour) : le proxy répond 502 / 503 / 504. On ouvre quand même
-    // l'interface, qui affiche « Nexis redémarre… » et se recharge seule.
+    // l'interface, qui affiche « Noxa redémarre… » et se recharge seule.
     if (res.status >= 502 && res.status <= 504) return (await cache.match(key)) || res;
     return res;
   } catch (err) {
@@ -52,7 +52,7 @@ async function networkFirst(req) {
   }
 }
 
-// Notifications push : le message arrive vide (rien à chiffrer côté serveur) ; on demande à Nexis quoi afficher.
+// Notifications push : le message arrive vide (rien à chiffrer côté serveur) ; on demande à Noxa quoi afficher.
 self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
     let msgs = [];
@@ -60,7 +60,7 @@ self.addEventListener('push', (event) => {
       const r = await fetch('/api/push/pending', { credentials: 'same-origin', cache: 'no-store' });
       if (r.ok) msgs = (await r.json()).messages || [];
     } catch { /* serveur injoignable : message générique */ }
-    const m = msgs[msgs.length - 1] || { title: 'Nexis', body: '', url: '#/', tag: 'nexis' };
+    const m = msgs[msgs.length - 1] || { title: 'Noxa', body: '', url: '#/', tag: 'nexis' };
     await self.registration.showNotification(m.title, { body: m.body, tag: m.tag, icon: '/icons/icon-192.png',
       badge: '/icons/maskable-192.png', data: { url: m.url || '#/' } });
   })());

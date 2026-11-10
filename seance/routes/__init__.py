@@ -1,1 +1,1 @@
-"""Routes HTTP de Nexis, regroupées par thème."""
+"""Routes HTTP de Noxa, regroupées par thème."""

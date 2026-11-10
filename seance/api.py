@@ -1,4 +1,4 @@
-"""Nexis — assemblage du serveur : contexte partagé (base, scanner, lecture…) et application HTTP.
+"""Noxa — assemblage du serveur : contexte partagé (base, scanner, lecture…) et application HTTP.
 
 Les routes sont rangées par thème dans seance/routes/ (comptes, bibliothèque, lecture, administration) et
 dans les modules des fonctions (collections_api, discover, tasks, livetv, syncplay).
@@ -40,7 +40,7 @@ class Ctx:
         for d in ("cache/img", "cache/orig", "cache/subs"):
             os.makedirs(os.path.join(data_dir, d), exist_ok=True)
         self.restored = backup.apply_pending(data_dir)  # restauration préparée avant l'arrêt : avant d'ouvrir la base
-        self.restart = None  # fourni par __main__ : arrêt avec un code qui fait relancer Nexis par son superviseur
+        self.restart = None  # fourni par __main__ : arrêt avec un code qui fait relancer Noxa par son superviseur
         self.db = DB(os.path.join(data_dir, "seance.db"))
         self.throttle = Throttle()
         self.lock = threading.Lock()

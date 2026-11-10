@@ -1,6 +1,6 @@
 """Téléchargements pour regarder hors ligne (comme Netflix).
 
-Nexis prépare un MP4 que l'appareil sait lire, à la qualité choisie, avec la piste audio voulue (et les
+Noxa prépare un MP4 que l'appareil sait lire, à la qualité choisie, avec la piste audio voulue (et les
 sous-titres image incrustés si on les demande). L'application le récupère ensuite par morceaux et le garde
 dans le stockage du navigateur. Un MP4 déjà lisible tel quel est envoyé directement, sans préparation.
 

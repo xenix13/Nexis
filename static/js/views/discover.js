@@ -89,7 +89,7 @@ async function renderBrowse(main, head, provider, ctx) {
     pages = r.pages;
     if (r.provider) {
       title.replaceChildren(r.provider.logo ? h('img.provider-logo.big', { src: tmdbImg(r.provider.logo, 'logo'), alt: '' }) : null, r.provider.name);
-      document.title = `${r.provider.name} · Nexis`;
+      document.title = `${r.provider.name} · Noxa`;
     }
     grid.append(...r.results.map(discoverCard));
     more.replaceChildren(page < pages ? h('button.btn', { onclick: load }, tr('Voir plus')) : null);
@@ -113,7 +113,7 @@ async function chooseSeasons(t) {
 async function renderTitle(main, kind, tid, ctx) {
   const t = await get(`/api/discover/title/${kind}/${tid}`);
   if (!ctx.isCurrent()) return;
-  document.title = `${t.title} · Nexis`;
+  document.title = `${t.title} · Noxa`;
   const rerender = () => renderTitle(main, kind, tid, ctx);
   const actions = h('div.detail-actions');
   if (t.item_id) actions.append(h('a.btn.primary', { href: `#/item/${t.item_id}` }, icon('play'), tr('Regarder')));

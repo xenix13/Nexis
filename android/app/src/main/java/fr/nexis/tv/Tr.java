@@ -51,13 +51,13 @@ final class Tr {
         en("Le serveur ne répond pas. Vérifiez la connexion réseau.", "The server is not responding. Check the network connection.");
         en("Réponse inattendue du serveur", "Unexpected response from the server");
         en("Ce serveur a répondu ", "This server responded ");
-        en(" : s'agit-il bien d'un serveur Nexis ?", ": is it really a Nexis server?");
-        en("Ce n'est pas un serveur Nexis.", "This is not a Nexis server.");
+        en(" : s'agit-il bien d'un serveur Noxa ?", ": is it really a Noxa server?");
+        en("Ce n'est pas un serveur Noxa.", "This is not a Noxa server.");
         en("Impossible de joindre le serveur. Vérifiez l'adresse et la connexion réseau.",
                 "Cannot reach the server. Check the address and the network connection.");
         en("Accueil", "Home");
         en("Plus", "More");
-        en("Quitter Nexis ?", "Quit Nexis?");
+        en("Quitter Noxa ?", "Quit Noxa?");
         en("Quitter", "Quit");
         en("Rester", "Stay");
         en("Chargement…", "Loading…");
@@ -151,11 +151,11 @@ final class Tr {
         en("Adresse", "Address");
         en("Changer de serveur ?", "Change server?");
         en("Vous devrez vous reconnecter sur le nouveau serveur.", "You will have to sign in again on the new server.");
-        en("Nexis pour Android TV, version ", "Nexis for Android TV, version ");
+        en("Noxa pour Android TV, version ", "Noxa for Android TV, version ");
         en("Activé", "On");
         en("Désactivé", "Off");
-        en("Adresse du serveur Nexis", "Nexis server address");
-        en("Exemple : https://nexis.mondomaine.fr ou 192.168.1.20:8420", "Example: https://nexis.mydomain.com or 192.168.1.20:8420");
+        en("Adresse du serveur Noxa", "Noxa server address");
+        en("Exemple : https://noxa.mondomaine.fr ou 192.168.1.20:8420", "Example: https://noxa.mydomain.com or 192.168.1.20:8420");
         en("Continuer", "Continue");
         en("Saisissez l'adresse du serveur.", "Enter the server address.");
         en("Connexion", "Sign in");

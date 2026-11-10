@@ -26,7 +26,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Accès à l'API du serveur Nexis : adresse, cookie de session (gardé entre deux lancements), requêtes JSON.
+ * Accès à l'API du serveur Noxa : adresse, cookie de session (gardé entre deux lancements), requêtes JSON.
  * Les appels réseau passent par un petit groupe de fils ; les réponses reviennent sur le fil principal.
  */
 final class Api {
@@ -244,16 +244,16 @@ final class Api {
         return o;
     }
 
-    /** Vérifie qu'une adresse répond comme un serveur Nexis. -> null si oui, sinon le message à afficher. */
+    /** Vérifie qu'une adresse répond comme un serveur Noxa. -> null si oui, sinon le message à afficher. */
     static String probe(String url) {
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(url + "/api/status").openConnection();
             c.setConnectTimeout(8000);
             c.setReadTimeout(8000);
-            if (c.getResponseCode() != 200) return Tr.t("Ce serveur a répondu ") + c.getResponseCode() + Tr.t(" : s'agit-il bien d'un serveur Nexis ?");
+            if (c.getResponseCode() != 200) return Tr.t("Ce serveur a répondu ") + c.getResponseCode() + Tr.t(" : s'agit-il bien d'un serveur Noxa ?");
             String body = read(c.getInputStream());
-            if (!body.contains("\"version\"")) return Tr.t("Ce n'est pas un serveur Nexis.");
+            if (!body.contains("\"version\"")) return Tr.t("Ce n'est pas un serveur Noxa.");
             return null;
         } catch (Exception e) {
             return Tr.t("Impossible de joindre le serveur. Vérifiez l'adresse et la connexion réseau.");

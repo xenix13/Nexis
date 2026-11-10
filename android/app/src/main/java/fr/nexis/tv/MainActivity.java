@@ -11,7 +11,7 @@ import android.widget.FrameLayout;
 import java.util.ArrayDeque;
 
 /**
- * Nexis pour Android TV : application native (écrans dessinés par l'appli, lecture par ExoPlayer).
+ * Noxa pour Android TV : application native (écrans dessinés par l'appli, lecture par ExoPlayer).
  * Au lancement : adresse du serveur, puis connexion, puis « Qui regarde ? », puis l'accueil.
  */
 public class MainActivity extends Activity {

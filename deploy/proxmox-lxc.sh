@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Crée un conteneur LXC Ubuntu 24.04 prêt pour Nexis et l'y installe. À lancer sur l'HÔTE Proxmox VE, en root :
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/main/deploy/proxmox-lxc.sh)"
+# Crée un conteneur LXC Ubuntu 24.04 prêt pour Noxa et l'y installe. À lancer sur l'HÔTE Proxmox VE, en root :
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/xenix13/Noxa/main/deploy/proxmox-lxc.sh)"
 # Réglages possibles (variables d'environnement) : CTID, CT_HOSTNAME, STORAGE, TEMPLATE_STORAGE, BRIDGE,
-# CORES, MEMORY (Mo), SWAP (Mo), DISK (Go), PRIVILEGED (1 = partages SMB montables depuis Nexis), SEANCE_BRANCH.
+# CORES, MEMORY (Mo), SWAP (Mo), DISK (Go), PRIVILEGED (1 = partages SMB montables depuis Noxa), SEANCE_BRANCH.
 set -euo pipefail
 
 command -v pct >/dev/null || { echo "À lancer sur un hôte Proxmox VE (commande pct introuvable)." >&2; exit 1; }
 [ "$(id -u)" -eq 0 ] || { echo "Lance ce script en root." >&2; exit 1; }
 
 CTID="${CTID:-$(pvesh get /cluster/nextid)}"
-CT_HOSTNAME="${CT_HOSTNAME:-nexis}"
+CT_HOSTNAME="${CT_HOSTNAME:-noxa}"
 STORAGE="${STORAGE:-local-lvm}"
 TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
 BRIDGE="${BRIDGE:-vmbr0}"
@@ -27,7 +27,7 @@ TEMPLATE=$(pveam available --section system | awk '/ubuntu-24\.04-standard/ {pri
 pveam list "$TEMPLATE_STORAGE" | grep -q "$TEMPLATE" || pveam download "$TEMPLATE_STORAGE" "$TEMPLATE"
 
 if [ "$PRIVILEGED" = "1" ]; then
-  UNPRIV=0; FEATURES="nesting=1,mount=cifs"   # privilégié : Nexis peut monter les partages SMB lui-même
+  UNPRIV=0; FEATURES="nesting=1,mount=cifs"   # privilégié : Noxa peut monter les partages SMB lui-même
 else
   UNPRIV=1; FEATURES="nesting=1"              # non privilégié : partages à monter sur l'hôte (README)
 fi
@@ -44,10 +44,10 @@ for _ in $(seq 1 30); do
   sleep 2
 done
 
-echo "==> Installation de Nexis dans le conteneur"
+echo "==> Installation de Noxa dans le conteneur"
 pct exec "$CTID" -- bash -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates >/dev/null \
-  && curl -fsSL https://raw.githubusercontent.com/xenix13/Nexis/$BRANCH/deploy/install.sh | SEANCE_BRANCH=$BRANCH bash"
+  && curl -fsSL https://raw.githubusercontent.com/xenix13/Noxa/$BRANCH/deploy/install.sh | SEANCE_BRANCH=$BRANCH bash"
 
 echo
 echo "Conteneur $CTID prêt. Pour la carte graphique (transcodage matériel), suis la section du README"
-echo "« Transcodage matériel » puis relance la mise à jour de Nexis depuis son interface."
+echo "« Transcodage matériel » puis relance la mise à jour de Noxa depuis son interface."

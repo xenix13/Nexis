@@ -4,7 +4,7 @@ Google Drive et OneDrive.
 - S3 : clé d'accès et secret ; requêtes signées (AWS Signature v4), adressage par chemin (accepté partout).
 - Google Drive et OneDrive : l'administrateur crée une application chez Google (type « TV et appareils à
   saisie limitée ») ou chez Microsoft (application publique), puis relie le compte par un code saisi sur
-  google.com/device ou microsoft.com/devicelogin. Nexis ne garde qu'un jeton de renouvellement, et n'a accès
+  google.com/device ou microsoft.com/devicelogin. Noxa ne garde qu'un jeton de renouvellement, et n'a accès
   qu'à ses propres fichiers (Google : drive.file ; OneDrive : dossier de l'application).
 """
 import datetime
@@ -253,10 +253,10 @@ class GoogleDrive(OAuthStorage):
         return {"Authorization": f"Bearer {self.token()}"}
 
     def folder(self):
-        """Dossier « Nexis » du Drive (créé par Nexis : drive.file n'y voit que ses propres fichiers)."""
+        """Dossier « Noxa » du Drive (créé par Noxa : drive.file n'y voit que ses propres fichiers)."""
         if self.conf.get("folder_id"):
             return self.conf["folder_id"]
-        name = self.conf.get("folder") or "Nexis"
+        name = self.conf.get("folder") or "Noxa"
         q = urllib.parse.urlencode({"q": f"name='{name}' and mimeType='application/vnd.google-apps.folder' and trashed=false",
                                     "fields": "files(id)"})
         st, _, body = _http("GET", f"{GOOGLE_API}/drive/v3/files?{q}", None, self._auth())
@@ -393,7 +393,7 @@ def valid_conf(kind, b, old=None):
     if kind == "gdrive":
         conf = {**old, "client_id": val("client_id", r"^[A-Za-z0-9._\-]{10,200}$"),
                 "client_secret": val("client_secret", r"^[\x21-\x7e]{6,200}$", 200, True),
-                "folder": str(b.get("folder") or old.get("folder") or "Nexis").strip()[:100] or "Nexis"}
+                "folder": str(b.get("folder") or old.get("folder") or "Noxa").strip()[:100] or "Noxa"}
         if conf["client_id"] != old.get("client_id"):
             for k in ("refresh_token", "access_token", "folder_id"):
                 conf.pop(k, None)

@@ -67,8 +67,8 @@ export function onDownloads(fn) { listeners.add(fn); return () => listeners.dele
 const notify = () => listeners.forEach((fn) => { try { fn(); } catch (e) { console.warn(e); } });
 
 // ------------------------------------------------------------------ application installée : continuer en arrière-plan
-// Android gèle une application qu'on quitte : tant qu'un téléchargement est en cours, l'application Nexis se déclare
-// « au travail » (notification « Nexis télécharge… » avec la progression) et le transfert continue, écran éteint
+// Android gèle une application qu'on quitte : tant qu'un téléchargement est en cours, l'application Noxa se déclare
+// « au travail » (notification « Noxa télécharge… » avec la progression) et le transfert continue, écran éteint
 // compris. Ordinateur : pas de mise en veille pendant un téléchargement.
 const busy = new Map(); // téléchargements en cours (clé -> enregistrement)
 let toldActive = false;
@@ -141,7 +141,7 @@ export async function download(uid, item, opts) {
 let running = false;
 // Coupure de réseau (Wi-Fi instable, application mise en arrière-plan par le système…) : on réessaie tout seul,
 // de plus en plus espacé (10 s, 20 s, 40 s, puis chaque minute), et tout de suite quand la connexion revient ou que
-// Nexis repasse au premier plan. Plus besoin de rouvrir la page Téléchargements.
+// Noxa repasse au premier plan. Plus besoin de rouvrir la page Téléchargements.
 let resumeTimer = null;
 let resumeDelay = 0;
 function scheduleResume() {
@@ -513,7 +513,7 @@ export async function syncProgress(uid) {
   }
 }
 
-// Place accordée par le NAVIGATEUR à Nexis (ce n'est pas la place libre du téléphone) et stockage persistant
+// Place accordée par le NAVIGATEUR à Noxa (ce n'est pas la place libre du téléphone) et stockage persistant
 export async function usage() {
   try {
     const [est, persisted] = await Promise.all([navigator.storage.estimate(), navigator.storage.persisted ? navigator.storage.persisted() : false]);

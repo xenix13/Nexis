@@ -5,7 +5,7 @@ Aegis, 2FAS, Microsoft Authenticator, Bitwarden…
   (sans mot de passe, ouvert depuis « Changer de profil ») ne le peut pas.
 - 10 codes de secours (usage unique, stockés hachés) permettent de se connecter sans le téléphone.
 - Un administrateur peut la désactiver pour un autre compte ; en dernier recours, la commande
-  `nexis reset-2fa <identifiant>` sur le serveur (voir __main__.py).
+  `noxa reset-2fa <identifiant>` sur le serveur (voir __main__.py).
 """
 import base64
 import hashlib
@@ -23,7 +23,7 @@ WINDOW = 1           # tolérance : un code d'avance ou de retard (horloge du t�
 TICKET_SECONDS = 300
 TICKET_TRIES = 5
 RECOVERY_COUNT = 10
-ISSUER = "Nexis"
+ISSUER = "Noxa"
 
 
 def new_secret():

@@ -1,18 +1,14 @@
-# Magasin de thèmes Nexis
+# Noxa theme store
 
-Chaque fichier `.json` de ce dossier est un thème proposé dans *Paramètres → Magasin de thèmes* de tous les serveurs
-Nexis. Les serveurs lisent `index.json`, régénéré automatiquement à chaque fusion dans `main`.
+Every `.json` file in this folder is a theme offered in *Settings → Appearance → Theme store* on every Noxa server. Servers read `index.json`, which is regenerated automatically each time a change is merged into `main`.
 
-## Proposer un thème
+## Proposing a theme
 
-**Le plus simple :** dans Nexis, *Paramètres → Magasin de thèmes → Créer un thème…*. Réglez les couleurs (l'interface
-entière sert d'aperçu), puis *Proposer sur GitHub* : GitHub s'ouvre sur ce dossier avec votre fichier déjà rempli.
-Validez la création du fichier : GitHub crée votre copie du dépôt et propose une demande de fusion (*pull request*).
+**The easy way:** in Noxa, *Settings → Appearance → Theme store → Create a theme…*. Adjust the colours (the whole interface is the preview), then *Propose on GitHub*: GitHub opens this folder with your file already filled in. Confirm the creation of the file: GitHub makes your copy of the repository and opens a pull request.
 
-**À la main :** ajoutez `static/themes/<id>.json` (le nom du fichier est l'`id` du thème) dans une demande de fusion.
-Vérification locale : `python3 -m seance.themes check-files static/themes`.
+**By hand:** add `static/themes/<id>.json` (the file name is the theme's `id`) in a pull request. Check it locally with `python3 -m seance.themes check-files static/themes`.
 
-L'intégration continue vérifie chaque thème (format, couleurs lisibles) ; un responsable du dépôt relit puis fusionne.
+CI checks every theme (format, readable colours); a maintainer reviews it, then merges.
 
 ## Format
 
@@ -22,7 +18,7 @@ L'intégration continue vérifie chaque thème (format, couleurs lisibles) ; un 
  "id": "ville-neon",
  "name": {"fr": "Ville néon", "en": "Neon city"},
  "description": {"fr": "Cyberpunk : magenta et cyan électriques.", "en": "Cyberpunk: electric magenta and cyan."},
- "author": "votre-identifiant-github",
+ "author": "your-github-username",
  "version": 1,
  "dark": true,
  "colors": {
@@ -38,26 +34,24 @@ L'intégration continue vérifie chaque thème (format, couleurs lisibles) ; un 
 }
 ```
 
-| Champ | Valeurs |
+| Field | Values |
 |---|---|
-| `id` | 3 à 40 caractères : minuscules, chiffres, tirets. Unique dans le magasin |
-| `name`, `description` | texte (40 et 160 caractères au plus), en français et en anglais si possible |
-| `author` | votre identifiant GitHub (affiché avec un lien vers votre profil) |
-| `version` | à augmenter à chaque modification : les personnes qui ont installé le thème se voient proposer la mise à jour |
-| `dark` | `true` pour un fond sombre et un texte clair |
-| `colors` | `#rrggbb` : fond, panneaux (`surface`, `surface2`), texte, texte secondaire (`muted`), bordures (`line`, facultatif), accent, second accent (`accent2`, facultatif), texte sur l'accent (`on_accent`) |
-| `background` | facultatif : dégradé de 2 à 4 couleurs, angle de 0 à 360 |
-| `effects` | jusqu'à 4 parmi `neon`, `scanlines`, `grain`, `stars`, `vignette`, `glow` |
+| `id` | 3 to 40 characters: lowercase letters, digits, hyphens. Unique in the store |
+| `name`, `description` | text (40 and 160 characters at most), in English and French if you can |
+| `author` | your GitHub username (shown with a link to your profile) |
+| `version` | increase it with every change: people who installed the theme are offered the update |
+| `dark` | `true` for a dark background and light text |
+| `colors` | `#rrggbb`: background, panels (`surface`, `surface2`), text, secondary text (`muted`), borders (`line`, optional), accent, second accent (`accent2`, optional), text on the accent (`on_accent`) |
+| `background` | optional: a gradient of 2 to 4 colours, angle from 0 to 360 |
+| `effects` | up to 4 of `neon`, `scanlines`, `grain`, `stars`, `vignette`, `glow` |
 | `font` | `default`, `mono`, `serif`, `rounded` |
-| `radius` | arrondi des angles, de 0 à 28 |
-| `style` | facultatif : style d'interface conseillé (`classic`, `glass`, `sidebar`, `minimal`, `cinema`, `rounded`) |
+| `radius` | corner radius, from 0 to 28 |
+| `style` | optional: suggested interface style (`classic`, `glass`, `sidebar`, `minimal`, `cinema`, `rounded`) |
 
-**Lisibilité (vérifiée) :** contraste texte / fond d'au moins 7, texte / panneaux et texte secondaire / fond d'au
-moins 4,5, texte des boutons / accent d'au moins 4,5, accent / fond d'au moins 3.
+**Readability (checked):** contrast of text on background at least 7, text on panels and secondary text on background at least 4.5, button text on accent at least 4.5, accent on background at least 3.
 
-## Règles du magasin
+## Store rules
 
-- **Pas de code, pas d'image :** un thème ne contient que les champs ci-dessus. Tout autre champ est refusé.
-- **Pas de marque ni de nom protégé :** inspirez-vous librement d'un film, d'un jeu ou d'un univers, mais avec un
-  nom à vous (« Héros », « Ville néon », « Terminal » plutôt que le nom d'un film, d'un personnage ou d'une marque).
-- Rien d'offensant dans les noms et les descriptions.
+- **No code, no images:** a theme only contains the fields above. Any other field is refused.
+- **No trademarks or protected names:** take inspiration freely from a film, a game or a universe, but give it your own name ("Hero", "Neon city", "Terminal" rather than the name of a film, a character or a brand).
+- Nothing offensive in names and descriptions.
