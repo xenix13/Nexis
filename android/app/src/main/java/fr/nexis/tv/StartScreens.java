@@ -306,6 +306,7 @@ final class ProfilesScreen extends Screen {
         LinearLayout row = Ui.row(act);
         row.setPadding(dp(24), dp(16), dp(24), dp(16));
         row.setClipChildren(false);
+        row.setClipToPadding(false);  // la pastille sélectionnée, agrandie, déborde dans la marge : pas coupée
         View first = null, current = null;
         for (int i = 0; i < profiles.length(); i++) {
             JSONObject p = profiles.optJSONObject(i);
@@ -329,6 +330,8 @@ final class ProfilesScreen extends Screen {
         tile.setGravity(Gravity.CENTER_HORIZONTAL);
         tile.setFocusable(true);
         tile.setClipChildren(false);
+        tile.setClipToPadding(false);
+        tile.setPadding(0, dp(8), 0, 0);
         FrameLayout av = StartScreens.avatar(this, p, 128);
         tile.addView(av, new LinearLayout.LayoutParams(dp(128), dp(128)));
         TextView name = Ui.oneLine(Ui.text(act, p.optString("display_name"), 18, Ui.MUTED));
